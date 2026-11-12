@@ -108,7 +108,48 @@ NodeHandle addPane(UiContext& ui, NodeHandle split, f32 size, std::string_view i
 }
 
 // ---- dock area: column [ row [left | centre | right] | bottom ] ----------------------------------------------------
-struct DockTitle { // the title strip of a dock widget; text = title. Close box at the right end.
+/// Per-node state pool keyed by the node's user data (slot + 1); a slot is reused once its node is gone.
+template <class S>
+struct Pool {
+    struct Slot { NodeHandle node; std::unique_ptr<S> s; };
+    std::vector<Slot> slots;
+    S* get(const UiContext& ui, NodeHandle n) {
+        const u64 k = ui.alive(n) ? ui.userData(n) : 0;
+        if (k == 0 || k > slots.size() || slots[k - 1].node != n) return nullptr;
+        return slots[k - 1].s.get();
+    }
+    S& create(UiContext& ui, NodeHandle n) {
+        for (std::size_t i = 0; i < slots.size(); ++i)
+            if (!ui.alive(slots[i].node) || ui.userData(slots[i].node) != i + 1) {
+                slots[i] = {n, std::make_unique<S>()};
+                ui.setUserData(n, i + 1);
+                return *slots[i].s;
+            }
+        slots.push_back({n, std::make_unique<S>()});
+        ui.setUserData(n, slots.size());
+        return *slots.back().s;
+    }
+};
+// A dock widget: its area (a floating dock has left the area's subtree), its tab strip while tabbed, the floating rect.
+struct DockState {
+    NodeHandle area, tabs;
+    bool floating = false, dragging = false;
+    Rect floatRect;
+    Vec2 grab; ///< pointer offset from the dock's top-left while its title is dragged
+};
+// A tab strip: the docks tabbed together, in tab order, and the one whose body shows.
+struct DockTabsState {
+    std::vector<NodeHandle> members;
+    NodeHandle current;
+};
+Pool<DockState>& dockPool() { static Pool<DockState> p; return p; }
+Pool<DockTabsState>& tabsPool() { static Pool<DockTabsState> p; return p; }
+DockState* dockState(const UiContext& ui, NodeHandle d) { return ui.alive(d) && ui.hasClass(d, "dock") ? dockPool().get(ui, d) : nullptr; }
+DockTabsState* tabsState(const UiContext& ui, NodeHandle t) { return ui.alive(t) && ui.hasClass(t, "docktabs") ? tabsPool().get(ui, t) : nullptr; }
+void moveFloat(UiContext& ui, NodeHandle dock, DockState& s, Vec2 at);
+void raiseFloat(UiContext& ui, NodeHandle dock);
+
+struct DockTitle { // the title strip of a dock widget; text = title. Close box at the right end. Drags a floating dock.
     static constexpr std::string_view kName = "docktitle";
     static constexpr A11yRole kRole = A11yRole::Text;
     static constexpr bool kInteractive = true;
@@ -127,8 +168,113 @@ struct DockTitle { // the title strip of a dock widget; text = title. Close box 
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
-        if (e.type == EventType::PointerMove) { ec.ui.invalidate(ec.node); return false; }
-        if (e.type == EventType::Click && closeBox(ec.ui.rect(ec.node)).contains(e.pos)) { dockClose(ec.ui, ec.ui.parent(ec.node)); return true; }
+        UiContext& ui = ec.ui;
+        const NodeHandle dock = ui.parent(ec.node);
+        DockState* s = dockState(ui, dock);
+        if (e.type == EventType::PointerDown && s) { // a floating dock comes to the front and follows the pointer
+            s->dragging = s->floating && e.button == MouseButton::Left && !closeBox(ui.rect(ec.node)).contains(e.pos);
+            if (s->dragging) {
+                const Rect r = ui.rect(dock);
+                s->grab = {e.pos.x - r.x, e.pos.y - r.y};
+                raiseFloat(ui, dock);
+            }
+            return false;
+        }
+        if (e.type == EventType::PointerMove) {
+            if (s && s->dragging && ui.pressed() == ec.node) { moveFloat(ui, dock, *s, {e.pos.x - s->grab.x, e.pos.y - s->grab.y}); return true; }
+            ui.invalidate(ec.node);
+            return false;
+        }
+        if (e.type == EventType::PointerUp && s) { s->dragging = false; return false; }
+        if (e.type == EventType::Click && closeBox(ui.rect(ec.node)).contains(e.pos)) { dockClose(ui, dock); return true; }
+        return false;
+    }
+};
+
+// The tab strip of docks tabbed together (dockTabify): one tab per open member, the current one highlighted; a close
+// box at the right end closes the current dock. value() = index of the current dock among the members.
+struct DockTabs {
+    static constexpr std::string_view kName = "docktabs";
+    static constexpr A11yRole kRole = A11yRole::Tab;
+    static constexpr bool kFocusable = true;
+    static constexpr bool kInteractive = true;
+    static constexpr f32 kTabPad = 20.f;
+    static std::string_view title(const UiContext& ui, NodeHandle dock) { return ui.text(ui.firstChild(dock)); }
+    static bool open(const UiContext& ui, NodeHandle dock) { return ui.alive(dock) && !ui.hasClass(dock, "dock-closed"); }
+    static Size measure(UiContext& ui, NodeHandle n, Size) {
+        f32 w = rowHeight(ui, n);
+        if (const DockTabsState* s = tabsState(ui, n))
+            for (NodeHandle m : s->members)
+                if (open(ui, m)) w += std::ceil(ui.measureString(title(ui, m), ui.computed(n).fontSize)) + kTabPad;
+        return {w, rowHeight(ui, n) - 2.f};
+    }
+    static Rect closeBox(const Rect& r) { return {r.right() - r.h, r.y, r.h, r.h}; }
+    /// Tab rect of `dock` (empty when it has no tab). Tabs share the strip left of the close box, shrunk to fit.
+    static Rect tabRect(UiContext& ui, NodeHandle n, const DockTabsState& s, NodeHandle dock) {
+        const Rect r = ui.rect(n);
+        const f32 fs = ui.computed(n).fontSize;
+        f32 total = 0.f;
+        for (NodeHandle m : s.members)
+            if (open(ui, m)) total += std::ceil(ui.measureString(title(ui, m), fs)) + kTabPad;
+        const f32 avail = std::max(0.f, r.w - r.h), k = total > avail && total > 0.f ? avail / total : 1.f;
+        f32 x = r.x;
+        for (NodeHandle m : s.members) {
+            if (!open(ui, m)) continue;
+            const f32 w = (std::ceil(ui.measureString(title(ui, m), fs)) + kTabPad) * k;
+            if (m == dock) return {x, r.y, w, r.h};
+            x += w;
+        }
+        return {};
+    }
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        UiContext& ui = pc.ui;
+        const DockTabsState* s = tabsState(ui, pc.node);
+        if (!s) return;
+        const Rect r = pc.rect;
+        const Color acc = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD));
+        dl.rect(r, pc.tint(Color::rgb(0x22222A)), 3.f);
+        for (NodeHandle m : s->members) {
+            const Rect t = tabRect(ui, pc.node, *s, m);
+            if (t.empty()) continue;
+            const bool cur = m == s->current, hot = ui.hovered() == pc.node && t.contains(ui.pointer());
+            if (cur || hot) dl.rect(t, pc.tint(Color::rgb(cur ? 0x34353E : 0x2A2A33)), 3.f);
+            if (cur) dl.rect({t.x + 2.f, t.bottom() - 2.f, t.w - 4.f, 2.f}, acc, 1.f);
+            dl.pushClip(t);
+            ui.paintString(dl, title(ui, m), {t.x + kTabPad * 0.5f, t.y, t.w - kTabPad * 0.5f, t.h},
+                           pc.tint(cur ? pc.style.color : pc.style.color.withAlpha(pc.style.color.a * 0.65f)), pc.style.fontSize,
+                           TextAlignment::Start, pc.node.index);
+            dl.popClip();
+        }
+        const Rect x = closeBox(r);
+        const Color c = pc.tint(ui.hovered() == pc.node && x.contains(ui.pointer()) ? Color::rgb(0xFF6B6B) : Color::rgb(0x9A9AA6));
+        const f32 mg = x.h * 0.32f;
+        dl.line({x.x + mg, x.y + mg}, {x.right() - mg, x.bottom() - mg}, c, 1.5f);
+        dl.line({x.right() - mg, x.y + mg}, {x.x + mg, x.bottom() - mg}, c, 1.5f);
+        if ((pc.states & kStateFocus) && ui.focusVisible()) dl.roundedRect(r, {}, {3.f, 3.f, 3.f, 3.f}, acc.withAlpha(acc.a * 0.6f), 1.f);
+    }
+    static bool onEvent(EventContext& ec, const Event& e) {
+        if (ec.phase != Phase::Target) return false;
+        UiContext& ui = ec.ui;
+        const DockTabsState* s = tabsState(ui, ec.node);
+        if (!s) return false;
+        if (e.type == EventType::PointerMove) { ui.invalidate(ec.node); return false; }
+        if (e.type == EventType::Click) {
+            if (closeBox(ui.rect(ec.node)).contains(e.pos)) { dockClose(ui, s->current); return true; }
+            const std::vector<NodeHandle> members = s->members; // raising edits the state
+            for (NodeHandle m : members)
+                if (tabRect(ui, ec.node, *s, m).contains(e.pos)) { dockRaise(ui, m); break; }
+            return true;
+        }
+        if (e.type == EventType::KeyDown && (e.key == Key::Left || e.key == Key::Right)) { // previous / next open tab
+            const i32 n = i32(s->members.size()), d = e.key == Key::Right ? 1 : -1;
+            i32 at = 0;
+            for (i32 i = 0; i < n; ++i) if (s->members[i] == s->current) at = i;
+            for (i32 i = 1; i < n; ++i) {
+                const NodeHandle m = s->members[std::size_t(((at + d * i) % n + n) % n)];
+                if (open(ui, m)) { dockRaise(ui, m); break; }
+            }
+            return true;
+        }
         return false;
     }
 };
@@ -139,9 +285,11 @@ NodeHandle nthChild(const UiContext& ui, NodeHandle n, u32 i) {
     return c;
 }
 bool anyShown(const UiContext& ui, NodeHandle region) {
-    for (NodeHandle c = ui.firstChild(region); ui.alive(c); c = ui.nextSibling(c))
+    for (NodeHandle c = ui.firstChild(region); ui.alive(c); c = ui.nextSibling(c)) {
+        if (ui.hasClass(c, "docktabs")) continue; // a tab strip follows its docks
         // dock widgets: the closed class is authoritative (computed visibility is stale right after dockTo re-shows one)
         if (ui.hasClass(c, "dock") ? !ui.hasClass(c, "dock-closed") : ui.computed(c).visible) return true;
+    }
     return false;
 }
 void showNode(UiContext& ui, NodeHandle n, bool on) { ui.setCss(n, "display", on ? "flex" : "none"); }
@@ -156,9 +304,76 @@ void refreshDock(UiContext& ui, NodeHandle area) {
     }
 }
 NodeHandle areaOf(const UiContext& ui, NodeHandle dock) {
+    if (const DockState* s = dockState(ui, dock); s && ui.alive(s->area)) return s->area;
     NodeHandle n = dock;
     while (ui.alive(n) && !ui.hasClass(n, "dockarea")) n = ui.parent(n);
     return n;
+}
+void setPx(UiContext& ui, NodeHandle n, Prop p, f32 v) { ui.set(n, p, PropValue::ofLength(Length::px(std::round(v)))); }
+
+/// Re-derives a tab group's display from its state: only the current open member shows (titles are replaced by the
+/// strip), a closed current hands over to the first open member, a group of one dissolves.
+void applyTabs(UiContext& ui, NodeHandle tabs) {
+    DockTabsState* t = tabsState(ui, tabs);
+    if (!t) return;
+    std::erase_if(t->members, [&](NodeHandle m) { const DockState* d = dockState(ui, m); return !d || d->tabs != tabs; });
+    if (t->members.size() < 2) {
+        for (NodeHandle m : t->members) {
+            dockState(ui, m)->tabs = {};
+            showNode(ui, ui.firstChild(m), true);
+            showNode(ui, m, DockTabs::open(ui, m));
+        }
+        t->members.clear();
+        ui.destroy(tabs);
+        return;
+    }
+    if (!DockTabs::open(ui, t->current) || std::find(t->members.begin(), t->members.end(), t->current) == t->members.end()) {
+        t->current = {};
+        for (NodeHandle m : t->members)
+            if (DockTabs::open(ui, m)) { t->current = m; break; }
+    }
+    i32 index = -1;
+    for (std::size_t i = 0; i < t->members.size(); ++i) {
+        const NodeHandle m = t->members[i];
+        showNode(ui, ui.firstChild(m), false);
+        showNode(ui, m, m == t->current);
+        if (m == t->current) index = i32(i);
+    }
+    showNode(ui, tabs, index >= 0);
+    ui.setText(tabs, {}); // re-measure (the open tabs changed)
+    ui.invalidate(tabs);
+    ui.setValue(tabs, f32(index), true);
+}
+/// Takes a dock out of its tab group and out of the floating state (it stays where it is in the tree).
+void detachDock(UiContext& ui, NodeHandle dock) {
+    DockState* s = dockState(ui, dock);
+    if (!s) return;
+    if (const NodeHandle tabs = s->tabs; tabs.valid()) {
+        s->tabs = {};
+        showNode(ui, ui.firstChild(dock), true);
+        showNode(ui, dock, DockTabs::open(ui, dock));
+        applyTabs(ui, tabs);
+    }
+    if (s->floating) {
+        s->floating = s->dragging = false;
+        ui.removeClass(dock, "dock-floating");
+        for (const char* p : {"left", "top", "width", "height"}) ui.setCss(dock, p, "auto");
+    }
+}
+void moveFloat(UiContext& ui, NodeHandle dock, DockState& s, Vec2 at) {
+    // the title strip stays reachable: at least 40 px of it inside the viewport, never above the top edge
+    const Size vp = ui.viewport();
+    s.floatRect.x = std::round(std::clamp(at.x, 40.f - s.floatRect.w, std::max(40.f - s.floatRect.w, vp.w - 40.f)));
+    s.floatRect.y = std::round(std::clamp(at.y, 0.f, std::max(0.f, vp.h - 24.f)));
+    setPx(ui, dock, Prop::Left, s.floatRect.x);
+    setPx(ui, dock, Prop::Top, s.floatRect.y);
+}
+/// Puts a floating dock above the other floating docks (popups and toasts created later stay above it).
+void raiseFloat(UiContext& ui, NodeHandle dock) {
+    NodeHandle last;
+    for (NodeHandle c = ui.firstChild(ui.parent(dock)); ui.alive(c); c = ui.nextSibling(c))
+        if (ui.hasClass(c, "dock-floating")) last = c;
+    if (last.valid() && last != dock) ui.moveTo(dock, ui.parent(dock), ui.nextSibling(last));
 }
 
 // ---- table view ---------------------------------------------------------------------------------------------------
@@ -384,6 +599,7 @@ void registerTierB2(UiContext& ui) {
     if (r.find("tableview") != 0xFFFFFFFFu) return;
     r.registerWidget<SplitHandle>();
     r.registerWidget<DockTitle>();
+    r.registerWidget<DockTabs>();
     r.registerWidget<TableView>();
 }
 
@@ -453,6 +669,7 @@ NodeHandle dockWidget(UiContext& ui, NodeHandle area, std::string_view title, Do
     registerTierB(ui);
     const NodeHandle d = panel(ui, dockRegion(ui, area, side), id);
     ui.addClass(d, "dock");
+    dockPool().create(ui, d).area = area;
     ui.setA11y(d, A11yRole::Group, title);
     ui.setCss(d, "flex-grow", "1");
     ui.setCss(d, "padding", "0px");
@@ -469,6 +686,7 @@ NodeHandle dockBody(const UiContext& ui, NodeHandle dock) { return nthChild(ui, 
 void dockTo(UiContext& ui, NodeHandle dock, DockSide side) {
     const NodeHandle area = areaOf(ui, dock);
     if (!ui.alive(area)) return;
+    detachDock(ui, dock);
     ui.moveTo(dock, dockRegion(ui, area, side));
     const bool wasClosed = ui.hasClass(dock, "dock-closed");
     ui.removeClass(dock, "dock-closed");
@@ -480,8 +698,107 @@ void dockClose(UiContext& ui, NodeHandle dock) {
     if (!ui.alive(dock) || ui.hasClass(dock, "dock-closed")) return;
     ui.addClass(dock, "dock-closed");
     showNode(ui, dock, false);
+    if (const DockState* s = dockState(ui, dock)) applyTabs(ui, s->tabs); // the next open tab takes over
     refreshDock(ui, areaOf(ui, dock));
     ui.emit(dock, SignalKind::Toggled, {.flag = false});
+}
+
+// ---- tabbed and floating docks ---------------------------------------------------------------------------------------
+namespace {
+/// dockTabify; `reopen` false keeps a closed dock closed (layout restore).
+void joinTabs(UiContext& ui, NodeHandle dock, NodeHandle withDock, bool reopen) {
+    DockState* ds = dockState(ui, dock);
+    DockState* ws = dockState(ui, withDock);
+    if (!ds || !ws || dock == withDock || ws->floating) return;
+    const NodeHandle area = areaOf(ui, withDock);
+    if (!ui.alive(area) || areaOf(ui, dock) != area) return;
+    if (ds->tabs.valid() && ds->tabs == ws->tabs) return;
+    detachDock(ui, dock);
+    const NodeHandle region = ui.parent(withDock);
+    if (!tabsState(ui, ws->tabs)) { // first pair: the strip goes right above `withDock`
+        const NodeHandle strip = make(ui, "docktabs", region);
+        if (!ui.alive(strip)) return;
+        ui.addClass(strip, "docktabs");
+        ui.moveTo(strip, region, withDock);
+        ui.setCss(strip, "flex-shrink", "0");
+        ui.setRange(strip, -1.f, 4096.f, 1.f);
+        ui.setValue(strip, -1.f);
+        DockTabsState& t = tabsPool().create(ui, strip);
+        t.members.push_back(withDock);
+        t.current = withDock;
+        ws->tabs = strip;
+    }
+    DockTabsState& t = *tabsState(ui, ws->tabs);
+    const NodeHandle after = ui.nextSibling(t.members.back());
+    t.members.push_back(dock);
+    ds->tabs = ws->tabs;
+    if (after != dock) ui.moveTo(dock, region, after);
+    const bool wasClosed = reopen && ui.hasClass(dock, "dock-closed");
+    if (reopen) ui.removeClass(dock, "dock-closed");
+    applyTabs(ui, ws->tabs);
+    refreshDock(ui, area);
+    if (wasClosed) ui.emit(dock, SignalKind::Toggled, {.flag = true});
+}
+} // namespace
+void dockTabify(UiContext& ui, NodeHandle dock, NodeHandle withDock) { joinTabs(ui, dock, withDock, true); }
+void dockRaise(UiContext& ui, NodeHandle dock) {
+    DockState* s = dockState(ui, dock);
+    if (!s) return;
+    DockTabsState* t = tabsState(ui, s->tabs);
+    if (!t) {
+        if (s->floating) raiseFloat(ui, dock);
+        return;
+    }
+    const bool wasClosed = ui.hasClass(dock, "dock-closed");
+    ui.removeClass(dock, "dock-closed");
+    t->current = dock;
+    applyTabs(ui, s->tabs);
+    refreshDock(ui, areaOf(ui, dock));
+    if (wasClosed) ui.emit(dock, SignalKind::Toggled, {.flag = true});
+}
+NodeHandle dockCurrent(const UiContext& ui, NodeHandle dock) {
+    const DockState* s = dockState(ui, dock);
+    if (!s) return {};
+    const DockTabsState* t = tabsState(ui, s->tabs);
+    return t ? t->current : dock;
+}
+NodeHandle dockTabBar(const UiContext& ui, NodeHandle dock) {
+    const DockState* s = dockState(ui, dock);
+    return s && tabsState(ui, s->tabs) ? s->tabs : NodeHandle{};
+}
+Rect dockTabRect(UiContext& ui, NodeHandle dock) {
+    const DockState* s = dockState(ui, dock);
+    const DockTabsState* t = s ? tabsState(ui, s->tabs) : nullptr;
+    return t ? DockTabs::tabRect(ui, s->tabs, *t, dock) : Rect{};
+}
+void dockFloat(UiContext& ui, NodeHandle dock, Rect rect) {
+    DockState* s = dockState(ui, dock);
+    const NodeHandle area = areaOf(ui, dock);
+    if (!s || !ui.alive(area)) return;
+    const NodeHandle layer = overlayLayer(ui); // may create the layer: `s` stays valid (pool storage, not node storage)
+    if (s->tabs.valid()) detachDock(ui, dock);
+    s->area = area;
+    s->floating = true;
+    s->floatRect = {0.f, 0.f, std::round(std::max(rect.w, 80.f)), std::round(std::max(rect.h, 60.f))};
+    if (ui.parent(dock) != layer) ui.moveTo(dock, layer);
+    ui.addClass(dock, "dock-floating");
+    setPx(ui, dock, Prop::Width, s->floatRect.w);
+    setPx(ui, dock, Prop::Height, s->floatRect.h);
+    moveFloat(ui, dock, *s, {rect.x, rect.y});
+    raiseFloat(ui, dock);
+    const bool wasClosed = ui.hasClass(dock, "dock-closed");
+    ui.removeClass(dock, "dock-closed");
+    showNode(ui, dock, true);
+    refreshDock(ui, area);
+    if (wasClosed) ui.emit(dock, SignalKind::Toggled, {.flag = true});
+}
+bool dockFloating(const UiContext& ui, NodeHandle dock) {
+    const DockState* s = dockState(ui, dock);
+    return s && s->floating;
+}
+Rect dockFloatRect(const UiContext& ui, NodeHandle dock) {
+    const DockState* s = dockState(ui, dock);
+    return s && s->floating ? s->floatRect : Rect{};
 }
 
 // ---- item models -------------------------------------------------------------------------------------------------------
@@ -585,13 +902,48 @@ std::string dockSaveLayout(const UiContext& ui, NodeHandle area) {
                    (ui.hasClass(d, "dock-closed") ? "closed" : "open") + "\n";
         }
     }
+    // tab groups: one line per named member, in tab order (only written when docks are tabbed)
+    auto named = [&](NodeHandle d) {
+        const std::string_view id = ui.idOf(d);
+        return !id.empty() && id.find_first_of(" \n") == std::string_view::npos;
+    };
+    u32 group = 0;
+    for (DockSide s : {DockSide::Left, DockSide::Right, DockSide::Bottom, DockSide::Center})
+        for (NodeHandle t = ui.firstChild(dockRegion(ui, area, s)); ui.alive(t); t = ui.nextSibling(t)) {
+            const DockTabsState* ts = tabsState(ui, t);
+            if (!ts) continue;
+            for (std::size_t i = 0; i < ts->members.size(); ++i)
+                if (const NodeHandle d = ts->members[i]; named(d))
+                    out += "tab " + std::string(ui.idOf(d)) + " " + std::to_string(group) + " " + std::to_string(i) +
+                           (d == ts->current ? " current\n" : " back\n");
+            ++group;
+        }
+    // floating docks, back to front (only written when docks float)
+    NodeHandle layer;
+    for (const auto& slot : dockPool().slots)
+        if (const DockState* d = dockState(ui, slot.node); d && d == slot.s.get() && d->floating && d->area == area) layer = ui.parent(slot.node);
+    for (NodeHandle d = ui.firstChild(layer); ui.alive(d); d = ui.nextSibling(d)) {
+        const DockState* st = dockState(ui, d);
+        if (!st || !st->floating || st->area != area || !named(d)) continue;
+        std::snprintf(b, sizeof b, " %.0f %.0f %.0f %.0f ", double(st->floatRect.x), double(st->floatRect.y), double(st->floatRect.w),
+                      double(st->floatRect.h));
+        out += "float " + std::string(ui.idOf(d)) + b + (ui.hasClass(d, "dock-closed") ? "closed" : "open") + "\n";
+    }
     return out;
 }
 
 bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
     if (!ui.alive(area) || !ui.hasClass(area, "dockarea")) return false;
     struct Entry { NodeHandle dock; DockSide side; u32 order; bool open; };
+    struct TabEntry { NodeHandle dock; u32 group, index; bool current; };
+    struct FloatEntry { NodeHandle dock; Rect rect; bool open; };
     std::vector<Entry> docks;
+    std::vector<TabEntry> tabs;
+    std::vector<FloatEntry> floats;
+    auto dockNamed = [&](std::string_view id) {
+        const NodeHandle d = ui.find(id);
+        return ui.alive(d) && ui.hasClass(d, "dock") && areaOf(ui, d) == area ? d : NodeHandle{};
+    };
     f32 sizes[3] = {-1.f, -1.f, -1.f};
     auto side = [](std::string_view w, DockSide& out) {
         for (u32 i = 0; i < 4; ++i) if (w == kSideName[i]) { out = DockSide(i); return true; }
@@ -625,9 +977,19 @@ bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
         } else if (w[0] == "dock" && w.size() == 5 && side(w[2], sd) && (w[4] == "open" || w[4] == "closed")) {
             double o;
             if (!parseNum(w[3], o) || !(o >= 0.0 && o < 1e6)) return false;
-            const NodeHandle d = ui.find(w[1]);
-            if (!ui.alive(d) || !ui.hasClass(d, "dock") || areaOf(ui, d) != area) continue; // unknown: ignored
+            const NodeHandle d = dockNamed(w[1]);
+            if (!d.valid()) continue; // unknown: ignored
             docks.push_back({d, sd, u32(o), w[4] == "open"});
+        } else if (w[0] == "tab" && w.size() == 5 && (w[4] == "current" || w[4] == "back")) {
+            double g, i;
+            if (!parseNum(w[2], g) || !parseNum(w[3], i) || !(g >= 0.0 && g < 1e6) || !(i >= 0.0 && i < 1e6)) return false;
+            if (const NodeHandle d = dockNamed(w[1]); d.valid()) tabs.push_back({d, u32(g), u32(i), w[4] == "current"});
+        } else if (w[0] == "float" && w.size() == 7 && (w[6] == "open" || w[6] == "closed")) {
+            double v[4];
+            for (u32 k = 0; k < 4; ++k)
+                if (!parseNum(w[2 + k], v[k]) || !(v[k] >= (k < 2 ? -1e6 : 1.0) && v[k] <= (k < 2 ? 1e6 : 16384.0))) return false;
+            if (const NodeHandle d = dockNamed(w[1]); d.valid())
+                floats.push_back({d, {f32(v[0]), f32(v[1]), f32(v[2]), f32(v[3])}, w[6] == "open"});
         } else {
             return false;
         }
@@ -637,9 +999,29 @@ bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
         return a.side != b.side ? u32(a.side) < u32(b.side) : a.order < b.order;
     });
     for (const Entry& e : docks) { // appended in order: each region ends up in saved order (unnamed docks first)
+        detachDock(ui, e.dock); // a docked entry leaves its tab group / floating state; "tab" lines regroup below
         ui.moveTo(e.dock, dockRegion(ui, area, e.side));
         if (e.open) dockTo(ui, e.dock, e.side);
         else dockClose(ui, e.dock);
+    }
+    for (const FloatEntry& e : floats) { // back to front
+        const bool wasOpen = !ui.hasClass(e.dock, "dock-closed");
+        if (!e.open && !wasOpen) ui.removeClass(e.dock, "dock-closed"); // floats without a spurious re-open signal ...
+        dockFloat(ui, e.dock, e.rect);
+        if (!e.open && !wasOpen) { ui.addClass(e.dock, "dock-closed"); showNode(ui, e.dock, false); } // ... and stays closed
+        else if (!e.open) dockClose(ui, e.dock);
+    }
+    std::stable_sort(tabs.begin(), tabs.end(), [](const TabEntry& a, const TabEntry& b) {
+        return a.group != b.group ? a.group < b.group : a.index < b.index;
+    });
+    for (std::size_t i = 0; i < tabs.size();) {
+        std::size_t j = i + 1;
+        while (j < tabs.size() && tabs[j].group == tabs[i].group) ++j;
+        if (dockFloating(ui, tabs[i].dock)) dockTo(ui, tabs[i].dock, DockSide::Left); // a group needs a docked first member
+        for (std::size_t k = i + 1; k < j; ++k) joinTabs(ui, tabs[k].dock, tabs[i].dock, false);
+        for (std::size_t k = i; k < j; ++k)
+            if (tabs[k].current && !ui.hasClass(tabs[k].dock, "dock-closed")) dockRaise(ui, tabs[k].dock);
+        i = j;
     }
     for (u32 i = 0; i < 3; ++i)
         if (sizes[i] >= 0.f) setBasis(ui, sidePane(ui, area, DockSide(i)), sizes[i]);

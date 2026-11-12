@@ -120,6 +120,33 @@ With Tier B installed (`widgets::install` does both tiers), a combo box opens a 
 `headerView`, `textEdit` (word wrapped, undo, clipboard, IME), `plainTextEdit`, `richText` (inline markup with
 links) and `doubleSpinBox`. Gate: `fuse_ui_tier_b3`, one `fuse_ui_widget_<name>` ctest per widget.
 
+The last four pieces of the catalogue (gates `fuse_ui_widget_chart_flame`, `_dock_tabs`, `_dock_float`,
+`_dock_layout_tabs_float`, `_minimap`, `_ammo_counter`):
+
+- **Flame graph**: `chart(ui, parent, ChartKind::Flame)` + `chartSetFlame(ui, chart, spans)` with
+  `FlameSpan {name, start, duration, depth, color}`. Bars are stacked by depth (0 at the top) and scaled to the total
+  time range; a label is cut to its bar. Hover sets `value()` to the span index (-1 outside), a click emits
+  `Submitted {value = index, text = name}`. `chartFlameSpanRect` / `chartFlameSpanAt` give the geometry.
+- **Tabbed docks**: `dockTabify(ui, dock, withDock)` puts `dock` in `withDock`'s region as a tab. The group shows a
+  tab strip instead of title bars and only the current dock's body; `dockRaise` (or a click on a tab, Left / Right on
+  the strip) changes it, `dockCurrent` / `dockTabBar` / `dockTabRect` query it. `dockTo` takes a dock out of its group.
+- **Floating docks**: `dockFloat(ui, dock, rect)` moves the dock into the overlay layer as a panel that is dragged by
+  its title bar; `dockTo` docks it again; `dockFloating` / `dockFloatRect` query it. There are no drop zones (a
+  floating dock is docked through `dockTo`, not by dragging it onto the area), a floating dock holds no tabs, and it
+  is a panel inside the window, not an OS window.
+- `dockSaveLayout` adds `tab <id> <group> <index> current|back` and `float <id> <x> <y> <w> <h> open|closed` lines
+  only when docks are tabbed or floating; layouts written before still restore, and restoring one un-tabs and docks
+  the docks it names.
+- **Minimap** (`fuse/ui/game/game_extras.hpp`): `minimap(ui, parent, id)`, `setMinimapRange` (world units that reach
+  the frame), `setMinimapHeading(ui, map, degrees, rotateMap)` (heading-up or north-up), `setMinimapShape` (circle /
+  square), `setMinimapImage` (rasteriser image index, drawn north-up) and `minimapSetBlips` (`MinimapBlip {pos, color,
+  kind}`, position relative to the player, +x east, +y north). Blips beyond the range sit on the frame edge;
+  `minimapBlipPos` returns where a blip is drawn.
+- **Ammo counter**: `ammoCounter(ui, parent, id)`, `setAmmo(ui, node, inMagazine, magazineSize, reserve)` shows
+  "12 / 90" and one pip per round (a bar above `kAmmoMaxPips` = 40), turns to the danger colour at or below 25 % of
+  the magazine (`setAmmoLowFraction`), `setAmmoReload(ui, node, progress01)` shows a reload bar. A count change emits
+  `ValueChanged`.
+
 ### Documents and Lua
 
 `.fuseui` files are JSON trees with `{expr}` and `{=two-way}` bindings (see `Doc/include/fuse/ui/doc/document.hpp` for

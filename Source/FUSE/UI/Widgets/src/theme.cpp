@@ -117,6 +117,11 @@ textedit {
 }
 textedit:focus { border-color: var(--accent); }
 richtext { color: var(--text); }
+docktabs { color: var(--text); background-end: var(--accent); padding: 0px 4px; }
+.dock-floating {
+  background: var(--surface); border: 1px var(--border); border-radius: 6px;
+  box-shadow: 0px 6px 18px rgba(0, 0, 0, 0.5);
+}
 .fontlist { height: 110px; }
 .fontpreview { padding: 6px 4px; }
 .filelist { height: 220px; width: 420px; }

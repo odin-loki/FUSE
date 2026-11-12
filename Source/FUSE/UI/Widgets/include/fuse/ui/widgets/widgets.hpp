@@ -113,7 +113,8 @@ NodeHandle splitter(UiContext& ui, NodeHandle parent, bool stacked = false, std:
 NodeHandle splitterPane(UiContext& ui, NodeHandle split, f32 size = 0.f, std::string_view id = {});
 
 /// Dock area: left / right / bottom regions around a centre, each resizable by splitter handles and hidden while
-/// empty. Dock widgets are titled panels with a close button; several in one region stack.
+/// empty. Dock widgets are titled panels with a close button; several in one region stack (or share it as tabs, see
+/// dockTabify). A dock's user data is reserved for the dock system.
 enum class DockSide : u8 { Left, Right, Bottom, Center };
 NodeHandle dockArea(UiContext& ui, NodeHandle parent, std::string_view id = {});
 NodeHandle dockRegion(const UiContext& ui, NodeHandle area, DockSide side);
@@ -121,6 +122,27 @@ NodeHandle dockWidget(UiContext& ui, NodeHandle area, std::string_view title, Do
 NodeHandle dockBody(const UiContext& ui, NodeHandle dock);
 void dockTo(UiContext& ui, NodeHandle dock, DockSide side);
 void dockClose(UiContext& ui, NodeHandle dock); ///< hides (dockTo re-shows); emits Toggled {flag = false}
+/// Tabbed docks (QMainWindow::tabifyDockWidget): `dock` joins `withDock` in its region as the last tab of its group.
+/// A group shows a tab strip in place of the members' title bars and only the current member's body; clicking a tab
+/// (or Left / Right on the focused strip) raises it, the strip's close box closes the current dock. A closed member
+/// keeps its place in the group without a tab; when the current one closes the first open member takes over. dockTo
+/// and dockFloat take a dock out of its group; a group left with one dock dissolves. Docks of different areas, and a
+/// floating `withDock`, are refused.
+void dockTabify(UiContext& ui, NodeHandle dock, NodeHandle withDock);
+/// Makes a tabbed dock the current tab of its group (re-opening it when closed); emits ValueChanged {value = tab
+/// index} on the tab strip. A floating dock comes to the front of the floating docks.
+void dockRaise(UiContext& ui, NodeHandle dock);
+/// The dock whose body shows in `dock`'s tab group (`dock` itself when it is not tabbed; invalid when every member
+/// of the group is closed).
+NodeHandle dockCurrent(const UiContext& ui, NodeHandle dock);
+NodeHandle dockTabBar(const UiContext& ui, NodeHandle dock); ///< the group's tab strip (invalid when not tabbed)
+Rect dockTabRect(UiContext& ui, NodeHandle dock);            ///< `dock`'s tab in the strip (empty: none; after update)
+/// Floating docks: the dock leaves its region and becomes a panel of `rect` (context coordinates, at least 80 x 60)
+/// in the overlay layer, above the window content and below popups. Dragging its title bar moves it (the title stays
+/// inside the viewport), pressing the title brings it to the front; dockTo docks it again, dockClose hides it.
+void dockFloat(UiContext& ui, NodeHandle dock, Rect rect);
+bool dockFloating(const UiContext& ui, NodeHandle dock);
+Rect dockFloatRect(const UiContext& ui, NodeHandle dock); ///< current floating rect (empty when docked)
 
 /// Item model: a function table over caller data (no inheritance). `data` may return a view into `scratch`.
 struct ItemModel {
@@ -163,7 +185,9 @@ NodeHandle modelListView(UiContext& ui, NodeHandle parent, const ItemModel* mode
 /// Dock layout persistence (plan §5 "saved layouts"): a small text blob with the side region sizes and, per dock
 /// widget with an id, its side, order in the region and open state. Restoring moves / opens / closes the named docks
 /// and resizes the regions; docks the blob does not name keep their place, names with no dock are ignored. A malformed
-/// blob changes nothing and returns false.
+/// blob changes nothing and returns false. Tab groups ("tab <id> <group> <index> current|back") and floating docks
+/// ("float <id> <x> <y> <w> <h> open|closed") are extra lines written only when present, so a layout without them is
+/// byte-identical to what earlier versions wrote and those blobs restore unchanged.
 std::string dockSaveLayout(const UiContext& ui, NodeHandle area);
 bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view layout);
 
@@ -240,11 +264,26 @@ i32 daysFromCivil(int y, int m, int d);
 void civilFromDays(i32 z, int& y, int& m, int& d);
 
 /// Chart: line, bar, area or scatter series over a shared x index, auto-scaled y axis with grid lines. Hovering
-/// sets value() to the nearest x index (-1 outside).
-enum class ChartKind : u8 { Line, Bar, Area, Scatter };
+/// sets value() to the nearest x index (-1 outside). ChartKind::Flame shows spans instead of series (chartSetFlame).
+enum class ChartKind : u8 { Line, Bar, Area, Scatter, Flame };
 NodeHandle chart(UiContext& ui, NodeHandle parent, ChartKind kind, std::string_view id = {});
 void chartSetSeries(UiContext& ui, NodeHandle chart, u32 index, std::string_view name, std::span<const f32> values, Color color);
 u32 chartSeriesCount(const UiContext& ui, NodeHandle chart);
+/// Flame graph (profiler icicle): hierarchical spans painted as labelled bars stacked by depth, depth 0 at the top,
+/// x scaled to the total time range [min start, max start + duration]; a label is clipped to its bar. A span with a
+/// transparent colour gets a warm colour picked from its name. Hovering sets value() to the hovered span index (-1
+/// outside; ValueChanged), a click on a span emits Submitted {value = span index, text = name}.
+struct FlameSpan {
+    std::string_view name;
+    f32 start = 0.f, duration = 0.f; ///< any time unit
+    u32 depth = 0;
+    Color color{};
+};
+/// Replaces the chart's spans (copied) and makes it a ChartKind::Flame chart.
+void chartSetFlame(UiContext& ui, NodeHandle chart, std::span<const FlameSpan> spans);
+u32 chartFlameSpanCount(const UiContext& ui, NodeHandle chart);
+Rect chartFlameSpanRect(const UiContext& ui, NodeHandle chart, u32 index); ///< context coordinates (after update)
+i32 chartFlameSpanAt(const UiContext& ui, NodeHandle chart, Vec2 pos);     ///< span under `pos`, -1 = none
 
 /// Markdown view: headings (#, ##, ###), paragraphs, '-' / '*' bullets, numbered items, ``` code blocks and '>' quotes
 /// become styled label children (classes md-h1..md-h3, md-p, md-li, md-code, md-quote). Inline ** and ` are stripped.

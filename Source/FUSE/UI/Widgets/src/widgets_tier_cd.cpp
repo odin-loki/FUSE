@@ -416,7 +416,8 @@ struct CalendarW {
 
 // ---- chart ----------------------------------------------------------------------------------------------------------------
 struct Series { std::string name; std::vector<f32> v; Color color; };
-struct ChartState { ChartKind kind = ChartKind::Line; std::vector<Series> series; };
+struct Flame { std::string name; f32 start = 0.f, duration = 0.f; u32 depth = 0; Color color; };
+struct ChartState { ChartKind kind = ChartKind::Line; std::vector<Series> series; std::vector<Flame> flame; };
 Pool<ChartState>& chartPool() { static Pool<ChartState> p; return p; }
 
 struct ChartW {
@@ -450,10 +451,83 @@ struct ChartW {
     static f32 xAt(const Rect& p, u32 i, u32 n, bool bars) {
         return bars ? p.x + (f32(i) + 0.5f) * p.w / f32(std::max(1u, n)) : p.x + (n > 1 ? f32(i) * p.w / f32(n - 1) : p.w * 0.5f);
     }
+    // ---- flame graph: spans stacked by depth (0 at the top) over the total time range ----
+    static Rect flamePlot(const UiContext& ui, NodeHandle n) {
+        const Rect c = ui.contentRect(n);
+        const f32 lh = lineH(ui, n);
+        return {c.x, c.y + lh + 4.f, c.w, std::max(0.f, c.h - lh - 4.f)};
+    }
+    static void flameRange(const ChartState& s, f32& t0, f32& t1, u32& rows) {
+        t0 = 1e30f; t1 = -1e30f; rows = 0;
+        for (const Flame& f : s.flame) {
+            t0 = std::min(t0, f.start);
+            t1 = std::max(t1, f.start + std::max(0.f, f.duration));
+            rows = std::max(rows, f.depth + 1);
+        }
+        if (!(t1 > t0)) { t0 = s.flame.empty() ? 0.f : t0; t1 = t0 + 1.f; }
+    }
+    static f32 flameRowH(const UiContext& ui, NodeHandle n, const Rect& p, u32 rows) {
+        return std::min(lineH(ui, n) + 6.f, p.h / f32(std::max(1u, rows)));
+    }
+    static Rect flameRect(const UiContext& ui, NodeHandle n, const ChartState& s, u32 index) {
+        if (index >= s.flame.size()) return {};
+        const Rect p = flamePlot(ui, n);
+        f32 t0, t1;
+        u32 rows;
+        flameRange(s, t0, t1, rows);
+        const Flame& f = s.flame[index];
+        const f32 rh = flameRowH(ui, n, p, rows), k = p.w / (t1 - t0);
+        return {p.x + (f.start - t0) * k, p.y + f32(f.depth) * rh, std::max(1.f, std::max(0.f, f.duration) * k), rh};
+    }
+    static i32 flameAt(const UiContext& ui, NodeHandle n, const ChartState& s, Vec2 pos) {
+        for (u32 i = u32(s.flame.size()); i-- > 0;) // later spans paint over earlier ones
+            if (flameRect(ui, n, s, i).contains(pos)) return i32(i);
+        return -1;
+    }
+    static Color flameColor(const Flame& f) {
+        if (f.color.a > 0.f) return f.color;
+        static constexpr u32 kWarm[] = {0xE4572E, 0xF0803C, 0xF3A712, 0xD95D39, 0xE9724C, 0xC8553D, 0xF2B134, 0xDB7F3B};
+        return Color::rgb(kWarm[hashId(f.name) % 8u]);
+    }
+    static void paintFlame(const PaintContext& pc, DrawList& dl, const ChartState& s) {
+        UiContext& ui = pc.ui;
+        const Rect c = pc.content, p = flamePlot(ui, pc.node);
+        const f32 fs = pc.style.fontSize * 0.8f;
+        f32 t0, t1;
+        u32 rows;
+        flameRange(s, t0, t1, rows);
+        const i32 hov = i32(ui.value(pc.node));
+        dl.pushClip(p);
+        for (u32 i = 0; i < s.flame.size(); ++i) {
+            const Rect r = flameRect(ui, pc.node, s, i);
+            const Rect bar{r.x, r.y, std::max(1.f, r.w - 1.f), std::max(1.f, r.h - 1.f)};
+            const Color col = flameColor(s.flame[i]);
+            dl.roundedRect(bar, pc.tint(col), {2.f, 2.f, 2.f, 2.f}, i32(i) == hov ? pc.tint(Color::rgb(0xFFFFFF)) : Color{}, i32(i) == hov ? 1.f : 0.f);
+            if (bar.w < 14.f) continue; // too narrow for a label
+            // dark text on the (warm, light) bars; the label never leaves its bar
+            const f32 lum = 0.299f * col.r + 0.587f * col.g + 0.114f * col.b;
+            dl.pushClip(bar);
+            ui.paintString(dl, s.flame[i].name, {bar.x + 4.f, bar.y, bar.w - 6.f, bar.h}, pc.tint(Color::rgb(lum > 0.5f ? 0x14141A : 0xFFFFFF)), fs,
+                           TextAlignment::Start, pc.node.index);
+            dl.popClip();
+        }
+        dl.popClip();
+        char b[96];
+        if (hov >= 0 && u32(hov) < s.flame.size()) { // readout: name, duration, share of the whole range
+            const Flame& f = s.flame[u32(hov)];
+            std::snprintf(b, sizeof b, "  %.4g (%.1f%%)", double(f.duration), double(f.duration / (t1 - t0) * 100.f));
+            ui.paintString(dl, f.name + b, {c.x, c.y, c.w, 20.f}, pc.tint(pc.style.color), fs, TextAlignment::Start, pc.node.index);
+        } else {
+            std::snprintf(b, sizeof b, "%.4g .. %.4g", double(t0), double(t1));
+            ui.paintString(dl, b, {c.x, c.y, c.w, 20.f}, pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.55f)), fs, TextAlignment::Start,
+                           pc.node.index);
+        }
+    }
     static void paint(const PaintContext& pc, DrawList& dl) {
         UiContext& ui = pc.ui;
         ChartState* s = chartPool().get(ui, pc.node);
         if (!s) return;
+        if (s->kind == ChartKind::Flame) { paintFlame(pc, dl, *s); return; }
         const Rect p = plot(ui, pc.node), c = pc.content;
         const Color text = pc.tint(pc.style.color), dim = pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.55f));
         const f32 fs = pc.style.fontSize * 0.8f;
@@ -498,6 +572,7 @@ struct ChartW {
                 case ChartKind::Line:
                     if (i + 1 < se.v.size()) dl.line({x, y}, {xAt(p, i + 1, n, false), yOf(se.v[i + 1])}, col, 2.f);
                     break;
+                case ChartKind::Flame: break; // painted by paintFlame
                 }
             }
         }
@@ -526,6 +601,18 @@ struct ChartW {
         UiContext& ui = ec.ui;
         ChartState* s = chartPool().get(ui, ec.node);
         if (!s) return false;
+        if (s->kind == ChartKind::Flame) {
+            if (e.type == EventType::PointerMove || e.type == EventType::PointerLeave) {
+                const i32 idx = e.type == EventType::PointerMove ? flameAt(ui, ec.node, *s, e.pos) : -1;
+                if (f32(idx) != ui.value(ec.node)) { ui.setValue(ec.node, f32(idx), true); ui.invalidate(ec.node); }
+            } else if (e.type == EventType::Click) {
+                const i32 idx = flameAt(ui, ec.node, *s, e.pos);
+                if (idx < 0) return false;
+                ui.emit(ec.node, SignalKind::Submitted, {.value = f32(idx), .text = s->flame[u32(idx)].name});
+                return true;
+            }
+            return false;
+        }
         if (e.type == EventType::PointerMove) {
             const Rect p = plot(ui, ec.node);
             const u32 n = points(*s);
@@ -827,6 +914,28 @@ void chartSetSeries(UiContext& ui, NodeHandle c, u32 index, std::string_view nam
 u32 chartSeriesCount(const UiContext& ui, NodeHandle c) {
     const ChartState* s = chartPool().get(ui, c);
     return s ? u32(s->series.size()) : 0u;
+}
+void chartSetFlame(UiContext& ui, NodeHandle c, std::span<const FlameSpan> spans) {
+    ChartState* s = chartPool().get(ui, c);
+    if (!s) return;
+    s->kind = ChartKind::Flame;
+    s->flame.clear();
+    s->flame.reserve(spans.size());
+    for (const FlameSpan& f : spans) s->flame.push_back({std::string(f.name), f.start, f.duration, f.depth, f.color});
+    ui.setValue(c, -1.f); // the hovered index belonged to the old spans
+    ui.invalidate(c);
+}
+u32 chartFlameSpanCount(const UiContext& ui, NodeHandle c) {
+    const ChartState* s = chartPool().get(ui, c);
+    return s ? u32(s->flame.size()) : 0u;
+}
+Rect chartFlameSpanRect(const UiContext& ui, NodeHandle c, u32 index) {
+    const ChartState* s = chartPool().get(ui, c);
+    return s && s->kind == ChartKind::Flame ? ChartW::flameRect(ui, c, *s, index) : Rect{};
+}
+i32 chartFlameSpanAt(const UiContext& ui, NodeHandle c, Vec2 pos) {
+    const ChartState* s = chartPool().get(ui, c);
+    return s && s->kind == ChartKind::Flame ? ChartW::flameAt(ui, c, *s, pos) : -1;
 }
 
 // ---- markdown view --------------------------------------------------------------------------------------------------------
