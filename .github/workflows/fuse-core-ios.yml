@@ -68,4 +68,4 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
             -DCMAKE_BUILD_TYPE=Release
       - name: Build
-        run: cmake --build build-ui-ios
+        run: cmake --build build-ui-ios -- -k 0

@@ -27,6 +27,11 @@ set_target_properties(fuse_lua PROPERTIES
 target_include_directories(fuse_lua SYSTEM PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>)
 
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    # iOS / tvOS / watchOS: no system(); see fuse_ios_no_system.h
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/loslib.c" PROPERTIES
+        COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/fuse_ios_no_system.h")
+endif()
 if(APPLE)
     target_compile_definitions(fuse_lua PRIVATE LUA_USE_MACOSX)
 elseif(UNIX)

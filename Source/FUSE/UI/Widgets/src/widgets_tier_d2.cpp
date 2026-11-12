@@ -758,6 +758,7 @@ struct CodeEditW {
     static f32 lineH(const PaintContext& pc) { return std::ceil(pc.style.fontSize * 1.35f); }
     static f32 lineH(UiContext& ui, NodeHandle n) { return std::ceil(ui.computed(n).fontSize * 1.35f); }
     static f32 gutter(UiContext& ui, NodeHandle n, const CodeState& s) {
+        if (ui.hasClass(n, "plain")) return 6.f; // plainTextEdit: no line numbers
         char b[16];
         std::snprintf(b, sizeof b, "%zu", s.lines.size());
         return ui.measureString(b, ui.computed(n).fontSize * 0.9f) + 18.f;

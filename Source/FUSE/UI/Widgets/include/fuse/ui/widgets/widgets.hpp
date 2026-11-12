@@ -394,4 +394,115 @@ u32 videoDecodedFrames(const UiContext& ui, NodeHandle video);
 /// Registers the Tier D (2) classes; install() calls it.
 void registerTierD2(UiContext& ui);
 
+// ---- The rest of the plan §5 catalogue: app chrome, header, text widgets ------------------------------------------------
+/// Group box (QGroupBox): a framed, titled group; add children to groupBoxBody. `checkable` puts a check box in the
+/// title that enables / disables the body (Toggled {flag} on the group; checked() mirrors it).
+NodeHandle groupBox(UiContext& ui, NodeHandle parent, std::string_view title, bool checkable = false, bool checked = true,
+                    std::string_view id = {});
+NodeHandle groupBoxBody(const UiContext& ui, NodeHandle group);
+
+/// Stack (QStackedWidget): pages laid over each other, one displayed. value() = current page; setStackIndex emits
+/// ValueChanged.
+NodeHandle stack(UiContext& ui, NodeHandle parent, std::string_view id = {});
+NodeHandle stackAddPage(UiContext& ui, NodeHandle stack, std::string_view id = {});
+void setStackIndex(UiContext& ui, NodeHandle stack, u32 index);
+u32 stackIndex(const UiContext& ui, NodeHandle stack);
+u32 stackCount(const UiContext& ui, NodeHandle stack);
+NodeHandle stackPage(const UiContext& ui, NodeHandle stack, u32 index);
+
+/// Tool bar (QToolBar): a row of tool buttons (Clicked on each action) and separators; any widget can be added to it.
+NodeHandle toolBar(UiContext& ui, NodeHandle parent, std::string_view id = {});
+NodeHandle toolBarAction(UiContext& ui, NodeHandle bar, std::string_view text, std::string_view tooltip = {}, std::string_view id = {});
+NodeHandle toolBarSeparator(UiContext& ui, NodeHandle bar);
+
+/// Status bar (QStatusBar): a message area (statusMessage; cleared after `timeoutSeconds` when > 0) followed by
+/// permanent widgets on the right (statusBarPermanent adds a label; any widget can be added to the bar).
+NodeHandle statusBar(UiContext& ui, NodeHandle parent, std::string_view id = {});
+void statusMessage(UiContext& ui, NodeHandle bar, std::string_view text, f32 timeoutSeconds = 0.f);
+std::string_view statusText(const UiContext& ui, NodeHandle bar);
+NodeHandle statusBarPermanent(UiContext& ui, NodeHandle bar, std::string_view text, std::string_view id = {});
+
+/// Main window (QMainWindow): menu bar, tool bar, dock area (central widget in its centre region) and status bar in
+/// one column that fills its parent.
+NodeHandle mainWindow(UiContext& ui, NodeHandle parent, std::string_view id = {});
+NodeHandle mainWindowMenuBar(const UiContext& ui, NodeHandle window);
+NodeHandle mainWindowToolBar(const UiContext& ui, NodeHandle window);
+NodeHandle mainWindowDockArea(const UiContext& ui, NodeHandle window);
+NodeHandle mainWindowCentral(const UiContext& ui, NodeHandle window);
+NodeHandle mainWindowStatusBar(const UiContext& ui, NodeHandle window);
+
+/// Context menu: a right press on `node` (or Shift+F10 while it has focus) opens a popup menu with `items`
+/// (popupMenu syntax). Picking emits Submitted {value = index, text} on `node`.
+void setContextMenu(UiContext& ui, NodeHandle node, std::string_view items);
+
+/// Message box (QMessageBox): a modal dialog with an icon badge, text and buttons ('\n'-separated, default "OK";
+/// the first is the default button). Opens at once; a button closes it and emits Submitted {value = button index,
+/// text = button} on the returned dialog, whose value() is then that index (-1 while open / dismissed with Escape).
+enum class MessageIcon : u8 { None, Info, Warning, Error, Question };
+NodeHandle messageBox(UiContext& ui, std::string_view title, std::string_view text, std::string_view buttons = {},
+                      MessageIcon icon = MessageIcon::Info, std::string_view id = {});
+
+/// Wizard (QWizard): a modal dialog of pages with Back / Next / Cancel; Next reads Finish on the last page.
+/// value() = current page (ValueChanged on change). Finish emits Submitted {flag = true, text = "finish"}, Cancel
+/// Submitted {flag = false, text = "cancel"}; both close it. Add content to the page wizardAddPage returns.
+enum class WizardButton : u8 { Back, Next, Cancel };
+NodeHandle wizard(UiContext& ui, std::string_view title, std::string_view id = {});
+NodeHandle wizardAddPage(UiContext& ui, NodeHandle wizard, std::string_view title, std::string_view id = {});
+void wizardSetPage(UiContext& ui, NodeHandle wizard, u32 index);
+u32 wizardPage(const UiContext& ui, NodeHandle wizard);
+u32 wizardPageCount(const UiContext& ui, NodeHandle wizard);
+NodeHandle wizardButton(const UiContext& ui, NodeHandle wizard, WizardButton which);
+void openWizard(UiContext& ui, NodeHandle wizard); ///< shows page 0
+
+/// Popover: a card anchored under `anchor` in the overlay layer; an outside click or Escape closes it (focus returns
+/// to the anchor). Add content to the returned card.
+NodeHandle popover(UiContext& ui, NodeHandle anchor, std::string_view id = {});
+void closePopover(UiContext& ui, NodeHandle popover);
+
+/// Toast: a transient message at the bottom centre of the window; fades in, stays `seconds`, fades out and is
+/// destroyed. Toasts stack (newest lowest) and never take input.
+NodeHandle toast(UiContext& ui, std::string_view text, f32 seconds = 2.5f, std::string_view id = {});
+u32 toastCount(const UiContext& ui);
+
+/// Header (QHeaderView, standalone): sections with titles ('\n'-separated). Clicking a section sorts by it (Toggled
+/// {value = section, flag = ascending}); dragging a section's right edge resizes it (ValueChanged {value = section}).
+NodeHandle headerView(UiContext& ui, NodeHandle parent, std::string_view titles, f32 sectionWidth = 120.f, std::string_view id = {});
+/// Replaces the titles; sections that already exist keep their width, new ones get the creation width.
+void setHeaderTitles(UiContext& ui, NodeHandle header, std::string_view titles);
+u32 headerSectionCount(const UiContext& ui, NodeHandle header);
+f32 headerSectionWidth(const UiContext& ui, NodeHandle header, u32 section);
+void setHeaderSectionWidth(UiContext& ui, NodeHandle header, u32 section, f32 px);
+i32 headerSortSection(const UiContext& ui, NodeHandle header, bool* ascending = nullptr); ///< -1 = unsorted
+
+/// Text edit (QTextEdit as plain text): multi-line, word wrapped to the widget width. Caret and selection (Shift,
+/// drag), Up / Down keep the column across wrapped lines, Home / End act on the visual line (Ctrl: document),
+/// Ctrl+A / C / X / V, undo / redo (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z), IME pre-edit at the caret, wheel scrolling.
+/// text() = the document; edits emit TextChanged. Offsets are UTF-8 bytes.
+NodeHandle textEdit(UiContext& ui, NodeHandle parent, std::string_view text = {}, std::string_view id = {});
+void textEditSetText(UiContext& ui, NodeHandle ed, std::string_view text);
+std::string textEditText(const UiContext& ui, NodeHandle ed);
+void textEditSetReadOnly(UiContext& ui, NodeHandle ed, bool readOnly);
+u32 textEditCaret(const UiContext& ui, NodeHandle ed);
+void textEditSetSelection(UiContext& ui, NodeHandle ed, u32 anchor, u32 caret);
+u32 textEditVisualLines(UiContext& ui, NodeHandle ed); ///< wrapped line count at the current width (after update)
+/// Plain text edit (QPlainTextEdit): unwrapped lines, no colouring, no line-number gutter. It is a code editor
+/// (CodeLanguage::Plain): use the codeEdit* accessors.
+NodeHandle plainTextEdit(UiContext& ui, NodeHandle parent, std::string_view text = {}, std::string_view id = {});
+
+/// Rich text view: word-wrapped text with inline markup: <b> <i> <u> <s> <color=#RRGGBB[AA]> <size=px>
+/// <a href="target"> <br> (and '\n'), entities &lt; &gt; &amp; &quot;. Clicking a link emits Submitted {value =
+/// link index, text = target}. One face is bundled, so bold is a double strike and italic keeps the upright face.
+NodeHandle richText(UiContext& ui, NodeHandle parent, std::string_view markup, std::string_view id = {});
+void setRichText(UiContext& ui, NodeHandle view, std::string_view markup);
+u32 richTextLinkCount(const UiContext& ui, NodeHandle view);
+std::string richTextLink(const UiContext& ui, NodeHandle view, u32 index);
+Rect richTextLinkRect(UiContext& ui, NodeHandle view, u32 index); ///< first piece of the link (after update)
+std::string richTextPlain(const UiContext& ui, NodeHandle view);  ///< the text without markup
+
+/// Double spin box (QDoubleSpinBox): a spin box with a fractional step (default 0.1).
+NodeHandle doubleSpinBox(UiContext& ui, NodeHandle parent, f32 lo, f32 hi, f32 value, f32 step = 0.1f, std::string_view id = {});
+
+/// Registers the classes of this group (header, textedit, richtext, toast); install() calls it.
+void registerTierB3(UiContext& ui);
+
 } // namespace fuse::ui::widgets

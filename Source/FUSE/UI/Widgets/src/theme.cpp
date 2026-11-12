@@ -88,6 +88,35 @@ nodegraph:focus, curveeditor:focus, timeline:focus, viewport:focus, codeedit:foc
 codeedit { font-size: 13px; }
 datetimeedit { background: #1e1f25; color: var(--text); background-end: var(--accent); border: 1px var(--border); border-radius: 4px; padding: 3px 6px; }
 datetimeedit:focus { border-color: var(--accent); }
+.groupbox { border: 1px var(--border); border-radius: 6px; padding: 8px 10px; gap: 6px; }
+.grouptitle { color: var(--text-dim); font-size: 12px; }
+.groupbody { gap: 6px; }
+.toolbar { flex-direction: row; gap: 2px; align-items: center; background: var(--surface); padding: 2px 4px; }
+.toolsep { width: 1px; height: 18px; background: var(--border); margin: 0px 4px; }
+.statusbar { flex-direction: row; gap: 12px; align-items: center; background: var(--surface); padding: 2px 8px; }
+.statusmsg, .statusperm { font-size: 12px; color: var(--text-dim); }
+.mainwindow { gap: 0px; }
+.msgbody { gap: 14px; }
+.msgtext { max-width: 420px; }
+.msgicon { width: 26px; height: 26px; border-radius: 13px; text-align: center; padding: 3px 0px; color: #ffffff; background: var(--accent); }
+.msgicon.warning { background: #d9a400; }
+.msgicon.error { background: var(--danger); }
+.wizard { min-width: 380px; }
+.wizardpages { min-height: 120px; }
+.wizardpage { gap: 8px; }
+.popover { min-width: 120px; }
+.toasthost { gap: 6px; align-items: center; }
+toast {
+  background: #0f1013; color: var(--text); border: 1px var(--border); border-radius: 6px; padding: 6px 14px;
+  box-shadow: 0px 4px 14px rgba(0, 0, 0, 0.45);
+}
+header { background: var(--surface); color: var(--text); border-color: var(--border); background-end: var(--accent); }
+textedit {
+  background: #15161a; color: var(--text); border: 1px var(--border); border-radius: 5px; padding: 5px 6px;
+  background-end: var(--accent);
+}
+textedit:focus { border-color: var(--accent); }
+richtext { color: var(--text); }
 .fontlist { height: 110px; }
 .fontpreview { padding: 6px 4px; }
 .filelist { height: 220px; width: 420px; }

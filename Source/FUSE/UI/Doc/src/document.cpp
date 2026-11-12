@@ -327,11 +327,27 @@ NodeHandle makeNode(UiContext& ui, std::string_view cls, NodeHandle parent, std:
     if (cls == "spinbox") return w::spinBox(ui, parent, 0.f, 100.f, 0.f, 1.f, id);
     if (cls == "scrollbar") return w::scrollBar(ui, parent, true, id);
     if (cls == "lineedit") return w::lineEdit(ui, parent, {}, id);
+    if (cls == "textedit") return w::textEdit(ui, parent, {}, id);
+    if (cls == "plaintextedit") return w::plainTextEdit(ui, parent, {}, id);
+    if (cls == "richtext") return w::richText(ui, parent, {}, id);
+    if (cls == "header") return w::headerView(ui, parent, {}, 120.f, id);
+    if (cls == "groupbox") return w::groupBox(ui, parent, {}, false, true, id);
+    if (cls == "stack") return w::stack(ui, parent, id);
+    if (cls == "toolbar") return w::toolBar(ui, parent, id);
+    if (cls == "statusbar") return w::statusBar(ui, parent, id);
     auto n = ui.create(cls, parent, id);
     return n ? *n : NodeHandle{};
 }
 
 void setNodeText(UiContext& ui, NodeHandle n, std::string_view s) {
+    namespace w = fuse::ui::widgets;
+    const std::string_view cls = ui.registry().get(ui.classOf(n)).name;
+    // widgets whose text lives in their own state
+    if (cls == "textedit") { w::textEditSetText(ui, n, s); return; }
+    if (cls == "richtext") { w::setRichText(ui, n, s); return; }
+    if (cls == "header") { w::setHeaderTitles(ui, n, s); return; }
+    if (cls == "codeedit") { w::codeEditSetText(ui, n, s); return; }
+    if (ui.hasClass(n, "groupbox")) { ui.setText(ui.firstChild(n), s); return; } // the title
     ui.setText(n, s);
     if (ui.registry().get(ui.classOf(n)).name == "lineedit") {
         ui.editBuffer(n).setText(s);
