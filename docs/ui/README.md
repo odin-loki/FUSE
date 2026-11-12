@@ -22,7 +22,7 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
 | `Source/FUSE/UI/Script` | `fuse_ui_script` | Lua `ui` table (vendored Lua 5.2) |
 | `Source/FUSE/UI/Render` | `fuse_ui_render`, `fuse_ui_vk` | GPU draw data packing, `ui.draw_list` compute kernel, `UiLayerGpu` render-graph pass and `UiFrameSource` (in tree with the Vulkan RHI) |
-| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; samples `hello_app`, `notes_app` |
+| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; samples `hello_app`, `notes_app`, `widget_gallery`, `game_menu` |
 | `Source/FUSE/UI/Game` | `fuse_ui_game` | HUD widgets, world markers, `UiSurface` world panels, gamepad navigation, input arbitration, prompts, time domains, locale table, subtitles, dialogue; samples `hud_demo`, `world_panel_demo` |
 | `Source/FUSE/UI/Sql` | `fuse_ui_sql` | `SqliteModel`: an `ItemModel` over a SQLite query (option `FUSE_BUILD_UI_SQL`) |
 | `Source/FUSE/UI/A11y` | `fuse_ui_a11y` | Accessibility bridge (snapshot diff, action queue); AccessKit adapter when `FUSE_UI_ACCESSKIT_DIR` is set |
@@ -131,9 +131,17 @@ The last four pieces of the catalogue (gates `fuse_ui_widget_chart_flame`, `_doc
   tab strip instead of title bars and only the current dock's body; `dockRaise` (or a click on a tab, Left / Right on
   the strip) changes it, `dockCurrent` / `dockTabBar` / `dockTabRect` query it. `dockTo` takes a dock out of its group.
 - **Floating docks**: `dockFloat(ui, dock, rect)` moves the dock into the overlay layer as a panel that is dragged by
-  its title bar; `dockTo` docks it again; `dockFloating` / `dockFloatRect` query it. There are no drop zones (a
-  floating dock is docked through `dockTo`, not by dragging it onto the area), a floating dock holds no tabs, and it
-  is a panel inside the window, not an OS window.
+  its title bar; `dockTo` docks it again; `dockFloating` / `dockFloatRect` query it. A floating dock holds no tabs, and
+  it is a panel inside the window, not an OS window.
+- **Dock drag and drop**: dragging a docked dock's title bar, or its tab in a tab strip, more than 8 px tears it off
+  into a floating dock that follows the pointer. While the pointer is over the dock area, indicators show for Left /
+  Right / Bottom (area edges), Center (centre region) and Tab (middle of the docked dock under the pointer); the one
+  under the pointer is hot and a translucent preview shows where the dock will land. Releasing on a hot zone docks it
+  (`dockTo`) or makes it the current tab of that dock's group; anywhere else it stays floating. Escape (the dragged
+  dock's title holds the focus during the drag), `dockCancelDrag` or a cancelled touch puts it back where it came from
+  (region and order, tab group / index / current tab, or floating rect). `dockDragged`, `dockDropZone`,
+  `dockDropTarget`, `dockDropPreview` report the drag; `dockDropIndicator(ui, area, zone, tabWith)` is where a zone's
+  indicator sits. Works with the mouse and with touch. Gates `fuse_ui_dock_drag_*`.
 - `dockSaveLayout` adds `tab <id> <group> <index> current|back` and `float <id> <x> <y> <w> <h> open|closed` lines
   only when docks are tabbed or floating; layouts written before still restore, and restoring one un-tabs and docks
   the docks it names.
@@ -152,6 +160,29 @@ The last four pieces of the catalogue (gates `fuse_ui_widget_chart_flame`, `_doc
 `.fuseui` files are JSON trees with `{expr}` and `{=two-way}` bindings (see `Doc/include/fuse/ui/doc/document.hpp` for
 the format and `tests/data/settings.fuseui` for an example); `fuse_ui_script` exposes the same context and model to Lua
 as a global `ui` table.
+
+A node's `"class"` is a registered widget class or a **document class**: the compound widgets and the widgets that
+need data are created by name too, with their own properties (the full list is in `document.hpp`):
+
+```json
+{ "class": "tabwidget", "tabs": ["Audio", "Video"], "children": [
+    { "class": "groupbox", "text": "Volume", "children": [
+        { "class": "slider", "min": 0, "max": 1, "value": "{=audio.master}", "tooltip": "Master volume" } ] },
+    { "class": "tableview", "columns": ["Name", "Size"], "rows": [["scene.fuse", 1204], ["hero.png", 88]] } ] }
+```
+
+`tabwidget` (child k = page k), `stack` (`"value"` = page, bindable), `splitter`, `dockarea` / `dock`, `groupbox`,
+`scrollarea`, `toolbar`, `statusbar`, `mainwindow`, `dialog` (`"visible"` opens / closes it), `propertygrid`,
+`tableview` / `modellistview` / `gridview` over inline data, `treemodelview` over inline `"items"` (the tabs at the
+start of a line are its depth, the tabs after them separate the cells; `"columns"`, `"editable"`, `"expanded"`),
+`svgimage` (`"icon": "folder"` names a built-in icon, `"svg"` is inline source), `chart`, `nodegraph`, `curveeditor`,
+`timeline`, `calendar`, `datetimeedit`, `colorpicker`, `codeedit`, `markdown`, `fontpicker`, `viewport`, `video`, ...;
+any node takes `"tooltip"` and `"contextMenu"`, a `button` / `toolbutton` takes `"icon"`. Message box, wizard, popover, toast and file dialog open from code.
+`doc::registerDocumentClass` adds your own (the game HUD widgets, for instance). Compound widgets are rebuilt on a
+hot reload; plain widgets with an id inside them keep their identity. The cooker's registration list
+(`registrationList`) resolves document classes to the widget classes they build. Cooked blobs carry
+`kCookedVersion` (3 now: it moves whenever the property set or the stored form changes; a blob of another version is
+refused, so re-cook after updating). `App/samples/ui/gallery.fuseui` uses every one of them. Gates `fuse_ui_doc_*`.
 
 ## Application shell (UI5)
 
@@ -245,8 +276,7 @@ Things that differ on these platforms:
   column edges, header sections, video seek bar); `setCapturesDrag(node, true)` does it for one node. On touch a
   drag over a text / code edit scrolls it; selecting by dragging is a mouse feature. Lists and tables select the row
   on the press, so a pan that starts on a row selects it. One finger drives the UI; there is no pinch.
-- Popups are overlays inside the window (`osPopups` is X11 / Win32 only). `AndroidManifest.xml` template:
-  `Source/FUSE/UI/App/android/`.
+- Popups are overlays inside the window (`osPopups` is X11 / Win32 only). Packaging: see below.
 
 These backends are compiled in CI (`fuse-core-android.yml`, `fuse-core-ios.yml`) and have not been run on a device.
 
@@ -312,6 +342,39 @@ fuse::app::openUrl("https://example.org");
 
 The macOS / iOS parts are compiled in CI only; the Win32 parts are cross-compiled with MinGW and have not been run.
 
+### Samples
+
+| Sample | Shows | Headless gate |
+|---|---|---|
+| `hello_app`, `notes_app` | a document with bindings; settings, text editing | `fuse_app_hello_sample`, `fuse_app_notes_sample` |
+| `widget_gallery [--page=N]` | every widget of the catalogue on seven tabbed pages (`ui/gallery.fuseui` plus the call-only widgets and the game HUD page), with icon buttons and SVG images, a multi-selection table beside an editable tree table, rich text in real bold / italic and an Edit menu built from an `ActionRegistry`: the manual test bed for a device | `fuse_app_widget_gallery_page0..6` |
+| `game_menu [--pad=script]` | main / pause / settings menu on `ui/game_menu.fuseui`: bindings, tabs, sliders, key rebinding, confirm dialog; keyboard, gamepad navigation (`GamepadNav`; left / right change the focused slider or tab), mouse, touch | `fuse_app_game_menu_sample` (a scripted session over all four input paths, every step checked) |
+
+All are `fuse_app_add_executable` targets with `fuse/app/main.hpp`, load their documents through
+`fuse::app::readResource` on Android / iOS, and take `--screenshot=<png>`. `game_menu` has no gamepad backend of its
+own: feed your platform's pad into the `GamepadState` in its loop (`--pad=udlrabs.` plays a script).
+
+### Packaging and installing
+
+- **Install / `find_package`.** `cmake --install <build> --prefix <prefix>` installs the static libraries, the public
+  headers (`include/fuse/...`) and `lib/cmake/FuseUI/FuseUIConfig.cmake`. A project elsewhere does
+  `find_package(FuseUI REQUIRED)` and links `FuseUI::widgets`, `FuseUI::doc`, `FuseUI::app`, `FuseUI::app_native`, ...
+  (`FuseUI_TARGETS` lists them; they carry includes, definitions, C++23 and their dependencies). Unless configured with
+  `-DFUSE_TEXT_EMBED_FONT=ON`, the default font is still read from the source tree's `vendor/fonts`. Gate
+  `fuse_ui_install_consumer` installs, then builds and runs `tests/consumer` against the install tree only.
+- **Apple bundles.** `fuse_app_add_executable` makes an iOS `.app` with `App/apple/Info.plist.ios.in` (`UILaunchScreen`,
+  orientations; id / versions from `FUSE_APP_BUNDLE_ID_PREFIX`, `FUSE_APP_BUNDLE_VERSION`,
+  `FUSE_APP_BUNDLE_SHORT_VERSION`) and, with `-DFUSE_APP_MACOS_BUNDLE=ON`, a macOS `.app` with
+  `Info.plist.macos.in` and an icon built from `Source/FUSE/Branding/fuse_256.png` (sips + iconutil).
+  `fuse_app_bundle_resources(target BASE dir FILES ...)` copies files into the bundle's `Resources` keeping their
+  path under `BASE`; the samples ship `ui/*.fuseui` and the fallback fonts that way. Written on Linux: these rules
+  have not been run on macOS yet.
+- **Android.** `App/android/` is a Gradle project template (`build.gradle`, `settings.gradle`, the manifest):
+  `gradle -PfuseApp=hello_app assembleDebug` builds `lib<app>.so` through `externalNativeBuild` from this CMake project
+  and packs `assets/ui` + `assets/fonts`. It has never produced an APK (the machine it was written on has no Android
+  SDK): expect to adjust versions. `fuse_app_stage_assets(target OUT dir UI_DIR dir FONTS)` (target `<name>_assets`)
+  stages the same assets tree from CMake; gate `fuse_app_stage_assets`.
+
 ## Game UI (UI7)
 
 ```cpp
@@ -349,7 +412,7 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
 - Tier D editor widgets: `fontPicker`, `fileDialog`, `nodeGraph`, `curveEditor`, `timeline`, `viewportWidget` (forwards input to your callback, paints your image), `codeEdit` (line numbers, highlighting), `dateTimeEdit` (`value()` = days since 1970, `dateTimeEditMinutes`), `videoWidget` (frame-source stub).
 - `fuse_ui_sql::SqliteModel`: `open`/`attach`, `setQuery`, `sortBy`, `refresh`; pass `model()` to `tableView`. Only the visible window of rows is fetched.
 - Platform feel (`platform_feel.hpp`): `setHapticsHandler`, `ScrollProfile::desktop()/ios()/android()`, `kineticScrollArea` (drag/fling with rubber band; a drag never clicks).
-- Accessibility (`fuse/ui/a11y/a11y.hpp`): `Bridge::sync` diffs `UiContext::snapshotA11y`, `perform`/`enqueue`/`drain` run assistive-tech actions on the UI thread. AccessKit needs a Rust toolchain and a prebuilt accesskit-c (tested with 0.22.3); without it the bridge still builds.
+- Accessibility. The core keeps the tree: `UiContext::snapshotA11y` returns one `A11ySnapshotNode` per accessible node with role (button ... menu, menu item, dialog, tree / tree item, table / row / cell / column header, tab list / tab / tab panel, tool bar, status bar, tooltip, alert), name, value (numeric with range, or `valueText`: a text field's content, a combo's selection, a date), states (focused, checked, disabled, expanded, selected, modal), live region, tree level, position in set and the actions it accepts. Widgets that paint their own items (list, tree, table, grid view, tab bar, dock tabs, header, rich-text links) expose the VISIBLE ones as virtual children (`child` id, stable while the item exists; a 1M-row table is a handful of entries). The item views of `modelview.hpp` do it in one place: a table is a header row of column headers plus rows of cells (selected rows or, with cell selection, selected cells from the `SelectionModel`; check cells are `checked` and toggle on Click; editable cells take SetValue; hidden or scrolled-out columns are left out), a model list is a list of list items, a `treeModelView` is a tree of tree items with level and expanded / collapsed (Expand / Collapse; a tree table's items carry their cells; ids follow the item, not the row), and the in-place editor is an ordinary child named after its column. `UiContext::performA11yAction(node, action, value, child, text)` is the one way in for assistive technology and tests: Focus, Click, Increment / Decrement, SetValue (number or text), Expand / Collapse, Select, ScrollUp / Down / Left / Right, ScrollIntoView; it asks the widget class first (`WidgetClass::a11y` / `a11yAction` are the hooks for your own classes). `setA11yLive(node, Polite | Assertive)` marks a live region (status-bar messages and toasts are marked already). `dumpA11y(out, actions)` prints the tree for gates. Bridge (`fuse/ui/a11y/a11y.hpp`): `Bridge::sync` diffs snapshots, `idOf(node, child)` / `resolve` map 64-bit platform ids, `perform` / `enqueue` / `drain` run actions on the UI thread, `takeAnnouncements` returns what live regions said since the last call. AccessKit needs a Rust toolchain and a prebuilt accesskit-c (the original backend was tested with 0.22.3; the roles, states and actions added since are behind `FUSE_UI_ACCESSKIT_EXTENDED`, default on, and have not been compiled against accesskit-c: build with `-DFUSE_UI_ACCESSKIT_EXTENDED=0` if your accesskit-c lacks a symbol); without AccessKit the bridge still builds. Gates `fuse_ui_a11y_tree_dump`, `fuse_ui_a11y_bridge`, `fuse_ui_a11y_family_*`.
 - Designer: `fuse_ui_designer [file.fuseui] [--save=out] [--screenshot=png]`. `DesignDocument` saves exactly what it loaded; keys starting with `x-` are kept for tools and stripped from the live preview.
 - `dockSaveLayout(dock)` returns a text layout (`fusedock 1`); `dockRestoreLayout(dock, text)` checks the whole text before applying it and ignores unknown panel ids.
 
@@ -646,6 +709,11 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
 | `fuse_ui_input_arbitration` | pointer / keyboard / gamepad ownership between UI and game |
 | `fuse_ui_pause_time_domain` | pause and slow motion affect game-time HUD only; locale switching |
+
+Finishing gates: `fuse_ui_dock_drag_*` (dock drag and drop), `fuse_ui_gap_*` (public widget functions no other gate
+called), `fuse_ui_widget_golden_spinmenu`, `fuse_ui_a11y_family_*`, `fuse_ui_doc_*` (document classes, cooked
+registration for them), `fuse_app_widget_gallery_page*`, `fuse_app_game_menu_sample`, `fuse_ui_install_consumer`,
+`fuse_app_stage_assets`. Their CMake wiring is in `tests/finishing.cmake` and at the end of the UI `CMakeLists.txt`.
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,
 `fuse_ui_relight_equivalence`, `fuse_ui_platform_keys_v2`, `fuse_ui_text_input`, `fuse_ui_doc_load`,

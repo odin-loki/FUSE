@@ -5,7 +5,8 @@
      fallback fonts ("fonts/noto/...", "fonts/twemoji/...", copied from vendor/fonts) go under assets/.
      ${fuseApp} is a manifest placeholder: the Gradle template next to this file (build.gradle) sets it and gives
      the package name through `namespace` / `applicationId`. Packaging by hand (aapt2 link), replace ${fuseApp} with
-     the target name and add package="org.fuse.<name>" to the manifest element. -->
+     the target name, add package="org.fuse.<name>" to the manifest element and a
+     <uses-sdk android:minSdkVersion="24" /> (Gradle supplies both from build.gradle). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:name="android.hardware.vulkan.level" android:version="0" android:required="false" />
     <application android:label="${fuseApp}" android:hasCode="false">

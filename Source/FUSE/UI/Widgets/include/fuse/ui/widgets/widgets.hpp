@@ -636,7 +636,8 @@ NodeHandle plainTextEdit(UiContext& ui, NodeHandle parent, std::string_view text
 
 /// Rich text view: word-wrapped text with inline markup: <b> <i> <u> <s> <color=#RRGGBB[AA]> <size=px>
 /// <a href="target"> <br> (and '\n'), entities &lt; &gt; &amp; &quot;. Clicking a link emits Submitted {value =
-/// link index, text = target}. One face is bundled, so bold is a double strike and italic keeps the upright face.
+/// link index, text = target}. <b> / <i> use the bold / italic face of the node's font family when it has one and a
+/// synthesised one otherwise.
 NodeHandle richText(UiContext& ui, NodeHandle parent, std::string_view markup, std::string_view id = {});
 void setRichText(UiContext& ui, NodeHandle view, std::string_view markup);
 u32 richTextLinkCount(const UiContext& ui, NodeHandle view);
