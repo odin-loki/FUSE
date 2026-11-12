@@ -9,6 +9,8 @@
 //   dialogs    — message box with each icon kind and with a long, wrapped text; one context per cell, tiled
 //   wizard     — wizard on its first (Back disabled) and last (Finish) page; one context per cell, tiled
 //   mainwindow — main window: menu bar, tool bar, tabbed docks, a floating dock, flame-graph chart, status bar
+//   spinmenu   — double spin boxes (0.1 / 0.05 / 0.5 steps, focused, disabled, negative) next to a whole-number one,
+//                and an open context menu with a separator and a hovered item
 //   hud        — minimap (circle with a map image and rotating map, square north-up; blips incl. clamped ones) and
 //                ammo counters (pips, bar fallback, low ammo, reload)        [needs fuse_ui_game]
 // The scenes are deterministic: fixed viewports, no clocks, timers / animations advanced by explicit update(dt).
@@ -344,10 +346,66 @@ void sceneHud(Image& img) {
 }
 #endif
 
+// ---- double spin box + context menu ---------------------------------------------------------------------------------
+void sceneSpinMenu(Image& img) {
+    UiContext ui({.viewport = {520, 260}, .font = &font()});
+    w::install(ui);
+    ui.setCss(ui.root(), "padding", "12px");
+    ui.setCss(ui.root(), "gap", "10px");
+    const NodeHandle row = w::panel(ui, ui.root(), "row");
+    ui.addClass(row, "row");
+    w::label(ui, row, "Gain");
+    const NodeHandle gain = w::doubleSpinBox(ui, row, 0.f, 1.f, 0.5f, 0.1f, "gain");
+    w::label(ui, row, "Fine");
+    const NodeHandle fine = w::doubleSpinBox(ui, row, 0.f, 1.f, 0.25f, 0.05f, "fine");
+    w::label(ui, row, "Offset");
+    const NodeHandle off = w::doubleSpinBox(ui, row, -10.f, 10.f, -2.5f, 0.5f, "offset");
+    const NodeHandle row2 = w::panel(ui, ui.root(), "row2");
+    ui.addClass(row2, "row");
+    w::label(ui, row2, "Disabled");
+    const NodeHandle dis = w::doubleSpinBox(ui, row2, 0.f, 100.f, 42.5f, 0.5f, "disabled");
+    ui.setDisabled(dis, true);
+    w::label(ui, row2, "Whole");
+    w::spinBox(ui, row2, 0.f, 240.f, 144.f, 1.f, "fps");
+    const NodeHandle asset = w::button(ui, ui.root(), "Asset (right-click)", "asset");
+    w::setContextMenu(ui, asset, "Rename\nDuplicate\nReveal in the asset browser\n-\nDelete");
+    ui.update();
+    // step the boxes with the keyboard: the text follows the value with the step's precision
+    ui.setFocus(gain, FocusReason::Keyboard);
+    ui.keyDown(Key::Up);
+    ui.keyDown(Key::Up);
+    ui.setFocus(fine, FocusReason::Keyboard);
+    ui.keyDown(Key::Up);
+    ui.setFocus(off, FocusReason::Keyboard);
+    ui.update();
+    UI_CHECK(std::abs(ui.value(gain) - 0.7f) < 1e-3f && std::abs(ui.value(fine) - 0.3f) < 1e-3f);
+    // the context menu, opened by a right press, with the pointer on its second item
+    const Vec2 at = ctr(ui.rect(asset));
+    const u32 before = ui.nodeCount();
+    ui.pointerMove(at);
+    ui.pointerDown(at, MouseButton::Right);
+    ui.pointerUp(at, MouseButton::Right);
+    ui.update();
+    UI_CHECK(ui.nodeCount() > before);
+    const u32 itemCls = ui.registry().find("menuitem");
+    u32 items = 0;
+    NodeHandle second;
+    for (u32 i = 0; i < 4096; ++i) {
+        const NodeHandle h = ui.handleOf(i);
+        if (!ui.alive(h) || ui.classOf(h) != itemCls) continue;
+        if (++items == 2) second = h;
+    }
+    UI_CHECK(items >= 4 && second.valid());
+    if (second.valid()) ui.pointerMove(ctr(ui.rect(second)));
+    settle(ui);
+    render(ui, img);
+}
+
 struct Scene { const char* name; void (*fn)(Image&); };
 const Scene kScenes[] = {{"containers", &sceneContainers}, {"text", &sceneText}, {"dialogs", &sceneDialogs},
                          {"wizard", &sceneWizard},
                          {"mainwindow", &sceneMainWindow},
+                         {"spinmenu", &sceneSpinMenu},
 #if FUSE_UI_GOLDEN_HAVE_GAME
                          {"hud", &sceneHud},
 #endif
