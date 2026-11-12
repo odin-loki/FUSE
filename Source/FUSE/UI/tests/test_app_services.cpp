@@ -190,6 +190,17 @@ void menuDescription() {
     UI_CHECK(ui.rect(bar).y < ui.rect(ui.find("content")).y);
     const NodeHandle fileBtn = ui.firstChild(bar), viewBtn = ui.nextSibling(fileBtn);
     UI_CHECK(ui.registry().get(ui.classOf(fileBtn)).name == "menubutton");
+    // accessibility: a menu bar of expandable buttons named by their titles
+    {
+        std::vector<A11ySnapshotNode> snap;
+        ui.snapshotA11y(snap);
+        u32 bars = 0, buttons = 0;
+        for (const A11ySnapshotNode& s : snap) {
+            bars += s.node == bar && s.role == A11yRole::MenuBar;
+            buttons += (s.node == fileBtn && s.name == "File") || (s.node == viewBtn && s.name == "View" && s.expandable && s.hasAction(A11yAction::Expand));
+        }
+        UI_CHECK(bars == 1u && buttons == 2u);
+    }
 
     // open a menu from the bar and click the item whose label starts with `itemText` (submenus: hover path first)
     auto findItem = [&](std::string_view itemText) {
