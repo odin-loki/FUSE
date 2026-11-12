@@ -30,6 +30,9 @@ jobs:
       # libX11 is loaded at run time so no X packages are needed to build). vulkan-headers / vulkan-loader make
       # fuse_ui_vk and the Xlib swapchain presenter (App/src/vk_present.cpp) compile; the VM has no Vulkan device
       # and no display, so only the headless gates run (-LE vulkan; the GPU parity gate skips with 77).
+      # The wall-clock budget gates (label `perf`: fuse_ui_bench_10k, the 1M-row model / view frame budgets, the icon
+      # rasterisation budget, hello_startup) are excluded too: their thresholds are for a quiet machine, and a shared
+      # nested VM misses them by noise (bench_10k: 0.514 ms median against 0.5 ms). The Linux gates keep them.
       - name: Build and test FUSE UI on FreeBSD
         uses: vmactions/freebsd-vm@v1
         with:
@@ -43,4 +46,4 @@ jobs:
             c++ --version
             cmake -S Source/FUSE/UI -B build-ui-freebsd -G Ninja -DCMAKE_BUILD_TYPE=Release
             cmake --build build-ui-freebsd
-            ctest --test-dir build-ui-freebsd -LE vulkan --output-on-failure
+            ctest --test-dir build-ui-freebsd -LE "vulkan|perf" --output-on-failure

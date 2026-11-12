@@ -49,8 +49,10 @@ jobs:
         run: cmake -S Source/FUSE/UI -B build-ui-macos -G Ninja -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build-ui-macos
+      # -LE perf: the wall-clock budget gates (fuse_ui_bench_10k, 1M-row frame budgets, icon rasterisation budget,
+      # hello_startup) have thresholds for a quiet machine; a shared runner under -j 3 misses them by noise.
       - name: Headless UI gates
-        run: ctest --test-dir build-ui-macos --output-on-failure -j 3 -LE vulkan
+        run: ctest --test-dir build-ui-macos --output-on-failure -j 3 -LE "vulkan|perf"
 
   fuse-ui-ios:
     name: FUSE UI iOS simulator (UIKit) compile

@@ -385,3 +385,14 @@ set_tests_properties(fuse_ui_gpu_pack_vector PROPERTIES LABELS "fuse_ui;gate")
 
 # Dock drag and drop, catalogue coverage / extra goldens, accessibility families, sample and packaging gates
 include(${CMAKE_CURRENT_SOURCE_DIR}/finishing.cmake)
+
+# Wall-clock budget gates also carry the label `perf`: their thresholds assume a quiet machine, so CI on shared or
+# nested VMs (FreeBSD VM, macOS runners) runs `ctest -LE "vulkan|perf"`. That also leaves out what else these gates
+# check (steady-state allocation counts, row counts); the Linux gates run them all.
+foreach(t fuse_ui_bench_10k fuse_ui_modelview_1m_rows fuse_ui_mv_selection_1m fuse_ui_mv_tree_1m fuse_ui_vector_steady
+          fuse_app_hello_startup)
+    if(TEST ${t})
+        get_test_property(${t} LABELS _fuse_ui_labels)
+        set_tests_properties(${t} PROPERTIES LABELS "${_fuse_ui_labels};perf")
+    endif()
+endforeach()
