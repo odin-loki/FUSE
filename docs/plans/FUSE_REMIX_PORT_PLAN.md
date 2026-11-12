@@ -2,7 +2,16 @@
 
 > **Path note (2026-10):** `Engine/lib/` in this document means `vendor/`; Torque addon submodules and `third_party/` are no longer in the repo.
 
-Status: plan, not started. Written 2026-09-23 on branch `claude/port-execution-plan-bi45jj`.
+Status: **implemented, Waves R0–R6** (re-checked against the code 2026-11-05). Wave R7, the hardware validation, is the manual HW checklist. The plan was written 2026-09-23 on branch `claude/port-execution-plan-bi45jj`. Every RL-0.x to RL-6.x package has its owned paths in the tree:
+- `vendor/{dxvk,dxbc-spirv,xxhash,gdeflate}`;
+- `Source/FUSE/Relight/{hash,options,tap,capture/**,scene/**,bridge/**,mods/**,replace,logic,particles,render/{frame,raster,material,lights,pathtrace,denoise,volumetrics,post},terrain,overlay,api,setup,package}`;
+- the `Tests/relight/apps` kit;
+- the Wine/i686 toolchain files in `cmake/toolchains/` and `.github/workflows/fuse-relight-wine.yml`;
+- `docs/relight.md`.
+
+Deviation from §7: RL-6.1 vendors no Dear ImGui (`vendor/imgui` is absent), and the overlay is FUSE's own. The §7 tables below are kept as the plan of record and carry no per-row status.
+
+> **Status note (2026-11-05, native Windows):** the DXVK `d3d9.dll` / `d3d8.dll` stay MinGW-only (G7). A native MSVC tree with `-DFUSE_BUILD_RELIGHT=ON` builds every CPU and Vulkan Relight module and runs its gates on the RTX 3090; the D3D9 test apps run there on the system `d3d9.dll` (`rl_app_*`, label `native`; no D3D8 twins: the Windows SDK has no `d3d8.h`). The Wine gates (`golden;wine`, incl. `rl_overlay_shown_*`) need a MinGW tree plus Wine. **Update (2026-11-05):** they were re-run under the user's Wine (`~/opt/wine`): 549/550 passed, and the overlay goldens are unchanged. Relight is native on MSVC, with 290 tests. These counts come from the run report; no ctest log is checked in, and the one failing Wine test is not named there.
 Product name: **FUSE Relight**, the runtime half of the FUSE Remaster stack. Remaster track A2 is now fully planned in this document.
 
 Companion documents:

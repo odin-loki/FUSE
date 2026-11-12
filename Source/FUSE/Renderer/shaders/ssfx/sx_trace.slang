@@ -10,6 +10,7 @@ struct SxTrace {
     float maxDistance;
     float fadeEdge;
     uint refineSteps;
+    bool hiz; // Hi-Z skipping (SSR with kSsfxFlagHiz)
 };
 
 struct SxHit {
@@ -39,7 +40,53 @@ float sxDepthNearest(float px, float py) {
     return sxDepthAt(uint(px), uint(py));
 }
 
-float sxRayZAt(float k0, float k1, float f) { return 1.0 / (k0 + (k1 - k0) * f); }
+float sxRayZAt(float k0, float k1, float f) { return fuseDivRn(1.0, k0 + (k1 - k0) * f); }
+
+
+// --- Hi-Z march (sx_trace.glsl, see there) -----------------------------------------------------------------
+static uint g_sxHizSkipped = 0u;
+static uint g_sxTested = 0u;
+
+float sxHizAt(uint level, uint cx, uint cy) {
+    const uint w = (F.width + (1u << level) - 1u) >> level;
+    return sxFloats(F.hiz)[F.hizOffset[level] + cy * w + cx];
+}
+
+uint sxHizRun(uint i, uint stepCount, float fStep, float p0x, float p0y, float ddx, float ddy, uint px, uint py,
+              uint level, out float fb) {
+    const uint x0 = (px >> level) << level;
+    const uint y0 = (py >> level) << level;
+    const uint x1 = min(F.width, x0 + (1u << level));
+    const uint y1 = min(F.height, y0 + (1u << level));
+    float fLim = 1.0;
+    if (ddx > 0.0) {
+        fLim = min(fLim, (float(x1) - p0x) / ddx);
+    } else if (ddx < 0.0) {
+        fLim = min(fLim, (float(x0) - p0x) / ddx);
+    }
+    if (ddy > 0.0) {
+        fLim = min(fLim, (float(y1) - p0y) / ddy);
+    } else if (ddy < 0.0) {
+        fLim = min(fLim, (float(y0) - p0y) / ddy);
+    }
+    uint b = uint(max(0.0, fLim / fStep));
+    b = clamp(b, i, stepCount);
+    for (uint tries = 0u; tries < 8u; ++tries) {
+        const float f = min(1.0, float(b) * fStep);
+        const float sx = p0x + ddx * f;
+        const float sy = p0y + ddy * f;
+        if (sx >= float(x0) && sx < float(x1) && sy >= float(y0) && sy < float(y1)) {
+            fb = f;
+            return b;
+        }
+        if (b == i) {
+            break;
+        }
+        b = i + (b - i) / 2u;
+    }
+    fb = min(1.0, float(i) * fStep);
+    return i;
+}
 
 float3 sxReflect(float3 incident, float3 n) { return sxSub(incident, sxScale(n, 2.0 * sxDot(incident, n))); }
 
@@ -53,7 +100,7 @@ SxHit sxTraceRay(uint64_t sceneColor, SxTrace P, uint x, uint y, float3 directio
 
     float rayLength = P.maxDistance;
     if (r.z < 0.0) {
-        const float maxLen = (p.z - F.nearZ * 1.01) / -r.z;
+        const float maxLen = fuseDivRn(p.z - F.nearZ * 1.01, -r.z);
         rayLength = min(rayLength, maxLen);
     }
     if (rayLength <= 1e-4) {
@@ -65,8 +112,8 @@ SxHit sxTraceRay(uint64_t sceneColor, SxTrace P, uint x, uint y, float3 directio
     if (!sxProject(p, p0x, p0y) || !sxProject(e, p1x, p1y)) {
         return result;
     }
-    const float k0 = 1.0 / p.z;
-    const float k1 = 1.0 / e.z;
+    const float k0 = fuseDivRn(1.0, p.z);
+    const float k1 = fuseDivRn(1.0, e.z);
     const float3 q0 = sxScale(p, k0);
     const float3 q1 = sxScale(e, k1);
     const float ddx = p1x - p0x;
@@ -75,14 +122,16 @@ SxHit sxTraceRay(uint64_t sceneColor, SxTrace P, uint x, uint y, float3 directio
     if (pixelLength < 1e-3) {
         return result;
     }
-    const float stride = max(P.stride, pixelLength / float(P.maxSteps));
-    const uint stepCount = uint(ceil(pixelLength / stride));
-    const float fStep = stride / pixelLength;
+    const float stride = max(P.stride, fuseDivRn(pixelLength, float(P.maxSteps)));
+    const uint stepCount = uint(ceil(fuseDivRn(pixelLength, stride)));
+    const float fStep = fuseDivRn(stride, pixelLength);
 
     float prevF = 0.0;
     float prevZ = p.z;
     bool hit = false;
     float hitF = 0.0;
+    const bool useHiz = P.hiz && F.hizLevels > 0u;
+    uint level = 1u;
     for (uint i = 1u; i <= stepCount; ++i) {
         const float f = min(1.0, float(i) * fStep);
         const float sx = p0x + ddx * f;
@@ -91,6 +140,29 @@ SxHit sxTraceRay(uint64_t sceneColor, SxTrace P, uint x, uint y, float3 directio
             break;
         }
         const float rayZ = sxRayZAt(k0, k1, f);
+        if (useHiz) {
+            bool skipped = false;
+            for (uint L = min(level, F.hizLevels); L > 0u; --L) {
+                float fb;
+                const uint b = sxHizRun(i, stepCount, fStep, p0x, p0y, ddx, ddy, uint(sx), uint(sy), L, fb);
+                const float zb = sxRayZAt(k0, k1, fb);
+                const float runMax = max(prevZ, max(rayZ, zb));
+                if (runMax < sxHizAt(L, uint(sx) >> L, uint(sy) >> L)) {
+                    g_sxHizSkipped += b - i + 1u;
+                    prevF = fb;
+                    prevZ = zb;
+                    i = b;
+                    level = min(L + 1u, F.hizLevels);
+                    skipped = true;
+                    break;
+                }
+            }
+            if (skipped) {
+                continue;
+            }
+            level = 1u;
+        }
+        ++g_sxTested;
         const float sceneZ = sxDepthNearest(sx, sy);
         if (sceneZ > 0.0 && !(uint(sx) == x && uint(sy) == y)) {
             const float zMin = min(prevZ, rayZ);
@@ -127,17 +199,17 @@ SxHit sxTraceRay(uint64_t sceneColor, SxTrace P, uint x, uint y, float3 directio
     result.color = sxColorAt(sceneColor, sxIndex(hx, hy));
 
     const float k = k0 + (k1 - k0) * hitF;
-    const float3 hitPos = sxScale(sxAdd(q0, sxScale(sxSub(q1, q0), hitF)), 1.0 / k);
+    const float3 hitPos = sxScale(sxAdd(q0, sxScale(sxSub(q1, q0), hitF)), fuseDivRn(1.0, k));
     result.distance = sxLength(sxSub(hitPos, p));
 
     float edgeFade = 1.0;
     if (P.fadeEdge > 0.0) {
-        const float u = result.px / float(F.width);
-        const float vv = result.py / float(F.height);
+        const float u = fuseDivRn(result.px, float(F.width));
+        const float vv = fuseDivRn(result.py, float(F.height));
         const float edge = min(min(u, 1.0 - u), min(vv, 1.0 - vv));
-        edgeFade = sxSaturate(edge / P.fadeEdge);
+        edgeFade = sxSaturate(fuseDivRn(edge, P.fadeEdge));
     }
-    const float distanceFade = sxSaturate(4.0 * (1.0 - result.distance / P.maxDistance));
+    const float distanceFade = sxSaturate(4.0 * (1.0 - fuseDivRn(result.distance, P.maxDistance)));
     result.confidence = edgeFade * distanceFade;
     return result;
 }
@@ -151,7 +223,7 @@ bool sxSkyExit(SxTrace P, uint x, uint y, float3 direction) {
     const float3 r = sxNormalize(direction);
     float rayLength = P.maxDistance;
     if (r.z < 0.0) {
-        const float maxLen = (p.z - F.nearZ * 1.01) / -r.z;
+        const float maxLen = fuseDivRn(p.z - F.nearZ * 1.01, -r.z);
         rayLength = min(rayLength, maxLen);
     }
     if (rayLength <= 1e-4) {

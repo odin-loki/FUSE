@@ -5,6 +5,7 @@
 //   settings         — command line parsing, settings round trip, single-instance lock
 #include "fuse/app/app.hpp"
 #include "fuse/ui/doc/document.hpp"
+#include "test_env.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -134,7 +135,8 @@ int helloStartup() {
     const double ms = std::chrono::duration<double, std::milli>(C::now() - t0).count();
     std::printf("fuse_app_hello_startup: first frame after %.1f ms (headless CPU present)\n", ms);
     CHECK(w.framesPresented() == 1);
-    CHECK(ms <= 150.0);
+    if (fuse::ui::test::timingBudgetsEnforced()) CHECK(ms <= 150.0);
+    else std::printf("  FUSE_INSTRUMENTED_RUN=%s: 150 ms budget reported, not enforced\n", fuse::ui::test::instrumentedRun());
     // the presented image has the button face in it (not just the clear colour)
     const Rect b = w.ui().rect(w.ui().find("b"));
     CHECK(w.image().at(int(b.x + b.w * 0.5f), int(b.y + 2.f)) != 0xFF000000u);

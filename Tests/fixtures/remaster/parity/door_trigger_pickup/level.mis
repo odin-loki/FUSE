@@ -1,0 +1,37 @@
+//--- OBJECT WRITE BEGIN ---
+// FUSE Remaster W1.7 parity fixture (ours, synthetic): a corridor with a door trigger, a door and a health pickup.
+// The player walks north from the spawn through DoorTrigger (opens Door1), picks up HealthKit, then walks back
+// south out of the trigger (closes Door1). Logic: logic.tscript; input: scenario.json; expected log: expected.log.
+new Scene(ParityLevel) {
+   new LevelInfo(theLevelInfo) {
+      FogColor = "0.6 0.6 0.7 1";
+      canvasClearColor = "0 0 0 255";
+   };
+   new GroundPlane() {
+      position = "0 0 0";
+   };
+   new SimGroup(CameraSpawnPoints) {
+      new SpawnSphere(PlayerSpawn) {
+         radius = "1";
+         dataBlock = "SpawnSphereMarker";
+         position = "0 -8 1";
+      };
+   };
+   new Trigger(DoorTrigger) {
+      position = "0 0 0";
+      scale = "4 4 3";
+      dataBlock = "DoorTriggerData";
+      polyhedron = "-0.5 0.5 0.0 1.0 0.0 0.0 0.0 -1.0 0.0 0.0 0.0 1.0";
+   };
+   new StaticShape(Door1) {
+      position = "0 2.5 0";
+      dataBlock = "DoorData";
+   };
+   new Item(HealthKit) {
+      position = "0 6 1";
+      dataBlock = "HealthKitData";
+      static = "1";
+      rotate = "1";
+   };
+};
+//--- OBJECT WRITE END ---

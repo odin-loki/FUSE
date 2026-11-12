@@ -1,0 +1,57 @@
+{
+  "$id": "fuse.poco/1/provenance.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Where a record came from (plan \u00a72.2, \u00a72.6).",
+  "properties": {
+    "ai": {
+      "oneOf": [
+        {
+          "$ref": "ai.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "derived_from": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "human_authorship": {
+      "enum": [
+        "none",
+        "selection",
+        "substantial"
+      ],
+      "type": "string"
+    },
+    "origin": {
+      "enum": [
+        "original",
+        "library",
+        "generated",
+        "derived",
+        "authored"
+      ],
+      "type": "string"
+    },
+    "recipe": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tool": {
+      "type": "string"
+    }
+  },
+  "title": "provenance",
+  "type": "object"
+}

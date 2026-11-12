@@ -19,6 +19,18 @@
 
 # WSL/bash entrypoints (must not get CRLF or `set -euo pipefail` breaks).
 scripts/*.sh text eol=lf
+cmake/**/*.sh text eol=lf
+# every other shell script too (ctest runs e.g. Relight's rl_hash_wine.sh / run_smoke.sh under WSL from a copy of a
+# Windows checkout)
+*.sh text eol=lf
+
+# Relight fixtures, expected outputs and profiles are compared byte for byte by the gates: LF on every checkout
+# (a Windows autocrlf checkout otherwise fails rl_mods_import_fixture_*, rl_logic_unit, rl_setup_content_*).
+Tests/relight/fixtures/** text=auto eol=lf
+Content/relight/** text=auto eol=lf
+# FUSE Remaster AI fixtures and prompts: recipe input hashes and recorded HTTP request bodies cover these bytes.
+Tools/FUSE/Remaster/tests/fixtures/** text=auto eol=lf
+Content/recipes/ai/** text=auto eol=lf
 
 # Vendored third-party trees pinned by sha256 (fuse_lint vendored-pins): keep upstream bytes (CRLF) as-is.
 vendor/streamline/** -text

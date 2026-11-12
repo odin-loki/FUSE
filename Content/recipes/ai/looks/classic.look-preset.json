@@ -1,0 +1,16 @@
+{
+  "schema": "fuse.ai-look-preset/1",
+  "name": "classic",
+  "description": "Classic: the original game's grade, reproduced by a 3D LUT fitted to golden captures (FUSE render vs the original capture of the same view). Reinhard tone map, no bloom or grain, so the LUT carries the look.",
+  "needs_lut": true,
+  "lut_strength": 1.0,
+  "base": {
+    "exposure": { "autoEnabled": false, "biasEv": 0.0 },
+    "toneMap": { "operator": "reinhard", "calibrateMidGrey": true },
+    "bloom": { "intensity": 0.0 },
+    "vignette": { "enabled": false },
+    "filmGrain": { "enabled": false },
+    "sharpen": { "enabled": false },
+    "colorGrade": { "lut": null }
+  }
+}

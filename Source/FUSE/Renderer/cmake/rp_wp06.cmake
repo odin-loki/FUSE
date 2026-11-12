@@ -29,8 +29,8 @@ endif()
 
 if(FUSE_BUILD_CORE_TESTS)
     # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-    set(_fuse_rp_wp06_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
-    set(_fuse_rp_wp06_env "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+    set(_fuse_rp_wp06_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
+    set(_fuse_rp_wp06_env "${FUSE_VULKAN_LVP_ENV}")
 
     # Vendored renderdoc_app.h matches its VERSION pin (sha256 + declared API version).
     add_test(NAME fuse_rp_renderdoc_header_pin
@@ -64,7 +64,7 @@ if(FUSE_BUILD_CORE_TESTS)
     endif()
     foreach(_t IN LISTS _fuse_wp06_gpu_tests)
         if(FUSE_VULKAN_BACKEND)
-            add_test(NAME ${_t} COMMAND "${_fuse_rp_wp06_lock}" "$<TARGET_FILE:${_t}>")
+            add_test(NAME ${_t} COMMAND ${_fuse_rp_wp06_lock} "$<TARGET_FILE:${_t}>")
         else()
             add_test(NAME ${_t} COMMAND ${_t})
         endif()

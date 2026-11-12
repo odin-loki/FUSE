@@ -1,0 +1,16 @@
+{
+  "$id": "fuse.poco/1/anim_event.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "An animation event at a clip time (seconds).",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "time": {
+      "type": "number"
+    }
+  },
+  "title": "anim_event",
+  "type": "object"
+}

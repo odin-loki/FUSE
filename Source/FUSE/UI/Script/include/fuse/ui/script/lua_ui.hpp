@@ -48,11 +48,21 @@ public:
         return {u32(v & 0xFFFFFFFFu), u32(v >> 32)};
     }
 
+    /// Lua handlers (ui.on) still held. A handler is released (registry ref + connection) once its node is gone:
+    /// swept by update() and by every ui.on / ui.destroy.
+    std::size_t handlerCount() const { return m_handlers.size(); }
+
     // implementation detail (C callbacks)
+    struct Handler {
+        int ref = 0;
+        NodeHandle node;
+        ConnectionHandle connection;
+    };
     std::vector<std::unique_ptr<doc::Document>> m_docs;
-    std::vector<int> m_refs;
+    std::vector<Handler> m_handlers;
     void dispatch(int ref, NodeHandle h, const SignalArgs& a);
     void action(std::string_view name, NodeHandle h, const SignalArgs& a);
+    void sweepHandlers();
 
 private:
     lua_State* m_L;

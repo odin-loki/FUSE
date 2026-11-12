@@ -2,6 +2,7 @@
 //   float3 E = fuseDdgiSampleIrradiance(volumeAddress, position, normal);   // 0 when address == 0
 //   float3 E = fuseDdgiSampleIrradianceView(volumeAddress, position, normal, view); // + view bias
 #pragma once
+#include "../common/exact_math.slang" // fuseDivRn / fuseSqrtRn: the oracle's IEEE quotients and roots
 
 static const float kFuseDdgiPi = 3.14159265358979323846;
 
@@ -25,11 +26,11 @@ struct DdgiVolume { // DdgiVolumeView, 96 bytes
 
 float3 fuseDdgiNormalized(float3 d) {
     const float dd = d.x * d.x + d.y * d.y + d.z * d.z;
-    const float len = sqrt(dd);
+    const float len = fuseSqrtRn(dd);
     if (len < 1e-8) {
         return float3(0.0, 0.0, 0.0);
     }
-    const float inv = 1.0 / len;
+    const float inv = fuseDivRn(1.0, len);
     return float3(d.x * inv, d.y * inv, d.z * inv);
 }
 
@@ -51,14 +52,14 @@ float3 fuseDdgiResolveDirectionOr(float3 d, float3 fallback) {
 
 float fuseDdgiLength(float3 d) {
     const float dd = d.x * d.x + d.y * d.y + d.z * d.z;
-    return sqrt(dd);
+    return fuseSqrtRn(dd);
 }
 
 float2 fuseDdgiEncodeDirection(float3 direction) {
     float3 n = fuseDdgiResolveDirection(direction);
     const float sum = abs(n.x) + abs(n.y) + abs(n.z);
     if (sum > 1e-8) {
-        const float inv = 1.0 / sum;
+        const float inv = fuseDivRn(1.0, sum);
         n = float3(n.x * inv, n.y * inv, n.z * inv);
     }
     float2 o;
@@ -71,10 +72,10 @@ float2 fuseDdgiEncodeDirection(float3 direction) {
     return float2(o.x * 0.5 + 0.5, o.y * 0.5 + 0.5);
 }
 
-float3 fuseDdgiSampleTile(uint64_t atlas, uint base, uint comps, uint res, float3 direction) {
+// The tile fetch at an already encoded direction (twin of fuse_ddgi_sample_tile_uv).
+float3 fuseDdgiSampleTileUv(uint64_t atlas, uint base, uint comps, uint res, float2 uv) {
     float* t = (float*)atlas;
     const uint stride = res + 2u;
-    const float2 uv = fuseDdgiEncodeDirection(direction);
     const float px = 1.0 + uv.x * float(res) - 0.5;
     const float py = 1.0 + uv.y * float(res) - 0.5;
     const float fx = clamp(px, 0.0, float(res));
@@ -98,14 +99,23 @@ float3 fuseDdgiSampleTile(uint64_t atlas, uint base, uint comps, uint res, float
     return result;
 }
 
-float3 fuseDdgiProbeIrradiance(DdgiVolume V, uint probe, float3 direction) {
+float3 fuseDdgiSampleTile(uint64_t atlas, uint base, uint comps, uint res, float3 direction) {
+    return fuseDdgiSampleTileUv(atlas, base, comps, res, fuseDdgiEncodeDirection(direction));
+}
+
+float2 fuseDdgiIrradianceUv(float3 direction) { return fuseDdgiEncodeDirection(fuseDdgiResolveDirection(direction)); }
+
+float3 fuseDdgiProbeIrradianceUv(DdgiVolume V, uint probe, float2 uv) {
     if (probe >= V.probeCount) {
         return float3(0.0, 0.0, 0.0);
     }
-    const float3 dir = fuseDdgiResolveDirection(direction);
     const uint tile = (V.irradianceRes + 2u) * (V.irradianceRes + 2u);
-    const float3 s = fuseDdgiSampleTile(V.irradiance, probe * tile * 3u, 3u, V.irradianceRes, dir);
+    const float3 s = fuseDdgiSampleTileUv(V.irradiance, probe * tile * 3u, 3u, V.irradianceRes, uv);
     return float3(s.x * kFuseDdgiPi, s.y * kFuseDdgiPi, s.z * kFuseDdgiPi);
+}
+
+float3 fuseDdgiProbeIrradiance(DdgiVolume V, uint probe, float3 direction) {
+    return fuseDdgiProbeIrradianceUv(V, probe, fuseDdgiIrradianceUv(direction));
 }
 
 float2 fuseDdgiProbeDistance(DdgiVolume V, uint probe, float3 direction) {
@@ -143,8 +153,8 @@ bool fuseDdgiProbeActive(DdgiVolume V, uint probe) {
 float3 fuseDdgiSampleVolumeBiased(DdgiVolume V, float3 position, float3 n, float3 biased) {
     float3 grid = float3(0.0, 0.0, 0.0);
     if (V.spacing[0] > 0.0 && V.spacing[1] > 0.0 && V.spacing[2] > 0.0) {
-        grid = float3((biased.x - V.origin[0]) / V.spacing[0], (biased.y - V.origin[1]) / V.spacing[1],
-                      (biased.z - V.origin[2]) / V.spacing[2]);
+        grid = float3(fuseDivRn(biased.x - V.origin[0], V.spacing[0]), fuseDivRn(biased.y - V.origin[1], V.spacing[1]),
+                      fuseDivRn(biased.z - V.origin[2], V.spacing[2]));
     }
     uint base[3];
     float alpha[3];
@@ -157,6 +167,7 @@ float3 fuseDdgiSampleVolumeBiased(DdgiVolume V, float3 position, float3 n, float
     }
     float3 sum = float3(0.0, 0.0, 0.0);
     float weightSum = 0.0;
+    const float2 irradianceUv = fuseDdgiIrradianceUv(n);
     for (uint corner = 0u; corner < 8u; ++corner) {
         float trilinear = 1.0;
         uint c[3];
@@ -179,21 +190,21 @@ float3 fuseDdgiSampleVolumeBiased(DdgiVolume V, float3 position, float3 n, float
         const float toProbeLen = fuseDdgiLength(toProbe);
         if (toProbeLen > 1e-6) {
             const float d = toProbe.x * n.x + toProbe.y * n.y + toProbe.z * n.z;
-            const float wrap = (d / toProbeLen + 1.0) * 0.5;
+            const float wrap = (fuseDivRn(d, toProbeLen) + 1.0) * 0.5;
             weight *= wrap * wrap + 0.2;
         }
 
         const float3 probeToPoint = float3(biased.x - probePos.x, biased.y - probePos.y, biased.z - probePos.z);
         const float dist = fuseDdgiLength(probeToPoint);
         if (dist > 1e-6) {
-            const float inv = 1.0 / dist;
+            const float inv = fuseDivRn(1.0, dist);
             const float3 dir = float3(probeToPoint.x * inv, probeToPoint.y * inv, probeToPoint.z * inv);
             const float2 moments = fuseDdgiProbeDistance(V, probe, dir);
             const float mean = moments.x;
             if (dist > mean) {
                 const float variance = abs(moments.y - mean * mean);
                 const float delta = dist - mean;
-                float chebyshev = variance / max(variance + delta * delta, 1e-12);
+                float chebyshev = fuseDivRn(variance, max(variance + delta * delta, 1e-12));
                 chebyshev = max(chebyshev * chebyshev * chebyshev, 0.0);
                 weight *= max(chebyshev, 0.05);
             }
@@ -201,18 +212,18 @@ float3 fuseDdgiSampleVolumeBiased(DdgiVolume V, float3 position, float3 n, float
         weight = max(weight, 1e-6);
         const float crush = V.weightCrushThreshold;
         if (crush > 0.0 && weight < crush) {
-            weight *= (weight * weight) / (crush * crush);
+            weight *= fuseDivRn(weight * weight, crush * crush);
         }
         weight *= trilinear;
 
-        const float3 e = fuseDdgiProbeIrradiance(V, probe, n);
+        const float3 e = fuseDdgiProbeIrradianceUv(V, probe, irradianceUv);
         sum = float3(sum.x + e.x * weight, sum.y + e.y * weight, sum.z + e.z * weight);
         weightSum += weight;
     }
     if (weightSum <= 0.0) {
         return float3(0.0, 0.0, 0.0);
     }
-    const float invSum = 1.0 / weightSum;
+    const float invSum = fuseDivRn(1.0, weightSum);
     return float3(sum.x * invSum, sum.y * invSum, sum.z * invSum);
 }
 

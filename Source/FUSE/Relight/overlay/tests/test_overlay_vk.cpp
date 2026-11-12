@@ -23,6 +23,7 @@
 #include <fuse/renderer/vk/instance.hpp>
 
 #include <fuse/relight/render/frame/vk_dispatch.hpp>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -490,8 +491,7 @@ int main(int argc, char** argv) {
             return kSkip;
         }
         setEnv("VK_INSTANCE_LAYERS", "VK_LAYER_KHRONOS_validation");
-        setEnv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT");
-        setEnv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true");
+        fuse::renderer::test::enableSyncValidationEnv();
     }
     rr::VulkanInstanceDesc idesc;
     idesc.appName = "rl_overlay_vk";

@@ -3,16 +3,17 @@
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/runtime_viewport.hpp>
 #include <fuse/editor/terrain_builder.hpp>
-#include <fuse/renderer/geometry/meshlet_builder.hpp>
 
 #include <unordered_map>
 #include <fuse/editor/viewport_panel.hpp>
 
 #if defined(FUSE_HAS_VULKAN_RHI)
+#include <fuse/renderer/geometry/meshlet_builder.hpp> // only the GPU path builds meshlets (no renderer without Vulkan)
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/frame/frame_ctx.hpp>
 #include <fuse/hybrid/hybrid_scene_renderer.hpp>
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/gpu_profiler.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 #include <fuse/world3d/world_3d.hpp>
 #endif
@@ -35,6 +36,8 @@ struct SceneViewportHost::Impl {
     u32 materialRevision = ~0u;
     std::unordered_map<u32, u64> terrainHashes; ///< engine mesh id -> uploaded Terrain hash
     f32 time = 0.f;
+    std::unique_ptr<renderer::GpuProfiler> gpuProfiler; ///< one zone per render-graph pass (rg::PassHooks)
+    u64 gpuReported = 0;                                ///< newest GPU frame pollGpuTimings returned
 #endif
 };
 
@@ -42,6 +45,11 @@ SceneViewportHost::SceneViewportHost() : m(std::make_unique<Impl>()) {}
 
 SceneViewportHost::~SceneViewportHost() {
 #if defined(FUSE_HAS_VULKAN_RHI)
+    if (m->gpu) {
+        m->gpu->waitIdle(); // the profiler's query pool must outlive every submitted frame
+        if (m->gpu->executor()) m->gpu->executor()->setPassHooks({});
+    }
+    m->gpuProfiler.reset();
     if (m->gpu) m->gpu->shutdown();
     m->gpu.reset();
     m->device.reset();
@@ -92,6 +100,15 @@ std::unique_ptr<SceneViewportHost> SceneViewportHost::create(const SceneViewport
     }
     m.width = sd.width;
     m.height = sd.height;
+    // editor profiler GPU times: timestamp zones around every pass of the viewport's render graph (executor ring 2 deep,
+    // so 3 profiler slots retire before reuse)
+    renderer::GpuProfilerDesc pd{};
+    pd.framesInFlight = 3;
+    pd.enableTracy = false;
+    pd.name = "fuse.editor.viewport";
+    m.gpuProfiler = renderer::GpuProfiler::create(*m.device, pd);
+    if (m.gpuProfiler && m.gpuProfiler->isValid() && m.gpu->executor()) m.gpu->executor()->setPassHooks(m.gpuProfiler->passHooks());
+    else m.gpuProfiler.reset();
     m.world.setClearColor(0.08f, 0.12f, 0.18f);
     m.reason.clear();
 #else
@@ -224,7 +241,17 @@ bool SceneViewportHost::render(EditorHost& host, const ViewportPanel& view, u32 
     gpu.setUnlit(mode == EditorViewMode::Unlit || mode == EditorViewMode::Wireframe);
     gpu.setFallbackSun(editorPreviewSun());
     gpu.beginOverlay();
-    if (!gpu.renderWorld3D(m->world, ctx) || !gpu.submitHeadless()) {
+    if (!gpu.renderWorld3D(m->world, ctx)) {
+        m->reason = std::string("frame: ") + gpu.reason();
+        return false;
+    }
+    if (m->gpuProfiler) m->gpuProfiler->beginFrame(); // the zones are recorded while the graph executes (submit)
+    const bool submitted = gpu.submitHeadless();
+    if (m->gpuProfiler) {
+        m->gpuProfiler->endFrame();
+        m->gpuProfiler->resolve();
+    }
+    if (!submitted) {
         m->reason = std::string("frame: ") + gpu.reason();
         return false;
     }
@@ -285,6 +312,36 @@ bool SceneViewportHost::readback(std::vector<u32>& out, u32& width, u32& height)
     return true;
 #else
     (void)out, (void)width, (void)height;
+    return false;
+#endif
+}
+
+bool SceneViewportHost::gpuTimingsSupported() const {
+#if defined(FUSE_HAS_VULKAN_RHI)
+    return m->gpuProfiler != nullptr;
+#else
+    return false;
+#endif
+}
+
+bool SceneViewportHost::pollGpuTimings(SceneViewportGpuTimings& out) {
+#if defined(FUSE_HAS_VULKAN_RHI)
+    if (!m->gpuProfiler) return false;
+    m->gpuProfiler->resolve();
+    const renderer::GpuFrameTimings& t = m->gpuProfiler->latest();
+    if (!t.valid || t.frame <= m->gpuReported) return false;
+    m->gpuReported = t.frame;
+    out.frame = t.frame;
+    out.totalMs = 0.f;
+    out.passes.clear();
+    for (const renderer::GpuZoneTiming& z : t.zones) {
+        const f32 ms = f32(double(z.durationNs()) * 1e-6);
+        out.passes.push_back({std::string(z.name), z.depth, ms});
+        if (z.depth == 0) out.totalMs += ms;
+    }
+    return true;
+#else
+    (void)out;
     return false;
 #endif
 }

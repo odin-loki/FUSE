@@ -89,6 +89,11 @@ void requiredVulkanInstanceExtensions(std::vector<const char*>& out) {
     if (x11::ensureDisplay()) {
         x11::vulkanInstanceExtensions(out);
     }
+#elif defined(__ANDROID__)
+    // no fuse::platform::Window: the app's ANativeWindow gets its surface from the renderer
+    // (fuse/renderer/vk/surface_android.hpp)
+    out.push_back("VK_KHR_surface");
+    out.push_back("VK_KHR_android_surface");
 #endif
 }
 

@@ -1,0 +1,42 @@
+{
+  "$id": "fuse.poco/1/mesh.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Kind 'mesh' payload.",
+  "properties": {
+    "bounds": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 6,
+      "minItems": 6,
+      "type": "array"
+    },
+    "indices32": {
+      "$ref": "blob_ref.schema.json"
+    },
+    "lodIds": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "skeletonId": {
+      "type": "string"
+    },
+    "streams": {
+      "items": {
+        "$ref": "mesh_stream.schema.json"
+      },
+      "type": "array"
+    },
+    "submeshes": {
+      "items": {
+        "$ref": "submesh.schema.json"
+      },
+      "type": "array"
+    }
+  },
+  "title": "mesh",
+  "type": "object"
+}

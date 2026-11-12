@@ -18,6 +18,11 @@ layout(push_constant) uniform AtPushBlock {
 #define AT_PHASE_SKY 0u
 #define AT_PHASE_ISOTROPIC 1u
 
+// Correctly rounded division / square root (fuse_div_rn / fuse_sqrt_rn, common/exact_math.glsl): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but the transmittance LUT's horizon column is ill-conditioned
+// (one ulp of r ~ 6.4e6 m moves the tangent point by 0.5 m, the transmittance by ~3e-3).
+#include "../common/exact_math.glsl"
+
 float at_one_minus_exp(float x) {
     if (x < 0.02) {
         return x * (1.0 - x * (0.5 - x * (1.0 / 6.0 - x * (1.0 / 24.0))));
@@ -112,17 +117,22 @@ void at_march_quadratic(AtParams P, float r0, float mu, float nu, float muS0, fl
 
 // --- texel kernels ------------------------------------------------------------------------------------------
 vec4 at_transmittance_texel(AtParams P, uint x, uint y) {
-    const float xMu = float(x) / float(P.transWidth - 1u);
-    const float xR = float(y) / float(P.transHeight - 1u);
+    // (r, mu) with correctly rounded divides / roots (fuse_div_rn), uncontracted: the CPU twin's geometry exactly.
+    const float xMu = fuse_div_rn(float(x), float(P.transWidth - 1u));
+    const float xR = fuse_div_rn(float(y), float(P.transHeight - 1u));
     const float rg = P.bottomRadius;
     const float rt = P.topRadius;
-    const float H = sqrt((rt - rg) * (rt + rg));
-    const float rho = H * xR;
-    const float r = sqrt(rho * rho + rg * rg);
-    const float dMin = rt - r;
-    const float dMax = rho + H;
-    const float d = dMin + xMu * (dMax - dMin);
-    float mu = d <= 0.0 ? 1.0 : (H * H - rho * rho - d * d) / (2.0 * r * d);
+    precise float H2 = (rt - rg) * (rt + rg);
+    const float H = fuse_sqrt_rn(H2);
+    precise float rho = H * xR;
+    precise float r2 = rho * rho + rg * rg;
+    const float r = fuse_sqrt_rn(r2);
+    precise float dMin = rt - r;
+    precise float dMax = rho + H;
+    precise float d = dMin + xMu * (dMax - dMin);
+    precise float muNum = H * H - rho * rho - d * d;
+    precise float muDen = 2.0 * r * d;
+    float mu = d <= 0.0 ? 1.0 : fuse_div_rn(muNum, muDen);
     mu = at_clamp(mu, -1.0, 1.0);
     const float len = at_distance_to_top(P, r, mu);
     const float dt = len / float(P.transSteps);

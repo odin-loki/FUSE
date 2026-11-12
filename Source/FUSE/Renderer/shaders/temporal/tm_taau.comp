@@ -56,12 +56,12 @@ vec3 fuse_tm_clip_to_aabb(vec3 history, vec3 boxMin, vec3 boxMax) {
     precise vec3 extent = (boxMax - boxMin) * 0.5;
     precise vec3 offset = history - center;
     const float eps = 1e-6;
-    precise float ux = abs(offset.x) / max(extent.x, eps);
-    precise float uy = abs(offset.y) / max(extent.y, eps);
-    precise float uz = abs(offset.z) / max(extent.z, eps);
+    const float ux = fuse_div_rn(abs(offset.x), max(extent.x, eps));
+    const float uy = fuse_div_rn(abs(offset.y), max(extent.y, eps));
+    const float uz = fuse_div_rn(abs(offset.z), max(extent.z, eps));
     const float maxUnit = max(ux, max(uy, uz));
     if (maxUnit > 1.0) {
-        precise float inv = 1.0 / maxUnit;
+        const float inv = fuse_div_rn(1.0, maxUnit);
         precise vec3 r = center + offset * inv;
         return r;
     }
@@ -91,7 +91,9 @@ float fuse_tm_lanczos2(float x) {
     }
     const float kPi = uintBitsToFloat(0x40490FDBu); // 3.14159265358979f
     precise float px = kPi * ax;
-    precise float r = 2.0 * sin(px) * sin(0.5 * px) / (px * px);
+    precise float num = 2.0 * sin(px) * sin(0.5 * px);
+    precise float den = px * px;
+    const float r = fuse_div_rn(num, den);
     return r;
 }
 
@@ -100,7 +102,8 @@ void fuse_tm_lanczos2_weights(float t, out float w[4]) {
     precise float w1 = fuse_tm_lanczos2(t);
     precise float w2 = fuse_tm_lanczos2(1.0 - t);
     precise float w3 = fuse_tm_lanczos2(2.0 - t);
-    precise float inv = 1.0 / (w0 + w1 + w2 + w3);
+    precise float wsum = w0 + w1 + w2 + w3;
+    const float inv = fuse_div_rn(1.0, wsum);
     w[0] = w0 * inv;
     w[1] = w1 * inv;
     w[2] = w2 * inv;
@@ -232,13 +235,15 @@ void main() {
     const float rhf = float(f.renderH);
     const float dwf = float(f.displayW);
     const float dhf = float(f.displayH);
-    precise float scaleX = dwf / rwf;
-    precise float scaleY = dhf / rhf;
+    const float scaleX = fuse_div_rn(dwf, rwf);
+    const float scaleY = fuse_div_rn(dhf, rhf);
     const float e = f.exposure;
 
     // Display pixel centre in UV and in (unjittered) render coordinates; q = jittered texel lattice coordinate.
-    precise float u = (float(x) + 0.5) / dwf;
-    precise float v = (float(y) + 0.5) / dhf;
+    precise float xc = float(x) + 0.5;
+    precise float yc = float(y) + 0.5;
+    const float u = fuse_div_rn(xc, dwf);
+    const float v = fuse_div_rn(yc, dhf);
     precise float prx = u * rwf;
     precise float pry = v * rhf;
     precise float qx = prx - f.jitterX;
@@ -268,9 +273,11 @@ void main() {
             precise vec3 c = fuse_tm_sanitize(fuse_tm_color(f.color, tx, ty)) * e;
             precise float ox = (float(cix + dx) + 0.5 + f.jitterX - prx) * scaleX;
             precise float oy = (float(ciy + dy) + 0.5 + f.jitterY - pry) * scaleY;
-            precise float dist = sqrt(ox * ox + oy * oy) * f.sampleKernelScale;
+            precise float od2 = ox * ox + oy * oy;
+            precise float dist = fuse_sqrt_rn(od2) * f.sampleKernelScale;
             const float w = fuse_tm_sample_weight(dist);
-            precise float wt = w / (1.0 + fuse_tm_luma709(c));
+            precise float wtd = 1.0 + fuse_tm_luma709(c);
+            const float wt = fuse_div_rn(w, wtd);
             sumW += w;
             sumWt += wt;
             sumC = sumC + c * wt;
@@ -295,8 +302,10 @@ void main() {
     vec3 spatialY = fuse_tm_rgb_to_ycocg(spatialRgb);
     spatialY = max(min(spatialY, nMax), nMin);
     const vec3 spatial = fuse_tm_ycocg_to_rgb(spatialY);
-    precise float spatialWt = f.spatialWeight / (1.0 + fuse_tm_luma709(spatial));
-    precise float invW = 1.0 / (sumWt + spatialWt);
+    precise float swd = 1.0 + fuse_tm_luma709(spatial);
+    const float spatialWt = fuse_div_rn(f.spatialWeight, swd);
+    precise float wd = sumWt + spatialWt;
+    const float invW = fuse_div_rn(1.0, wd);
     precise vec3 current = (sumC + spatial * spatialWt) * invW;
     precise float confidence = sumW + f.spatialWeight;
 
@@ -311,7 +320,9 @@ void main() {
     precise float historyW = 0.0;
     vec3 history = vec3(0.0);
     if (f.historyValid != 0u && hx >= 0.0 && hy >= 0.0 && hx < dwf && hy < dhf) {
-        precise float motionCap = f.maxAccumulation / (1.0 + sqrt(mvx * mvx + mvy * mvy) * f.accumulationMotionFalloff);
+        precise float mv2 = mvx * mvx + mvy * mvy;
+        precise float capD = 1.0 + fuse_sqrt_rn(mv2) * f.accumulationMotionFalloff;
+        const float motionCap = fuse_div_rn(f.maxAccumulation, capD);
         historyW = min(fuse_tm_sample_history_weight(f, hx, hy), motionCap);
         history = fuse_tm_sample_history(f, hx, hy, f.historyFilter);
 
@@ -322,8 +333,10 @@ void main() {
             const float d = depthBuf.v[ci];
             precise float expected = fuse_tm_effective_depth(d);
             if (f.hasCamera != 0u && d > 0.0) {
-                precise float su = (float(cix) + 0.5 + f.jitterX) / rwf;
-                precise float sv = (float(ciy) + 0.5 + f.jitterY) / rhf;
+                precise float sun = float(cix) + 0.5 + f.jitterX;
+                precise float svn = float(ciy) + 0.5 + f.jitterY;
+                const float su = fuse_div_rn(sun, rwf);
+                const float sv = fuse_div_rn(svn, rhf);
                 precise float vx = (2.0 * su - 1.0) * f.tanHalfX * d;
                 precise float vy = (1.0 - 2.0 * sv) * f.tanHalfY * d;
                 precise float vz = -d;
@@ -356,7 +369,8 @@ void main() {
             const vec2 pm = FuseTmVec2Ref(f.prevMotion).v[pi];
             precise float ddx = (motion.x - pm.x) * dwf;
             precise float ddy = (motion.y - pm.y) * dhf;
-            precise float keep = 1.0 - fuse_tm_saturate(sqrt(ddx * ddx + ddy * ddy) / f.velocityRejectionPx);
+            precise float dd2 = ddx * ddx + ddy * ddy;
+            precise float keep = 1.0 - fuse_tm_saturate(fuse_div_rn(fuse_sqrt_rn(dd2), f.velocityRejectionPx));
             historyW *= keep;
         }
         // 3c. Reactive mask.
@@ -371,29 +385,31 @@ void main() {
         const vec3 historyY = fuse_tm_rgb_to_ycocg(history);
         precise vec3 mean = m1 * (1.0 / 9.0);
         precise vec3 var = m2 * (1.0 / 9.0) - mean * mean;
-        precise vec3 sigma = vec3(sqrt(max(0.0, var.x)), sqrt(max(0.0, var.y)), sqrt(max(0.0, var.z)));
+        const vec3 sigma = vec3(fuse_sqrt_rn(max(0.0, var.x)), fuse_sqrt_rn(max(0.0, var.y)), fuse_sqrt_rn(max(0.0, var.z)));
         precise vec3 lowBox = mean - sigma * f.clampGamma;
         precise vec3 highBox = mean + sigma * f.clampGamma;
         vec3 boxMin = max(nMin, lowBox);
         vec3 boxMax = min(nMax, highBox);
         boxMin = min(min(boxMin, boxMax), currentY);
         boxMax = max(max(boxMin, boxMax), currentY);
-        precise float motionPx = sqrt(mvx * mvx + mvy * mvy);
-        precise float motionClip = motionPx / max(1e-4, f.clipFullMotionPx);
+        precise float mp2 = mvx * mvx + mvy * mvy;
+        const float motionPx = fuse_sqrt_rn(mp2);
+        const float motionClip = fuse_div_rn(motionPx, max(1e-4, f.clipFullMotionPx));
         precise float transparencyTerm = transparency * f.transparencyClip;
         const float clipStrength = max(max(fuse_tm_saturate(f.staticClipStrength), fuse_tm_saturate(motionClip)),
                                        max(reactive > 0.0 ? 1.0 : 0.0, fuse_tm_saturate(transparencyTerm)));
         const vec3 clipped = fuse_tm_clip_to_aabb(historyY, boxMin, boxMax);
         const vec3 clippedHistory = fuse_tm_lerp3(historyY, clipped, clipStrength);
         // 5. Accumulate.
-        precise float alpha = confidence / (historyW + confidence);
+        precise float ad = historyW + confidence;
+        const float alpha = fuse_div_rn(confidence, ad);
         resolvedY = fuse_tm_lerp3(clippedHistory, currentY, alpha);
     }
     const vec3 resolved = fuse_tm_sanitize(fuse_tm_ycocg_to_rgb(resolvedY));
     precise float newWSum = historyW + confidence;
     const float newW = min(newWSum, f.maxAccumulation);
     FuseTmVec4Ref(f.historyOut).v[di] = vec4(resolved, newW);
-    precise float invE = 1.0 / e;
+    const float invE = fuse_div_rn(1.0, e);
     precise vec3 outColor = resolved * invE;
     imageStore(fuse_tm_out_images[fuse_handle_index(f.output_)], ivec2(int(x), int(y)), vec4(outColor, 1.0));
     if (pc.out_ != 0ul) {

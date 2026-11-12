@@ -42,14 +42,34 @@ if(TARGET fuse_hybrid AND FUSE_BUILD_VULKAN)
     target_compile_definitions(fuse_runtime_smoke PRIVATE FUSE_SMOKE_HAS_HYBRID=1)
 endif()
 if(TARGET fuse_hybrid AND FUSE_VULKAN_BACKEND AND NOT CMAKE_CROSSCOMPILING
-   AND EXISTS "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
+   AND EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
     add_test(NAME fuse_runtime_smoke
-             COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh"
+             COMMAND ${FUSE_VULKAN_TEST_LAUNCHER}
                      $<TARGET_FILE:fuse_runtime_smoke> --gpu-frame)
     set_tests_properties(fuse_runtime_smoke PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" RUN_SERIAL TRUE)
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}" RUN_SERIAL TRUE)
 else()
     add_test(NAME fuse_runtime_smoke COMMAND fuse_runtime_smoke)
+endif()
+
+# B7.10 "Engine boots ... scene loads, physics runs, audio plays in < 3 seconds": `--boot-budget-ms` times
+# process start -> engine boot (core, jobs, VFS, scripts, renderer, GPU frame) -> .fuselevel load -> 30
+# physics steps -> a tone through the audio mixer, and fails over the budget. The editor is not in this
+# process. Label "perf": the 3 s budget is for the reference workstation (ThinkStation P920 + RTX 3090).
+if(TARGET fuse_audio AND FUSE_BUILD_PROJECT)
+    target_link_libraries(fuse_runtime_smoke PRIVATE fuse_audio)
+    target_compile_definitions(fuse_runtime_smoke PRIVATE FUSE_SMOKE_HAS_BOOT_SCENE=1)
+    if(TARGET fuse_hybrid AND FUSE_VULKAN_BACKEND AND NOT CMAKE_CROSSCOMPILING
+       AND EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
+        add_test(NAME fuse_runtime_boot_time
+                 COMMAND ${FUSE_VULKAN_TEST_LAUNCHER}
+                         $<TARGET_FILE:fuse_runtime_smoke> --gpu-frame --boot-budget-ms 3000)
+        set_tests_properties(fuse_runtime_boot_time PROPERTIES
+            ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}" RUN_SERIAL TRUE LABELS "perf")
+    else()
+        add_test(NAME fuse_runtime_boot_time COMMAND fuse_runtime_smoke --boot-budget-ms 3000)
+        set_tests_properties(fuse_runtime_boot_time PROPERTIES LABELS "perf")
+    endif()
 endif()
 
 if(COMMAND fuse_shipping_assert_runtime_targets)
@@ -79,8 +99,8 @@ if(TARGET fuse_hybrid AND TARGET fuse_scene AND TARGET fuse_animation AND TARGET
         endif()
     endif()
     set(_fuse_steady_cmd fuse_runtime_steady_state_alloc)
-    if(FUSE_BUILD_VULKAN AND EXISTS "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
-        set(_fuse_steady_cmd "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh"
+    if(FUSE_BUILD_VULKAN AND EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
+        set(_fuse_steady_cmd ${FUSE_VULKAN_TEST_LAUNCHER}
             $<TARGET_FILE:fuse_runtime_steady_state_alloc>)
     endif()
     add_test(NAME fuse_runtime_steady_state_alloc COMMAND ${_fuse_steady_cmd})

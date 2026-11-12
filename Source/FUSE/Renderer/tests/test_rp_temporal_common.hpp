@@ -134,10 +134,12 @@ struct Analytic {
 };
 
 /// The exact point of triangle `v` (object space, decoded f32 vertices) that the pixel centre (x, y) sees under
-/// `draw` (the rasterised matrix), and its motion under the unjittered matrices, all in f64.
+/// `draw` (the rasterised matrix), and its motion under the unjittered matrices, all in f64. `prevV` (skinned
+/// triangles): the vertices' previous object-space positions; the previous point is then sum b_i prevV_i (the same
+/// surface point of the deforming triangle) instead of the current one.
 inline Analytic analyticMotion(const f32 draw[16], const f32 vp[16], const f32 prevVp[16], const f32 prevDraw[16],
                                const GpuTransform& cur, const GpuTransform& prev, const f32 v[3][3], u32 x, u32 y, u32 w,
-                               u32 h) {
+                               u32 h, const f64 (*prevV)[3] = nullptr) {
     Analytic a;
     D4 c[3];
     f64 obj[3][3];
@@ -165,12 +167,14 @@ inline Analytic analyticMotion(const f32 draw[16], const f32 vp[16], const f32 p
     }
     const f64 b[3] = {e0 / s, e1 / s, e2 / s};
     f64 p[3];
+    f64 pp[3];
     for (u32 i = 0; i < 3u; ++i) {
         p[i] = b[0] * obj[0][i] + b[1] * obj[1][i] + b[2] * obj[2][i];
+        pp[i] = prevV != nullptr ? b[0] * prevV[0][i] + b[1] * prevV[1][i] + b[2] * prevV[2][i] : p[i];
     }
     f64 wc[3], wpv[3];
     worldOf(cur, p, wc);
-    worldOf(prev, p, wpv);
+    worldOf(prev, pp, wpv);
     const D4 cc = clipOf(vp, wc);
     const D4 pc = clipOf(prevVp, wpv);
     const D4 pd = clipOf(prevDraw, wpv);

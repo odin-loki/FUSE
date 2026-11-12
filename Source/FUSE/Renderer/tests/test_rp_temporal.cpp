@@ -5,12 +5,16 @@
 //                      JITTERED matrix (jitter_view_proj, Halton), then "temporal.motion" and the TAAU chain
 //                      ("taau.resolve" + "taau.keep" fed by the motion pass's buffers and a render-resolution
 //                      colour image). Scene: 4 meshlet meshes (sphere, torus, 2-submesh box, ground plane) x 121
-//                      instances (mirrored / squashed ones; a third of them move and rotate every frame), a moving
-//                      and turning camera, 7 frames at 192 x 144. Checked every frame >= 1, for each kernel
-//                      language built (Slang, GLSL):
+//                      instances (mirrored / squashed ones; a third of them move and rotate every frame) + 12 GPU-
+//                      SKINNED instances (skinning/skinning_gpu.hpp "skin.lbs": sphere 4-bone and torus 6-bone chains
+//                      bending every frame, a third of them also moving rigidly; their per-instance GpuMesh rows carry
+//                      the current + previous skinned positions), a moving and turning camera, 7 frames at 192 x 144.
+//                      Checked every frame >= 1, for each kernel language built (Slang, GLSL):
 //                        analytic   every covered pixel: GPU motion vs the f64 reprojection of the exact point the
 //                                   pixel centre sees (the read-back triangle under the draw matrix) < 1e-3 px,
-//                                   static and moving instances reported separately; sky pixels vs the f64
+//                                   static, moving and skinned instances reported separately (skinned: the
+//                                   previous point = the same barycentric combination of the vertices' f64 LBS
+//                                   under the previous palette); sky pixels vs the f64
 //                                   rotation-only reprojection < 1e-3 px; depth == f64 clip w (1e-5 relative)
 //                        reference  GPU motion / depth == the CPU kernel "temporal_motion" on the read-back
 //                                   visibility image (1e-4 px, 1e-6 relative)
@@ -28,10 +32,14 @@
 //
 // TAAU tolerance (GPU vs CPU kernel), per value e = |gpu - cpu| / max(1, |cpu|) over output RGB and history RGB + w:
 //   bulk      e <= 2e-5 for all but 0.1% of the values. The twins execute the same operations in the same order
-//             without contraction and Lavapipe rounds add / mul / div / sqrt / floor like the CPU, so the one
-//             source of difference is sin() in the Lanczos-2 weights (Vulkan allows 2^-11 absolute; llvmpipe's
-//             polynomial is ~1e-7): a weight error dw moves the resolve by <= dw * colour range / sum(w), and the
+//             without contraction, and add / mul / floor round like the CPU on every device; division and sqrt
+//             go through fuse_div_rn / fuse_sqrt_rn (common/exact_math.glsl: correctly rounded even where OpFDiv uses its
+//             2.5 ulp, e.g. NVIDIA, where a 1-ulp quotient switched floor() texels and rejection tests: history
+//             errors up to 5.7e-3 before), so the one source of difference is sin() in the Lanczos-2 weights
+//             (Vulkan allows 2^-11 absolute; llvmpipe's polynomial is ~1e-7, RTX 3090 measured worst 1.7e-4 on
+//             0.0044% of the values): a weight error dw moves the resolve by <= dw * colour range / sum(w), and the
 //             history blend is a contraction, so values stay within a few ulps of the HDR range (measured ~2e-6).
+//             The motion pass ("reference" below) is exact on every device for the same reason.
 //   outliers  worst e <= 2e-3. clip_to_aabb divides the history offset by the YCoCg box extent, floored at 1e-6:
 //             in smooth regions the 3x3 box is almost flat, so the clip factor 1 / maxUnit amplifies a 1e-7 history
 //             difference by up to ~1 / extent. That is the kernel's own conditioning, not a twin mismatch: it touches
@@ -39,6 +47,7 @@
 //             none, worst 1.7e-6), and the next frames contract it again.
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
 #include "test_rp_material_resolve_scene.hpp"
+#include "test_rp_skinning_common.hpp"
 #include "test_rp_temporal_common.hpp"
 
 #include <fuse/compute_kernel/launch.hpp>
@@ -47,6 +56,7 @@
 #include <fuse/renderer/material_resolve/resolve_reference.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
+#include <fuse/renderer/skinning/skinning_gpu.hpp>
 #include <fuse/renderer/taa/taau.hpp>
 #include <fuse/renderer/temporal/motion_kernel.hpp>
 #include <fuse/renderer/temporal/taau_gpu.hpp>
@@ -74,6 +84,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------------
@@ -152,6 +163,7 @@ using namespace fuse::renderer;
 using namespace fuse::renderer::culling;
 using namespace fuse::renderer::gpu_scene;
 using namespace fuse::renderer::material_resolve;
+using namespace fuse::renderer::skinning;
 using namespace fuse::renderer::temporal;
 using namespace fuse::renderer::visbuffer;
 using fuse::f32;
@@ -276,8 +288,7 @@ int setup(Context& ctx, bool descriptorBuffer, bool validation) {
             return kSkip;
         }
         setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         setenv("VK_INSTANCE_LAYERS", "", 1);
@@ -549,7 +560,16 @@ struct Scene {
     std::vector<InstanceHandle> handles;
     std::vector<u32> movers;
     std::vector<f32> moverYaw;
+    // GPU skinning: kSkinned instances of the sphere (4 bones) and the torus (6 bones).
+    SkinningGpu skin;
+    std::vector<sk_test::SkinMesh> skinMeshes;
+    std::vector<u32> skinBase;  ///< per skinned instance: 0 sphere / 1 torus
+    std::vector<f32> skinPhase;
+    std::vector<f32> paletteScratch;
 };
+
+constexpr u32 kSkinned = 12;
+constexpr f32 kSkinAmplitude = 0.22f;
 
 void beginSceneFrame(Context& ctx, Scene& s) {
     ++ctx.serial;
@@ -600,9 +620,73 @@ bool buildScene(Context& ctx, Scene& s) {
             s.moverYaw.push_back(yaw);
         }
     }
+    // Skinned instances in front of the camera; every third one also moves rigidly.
+    SkinningGpuDesc sd{};
+    sd.device = ctx.device.get();
+    sd.allocator = ctx.allocator.get();
+    sd.upload = &ctx.upload;
+    sd.maxRestVertices = s.meshes[0].vertex_count() + s.meshes[1].vertex_count();
+    sd.maxOutputVertices = kSkinned * std::max(s.meshes[0].vertex_count(), s.meshes[1].vertex_count());
+    sd.maxInstances = kSkinned;
+    sd.maxPaletteBones = kSkinned * 6u;
+    if (!s.skin.init(sd)) {
+        std::fprintf(stderr, "FAIL: SkinningGpu init\n");
+        return false;
+    }
+    s.skin.attach(s.gpu);
+    u32 skinIds[2] = {0u, 0u};
+    for (u32 b = 0; b < 2u; ++b) {
+        s.skinMeshes.push_back(sk_test::makeSkinMesh(s.meshes[b], s.gpu.mesh(b), b == 0u ? 4u : 6u));
+        const sk_test::SkinMesh& sm = s.skinMeshes.back();
+        SkinMeshDesc md{};
+        md.restPositions = sm.positions.data();
+        md.restNormals = sm.normals.data();
+        md.handedness = sm.handedness.data();
+        md.weights = sm.weights.data();
+        md.vertexCount = sm.vertexCount;
+        skinIds[b] = s.skin.addMesh(md);
+        if (skinIds[b] == kInvalidSkin) {
+            return false;
+        }
+    }
+    s.paletteScratch.resize(6u * 16u);
+    for (u32 k = 0; k < kSkinned; ++k) {
+        const u32 b = k % 2u;
+        InstanceDesc id{};
+        id.mesh = b;
+        const f32 yaw = 0.7f * static_cast<f32>(k);
+        id.transform = tm_test::place(-3.5f + 0.65f * static_cast<f32>(k), -0.4f + 0.25f * static_cast<f32>(k % 3u),
+                                      -6.f - 0.6f * static_cast<f32>(k), 0.8f, 0.8f, 0.8f, yaw, 0.25f);
+        const InstanceHandle h = s.gpu.addInstance(id);
+        s.handles.push_back(h);
+        SkinInstanceDesc si{};
+        si.instance = h;
+        si.mesh = skinIds[b];
+        si.baseMeshRow = b;
+        si.boneCount = s.skinMeshes[b].bones;
+        si.boundsScale = 2.5f;
+        if (s.skin.addInstance(s.gpu, si) != k) {
+            return false;
+        }
+        s.skinBase.push_back(b);
+        s.skinPhase.push_back(0.9f * static_cast<f32>(k));
+        if (k % 3u == 2u) {
+            s.movers.push_back(static_cast<u32>(s.handles.size() - 1u));
+            s.moverYaw.push_back(yaw);
+        }
+    }
     const GpuSceneCommitStats stats = s.gpu.commit();
     ctx.upload.flush();
     return stats.ok && ctx.upload.waitAll();
+}
+
+/// This frame's palette of every skinned instance (no allocation: the scratch palette is reused).
+void animateSkin(Scene& s, u32 frame) {
+    for (u32 k = 0; k < s.skinBase.size(); ++k) {
+        const sk_test::SkinMesh& sm = s.skinMeshes[s.skinBase[k]];
+        sk_test::palette(sm, 0.5f * static_cast<f32>(frame), s.skinPhase[k], kSkinAmplitude, s.paletteScratch.data());
+        s.skin.setPose(k, s.paletteScratch.data(), sm.bones);
+    }
 }
 
 /// Moves (translation), turns (yaw) and rescales every `step`-th mover.
@@ -751,10 +835,10 @@ void destroyRig(Context& ctx, Rig& rig) {
 
 /// Byte layout of the motion-mode readback buffer.
 struct MotionReadback {
-    u64 vis = 0, motion = 0, depth = 0, dump = 0, history = 0, end = 0;
+    u64 vis = 0, motion = 0, depth = 0, dump = 0, history = 0, skin = 0, skinBytes = 0, end = 0;
 };
 
-MotionReadback motionLayout(const UpscaleResolution& res) {
+MotionReadback motionLayout(const UpscaleResolution& res, u64 skinBytes = 0) {
     MotionReadback l{};
     u64 cursor = 0;
     auto take = [&](u64 bytes) {
@@ -768,6 +852,8 @@ MotionReadback motionLayout(const UpscaleResolution& res) {
     l.depth = take(kPixels * 4ull);
     l.dump = take(dn * 16u);
     l.history = take(dn * 16u);
+    l.skinBytes = skinBytes;
+    l.skin = take(skinBytes);
     l.end = cursor;
     return l;
 }
@@ -788,6 +874,7 @@ bool beginFrame(Context& ctx, Scene& s, Rig& rig, FrameState& fs, u32 frame, boo
     cf.instanceCount = s.gpu.instanceHighWater();
     bool ok = rig.culler.beginFrame(ctx.serial, cf);
     ok = rig.vb.beginFrame(ctx.serial, draw, s.gpu.headerHandle(), s.gpu.instanceHighWater()) && ok;
+    ok = s.skin.beginFrame(ctx.serial) && ok;
     MotionFrameDesc mf{};
     std::memcpy(mf.viewProj, fs.vp.m, sizeof(mf.viewProj));
     std::memcpy(mf.prevViewProj, fs.prevVp.m, sizeof(mf.prevViewProj));
@@ -814,6 +901,7 @@ void buildGraph(Scene& s, Rig& rig, rg::Graph& graph, FrameState& fs, HostBuffer
     graph.reset();
     fs.copies.reset();
     const GpuSceneGraphRefs sceneRefs = s.gpu.importInto(graph);
+    s.skin.addSkinning(graph, sceneRefs); // before every scene reader (cull, vis, motion)
     const CullGraphRefs cull = rig.culler.importInto(graph);
     const VisGraphRefs vis = rig.vb.importInto(graph);
     rig.vb.addCulledFrame(graph, vis, sceneRefs, s.gpu.headerHandle(), rig.culler, cull);
@@ -836,6 +924,9 @@ void buildGraph(Scene& s, Rig& rig, rg::Graph& graph, FrameState& fs, HostBuffer
     fs.copies.add(graph, CopyRecord::Buffer, {}, m.motion, rb, layout.motion, kPixels * 8ull);
     fs.copies.add(graph, CopyRecord::Buffer, {}, m.depth, rb, layout.depth, kPixels * 4ull);
     fs.copies.add(graph, CopyRecord::Buffer, {}, t.history[written], rb, layout.history, dn * 16u);
+    if (layout.skinBytes > 0u && sceneRefs.dynamicGeometry.valid()) {
+        fs.copies.add(graph, CopyRecord::Buffer, {}, sceneRefs.dynamicGeometry, rb, layout.skin, layout.skinBytes);
+    }
     graph.addPass("readback.host", nullptr, nullptr).use(rb, rg::Access::HostRead);
 }
 
@@ -848,8 +939,9 @@ void collect(Context& ctx, Scene& s, Rig& rig) {
 
 // --- motion mode ---------------------------------------------------------------------------------------
 struct MotionReport {
-    u32 staticPx = 0, movingPx = 0, skyPx = 0;
-    f64 staticErr = 0, movingErr = 0, skyErr = 0, depthErr = 0;
+    u32 staticPx = 0, movingPx = 0, skyPx = 0, skinnedPx = 0, skinnedMovingPx = 0;
+    f64 staticErr = 0, movingErr = 0, skyErr = 0, depthErr = 0, skinnedErr = 0;
+    f64 skinnedMotionPx = 0; ///< largest skinned motion seen (the case is not trivially static)
     f64 kernelErr = 0, kernelDepthErr = 0;
     f64 naiveErr = 0;
     Diff taauOut{}, taauHistory{};
@@ -866,6 +958,16 @@ void analyseMotion(Context& ctx, Scene& s, Rig& rig, const FrameState& fs, const
     std::vector<visbuffer::decode_kernel::MeshPositions> positions;
     for (const resolve_kernel::MeshStreams& st : s.streams) {
         positions.push_back({st.vpos, st.vertexCount});
+    }
+    // Skinned rows: the read-back skin.lbs output (current then previous f32 x 4 positions).
+    const f32* skinOut = reinterpret_cast<const f32*>(rb + layout.skin);
+    std::vector<u32> skinOfRow(view.meshes.size, ~0u);
+    for (u32 k = 0; k < s.skin.instanceCount(); ++k) {
+        while (positions.size() <= s.skin.meshRow(k)) {
+            positions.push_back({});
+        }
+        positions[s.skin.meshRow(k)] = {nullptr, s.skin.vertexCount(k), skinOut + s.skin.outputOffset(k) / sizeof(f32)};
+        skinOfRow[s.skin.meshRow(k)] = k;
     }
     // CPU reference kernel on the read-back visibility image.
     std::vector<fuse::math::Vec2> cm(kPixels);
@@ -911,15 +1013,21 @@ void analyseMotion(Context& ctx, Scene& s, Rig& rig, const FrameState& fs, const
             }
             const GpuInstance& gi = view.instances[inst];
             const GpuMesh& mesh = view.meshes[gi.mesh];
+            const u32 skinK = skinOfRow[gi.mesh];
             f32 v[3][3];
+            f64 pv[3][3];
             for (u32 k = 0; k < 3u; ++k) {
                 const u32 vi = static_cast<u32>(static_cast<fuse::s32>(view.indices[mesh.firstIndex + vis[i * 2u + 1u] * 3u + k]) +
                                                 mesh.vertexOffset);
-                visbuffer::decode_kernel::mesh_position(mesh, s.streams[gi.mesh].vpos, vi, v[k]);
+                visbuffer::decode_kernel::mesh_position(mesh, positions[gi.mesh], vi, v[k]);
+                if (skinK != ~0u) {
+                    sk_test::skinF64(s.skinMeshes[s.skinBase[skinK]], s.skin.previousPalette(skinK), vi, pv[k]);
+                }
             }
             const GpuTransform& ct = view.transforms[inst];
             const GpuTransform& pt = view.prevTransforms[inst];
-            const tm_test::Analytic a = tm_test::analyticMotion(draw, fs.vp.m, fs.prevVp.m, prevDraw, ct, pt, v, x, y, kWidth, kHeight);
+            const tm_test::Analytic a = tm_test::analyticMotion(draw, fs.vp.m, fs.prevVp.m, prevDraw, ct, pt, v, x, y, kWidth, kHeight,
+                                                                skinK != ~0u ? pv : nullptr);
             if (!a.ok) {
                 ++r.statusMismatch;
                 continue;
@@ -927,7 +1035,18 @@ void analyseMotion(Context& ctx, Scene& s, Rig& rig, const FrameState& fs, const
             const f64 err = std::max(std::fabs(gm[i * 2u] * static_cast<f64>(kWidth) - a.motionPx[0]),
                                      std::fabs(gm[i * 2u + 1u] * static_cast<f64>(kHeight) - a.motionPx[1]));
             const bool moving = std::memcmp(&ct, &pt, sizeof(GpuTransform)) != 0;
-            if (moving) {
+            if (skinK != ~0u) {
+                r.skinnedErr = std::max(r.skinnedErr, err);
+                ++r.skinnedPx;
+                r.skinnedMovingPx += moving ? 1u : 0u;
+                // Skinned part of the motion: the analytic motion minus that of a rigid point (no deformation).
+                const tm_test::Analytic rigid =
+                    tm_test::analyticMotion(draw, fs.vp.m, fs.prevVp.m, prevDraw, ct, pt, v, x, y, kWidth, kHeight);
+                if (rigid.ok) {
+                    r.skinnedMotionPx = std::max({r.skinnedMotionPx, std::fabs(a.motionPx[0] - rigid.motionPx[0]),
+                                                  std::fabs(a.motionPx[1] - rigid.motionPx[1])});
+                }
+            } else if (moving) {
                 r.movingErr = std::max(r.movingErr, err);
                 ++r.movingPx;
             } else {
@@ -982,7 +1101,7 @@ int runMotion(Context& ctx) {
             std::fprintf(stderr, "FAIL: scene\n");
             return 1;
         }
-        const MotionReadback layout = motionLayout(rig.res);
+        const MotionReadback layout = motionLayout(rig.res, s.skin.outputBuffer().desc.size);
         HostBuffer readback;
         if (!readback.create(ctx, layout.end,
                              bufferUsage({BufferUsage::TransferDst, BufferUsage::Storage, BufferUsage::ShaderDeviceAddress}),
@@ -1000,6 +1119,7 @@ int runMotion(Context& ctx) {
             if (frame > 0u) {
                 moveObjects(s, frame, 1u);
             }
+            animateSkin(s, frame);
             const GpuSceneCommitStats stats = s.gpu.commit();
             ctx.upload.flush();
             fs.prevVp = frame > 0u ? frameViewProj(frame - 1u) : frameViewProj(0u);
@@ -1025,14 +1145,20 @@ int runMotion(Context& ctx) {
                 analyseMotion(ctx, s, rig, fs, rb, layout, r);
             }
             analyseChain(cpu, rig, fs, frame, reset, rb, layout, r);
-            std::printf("  [%s] frame %u: static %u px max %.2e, moving %u px max %.2e, sky %u px max %.2e (px); depth %.1e; "
+            std::printf("  [%s] frame %u: static %u px max %.2e, moving %u px max %.2e, skinned %u px (%u also moving) max %.2e "
+                        "(skinned part up to %.2f px), sky %u px max %.2e (px); depth %.1e; "
                         "vs CPU kernel %.1e px / %.1e; no-jitter control %.3f px; TAAU out %.1e history %.1e%s\n",
-                        rig.language, frame, r.staticPx, r.staticErr, r.movingPx, r.movingErr, r.skyPx, r.skyErr, r.depthErr,
+                        rig.language, frame, r.staticPx, r.staticErr, r.movingPx, r.movingErr, r.skinnedPx, r.skinnedMovingPx,
+                        r.skinnedErr, r.skinnedMotionPx, r.skyPx, r.skyErr, r.depthErr,
                         r.kernelErr, r.kernelDepthErr, r.naiveErr, r.taauOut.worst, r.taauHistory.worst,
                         rig.taau.stats().historyUsed ? "" : " (no history)");
             total.staticPx += r.staticPx;
             total.movingPx += r.movingPx;
             total.skyPx += r.skyPx;
+            total.skinnedPx += r.skinnedPx;
+            total.skinnedMovingPx += r.skinnedMovingPx;
+            total.skinnedErr = std::max(total.skinnedErr, r.skinnedErr);
+            total.skinnedMotionPx = std::max(total.skinnedMotionPx, r.skinnedMotionPx);
             total.statusMismatch += r.statusMismatch;
             total.staticErr = std::max(total.staticErr, r.staticErr);
             total.movingErr = std::max(total.movingErr, r.movingErr);
@@ -1046,6 +1172,9 @@ int runMotion(Context& ctx) {
                 expect(r.naiveErr > 0.05, "negative control: motion without jitter handling fails the gate");
             }
         }
+        std::printf("[%s] skinned: %u px (%u on rigidly moving instances) max %.3g px analytic error, skinned motion up to "
+                    "%.2f px\n",
+                    rig.language, total.skinnedPx, total.skinnedMovingPx, total.skinnedErr, total.skinnedMotionPx);
         std::printf("[%s] %u frames: analytic static %u px max %.3g px, moving %u px max %.3g px, sky %u px max %.3g px, "
                     "depth rel %.2g; GPU vs CPU kernel %.2g px, depth %.2g; TAAU chain output max %.2g (%.2g%% > %.0e) history "
                     "max %.2g (%.2g%%)\n",
@@ -1054,6 +1183,9 @@ int runMotion(Context& ctx) {
                     100.0 * total.taauOut.fractionAbove(), kTolTaauBulk, total.taauHistory.worst,
                     100.0 * total.taauHistory.fractionAbove());
         expect(total.staticPx > 20000u && total.movingPx > 2000u && total.skyPx > 2000u, "coverage (static, moving, sky)");
+        expect(total.skinnedPx > 2000u && total.skinnedMovingPx > 200u, "coverage (skinned, skinned + moving)");
+        expect(total.skinnedMotionPx > 0.25, "skinned case deforms (skinned part of the motion > 0.25 px)");
+        expect(total.skinnedErr < kTolMotionPx, "skinned analytic reprojection error < 1e-3 px");
         expect(total.statusMismatch == 0u, "every covered pixel reconstructs");
         expect(total.staticErr < kTolMotionPx && total.movingErr < kTolMotionPx && total.skyErr < kTolMotionPx,
                "analytic reprojection error < 1e-3 px");
@@ -1062,6 +1194,7 @@ int runMotion(Context& ctx) {
         expect(taauWithin(total.taauOut) && taauWithin(total.taauHistory), "TAAU chain == CPU TaauUpscaler within tolerance");
         expect(rig.motion.stats().skyValid, "sky reprojection valid");
         readback.destroy(ctx);
+        s.skin.destroy();
         s.gpu.destroy();
         destroyRig(ctx, rig);
     }
@@ -1265,7 +1398,8 @@ thread_local bool t_inPass = false;
 
 void hookBegin(const rg::PassContext&, const char* name, void*) {
     if (name != nullptr && (std::strncmp(name, "temporal.", 9) == 0 || std::strncmp(name, "taau.", 5) == 0 ||
-                            std::strncmp(name, "vis.", 4) == 0 || std::strncmp(name, "cull.", 5) == 0)) {
+                            std::strncmp(name, "vis.", 4) == 0 || std::strncmp(name, "cull.", 5) == 0 ||
+                            std::strncmp(name, "skin.", 5) == 0)) {
         t_inPass = true;
         t_count = true;
     }
@@ -1308,6 +1442,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
         const bool measure = countAllocations && frame >= kWarmup;
         beginSceneFrame(ctx, s);
         moveObjects(s, frame, 10u);
+        t_count = measure;
+        animateSkin(s, frame);
+        t_count = false;
         s.gpu.commit();
         ctx.upload.flush();
         fs.prevVp = frameViewProj(frame == 0u ? 0u : (frame - 1u) % 5u);
@@ -1350,6 +1487,7 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
     } else {
         std::printf("zero_alloc frames under validation + sync validation: %u frames ok\n", kTotal);
     }
+    s.skin.destroy();
     s.gpu.destroy();
     destroyRig(ctx, rig);
     return 0;

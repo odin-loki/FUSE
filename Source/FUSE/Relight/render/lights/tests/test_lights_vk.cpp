@@ -40,6 +40,7 @@
 #include <fuse/renderer/vk/instance.hpp>
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -53,6 +54,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------
@@ -302,8 +304,7 @@ int setup(Context& ctx, Validation validation) {
             return kSkip;
         }
         setEnv("VK_INSTANCE_LAYERS", kValidationLayer);
-        setEnv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT");
-        setEnv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true");
+        fuse::renderer::test::enableSyncValidationEnv();
         setEnv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK");
     } else if (validation == Validation::Off) {
         setEnv("VK_INSTANCE_LAYERS", "");
@@ -624,6 +625,12 @@ float relErr(float a, float b) {
     if (!std::isfinite(a) || !std::isfinite(b)) {
         return 1e30f;
     }
+    // The GPU converts with its float cos (FUSE_RL_STABLE_COS; the CPU rounds a double cos once): cosCone and the
+    // spot softness (a difference of two cosines) carry its absolute error, a few ulp of 1.0 on NVIDIA. Differences
+    // that small are not conversion errors, even where the softness itself is tiny.
+    if (std::fabs(a - b) <= 4.f * FLT_EPSILON) {
+        return 0.f;
+    }
     return std::fabs(a - b) / std::max(std::fabs(b), 1e-3f);
 }
 
@@ -768,9 +775,9 @@ int runParity(Context& ctx, const std::string& language) {
         Scene big = makeScene(1500, 24, 2);
         steps.push_back({"rebuild (large)", runFrame(ctx, gpu, graph, set, big, rng)});
         check(gpu.stats().reallocations > reallocBefore, "the larger set reallocates the ring");
-        Scene small = makeScene(10, 2, 3);
-        small.fallback = false;
-        steps.push_back({"rebuild (small)", runFrame(ctx, gpu, graph, set, small, rng)});
+        Scene smallScene = makeScene(10, 2, 3);
+        smallScene.fallback = false;
+        steps.push_back({"rebuild (small)", runFrame(ctx, gpu, graph, set, smallScene, rng)});
         std::printf("%s kernels, %u queries per frame:\n", gpu.kernelLanguage(), kQueries);
         for (const Step& s : steps) {
             const FrameReport& r = s.rep;

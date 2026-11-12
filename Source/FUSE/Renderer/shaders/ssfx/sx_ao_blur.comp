@@ -1,0 +1,77 @@
+#version 460
+// "ssfx.ao_blur" (SsfxGpuSettings::aoBlur): cross-bilateral 5 x 5 blur of the GTAO visibility -> the aoBlurred section.
+// Line-for-line twin of the B5 HBAO blur fuse::compute::screen_space_kernels::ao_blur::Kernel ("screen_space_ao_blur",
+// Compute/include/fuse/compute/screen_space_kernels.hpp): each neighbour's distance from the centre's tangent plane
+// relative to the centre depth and the normal dot product weight it (ao_blur::weight); sky pixels pass through.
+// GLSL twin of sx_ao_blur.slang.
+#extension GL_GOOGLE_include_directive : require
+#define SX_VIEW_HELPERS
+#include "sx_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// ao_blur::weight(0, planeDelta, 1, normalSimilarity, {true, aoBlurDepth, aoBlurNormal}).
+float sx_blur_weight(float planeDelta, float normalSimilarity) {
+    const float depthDelta = abs(0.0 - planeDelta);
+    if (depthDelta > F.aoBlurDepth) {
+        return 0.0;
+    }
+    if (normalSimilarity < F.aoBlurNormal) {
+        return 0.0;
+    }
+    const float dw = fuse_div_rn(depthDelta, max(F.aoBlurDepth, 1e-6));
+    precise float depthWeight = 1.0 - dw;
+    precise float ns = normalSimilarity - F.aoBlurNormal;
+    precise float nd = 1.0 - F.aoBlurNormal;
+    const float normalWeight = fuse_div_rn(ns, max(nd, 1e-6));
+    precise float w = depthWeight * normalWeight;
+    return sx_clamp(w, 0.0, 1.0);
+}
+
+// sum += wgt x raw, total += wgt for neighbour (nx, ny).
+vec2 sx_blur_accumulate(vec2 acc, vec3 cp, vec3 cn, float cz, uint nx, uint ny, float rawN) {
+    const vec3 np = sx_position_at(nx, ny);
+    const vec3 nn = sx_normalize(sx_normal_at(nx, ny));
+    const float planeDelta = fuse_div_rn(abs(sx_dot(cn, sx_sub(np, cp))), cz);
+    const float wgt = sx_blur_weight(planeDelta, sx_dot(cn, nn));
+    precise float add = wgt * rawN;
+    precise float sum = acc.x + add;
+    precise float total = acc.y + wgt;
+    return vec2(sum, total);
+}
+
+void main() {
+    sx_begin();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint ci = sx_index(p.x, p.y);
+    const float cz = sx_depth_at(p.x, p.y);
+    if (cz <= 0.0) {
+        SxFloatsRef(F.aoBlurred).v[ci] = SxFloatsRef(F.ao).v[ci];
+        return;
+    }
+    const vec3 cp = sx_position_at(p.x, p.y);
+    const vec3 cn = sx_normalize(sx_normal_at(p.x, p.y));
+    vec2 acc = vec2(SxFloatsRef(F.ao).v[ci], 1.0); // (sum, total)
+    const int w = int(F.width);
+    const int h = int(F.height);
+    // One tap per iteration of a flat loop (row-major 5 x 5, the CPU kernel's order). Buffer references are not held in
+    // local variables here: glslangValidator (SDK 1.4.357) never returns on a local reference read in a loop that also
+    // calls a function.
+    for (int t = 0; t < 25; ++t) {
+        const int dx = t % 5 - 2;
+        const int dy = t / 5 - 2;
+        const int nx = int(p.x) + dx;
+        const int ny = int(p.y) + dy;
+        if ((dx == 0 && dy == 0) || nx < 0 || ny < 0 || nx >= w || ny >= h) {
+            continue;
+        }
+        if (sx_depth_at(uint(nx), uint(ny)) <= 0.0) {
+            continue;
+        }
+        acc = sx_blur_accumulate(acc, cp, cn, cz, uint(nx), uint(ny), SxFloatsRef(F.ao).v[sx_index(uint(nx), uint(ny))]);
+    }
+    SxFloatsRef(F.aoBlurred).v[ci] = fuse_div_rn(acc.x, acc.y);
+}

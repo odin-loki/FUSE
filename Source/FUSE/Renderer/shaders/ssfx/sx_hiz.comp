@@ -1,0 +1,43 @@
+#version 460
+// "ssfx.hiz" (kSsfxFlagHiz): one level of the min-depth pyramid the Hi-Z SSR march skips with (sx_trace.glsl). Level
+// pc.mode >= 1: each texel = the minimum of the (up to) 2 x 2 texels of the level below it covers; level 0 = the
+// prepared linear depth with sky (<= 0) = SX_HIZ_SKY. Twin of ssfx_gpu::hiz_texel / hiz_depth (ssfx_gpu_reference.hpp;
+// min is exact, so the pyramid is the CPU's bit for bit). GLSL twin of sx_hiz.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "sx_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+uint sx_hiz_extent(uint extent, uint level) { return (extent + (1u << level) - 1u) >> level; }
+
+float sx_hiz_below(uint level, uint x, uint y) {
+    if (level == 0u) {
+        const float z = sx_depth_at(x, y);
+        return z > 0.0 ? z : SX_HIZ_SKY;
+    }
+    return SxFloatsRef(F.hiz).v[F.hizOffset[level] + y * sx_hiz_extent(F.width, level) + x];
+}
+
+void main() {
+    sx_begin();
+    const uint level = pc.mode;
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    const uint w = sx_hiz_extent(F.width, level);
+    const uint h = sx_hiz_extent(F.height, level);
+    if (level == 0u || level > F.hizLevels || p.x >= w || p.y >= h) {
+        return;
+    }
+    const uint bw = sx_hiz_extent(F.width, level - 1u);
+    const uint bh = sx_hiz_extent(F.height, level - 1u);
+    const uint x0 = p.x * 2u;
+    const uint y0 = p.y * 2u;
+    const uint x1 = x0 + 1u < bw ? x0 + 1u : x0;
+    const uint y1 = y0 + 1u < bh ? y0 + 1u : y0;
+    const float a = sx_hiz_below(level - 1u, x0, y0);
+    const float b = sx_hiz_below(level - 1u, x1, y0);
+    const float c = sx_hiz_below(level - 1u, x0, y1);
+    const float d = sx_hiz_below(level - 1u, x1, y1);
+    const float ab = a < b ? a : b;
+    const float cd = c < d ? c : d;
+    SxFloatsRef(F.hiz).v[F.hizOffset[level] + p.y * w + p.x] = ab < cd ? ab : cd;
+}

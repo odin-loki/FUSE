@@ -1,0 +1,220 @@
+// Gate fuse_ui_cpu_raster_bench: speed and exactness of the CPU reference rasteriser.
+//   * exact: every scene, a fuzzed mix of all primitives (rounded clips, gradients, borders, shadows, lines, glyphs in
+//     all modes, images, backdrops, effects) and scissored (incremental) renders give the same bytes as the frozen
+//     pre-optimisation copy (cpu_raster_reference.hpp), single-threaded and banded over threads
+//   * speed (median of 10 after a warm-up): 1080p "8 cards" full frame <= 20 ms, a small-change incremental frame
+//     (one button's damage) <= 2 ms; the sample and the 1440p HUD are reported, all next to the pre-change reference
+// --report (or FUSE_UI_PERF_REPORT_ONLY=1, for slow / software CI): print the times, do not fail on them.
+// --ops: also time each op kind alone (where the frame time goes).
+#include "fuse/ui/effects.hpp"
+#include "fuse/ui/game/game_ui.hpp"
+#include "cpu_raster_fuzz.hpp"
+#include "cpu_raster_reference.hpp"
+#include "test_util.hpp"
+
+#include "../Game/samples/hud_scene.hpp"
+
+#include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <cstring>
+#include <thread>
+#include <vector>
+
+using namespace fuse::ui;
+using namespace fuse::ui::test;
+
+namespace {
+void appendShifted(DrawList& out, const DrawList& src, f32 dx, f32 dy) {
+    for (DrawCmd c : src.cmds()) {
+        c.rect.x += dx;
+        c.rect.y += dy;
+        if (c.op == DrawOp::Line) {
+            c.rect.w += dx;
+            c.rect.h += dy;
+        }
+        out.push(c);
+    }
+}
+
+struct Scene {
+    const char* name;
+    int w, h;
+    const DrawList* list;
+    const u8* atlas;
+    int atlasSize;
+};
+
+struct Times {
+    double min = 0.0, median = 0.0;
+};
+template <class F> Times timeIt(F&& f, int runs = 10) {
+    f(); // warm-up (thread pool, scratch buffers)
+    std::vector<double> ms;
+    for (int i = 0; i < runs; ++i) {
+        const auto t0 = std::chrono::steady_clock::now();
+        f();
+        ms.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+    }
+    std::sort(ms.begin(), ms.end());
+    return {ms.front(), ms[ms.size() / 2]};
+}
+
+bool envOn(const char* n) {
+    const char* v = std::getenv(n);
+    return v && *v && std::strcmp(v, "0") != 0;
+}
+} // namespace
+
+int main(int argc, char** argv) {
+    bool report = envOn("FUSE_UI_PERF_REPORT_ONLY"), ops = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--report") == 0) report = true;
+        if (std::strcmp(argv[i], "--ops") == 0) ops = true;
+    }
+
+    // ---- scenes (the fuse_ui_baselines frames) ----
+    UiContext sample({.viewport = {488.f, 400.f}, .font = &font()});
+    widgets::install(sample);
+    buildSample(sample);
+    sample.update();
+    UiContext card({.viewport = {470.f, 520.f}, .font = &font()});
+    widgets::install(card);
+    buildSample(card);
+    card.update();
+    DrawList cards;
+    cards.gradientRect({0, 0, 1920.f, 1080.f}, Color::rgb(0x202838), Color::rgb(0x101018), true);
+    for (int i = 0; i < 8; ++i) appendShifted(cards, card.drawList(), f32(i % 4) * 480.f, f32(i / 4) * 540.f);
+    UiContext hud({.viewport = game::demo::kHudViewport, .font = &font()});
+    widgets::install(hud);
+    game::install(hud);
+    auto hudScene = game::demo::buildHudScene(hud);
+    hud.setScale(2560.f / game::demo::kHudViewport.w);
+    hud.update();
+    const Scene scenes[] = {
+        {"sample", 488, 400, &sample.drawList(), sample.atlas().pixels(), sample.atlas().size()},
+        {"cards-1080p", 1920, 1080, &cards, card.atlas().pixels(), card.atlas().size()},
+        {"hud-1440p", 2560, 1440, &hud.drawList(), hud.atlas().pixels(), hud.atlas().size()},
+    };
+
+    // ---- exactness against the frozen reference ----
+    EffectRegistry fx;
+    fx.addBuiltins();
+    Image imgs[2];
+    imgs[0].resize(37, 23);
+    imgs[1].resize(300, 200);
+    {
+        std::mt19937 rng(7);
+        for (Image& im : imgs)
+            for (u32& p : im.pixels) {
+                const u32 a = (rng() & 1) ? 255u : rng() & 0xFFu;
+                auto c = [&] { return u32(rng() % (a + 1)); };
+                p = c() | (c() << 8) | (c() << 16) | (a << 24);
+            }
+    }
+    auto check = [&](const char* what, const DrawList& dl, int w, int h, const u8* atlas, int atlasSize, Rect scissor,
+                     bool withImages) {
+        Image base;
+        base.resize(w, h, 0xFF000000u);
+        if (!scissor.empty()) { // incremental: render over a previous frame
+            ref::Rasterizer r0;
+            r0.m_atlas = atlas;
+            r0.m_atlasSize = atlasSize;
+            r0.m_effects = &fx;
+            if (withImages) r0.m_images = {&imgs[0], &imgs[1]};
+            r0.render(dl, base);
+        }
+        Image want = base;
+        ref::Rasterizer rr;
+        rr.m_atlas = atlas;
+        rr.m_atlasSize = atlasSize;
+        rr.m_effects = &fx;
+        if (withImages) rr.m_images = {&imgs[0], &imgs[1]};
+        rr.render(dl, want, scissor);
+        for (int threads : {1, 0, 3}) {
+            CpuRasterizer r;
+            r.setGlyphAtlas(atlas, atlasSize);
+            r.setEffects(&fx);
+            r.setThreads(threads);
+            if (withImages) {
+                r.addImage(&imgs[0]);
+                r.addImage(&imgs[1]);
+            }
+            Image got = base;
+            r.render(dl, got, scissor);
+            char label[160];
+            std::snprintf(label, sizeof label, "%s (threads %d)", what, threads);
+            UI_CHECK(same(got, want, label));
+        }
+    };
+    for (const Scene& s : scenes) {
+        check(s.name, *s.list, s.w, s.h, s.atlas, s.atlasSize, {}, false);
+        check(s.name, *s.list, s.w, s.h, s.atlas, s.atlasSize, {f32(s.w) * 0.3f, f32(s.h) * 0.2f, 157.f, 61.f}, false);
+    }
+    for (u32 seed = 1; seed <= 48; ++seed) {
+        const int w = seed % 3 == 0 ? 701 : 512, h = seed % 3 == 0 ? 333 : 384;
+        const DrawList dl = fuzzList(seed, w, h, sample.atlas().size(), 2, true);
+        char what[64];
+        std::snprintf(what, sizeof what, "fuzz %u", seed);
+        check(what, dl, w, h, sample.atlas().pixels(), sample.atlas().size(), {}, true);
+        const Rect sc{f32(seed * 7 % 200), f32(seed * 13 % 150), f32(40 + seed * 11 % 300), f32(30 + seed * 5 % 200)};
+        check(what, dl, w, h, sample.atlas().pixels(), sample.atlas().size(), sc, true);
+    }
+
+    // ---- speed ----
+    std::printf("fuse_ui_cpu_raster_bench (%u hardware threads)%s\n", std::thread::hardware_concurrency(),
+                report ? " [report only]" : "");
+    double cardsMs = 0.0, incrMs = 0.0;
+    for (const Scene& s : scenes) {
+        CpuRasterizer r;
+        r.setGlyphAtlas(s.atlas, s.atlasSize);
+        Image img;
+        img.resize(s.w, s.h, 0xFF000000u);
+        const Times full = timeIt([&] { r.render(*s.list, img); });
+        r.setThreads(1);
+        const Times one = timeIt([&] { r.render(*s.list, img); });
+        ref::Rasterizer old;
+        old.m_atlas = s.atlas;
+        old.m_atlasSize = s.atlasSize;
+        const Times before = timeIt([&] { old.render(*s.list, img); }, 4);
+        std::printf("  %-12s %4dx%-4d %5zu cmds  full %7.2f ms (min %6.2f), one thread %7.2f ms (min %6.2f); "
+                    "pre-change reference %7.2f ms (min %6.2f)\n",
+                    s.name, s.w, s.h, s.list->size(), full.median, full.min, one.median, one.min, before.median, before.min);
+        if (std::strcmp(s.name, "cards-1080p") == 0) cardsMs = full.median;
+        if (ops) {
+            for (DrawOp op : {DrawOp::Rect, DrawOp::Shadow, DrawOp::Glyph, DrawOp::Image, DrawOp::Line}) {
+                DrawList only;
+                for (const DrawCmd& c : s.list->cmds())
+                    if (c.op == op || c.op == DrawOp::PushClip || c.op == DrawOp::PopClip) only.push(c);
+                const Times t = timeIt([&] { r.render(only, img); }, 5);
+                std::printf("      op %d alone (one thread): %7.2f ms\n", int(op), t.median);
+            }
+        }
+    }
+    {
+        // small change: one button of the second card re-rendered (its damage + the redraw region rule)
+        const Rect btn = card.rect(card.find("apply"));
+        const Rect damage{btn.x + 480.f - 2.f, btn.y - 2.f, btn.w + 4.f, btn.h + 4.f};
+        const Rect region = cards.redrawRegion(damage, {0.f, 0.f, 1920.f, 1080.f});
+        CpuRasterizer r;
+        r.setGlyphAtlas(card.atlas().pixels(), card.atlas().size());
+        Image img;
+        img.resize(1920, 1080, 0xFF000000u);
+        r.render(cards, img);
+        const Times t = timeIt([&] { r.render(cards, img, region); }, 20);
+        incrMs = t.median;
+        ref::Rasterizer old;
+        old.m_atlas = card.atlas().pixels();
+        old.m_atlasSize = card.atlas().size();
+        const Times before = timeIt([&] { old.render(cards, img, region); }, 20);
+        std::printf("  incremental  %.0fx%.0f px region of cards-1080p: %.3f ms (min %.3f); pre-change reference %.3f ms "
+                    "(min %.3f)\n",
+                    region.w, region.h, t.median, t.min, before.median, before.min);
+    }
+    if (!report) {
+        UI_CHECK(cardsMs <= 20.0);
+        UI_CHECK(incrMs <= 2.0);
+    }
+    (void)hudScene;
+    return finish("fuse_ui_cpu_raster_bench");
+}

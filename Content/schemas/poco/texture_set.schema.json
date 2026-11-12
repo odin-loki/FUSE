@@ -1,0 +1,83 @@
+{
+  "$id": "fuse.poco/1/texture_set.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Kind 'texture_set' payload: one material's maps, all optional.",
+  "properties": {
+    "albedo": {
+      "oneOf": [
+        {
+          "$ref": "blob_ref.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "albedoSrgb": {
+      "type": "boolean"
+    },
+    "emissive": {
+      "oneOf": [
+        {
+          "$ref": "blob_ref.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "height": {
+      "oneOf": [
+        {
+          "$ref": "blob_ref.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "normal": {
+      "oneOf": [
+        {
+          "$ref": "blob_ref.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "normalConvention": {
+      "enum": [
+        "GL",
+        "DX"
+      ],
+      "type": "string"
+    },
+    "opacity": {
+      "oneOf": [
+        {
+          "$ref": "blob_ref.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "orm": {
+      "oneOf": [
+        {
+          "$ref": "blob_ref.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "texelsPerMetre": {
+      "type": "number"
+    }
+  },
+  "title": "texture_set",
+  "type": "object"
+}

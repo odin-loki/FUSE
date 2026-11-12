@@ -8,13 +8,21 @@ target_sources(fuse_rhi PRIVATE
 
 if(FUSE_BUILD_CORE_TESTS)
     # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-    set(_fuse_vk_followups_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+    set(_fuse_vk_followups_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
+    # Layer manifests name the library relative to the manifest. The Windows loader opens it with
+    # LoadLibraryEx(LOAD_WITH_ALTERED_SEARCH_PATH), which rejects '/' (ERROR_INVALID_PARAMETER), so
+    # the prefix is ".\" there (written JSON-escaped).
+    if(WIN32)
+        set(_fuse_layer_lib_prefix ".\\\\")
+    else()
+        set(_fuse_layer_lib_prefix "./")
+    endif()
 
     add_executable(fuse_b2_async_upload tests/test_b2_async_upload.cpp)
     target_link_libraries(fuse_b2_async_upload PRIVATE fuse_rhi)
-    add_test(NAME fuse_b2_async_upload COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_async_upload>")
+    add_test(NAME fuse_b2_async_upload COMMAND ${_fuse_vk_followups_lock} "$<TARGET_FILE:fuse_b2_async_upload>")
     set_tests_properties(fuse_b2_async_upload PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
         LABELS "gate"
     )
@@ -24,9 +32,9 @@ if(FUSE_BUILD_CORE_TESTS)
     add_executable(fuse_b2_upload_queue_alloc tests/test_b2_upload_queue_alloc.cpp)
     target_link_libraries(fuse_b2_upload_queue_alloc PRIVATE fuse_rhi)
     add_test(NAME fuse_b2_upload_queue_alloc
-             COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_upload_queue_alloc>")
+             COMMAND ${_fuse_vk_followups_lock} "$<TARGET_FILE:fuse_b2_upload_queue_alloc>")
     set_tests_properties(fuse_b2_upload_queue_alloc PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
         LABELS "gate"
     )
@@ -35,16 +43,16 @@ if(FUSE_BUILD_CORE_TESTS)
     add_executable(fuse_resource_layout_tracking tests/test_resource_layout_tracking.cpp)
     target_link_libraries(fuse_resource_layout_tracking PRIVATE fuse_rhi)
     add_test(NAME fuse_resource_layout_tracking
-             COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_resource_layout_tracking>")
+             COMMAND ${_fuse_vk_followups_lock} "$<TARGET_FILE:fuse_resource_layout_tracking>")
 
     # TaaResolve runs the CPU reference resolver when host surfaces are bound.
     add_executable(fuse_taa_cpu_resolve_wiring tests/test_taa_cpu_resolve_wiring.cpp)
     target_link_libraries(fuse_taa_cpu_resolve_wiring PRIVATE fuse_rhi)
     add_test(NAME fuse_taa_cpu_resolve_wiring
-             COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_taa_cpu_resolve_wiring>")
+             COMMAND ${_fuse_vk_followups_lock} "$<TARGET_FILE:fuse_taa_cpu_resolve_wiring>")
 
     set_tests_properties(fuse_resource_layout_tracking fuse_taa_cpu_resolve_wiring PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
     )
 
@@ -76,7 +84,7 @@ if(FUSE_BUILD_CORE_TESTS)
     \"layer\": {
         \"name\": \"VK_LAYER_FUSE_split_transfer_family\",
         \"type\": \"GLOBAL\",
-        \"library_path\": \"./$<TARGET_FILE_NAME:VkLayer_fuse_split_transfer_family>\",
+        \"library_path\": \"${_fuse_layer_lib_prefix}$<TARGET_FILE_NAME:VkLayer_fuse_split_transfer_family>\",
         \"api_version\": \"1.3.0\",
         \"implementation_version\": \"1\",
         \"description\": \"FUSE test layer: splits a transfer-only queue family off a single-family ICD\"
@@ -92,27 +100,27 @@ if(FUSE_BUILD_CORE_TESTS)
         target_link_libraries(fuse_b2_device_queue_families PRIVATE fuse_rhi)
         add_dependencies(fuse_b2_device_queue_families VkLayer_fuse_split_transfer_family)
         add_test(NAME fuse_b2_device_queue_families_split
-                 COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_device_queue_families>"
+                 COMMAND ${_fuse_vk_followups_lock} "$<TARGET_FILE:fuse_b2_device_queue_families>"
                          --layer-dir "${_fuse_split_layer_dir}" --mode transfer-compute)
         add_test(NAME fuse_b2_device_queue_families_transfer
-                 COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_device_queue_families>"
+                 COMMAND ${_fuse_vk_followups_lock} "$<TARGET_FILE:fuse_b2_device_queue_families>"
                          --layer-dir "${_fuse_split_layer_dir}" --mode transfer)
         add_test(NAME fuse_b2_device_queue_families_shared
-                 COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_device_queue_families>" --mode shared)
+                 COMMAND ${_fuse_vk_followups_lock} "$<TARGET_FILE:fuse_b2_device_queue_families>" --mode shared)
         set_tests_properties(fuse_b2_device_queue_families_split fuse_b2_device_queue_families_transfer
                              fuse_b2_device_queue_families_shared PROPERTIES
-            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+            ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
             RUN_SERIAL TRUE
             SKIP_RETURN_CODE 77
             LABELS "gate;vulkan")
         add_test(NAME fuse_b2_upload_queue_family
-                 COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_upload_queue_family>"
+                 COMMAND ${_fuse_vk_followups_lock} "$<TARGET_FILE:fuse_b2_upload_queue_family>"
                          --layer-dir "${_fuse_split_layer_dir}" --expect-split)
         # Same scenarios on the single-family path (plain Lavapipe).
         add_test(NAME fuse_b2_upload_queue_same_family
-                 COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_upload_queue_family>")
+                 COMMAND ${_fuse_vk_followups_lock} "$<TARGET_FILE:fuse_b2_upload_queue_family>")
         set_tests_properties(fuse_b2_upload_queue_same_family PROPERTIES
-            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+            ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
             RUN_SERIAL TRUE
             SKIP_RETURN_CODE 77
             LABELS "vulkan")
@@ -120,7 +128,7 @@ if(FUSE_BUILD_CORE_TESTS)
         add_test(NAME fuse_b2_upload_queue_family COMMAND fuse_b2_upload_queue_family)
     endif()
     set_tests_properties(fuse_b2_upload_queue_family PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
         SKIP_RETURN_CODE 77
         LABELS "gate;vulkan")
@@ -128,7 +136,7 @@ if(FUSE_BUILD_CORE_TESTS)
     # Row "Physical device selection picks the RTX 3090 correctly over any integrated GPU" (policy
     # half): the test registers the Lavapipe ICD twice (two real devices) and the test-only layer
     # VK_LAYER_FUSE_spoof_multi_gpu rewrites enumeration order, device type, heap size, limits and
-    # features per scenario. Exit 77 = skip (stub build, non-Linux, ICD not resolvable).
+    # features per scenario (Windows: the system ICD twice). Exit 77 = skip (stub build, ICD not resolvable).
     add_executable(fuse_b2_physical_device_selection tests/test_b2_physical_device_selection.cpp)
     target_link_libraries(fuse_b2_physical_device_selection PRIVATE fuse_rhi ${CMAKE_DL_LIBS})
     if(FUSE_VULKAN_BACKEND)
@@ -152,7 +160,7 @@ if(FUSE_BUILD_CORE_TESTS)
     \"layer\": {
         \"name\": \"VK_LAYER_FUSE_spoof_multi_gpu\",
         \"type\": \"GLOBAL\",
-        \"library_path\": \"./$<TARGET_FILE_NAME:VkLayer_fuse_spoof_multi_gpu>\",
+        \"library_path\": \"${_fuse_layer_lib_prefix}$<TARGET_FILE_NAME:VkLayer_fuse_spoof_multi_gpu>\",
         \"api_version\": \"1.3.0\",
         \"implementation_version\": \"1\",
         \"description\": \"FUSE test layer: presents physical devices with spoofed type, limits and features\"
@@ -161,13 +169,13 @@ if(FUSE_BUILD_CORE_TESTS)
 ")
         add_dependencies(fuse_b2_physical_device_selection VkLayer_fuse_spoof_multi_gpu)
         add_test(NAME fuse_b2_physical_device_selection
-                 COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_physical_device_selection>"
+                 COMMAND ${_fuse_vk_followups_lock} "$<TARGET_FILE:fuse_b2_physical_device_selection>"
                          --layer-dir "${_fuse_spoof_layer_dir}")
     else()
         add_test(NAME fuse_b2_physical_device_selection COMMAND fuse_b2_physical_device_selection)
     endif()
     set_tests_properties(fuse_b2_physical_device_selection PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
         SKIP_RETURN_CODE 77
         LABELS "gate;vulkan")

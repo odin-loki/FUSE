@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 
 #if defined(FUSE_RP_HARNESS_QUALITY_METRICS)
@@ -87,22 +88,37 @@ GoldenResult compareImages(const ImageRgba8& actual, const ImageRgba8& golden, c
         *diff = ImageRgba8(actual.width, actual.height);
     }
     const usize n = static_cast<usize>(actual.width) * actual.height;
+    const bool useExempt = spec.exempt != nullptr && spec.exempt->size() == n;
+    // The image the metric sees: the golden's value at exempt pixels.
+    ImageRgba8 gated;
+    if (useExempt) {
+        gated = actual;
+    }
     for (usize i = 0; i < n; ++i) {
         u32 worst = 0;
         for (usize c = 0; c < 4u; ++c) {
             const int d = std::abs(static_cast<int>(actual.pixels[i * 4u + c]) - golden.pixels[i * 4u + c]);
             worst = std::max(worst, static_cast<u32>(d));
         }
-        r.maxChannelDiff = std::max(r.maxChannelDiff, worst);
+        const bool exempt = useExempt && (*spec.exempt)[i] != 0u;
+        if (exempt) {
+            std::memcpy(gated.pixels.data() + i * 4u, golden.pixels.data() + i * 4u, 4u);
+        } else {
+            r.maxChannelDiff = std::max(r.maxChannelDiff, worst);
+        }
         const bool differs = worst > spec.pixelTolerance;
         if (differs) {
-            ++r.differingPixels;
+            ++(exempt ? r.exemptDifferingPixels : r.differingPixels);
         }
         if (diff != nullptr) {
             const u8* g = golden.pixels.data() + i * 4u;
             const u8 grey = static_cast<u8>((static_cast<u32>(g[0]) * 77u + g[1] * 150u + g[2] * 29u) >> 10); // /4 dim
             u8* d = diff->pixels.data() + i * 4u;
-            if (differs) {
+            if (differs && exempt) { // excused: blue
+                d[0] = 0;
+                d[1] = 0;
+                d[2] = static_cast<u8>(std::min(255u, 128u + worst));
+            } else if (differs) {
                 d[0] = static_cast<u8>(std::min(255u, 128u + worst));
                 d[1] = 0;
                 d[2] = 0;
@@ -116,13 +132,14 @@ GoldenResult compareImages(const ImageRgba8& actual, const ImageRgba8& golden, c
             d[3] = 255;
         }
     }
-    r.psnr = psnrOf(actual, golden);
+    const ImageRgba8& measured = useExempt ? gated : actual;
+    r.psnr = psnrOf(measured, golden);
 
     GoldenMetric metric = spec.metric;
     f64 score = std::numeric_limits<f64>::quiet_NaN();
 #if defined(FUSE_RP_HARNESS_QUALITY_METRICS)
     if (metric != GoldenMetric::Psnr) {
-        score = qualityMetric(metric, actual, golden);
+        score = qualityMetric(metric, measured, golden);
     }
 #endif
     if (metric == GoldenMetric::Psnr || std::isnan(score)) {
@@ -142,6 +159,9 @@ GoldenResult compareImages(const ImageRgba8& actual, const ImageRgba8& golden, c
                   goldenMetricName(metric), score, metric == GoldenMetric::Flip ? "<=" : ">=", r.threshold, r.psnr,
                   r.differingPixels, static_cast<u32>(spec.pixelTolerance), spec.maxDifferingPixels, r.maxChannelDiff);
     r.message = buffer;
+    if (useExempt) {
+        r.message += ", " + std::to_string(r.exemptDifferingPixels) + " px exempt";
+    }
     if (!metricOk) {
         r.message += " [metric over threshold]";
     }

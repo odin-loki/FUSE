@@ -66,10 +66,10 @@ float4 srcGather(uint x, uint y, uint index, out float4 composed) {
             const float den = sw * cw;
             const float4 dif = srcTexels(F.diffuse)[index];
             const float4 alb = srcTexels(F.albedo)[index];
-            ir = dif.x * (sr / den) * F.intensity;
-            ig = dif.y * (sg / den) * F.intensity;
-            ib = dif.z * (sb / den) * F.intensity;
-            ao = sv / den;
+            ir = dif.x * (fuseDivRn(sr, den)) * F.intensity;
+            ig = dif.y * (fuseDivRn(sg, den)) * F.intensity;
+            ib = dif.z * (fuseDivRn(sb, den)) * F.intensity;
+            ao = fuseDivRn(sv, den);
             const float kk = dif.w * (ao - 1.0);
             cr = (l.x + ir) + F.ambient[0] * alb.x * kk;
             cg = (l.y + ig) + F.ambient[1] * alb.y * kk;

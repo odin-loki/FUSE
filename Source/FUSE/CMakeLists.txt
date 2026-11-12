@@ -4,6 +4,7 @@
 include(${CMAKE_SOURCE_DIR}/cmake/FuseCxx23.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/FuseVulkanMobile.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/FuseFindVulkan.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/FuseVulkanTestEnv.cmake)  # Vulkan gate launcher + env for every directory
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -88,6 +89,10 @@ option(FUSE_BUILD_UI "Build FUSE UI (docs/plans/FUSE_UI_PLAN.md): fuse_text, fus
 if(FUSE_BUILD_UI)
     add_subdirectory(UI)
 endif()
+# Android: the engine renderer on a NativeActivity window (APK tooling from UI/App)
+if(ANDROID AND TARGET fuse_rhi AND TARGET fuse_app_native AND COMMAND fuse_app_add_android_app)
+    add_subdirectory(Renderer/android)
+endif()
 
 # UI9 (docs/plans/FUSE_EDITOR_QT_FIRST_PLAN.md): the Qt-free EditorController and, with FUSE_EDITOR_SHELL=fuse, the
 # FUSE UI editor shell beside the Qt one (Source/FUSE/EditorShell).
@@ -95,7 +100,9 @@ if(FUSE_BUILD_EDITOR_API OR FUSE_BUILD_EDITOR)
     add_subdirectory(EditorShell)
 endif()
 
+add_subdirectory(Remaster)  # FUSE Remaster W0 (docs/plans/FUSE_REMASTER_PLAN.md): fuse_poco, fuse_remaster_store/_db/_tscript; before Relight
 add_subdirectory(Relight)  # FUSE Relight (docs/plans/FUSE_REMIX_PORT_PLAN.md); FUSE_BUILD_RELIGHT inside, default ON for MinGW
+add_subdirectory(Remaster/remix)  # Remaster W2.3 / W2.4 ingest-remix / export-remix (needs Relight's importer; returns early without it)
 
 
 if(TARGET fuse_script AND TARGET fuse_compat_ts)

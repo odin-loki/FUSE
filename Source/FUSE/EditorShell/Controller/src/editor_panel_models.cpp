@@ -12,6 +12,14 @@
 #include <fuse/editor/terrain_builder.hpp>
 #include <fuse/editor/undo_stack.hpp>
 #include <fuse/editor/viewport_scene_view.hpp>
+#include <fuse/editor/command_queue.hpp>
+#include <fuse/editor/component_schema.hpp>
+#include <fuse/editor/editor_timeline.hpp>
+#include <fuse/editor/profiler_flame_graph.hpp>
+
+#include <cctype>
+#include <fuse/ecs/components/environment.hpp>
+#include <fuse/ecs/components/light.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -19,11 +27,17 @@
 #include <ctime>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
+#include <string>
+#include <string_view>
 
 namespace fuse::editor {
 
 namespace {
 namespace fs = std::filesystem;
+
+/// UTF-8 text -> path (fs::u8path is deprecated in C++20; MinGW -Werror builds reject it).
+fs::path utf8Path(std::string_view s) { return fs::path(std::u8string(reinterpret_cast<const char8_t*>(s.data()), s.size())); }
 
 f32 toLinear(f32 c) { return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f); }
 f32 toSrgb(f32 c) {
@@ -44,6 +58,11 @@ EditorPanels::EditorPanels(EditorController& controller)
     std::error_code ec;
     m_projectsRoot = fs::current_path(ec).string();
 }
+
+struct TimelineKeyDrag {
+    EditorTimeline::Tracks before;
+    i32 track = -1, key = -1; ///< the dragged key in `before`
+};
 
 EditorPanels::~EditorPanels() = default;
 
@@ -97,6 +116,11 @@ bool EditorPanels::hubNew(const std::string& directory, const std::string& name,
     ++m_revision;
     return ok;
 }
+bool EditorPanels::hubNewApp(const std::string& directory, const std::string& name) {
+    const bool ok = m_c.newAppProject(directory, name);
+    ++m_revision;
+    return ok;
+}
 
 // ---- Asset Browser (AssetBrowserWidget) -----------------------------------------------------------------------------
 
@@ -133,7 +157,7 @@ AssetBrowserView EditorPanels::assets() {
         if (!folder && m_assetTypeFilter != 0u && u32(e.type) != m_assetTypeFilter) continue;
         AssetEntryView ev{e.name, e.path, AssetBrowser::assetTypeLabel(e.type), folder, e.name};
         std::error_code ec;
-        const fs::path abs = fs::u8path(m_assets->absolutePath(e.path));
+        const fs::path abs = utf8Path(m_assets->absolutePath(e.path));
         if (!folder) {
             const auto sz = fs::file_size(abs, ec);
             if (!ec) ev.tooltip += sz < 1024 ? "\n" + std::to_string(sz) + " B" : fmt("\n%.1f KB", double(sz) / 1024.0);
@@ -145,13 +169,13 @@ AssetBrowserView EditorPanels::assets() {
             const std::time_t t = std::chrono::system_clock::to_time_t(sys);
             char buf[32];
             if (std::strftime(buf, sizeof buf, "%Y-%m-%d %H:%M", std::localtime(&t)))
-                ev.tooltip += std::string(folder ? "\n" : " · ") + "modified " + buf;
+                ev.tooltip += std::string(folder ? "\n" : " Â· ") + "modified " + buf;
         }
         v.folders += folder;
         v.entries.push_back(std::move(ev));
     }
     v.status = std::to_string(v.entries.size()) + " items (" + std::to_string(v.folders) + " folders)";
-    if (sel) v.status += std::string(" · ") + sel->name + " (" + AssetBrowser::assetTypeLabel(sel->type) + ")";
+    if (sel) v.status += std::string(" Â· ") + sel->name + " (" + AssetBrowser::assetTypeLabel(sel->type) + ")";
     return v;
 }
 
@@ -173,7 +197,7 @@ void EditorPanels::assetsSetGrid(bool on) { m_assetsGrid = on; ++m_revision; }
 
 bool EditorPanels::assetsNavigateTo(const std::string& relDir) {
     std::error_code ec;
-    if (!fs::is_directory(fs::u8path(m_assets->absolutePath(relDir)), ec)) return false;
+    if (!fs::is_directory(utf8Path(m_assets->absolutePath(relDir)), ec)) return false;
     m_assets->setSearchFilter("");
     m_assets->setCurrentDirectory(relDir.c_str());
     m_assets->refresh();
@@ -194,7 +218,7 @@ bool validAssetName(const std::string& n) {
 
 bool EditorPanels::assetsCreateFolder(const std::string& name) {
     if (!validAssetName(name) || m_assets->projectRoot().empty()) return false;
-    const fs::path dir = fs::u8path(m_assets->absolutePath(m_assets->currentDirectory())) / fs::u8path(name);
+    const fs::path dir = utf8Path(m_assets->absolutePath(m_assets->currentDirectory())) / utf8Path(name);
     std::error_code ec;
     if (fs::exists(dir, ec) || !fs::create_directory(dir, ec) || ec) return false;
     m_assets->refresh();
@@ -204,8 +228,8 @@ bool EditorPanels::assetsCreateFolder(const std::string& name) {
 
 bool EditorPanels::assetsRename(const std::string& path, const std::string& newName) {
     if (!validAssetName(newName)) return false;
-    const fs::path from = fs::u8path(m_assets->absolutePath(path));
-    const fs::path to = from.parent_path() / fs::u8path(newName);
+    const fs::path from = utf8Path(m_assets->absolutePath(path));
+    const fs::path to = from.parent_path() / utf8Path(newName);
     std::error_code ec;
     if (!fs::exists(from, ec) || fs::exists(to, ec)) return false;
     fs::rename(from, to, ec);
@@ -444,8 +468,31 @@ void EditorPanels::profilerSample(f32 uiMs) {
         m_c.m_host.editorScene().registry().each<ecs::Transform>([&](ecs::EntityID, ecs::Transform&) { ++n; });
         d.sdfObjects = n;
     }
+    if (m_gpuPending) { // the scene viewport's newest GPU frame (one sample each)
+        m_gpuPending = false;
+        d.gpuMs = m_gpuTotalMs;
+        for (const GpuPassView& p : m_gpuPasses) {
+            if (p.depth != 0) continue;
+            std::string n = p.name;
+            for (char& ch : n) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+            auto has = [&](const char* k) { return n.find(k) != std::string::npos; };
+            if (has("shadow") || n.starts_with("vsm.")) d.shadowsMs += p.ms;
+            else if (has("ddgi")) d.ddgiMs += p.ms;
+            else if (has("sdf")) d.sdfMarchMs += p.ms;
+            else if (has("depth") || has("prepass") || has("cull")) d.depthPrepassMs += p.ms;
+            else if (has("gbuffer") || n.starts_with("vis.") || has("visbuffer") || has("opaque")) d.gbufferMs += p.ms;
+            else if (has("deferred") || has("light")) d.deferredMs += p.ms;
+        }
+    }
     m_profiler->pushFrameData(d);
     ++m_revision;
+}
+
+void EditorPanels::profilerSetGpu(f32 totalMs, std::vector<GpuPassView> passes) {
+    m_gpuTotalMs = totalMs;
+    m_gpuPasses = std::move(passes);
+    m_gpuPending = true;
+    ++m_gpuFrames;
 }
 
 ProfilerView EditorPanels::profiler() const {
@@ -454,16 +501,120 @@ ProfilerView EditorPanels::profiler() const {
     v.latest = m_profiler->latestFrame();
     m_profiler->copyCpuHistory(v.history);
     v.frames = m_profiler->frameCount();
+    v.gpuHistory.reserve(v.frames);
+    for (u32 i = 0; i < v.frames; ++i) v.gpuHistory.push_back(m_profiler->frameAt(i).gpuMs);
+    v.gpuPasses = m_gpuPasses;
+    v.gpuLastMs = m_gpuTotalMs;
+    v.gpuFrames = m_gpuFrames;
     v.paused = m_profiler->isPaused();
     v.targetFps = m_profiler->targetFps();
     v.summary = fmt("Frames: %.0f   CPU: %.3f ms   min %.2f / avg %.2f / max %.2f ms   ~%.0f fps   over budget: %.0f", v.frames,
                     v.latest.cpuMs, v.stats.minMs, v.stats.avgMs, v.stats.maxMs, v.stats.avgFps, v.stats.overBudget) +
                 fmt("   Editor UI: %.3f ms   Target: %.0f fps", v.latest.postprocessMs, v.targetFps);
+    if (v.gpuFrames > 0)
+        v.summary += fmt("   GPU (viewport): %.3f ms in %.0f passes", v.gpuLastMs, f64(v.gpuPasses.size()));
     return v;
 }
 
 void EditorPanels::profilerSetPaused(bool paused) { m_profiler->setPaused(paused); ++m_revision; }
-void EditorPanels::profilerClear() { m_profiler->clearHistory(); ++m_revision; }
+void EditorPanels::profilerClear() {
+    m_profiler->clearHistory();
+    m_flame = {};
+    m_gpuPending = false;
+    ++m_revision;
+}
+
+void EditorPanels::profilerCaptureFlame() {
+    if (m_profiler->isPaused()) return;
+    std::vector<profiler::ProfileEvent> events;
+    const u32 count = profiler::eventCount();
+    events.reserve(count);
+    for (u32 i = 0; i < count; ++i) {
+        profiler::ProfileEvent e{};
+        if (profiler::tryEventAt(i, e)) events.push_back(e);
+    }
+    profilerFlameFromEvents(events);
+}
+
+void EditorPanels::profilerFlameFromEvents(const std::vector<profiler::ProfileEvent>& events) {
+    ProfilerFlameGraph g;
+    g.build(events);
+    FlameView v;
+    v.captures = m_flame.captures + 1;
+    v.threads = g.threadCount();
+    v.slices = u32(g.slices().size());
+    const auto& nodes = g.flameNodes();
+    u64 cpuTotal = 0;
+    for (u32 r : g.flameRoots()) cpuTotal += nodes[r].totalNs;
+    // the scene viewport's last GPU frame: one more root ("gpu.viewport") beside the CPU scopes, its passes as children
+    u64 gpuTotal = 0;
+    for (const GpuPassView& p : m_gpuPasses)
+        if (p.depth == 0) gpuTotal += u64(f64(p.ms) * 1e6);
+    const u64 total = cpuTotal + gpuTotal;
+    v.totalMs = f32(f64(total) / 1e6);
+    if (total > 0) {
+        // classic flame layout: roots side by side, each child inside its parent from the left, width ~ total time
+        const std::function<void(u32, f64, i32)> place = [&](u32 ni, f64 x0, i32 parent) {
+            const FlameNode& n = nodes[ni];
+            FlameBarView b;
+            b.name = n.name;
+            b.depth = n.depth;
+            b.parent = parent;
+            b.x0 = f32(x0);
+            b.x1 = f32(x0 + f64(n.totalNs) / f64(total));
+            b.totalMs = f32(f64(n.totalNs) / 1e6);
+            b.selfMs = f32(f64(n.selfNs) / 1e6);
+            b.calls = n.callCount;
+            v.maxDepth = std::max(v.maxDepth, n.depth);
+            const i32 me = i32(v.bars.size());
+            v.bars.push_back(std::move(b));
+            f64 cx = x0;
+            for (u32 c : n.children) {
+                place(c, cx, me);
+                cx += f64(nodes[c].totalNs) / f64(total);
+            }
+        };
+        f64 x = 0.0;
+        for (u32 r : g.flameRoots()) {
+            place(r, x, -1);
+            x += f64(nodes[r].totalNs) / f64(total);
+        }
+        if (gpuTotal > 0) {
+            const i32 root = i32(v.bars.size());
+            FlameBarView rb;
+            rb.name = "gpu.viewport";
+            rb.x0 = f32(x);
+            rb.x1 = 1.f;
+            rb.totalMs = f32(f64(gpuTotal) / 1e6);
+            rb.calls = 1;
+            v.bars.push_back(rb);
+            // zones arrive in begin order and nest LIFO: open parents per depth (bar, next child x)
+            std::vector<std::pair<i32, f64>> open{{root, x}};
+            for (const GpuPassView& p : m_gpuPasses) {
+                const std::size_t d = std::size_t(p.depth) + 1;
+                if (d > open.size()) continue; // malformed nesting
+                open.resize(d);
+                FlameBarView b;
+                b.name = p.name;
+                b.depth = u32(d);
+                b.parent = open.back().first;
+                b.x0 = f32(open.back().second);
+                b.x1 = f32(open.back().second + f64(p.ms) * 1e6 / f64(total));
+                b.totalMs = b.selfMs = p.ms;
+                b.calls = 1;
+                open.back().second = b.x1;
+                if (d > 1) v.bars[std::size_t(b.parent)].selfMs -= p.ms;
+                v.maxDepth = std::max(v.maxDepth, b.depth);
+                open.emplace_back(i32(v.bars.size()), f64(b.x0));
+                v.bars.push_back(std::move(b));
+            }
+        }
+    }
+    v.summary = fmt("Flame graph: %.0f scopes, %.0f slices, %.0f thread(s), depth %.0f, %.3f ms captured", f64(v.bars.size()),
+                    f64(v.slices), f64(v.threads), f64(v.bars.empty() ? 0 : v.maxDepth + 1), v.totalMs);
+    m_flame = std::move(v);
+    ++m_revision;
+}
 
 // ---- Timeline (TimelineWidget) --------------------------------------------------------------------------------------
 
@@ -482,6 +633,15 @@ TimelineView EditorPanels::timeline() const {
         v.lanes.push_back(std::move(lane));
     }
     v.status = std::to_string(v.lanes.size()) + " lanes - " + std::to_string(v.keyCount) + " keys";
+    if (m_tlSelTrack >= 0 && m_tlSelTrack < i32(tl.tracks().size()) && m_tlSelKey >= 0 &&
+        m_tlSelKey < i32(tl.tracks()[usize(m_tlSelTrack)].keyframes().size())) {
+        const cinematics::PropertyKeyframe& k = tl.tracks()[usize(m_tlSelTrack)].keyframes()[usize(m_tlSelKey)];
+        v.selTrack = m_tlSelTrack;
+        v.selKey = m_tlSelKey;
+        v.selInterp = u32(k.interp);
+        v.selIn = k.in_tangent;
+        v.selOut = k.out_tangent;
+    }
     return v;
 }
 
@@ -1208,6 +1368,339 @@ bool EditorPanels::orthoPointer(OrthoView& v, const ViewportPointerEvent& e, boo
     }
     v.drag = OrthoView::Drag::None;
     return changed;
+}
+
+// ---- Material usability (Qt MaterialEditorWidget) -------------------------------------------------------------------
+
+bool EditorPanels::materialRename(std::string_view name) {
+    std::string after(name);
+    const auto b = after.find_first_not_of(" \t");
+    const auto e = after.find_last_not_of(" \t");
+    after = b == std::string::npos ? std::string() : after.substr(b, e - b + 1);
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        MaterialCatalog& cat = m_c.m_host.materials();
+        if (after.empty() || !cat.valid(m_material) || cat.entry(m_material).name == after) return false;
+        m_c.m_host.undoStack().execute(std::make_unique<RenameMaterialCommand>(cat, m_material, cat.entry(m_material).name, after));
+    }
+    ++m_revision;
+    m_c.refresh();
+    return true;
+}
+
+std::vector<std::string> EditorPanels::materialPresetNames() {
+    std::vector<std::string> names;
+    for (const MaterialPreset& p : materialPresets()) names.emplace_back(p.name);
+    return names;
+}
+
+bool EditorPanels::materialApplyPreset(u32 index) {
+    const auto& presets = materialPresets();
+    if (index >= presets.size()) return false;
+    MaterialEditState s;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        if (!m_c.m_host.materials().valid(m_material)) return false;
+        const MaterialEditState cur = m_c.m_host.materials().entry(m_material).state;
+        s = presets[index].state;
+        s.baseColorTexture = cur.baseColorTexture;
+        s.uvScale = cur.uvScale;
+        s.shadingModel = cur.shadingModel;
+    }
+    return applyMaterial_(s, "preset");
+}
+
+u32 EditorPanels::materialUsage() const {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    ecs::Registry& reg = m_c.m_host.editorScene().registry();
+    u32 n = 0;
+    reg.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) {
+        u32 mat = 0;
+        if (AssignMaterialCommand::materialOf(reg, id, mat) && mat == m_material) ++n;
+    });
+    return n;
+}
+
+u32 EditorPanels::materialSelectUsers() {
+    std::vector<EntityRef> users;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        ecs::Registry& reg = m_c.m_host.editorScene().registry();
+        reg.each<ecs::Transform>([&](ecs::EntityID id, ecs::Transform&) {
+            u32 mat = 0;
+            if (AssignMaterialCommand::materialOf(reg, id, mat) && mat == m_material) users.push_back({id.index, id.generation});
+        });
+    }
+    if (!users.empty()) m_c.select(users, users.front());
+    ++m_revision;
+    return u32(users.size());
+}
+
+// ---- Lighting (Qt LightingPanel) ------------------------------------------------------------------------------------
+
+LightingView EditorPanels::lighting() const {
+    LightingView v;
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    ecs::Registry& reg = m_c.m_host.editorScene().registry();
+    ecs::quat rot{0.f, 0.f, 0.f, 1.f};
+    reg.each<ecs::DirectionalLight>([&](ecs::EntityID id, ecs::DirectionalLight& l) {
+        if (v.sun.valid()) return;
+        v.sun = {id.index, id.generation};
+        v.sunIntensity = l.intensity;
+        v.sunColor[0] = l.color.x, v.sunColor[1] = l.color.y, v.sunColor[2] = l.color.z;
+        if (const ecs::Transform* t = reg.get<ecs::Transform>(id)) rot = t->rotation;
+    });
+    reg.each<ecs::AmbientLight>([&](ecs::EntityID id, ecs::AmbientLight& a) {
+        if (v.ambient.valid()) return;
+        v.ambient = {id.index, id.generation};
+        v.ambientIntensity = a.intensity;
+        v.ambientColor[0] = a.color.x, v.ambientColor[1] = a.color.y, v.ambientColor[2] = a.color.z;
+    });
+    reg.each<ecs::EnvironmentFog>([&](ecs::EntityID id, ecs::EnvironmentFog& f) {
+        if (v.fog.valid()) return;
+        v.fog = {id.index, id.generation};
+        v.fogDensity = f.density;
+        v.fogDistance = f.visible_distance;
+        v.fogColor[0] = f.color.x, v.fogColor[1] = f.color.y, v.fogColor[2] = f.color.z;
+    });
+    if (v.sun.valid()) {
+        const ecs::vec3 e = eulerDegFromQuat(rot); // x = pitch (elevation is -pitch), y = yaw
+        v.elevation = -e.x;
+        v.azimuth = e.y;
+        v.sunLabel = "Entity #" + std::to_string(v.sun.index);
+    } else {
+        v.sunLabel = "(no sun)";
+    }
+    return v;
+}
+
+bool EditorPanels::lightingPost_(EntityRef e, const char* property, const std::string& value) {
+    if (!e.valid()) return false;
+    m_c.m_host.postFromUi(makeSetPropertyCommand(Handle<Object>(e.index, e.generation), property, value));
+    ++m_revision;
+    return true;
+}
+
+EntityRef EditorPanels::lightingAddSun() {
+    const LightingView cur = lighting();
+    if (cur.sun.valid()) return cur.sun;
+    EntityRef created;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        ecs::Registry& registry = m_c.m_host.editorScene().registry();
+        EntityComponentSet set{};
+        ecs::Transform t{};
+        t.position = ecs::vec3{0.f, 10.f, 0.f, 1.f};
+        t.rotation = quatFromEulerDeg(-45.f, 30.f, 0.f);
+        std::get<std::optional<ecs::Transform>>(set) = t;
+        std::get<std::optional<ecs::DirectionalLight>>(set) = ecs::DirectionalLight{};
+        auto cmd = std::make_unique<CreateEntityCommand>(registry, std::move(set), "Add sun");
+        CreateEntityCommand* raw = cmd.get();
+        m_c.m_host.undoStack().execute(std::move(cmd));
+        const ecs::EntityID id = raw->createdEntity();
+        created = {id.index, id.generation};
+        m_c.m_host.editorState().sceneModified = true;
+    }
+    ++m_revision;
+    m_c.refresh();
+    return created;
+}
+
+bool EditorPanels::lightingAddAmbient() {
+    if (lighting().ambient.valid()) return false;
+    const EntityRef host = lightingAddSun();
+    m_c.addComponent(host, ecs::AmbientLight::component_name);
+    ++m_revision;
+    return true;
+}
+
+bool EditorPanels::lightingAddFog() {
+    if (lighting().fog.valid()) return false;
+    const EntityRef host = lightingAddSun();
+    m_c.addComponent(host, ecs::EnvironmentFog::component_name);
+    ++m_revision;
+    return true;
+}
+
+bool EditorPanels::lightingSetSunAngles(f32 elevationDeg, f32 azimuthDeg) {
+    return lightingPost_(lighting().sun, "transform.rotation", formatPropertyQuat(quatFromEulerDeg(-elevationDeg, azimuthDeg, 0.f)));
+}
+bool EditorPanels::lightingSetSunIntensity(f32 v) { return lightingPost_(lighting().sun, "directional.intensity", formatPropertyFloat(v)); }
+bool EditorPanels::lightingSetAmbientIntensity(f32 v) { return lightingPost_(lighting().ambient, "AmbientLight.intensity", formatPropertyFloat(v)); }
+bool EditorPanels::lightingSetFogDensity(f32 v) { return lightingPost_(lighting().fog, "EnvironmentFog.density", formatPropertyFloat(v)); }
+bool EditorPanels::lightingSetFogDistance(f32 v) { return lightingPost_(lighting().fog, "EnvironmentFog.visible_distance", formatPropertyFloat(v)); }
+
+bool EditorPanels::lightingPickColour(std::string_view which) {
+    const LightingView v = lighting();
+    const EntityRef e = which == "sun" ? v.sun : which == "ambient" ? v.ambient : v.fog;
+    const f32* c = which == "sun" ? v.sunColor : which == "ambient" ? v.ambientColor : v.fogColor;
+    const char* prop = which == "sun" ? "DirectionalLight.color" : which == "ambient" ? "AmbientLight.color" : "EnvironmentFog.color";
+    if (!e.valid()) return false;
+    const auto picked = m_c.services().pickColour({c[0], c[1], c[2], 1.f});
+    if (!picked) return false;
+    return lightingPost_(e, prop, formatPropertyFloat(picked->r) + "," + formatPropertyFloat(picked->g) + "," + formatPropertyFloat(picked->b));
+}
+
+// ---- Profiler push / timeline keys / sequencer scrub ---------------------------------------------------------------
+
+void EditorPanels::profilerPush(const ProfilerPanel::FrameProfileData& frame) {
+    m_profiler->pushFrameData(frame);
+    ++m_revision;
+}
+
+i32 EditorPanels::timelineFindTrack(EntityRef entity, const std::string& channel) const {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    return m_c.m_host.timeline().findTrack(entity.index, channel);
+}
+
+bool EditorPanels::timelineSelectKey(i32 track, i32 key) {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    const EditorTimeline& tl = m_c.m_host.timeline();
+    const bool ok = track >= 0 && track < i32(tl.tracks().size()) && key >= 0 && key < i32(tl.tracks()[usize(track)].keyframes().size());
+    m_tlSelTrack = ok ? track : -1;
+    m_tlSelKey = ok ? key : -1;
+    ++m_revision;
+    return ok;
+}
+
+bool EditorPanels::timelineEdit_(const char* what, const std::function<bool(EditorTimeline&)>& edit) {
+    if (m_tlSelKey < 0) return false;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        EditorTimeline& tl = m_c.m_host.timeline();
+        EditorTimeline::Tracks before = tl.tracks();
+        if (!edit(tl)) return false;
+        m_c.m_host.undoStack().execute(std::make_unique<TimelineEditCommand>(tl, std::move(before), tl.tracks(), what));
+        tl.apply(m_c.m_host.editorScene().registry(), tl.playheadMs());
+    }
+    ++m_revision;
+    m_c.refresh();
+    return true;
+}
+
+bool EditorPanels::timelineMoveSelectedKey(i32 ms) {
+    const i32 track = m_tlSelTrack;
+    i32 moved = -1;
+    const bool ok = timelineEdit_("Move key", [&](EditorTimeline& tl) {
+        if (tl.tracks()[usize(track)].keyframes()[usize(m_tlSelKey)].time_ms == ms) return false;
+        moved = tl.moveKey(track, m_tlSelKey, ms);
+        return moved >= 0;
+    });
+    if (ok) m_tlSelKey = moved;
+    return ok;
+}
+
+bool EditorPanels::timelineBeginKeyDrag(i32 track, i32 key) {
+    if (m_tlDrag) timelineEndKeyDrag(false);
+    if (!timelineSelectKey(track, key)) return false;
+    auto d = std::make_unique<TimelineKeyDrag>();
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        d->before = m_c.m_host.timeline().tracks();
+    }
+    d->track = track;
+    d->key = key;
+    m_tlDrag = std::move(d);
+    return true;
+}
+
+bool EditorPanels::timelineDragKeyTo(i32 ms) {
+    if (!m_tlDrag || m_tlSelKey < 0) return false;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        EditorTimeline& tl = m_c.m_host.timeline();
+        ms = std::clamp(ms, 0, i32(tl.durationMs()));
+        // always from the drag-start tracks: passing over another key does not eat it (only a drop on it does)
+        tl.tracks() = m_tlDrag->before;
+        const i32 moved = tl.moveKey(m_tlDrag->track, m_tlDrag->key, ms);
+        if (moved < 0) return false;
+        m_tlSelKey = moved;
+        tl.apply(m_c.m_host.editorScene().registry(), tl.playheadMs()); // the scene follows the drag (Qt)
+    }
+    ++m_revision;
+    return true;
+}
+
+bool EditorPanels::timelineEndKeyDrag(bool commit) {
+    if (!m_tlDrag) return false;
+    std::unique_ptr<TimelineKeyDrag> d = std::move(m_tlDrag);
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        EditorTimeline& tl = m_c.m_host.timeline();
+        const auto& now = tl.tracks();
+        changed = now.size() != d->before.size();
+        for (usize t = 0; !changed && t < now.size(); ++t) {
+            const auto& a = now[t].keyframes();
+            const auto& b = d->before[t].keyframes();
+            changed = a.size() != b.size();
+            for (usize k = 0; !changed && k < a.size(); ++k) changed = a[k].time_ms != b[k].time_ms;
+        }
+        if (changed && commit) {
+            // one undo step for the whole drag (Qt endKeyDrag_)
+            m_c.m_host.undoStack().execute(std::make_unique<TimelineEditCommand>(tl, std::move(d->before), tl.tracks(), "Move key"));
+        } else if (changed) {
+            // cancelled (Escape): back to the tracks at drag start, nothing on the undo stack
+            tl.tracks() = std::move(d->before);
+            m_tlSelKey = -1;
+            m_tlSelTrack = -1;
+        }
+        tl.apply(m_c.m_host.editorScene().registry(), tl.playheadMs());
+    }
+    ++m_revision;
+    m_c.refresh();
+    return changed && commit;
+}
+
+bool EditorPanels::timelineDeleteSelectedKey() {
+    const bool ok = timelineEdit_("Delete key", [&](EditorTimeline& tl) { return tl.deleteKey(m_tlSelTrack, m_tlSelKey); });
+    if (ok) m_tlSelTrack = m_tlSelKey = -1;
+    return ok;
+}
+
+bool EditorPanels::timelineSetSelectedKeyInterp(u32 interp, u32 tangentMode) {
+    return timelineEdit_("Key interpolation", [&](EditorTimeline& tl) {
+        return tl.setKeyInterp(m_tlSelTrack, m_tlSelKey, cinematics::KeyInterp(interp), cinematics::TangentMode(tangentMode));
+    });
+}
+
+bool EditorPanels::timelineSetSelectedKeyTangents(f32 inSlope, f32 outSlope) {
+    return timelineEdit_("Key tangents", [&](EditorTimeline& tl) { return tl.setKeyTangents(m_tlSelTrack, m_tlSelKey, inSlope, outSlope); });
+}
+
+f32 EditorPanels::timelineSampleSelected(i32 ms) const {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    const EditorTimeline& tl = m_c.m_host.timeline();
+    if (m_tlSelTrack < 0 || m_tlSelTrack >= i32(tl.tracks().size())) return 0.f;
+    return tl.tracks()[usize(m_tlSelTrack)].sample_at(ms);
+}
+
+u32 EditorPanels::timelineSelectedKeyTangentMode() const {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    const EditorTimeline& tl = m_c.m_host.timeline();
+    if (m_tlSelTrack < 0 || m_tlSelTrack >= i32(tl.tracks().size())) return 0;
+    const auto& keys = tl.tracks()[usize(m_tlSelTrack)].keyframes();
+    return m_tlSelKey >= 0 && m_tlSelKey < i32(keys.size()) ? u32(keys[usize(m_tlSelKey)].tangent_mode) : 0u;
+}
+
+i32 EditorPanels::timelineKeyTime(i32 track, i32 key) const {
+    std::lock_guard<std::mutex> lock(m_c.m_mutex);
+    const EditorTimeline& tl = m_c.m_host.timeline();
+    if (track < 0 || track >= i32(tl.tracks().size())) return -1;
+    const auto& keys = tl.tracks()[usize(track)].keyframes();
+    return key >= 0 && key < i32(keys.size()) ? i32(keys[usize(key)].time_ms) : -1;
+}
+
+void EditorPanels::sequencerScrubUi(i32 ms) {
+    sequencerScrub(ms);
+    if (!m_seq.linked) return;
+    {
+        std::lock_guard<std::mutex> lock(m_c.m_mutex);
+        EditorTimeline& tl = m_c.m_host.timeline();
+        tl.setPlayheadMs(ms);
+        tl.apply(m_c.m_host.editorScene().registry(), tl.playheadMs());
+    }
+    ++m_revision;
 }
 
 } // namespace fuse::editor

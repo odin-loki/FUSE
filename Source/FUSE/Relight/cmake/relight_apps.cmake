@@ -15,6 +15,8 @@
 #                       the pixel probes and requires both runs to be byte-identical (image
 #                       tolerances per app: Tests/relight/apps/tolerances.json). Skips (77)
 #                       without Wine or Xvfb.
+#                       Native Windows builds run the app directly on the system d3d9/d3d8 instead
+#                       (labels relight;native).
 #   rl_app_kit_selftest (label relight) schema / checker self-test on generated good and bad
 #                       sidecars; no Wine.
 #
@@ -67,9 +69,23 @@ set(_rl_apps
 set(_rl_apps_common_src
     "${_rl_apps_dir}/common/rl_app.cpp"
     "${_rl_apps_dir}/common/rl_dump.c")
-set(_rl_apps_cxx_flags -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
+if(MSVC)
+    set(_rl_apps_cxx_flags /W3)
+else()
+    set(_rl_apps_cxx_flags -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
+endif()
 
-foreach(_api 9 8)
+# The D3D8 twins need d3d8.h: MinGW-w64 ships it, the Windows SDK does not (nor does Windows 11 ship d3d8.dll).
+include(CheckIncludeFileCXX)
+check_include_file_cxx(d3d8.h FUSE_RL_APPS_HAVE_D3D8_H)
+set(_rl_apis 9)
+if(FUSE_RL_APPS_HAVE_D3D8_H)
+    list(APPEND _rl_apis 8)
+else()
+    message(STATUS "Relight test apps (RL-0.4): no d3d8.h in this toolchain; D3D8 twins not built")
+endif()
+
+foreach(_api IN LISTS _rl_apis)
     add_library(rl_app_kit_d3d${_api} STATIC ${_rl_apps_common_src} "${_rl_apps_dir}/common/rl_gfx_d3d${_api}.cpp")
     target_include_directories(rl_app_kit_d3d${_api} PUBLIC "${_rl_apps_dir}/common")
     target_compile_definitions(rl_app_kit_d3d${_api} PUBLIC RL_API=${_api} WIN32_LEAN_AND_MEAN NOMINMAX)
@@ -97,7 +113,7 @@ foreach(_entry IN LISTS _rl_apps)
     list(GET _entry 0 _scene)
     list(GET _entry 1 _twin)
     set(_variants 9)
-    if(_twin STREQUAL "twin")
+    if(_twin STREQUAL "twin" AND FUSE_RL_APPS_HAVE_D3D8_H)
         list(APPEND _variants 8)
     endif()
     foreach(_api IN LISTS _variants)
@@ -115,7 +131,22 @@ foreach(_entry IN LISTS _rl_apps)
             OUTPUT_NAME "${_app}"
             RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/relight/apps")
         list(APPEND _rl_apps_all ${_target})
-        if(Python3_Interpreter_FOUND AND CMAKE_CROSSCOMPILING)
+        if(Python3_Interpreter_FOUND AND NOT CMAKE_CROSSCOMPILING)
+            # Native Windows: the app runs on the system d3d9.dll / d3d8.dll (the OS runtime on the real GPU), the
+            # same checks as under Wine
+            add_test(NAME ${_target}
+                     COMMAND "${Python3_EXECUTABLE}" "${_rl_apps_check}" run
+                             --exe "$<TARGET_FILE:${_target}>"
+                             --app "${_app}"
+                             --schema "${_rl_apps_dir}/schema/rl_app_sidecar.schema.json"
+                             --tolerances "${_rl_apps_dir}/tolerances.json"
+                             --out "${CMAKE_BINARY_DIR}/relight/apps/out/${_app}"
+                             --runner native)
+            set_tests_properties(${_target} PROPERTIES
+                LABELS "relight;native"
+                SKIP_RETURN_CODE 77
+                TIMEOUT 300)
+        elseif(Python3_Interpreter_FOUND)
             add_test(NAME ${_target}
                      COMMAND "${Python3_EXECUTABLE}" "${_rl_apps_check}" run
                              --exe "$<TARGET_FILE:${_target}>"

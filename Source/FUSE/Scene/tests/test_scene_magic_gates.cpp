@@ -102,6 +102,13 @@ void testLegacyMagicCompat() {
 void testCommittedSampleStillLoads() {
     const std::filesystem::path sample =
         std::filesystem::path(FUSE_SOURCE_DIR) / "Samples/unification/demo_3d_empty/worlds/example.fuselevel";
+    std::error_code ec;
+    if (!std::filesystem::exists(sample, ec)) {
+        // The cooked level is gitignored (Samples/unification/.gitignore); a fresh checkout has none until the editor,
+        // demo_3d_empty or fuse_convert cooks it. The compat check needs an existing file.
+        std::printf("scene magic: %s not cooked yet; sample check skipped\n", sample.generic_string().c_str());
+        return;
+    }
     const std::vector<unsigned char> bytes = readAll(sample);
     expectTrue(bytes.size() >= 4u, "committed sample present");
     if (bytes.size() >= 4u && std::memcmp(bytes.data(), "CGNE", 4) == 0) {

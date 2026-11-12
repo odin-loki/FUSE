@@ -85,6 +85,13 @@ struct MeshCookOptions {
     /// bones on some sub-meshes but not others, or skinned vertices without weights, is rejected.
     bool import_skin = false;
     bool import_material_names = false;
+    /// Opt-in repair, off by default (the cook otherwise never repairs: the strict AssetCooker refuses
+    /// zero-area triangles through the §5.3 asset_geometry gate). On: after import, triangles with a repeated
+    /// corner index or an area <= fuse::assetcheck::kMinTriangleArea (1e-10 m², the gate's own threshold) are
+    /// dropped (drop_degenerate_triangles); vertices are kept, a submesh left empty is removed with its
+    /// material slot, and the cook note records how many were dropped. For sources that carry a handful of
+    /// such faces from their exporter (five Templates/ DAEs: Playerbot, car, flier, hoverboat, DemoRoomLrg).
+    bool repair_degenerate = false;
     MeshEncoding encoding{};
     MeshOptimizeOptions optimize{}; ///< W0.2 LODs / meshlets / cluster DAG
 };
@@ -96,6 +103,11 @@ struct MeshCookOptions {
 /// or non-finite positions / normals / uvs. Nothing is ever "repaired" — bad data is rejected.
 bool import_mesh_file(const std::string& input_path, const MeshCookOptions& options, CookedMesh& out,
                       std::string* error = nullptr, CookFailure* failure = nullptr);
+
+/// The `repair_degenerate` step on an imported mesh (LOD 0 index list; call before LODs / meshlets are built).
+/// Returns the number of triangles dropped. Submesh offsets are recompacted; empty submeshes (and their
+/// material slots) are removed.
+u32 drop_degenerate_triangles(CookedMesh& mesh);
 
 /// W0.2 additions to FMSH v2 (additive: files without them are byte-identical to W0.1 v2 and load
 /// unchanged). Header flag bits (bits 1..3 stay reserved and are refused):

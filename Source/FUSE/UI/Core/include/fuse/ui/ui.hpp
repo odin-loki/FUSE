@@ -155,6 +155,15 @@ struct ClipboardHooks {
     void* user = nullptr;
 };
 
+/// Locale data widgets format with (the calendar's month header, weekday names and first column). Core and widgets
+/// carry no locale tables: fuse_ui_l10n fills these in (`fuse::ui::l10n::setUiLocale(ui, tag)`, header-only
+/// fuse/ui/l10n/ui_locale.hpp), so binaries that never localise do not link them. Null hooks: English, Monday first.
+struct LocaleHooks {
+    std::string (*monthYear)(std::string_view locale, int year, int month) = nullptr; ///< "März 2024"
+    std::string_view (*weekdayShort)(std::string_view locale, int isoWeekday) = nullptr; ///< 1 = Monday: "Mo."
+    int (*firstDayOfWeek)(std::string_view locale) = nullptr; ///< ISO 1 (Monday) .. 7 (Sunday)
+};
+
 // ---- Signals -------------------------------------------------------------------------------------------------------
 enum class SignalKind : u8 {
     Clicked, Toggled, ValueChanged, TextChanged, Submitted, FocusChanged, HoverChanged, Event,
@@ -486,6 +495,16 @@ public:
     const FrameStats& stats() const { return m_stats; }
     u64 frameIndex() const { return m_frame; }
     void markAllDirty();
+    /// BCP 47 locale tag widgets format with, and its data (LocaleHooks; must outlive the context, null = keep the
+    /// current hooks). A change repaints everything.
+    void setLocale(std::string_view tag, const LocaleHooks* hooks = nullptr) {
+        if (tag == m_locale && (!hooks || hooks == m_localeHooks)) return;
+        m_locale = tag;
+        if (hooks) m_localeHooks = hooks;
+        markAllDirty();
+    }
+    std::string_view locale() const { return m_locale; }
+    const LocaleHooks* localeHooks() const { return m_localeHooks; }
     /// Repaints `n` next update (widgets whose paint reads external state, e.g. item models).
     void invalidate(NodeHandle n) { if (node(n)) markPaint(n.index); }
     /// Re-measures and re-lays out `n` next update (widgets whose content size depends on state the core does not
@@ -805,6 +824,8 @@ private:
     Rect m_caret;
     ClipboardHooks m_clipboard;
     std::string m_localClipboard;
+    std::string m_locale;
+    const LocaleHooks* m_localeHooks = nullptr;
     Vec2 m_pointer{-1.f, -1.f};
     u8 m_mods = 0;
     Cursor m_cursorOverride = Cursor::Auto;

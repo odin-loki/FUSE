@@ -13,6 +13,10 @@
 #include <fuse/cook/audio_cook.hpp>
 #include <fuse/cook/cook_stub_writer.hpp>
 
+#if defined(FUSE_AUDIO_COOK_TEST_HAS_PROJECT)
+#include <fuse/project/asset_cooker.hpp>
+#endif
+
 #if defined(FUSE_AUDIO_COOK_TEST_HAS_RUNTIME)
 #include <fuse/audio/audio_codec.hpp>
 #include <fuse/audio/audio_container.hpp>
@@ -750,6 +754,73 @@ void test_determinism_and_wrapper() {
 #endif
 }
 
+#if defined(FUSE_AUDIO_COOK_TEST_HAS_PROJECT)
+/// 4e: AssetCooker::cook_audio honours AudioImportDesc::normalise / trim_silence / ogg_quality (and stays
+/// deterministic): 0.4 s silence + 1.2 s tone + noise at -32 dBFS-ish + 0.6 s silence, mono 48 kHz.
+void test_asset_cooker_options() {
+    AudioBuffer src = make_buffer(48000, 1, 48000 * 22 / 10);
+    add_sine(src, 440.0, 0.03, 19200, 19200 + 57600);
+    {
+        Lcg rng{77};
+        for (u32 f = 19200; f < 19200 + 57600; ++f) {
+            src.samples[f] += static_cast<float>(0.01 * rng.next());
+        }
+    }
+    const float source_peak = sample_peak(src);
+    const std::string wav = temp_path("opts_source.wav");
+    write_file(wav, make_wav(src, 33));
+
+    auto cook = [&](const std::string& name, bool normalise, bool trim, float quality, bool pcm) {
+        fuse::project::AudioImportDesc desc;
+        desc.input_path = wav;
+        desc.output_path = temp_path(name);
+        desc.normalise = normalise;
+        desc.trim_silence = trim;
+        desc.ogg_quality = quality;
+        desc.format = pcm ? fuse::project::AudioImportDesc::Format::PCM_F32
+                          : fuse::project::AudioImportDesc::Format::OGG_VORBIS;
+        fuse::project::AssetCooker cooker; // strict (default)
+        const fuse::project::CookRecord record = cooker.cook_audio(desc);
+        check(record.ok && record.status == fuse::project::CookStatus::Ok, "AssetCooker cook_audio " + name + ": " + record.note);
+        return desc.output_path;
+    };
+
+    // normalise on: one-shot loudness target -16 LUFS (+-1 LU), peak held under the -1 dBFS ceiling.
+    AudioBuffer normalised;
+    check(load_cooked_pcm(cook("opts_norm.fuseaudio", true, true, 0.6f, true), normalised), "normalised PCM loads");
+    const double norm_lufs = reference_loudness_48k(normalised);
+    check(std::abs(norm_lufs + 16.0) <= 1.0, "normalise=true: -16 LUFS one-shot target, got " + fmt(norm_lufs));
+    check(sample_peak(normalised) <= std::pow(10.0f, -1.0f / 20.0f) + 1e-4f, "normalise=true: peak <= -1 dBFS ceiling");
+    // normalise off: no gain at all (sample peak unchanged).
+    AudioBuffer raw;
+    check(load_cooked_pcm(cook("opts_raw.fuseaudio", false, true, 0.6f, true), raw), "unnormalised PCM loads");
+    check(std::abs(sample_peak(raw) - source_peak) <= 1e-6f, "normalise=false: source peak kept (no gain)");
+    check(std::abs(reference_loudness_48k(raw) - norm_lufs) > 6.0, "normalise=false: loudness differs from the normalised cook");
+
+    // trim on: the 1.2 s tone plus pads (1 ms head / 20 ms tail); trim off: every source frame.
+    check(raw.frames < src.frames && raw.frames >= 57600u && raw.frames <= 57600u + 48u + 960u + 64u,
+          "trim_silence=true: leading / trailing silence removed (" + std::to_string(raw.frames) + " frames)");
+    AudioBuffer untrimmed;
+    check(load_cooked_pcm(cook("opts_untrimmed.fuseaudio", false, false, 0.6f, true), untrimmed), "untrimmed PCM loads");
+    check(untrimmed.frames == src.frames && max_abs_diff(untrimmed, src) == 0.0,
+          "trim_silence=false (+ no normalise, 48 kHz): the source passes through bit-exact");
+
+    // ogg_quality: higher quality -> larger stream and closer to the source; each quality byte-identical on re-cook.
+    const std::string low = cook("opts_q01.fuseaudio", true, true, 0.1f, false);
+    const std::string high = cook("opts_q09.fuseaudio", true, true, 0.9f, false);
+    const std::string high_again = cook("opts_q09_again.fuseaudio", true, true, 0.9f, false);
+    const std::vector<u8> low_bytes = read_file(low);
+    const std::vector<u8> high_bytes = read_file(high);
+    check(!low_bytes.empty() && low_bytes.size() < high_bytes.size(),
+          "ogg_quality 0.1 < 0.9 in size (" + std::to_string(low_bytes.size()) + " vs " + std::to_string(high_bytes.size()) + ")");
+    check(high_bytes == read_file(high_again), "ogg_quality cook is byte-identical across cooks");
+    AudioBuffer low_pcm, high_pcm;
+    check(load_cooked_pcm(low, low_pcm) && load_cooked_pcm(high, high_pcm), "Vorbis cooks decode");
+    check(max_abs_diff(high_pcm, normalised) < max_abs_diff(low_pcm, normalised),
+          "ogg_quality 0.9 is closer to the PCM cook than 0.1");
+}
+#endif
+
 void test_cli(const char* fuse_cook) {
     if (fuse_cook == nullptr) {
         std::printf("  fuse_cook CLI check skipped (no executable path given)\n");
@@ -798,6 +869,9 @@ int main(int argc, char** argv) {
     test_round_trip_snr();
     test_loop();
     test_determinism_and_wrapper();
+#if defined(FUSE_AUDIO_COOK_TEST_HAS_PROJECT)
+    test_asset_cooker_options();
+#endif
     test_cli(argc > 1 ? argv[1] : nullptr);
     if (g_failures != 0) {
         std::fprintf(stderr, "fuse_asset_audio_cook: %d failure(s)\n", g_failures);

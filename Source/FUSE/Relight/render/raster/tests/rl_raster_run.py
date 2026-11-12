@@ -742,7 +742,6 @@ def cmd_validation(tools, args):
     common = {
         "VK_INSTANCE_LAYERS": "VK_LAYER_KHRONOS_validation",
         "VK_KHRONOS_VALIDATION_REPORT_FLAGS": "error,warn",
-        "VK_LAYER_ENABLES": "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT",
         "VK_KHRONOS_VALIDATION_VALIDATE_SYNC": "true",
         "DXVK_LOG_LEVEL": "info",
         "FUSE_RELIGHT_VK_VALIDATION": "1",
@@ -821,7 +820,7 @@ def main():
             s.add_argument("--fixtures")
             s.add_argument("--emulator", default="")
     args = p.parse_args()
-    if not shutil.which("wine") and not shutil.which("wine64"):
+    if not os.environ.get("FUSE_WINE") and not shutil.which("wine") and not shutil.which("wine64"):
         print("SKIP: wine not installed")
         return SKIP
     tools = load_tap_tools(args.tap_tools)

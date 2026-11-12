@@ -63,6 +63,8 @@ bool writeCapture(const fs::path& dir, const CaptureData& capture, hash::HashRul
         rep.files.push_back("store/" + r);
     }
     rep.files.push_back("store/db/remaster_db.json");
+    rep.files.push_back(std::string("store/db/") + kLockFile);
+    rep.files.push_back(std::string("store/db/") + kSqliteFile);
     rep.keys = store.keys;
     std::sort(rep.files.begin(), rep.files.end());
     if (report) {

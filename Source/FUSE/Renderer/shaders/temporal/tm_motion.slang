@@ -13,8 +13,8 @@ struct TmMotion {
 
 float2 fuseTmClipUv(float4 c) {
     float2 uv;
-    uv.x = c.x / c.w * 0.5 + 0.5;
-    uv.y = c.y / c.w * 0.5 + 0.5;
+    uv.x = fuseDivRn(c.x, c.w) * 0.5 + 0.5;
+    uv.y = fuseDivRn(c.y, c.w) * 0.5 + 0.5;
     return uv;
 }
 
@@ -27,15 +27,15 @@ TmMotion fuseTmSky(TmMotionFrame f, uint2 p) {
     }
     const float sx = float(p.x) + 0.5 + f.jitterX;
     const float sy = float(p.y) + 0.5 + f.jitterY;
-    const float nx = sx * (2.0 / float(f.width)) - 1.0;
-    const float ny = sy * (2.0 / float(f.height)) - 1.0;
+    const float nx = sx * fuseDivRn(2.0, float(f.width)) - 1.0;
+    const float ny = sy * fuseDivRn(2.0, float(f.height)) - 1.0;
     const float px = f.skyReproj[0].x * nx + f.skyReproj[1].x * ny + f.skyReproj[2].x;
     const float py = f.skyReproj[0].y * nx + f.skyReproj[1].y * ny + f.skyReproj[2].y;
     const float pw = f.skyReproj[0].z * nx + f.skyReproj[1].z * ny + f.skyReproj[2].z;
     if (pw > 0.0) {
-        const float cu = sx / float(f.width);
-        const float cv = sy / float(f.height);
-        r.motion = float2(cu - (px / pw * 0.5 + 0.5), cv - (py / pw * 0.5 + 0.5));
+        const float cu = fuseDivRn(sx, float(f.width));
+        const float cv = fuseDivRn(sy, float(f.height));
+        r.motion = float2(cu - (fuseDivRn(px, pw) * 0.5 + 0.5), cv - (fuseDivRn(py, pw) * 0.5 + 0.5));
     }
     return r;
 }
@@ -64,6 +64,7 @@ TmMotion fuseTmMotion(GpuSceneHeader* scene, TmMotionFrame f, uint2 p, uint2 vis
     const GpuTransform t = fuseGpuSceneTransforms(scene)[instance];
     const uint base = mesh.firstIndex + triangle * 3u;
     float3 v[3];
+    float3 pv[3];
     float4 c[3];
     for (uint k = 0u; k < 3u; ++k) {
         const uint vi = uint(int(indices[base + k]) + mesh.vertexOffset);
@@ -71,6 +72,7 @@ TmMotion fuseTmMotion(GpuSceneHeader* scene, TmMotionFrame f, uint2 p, uint2 vis
             return r;
         }
         v[k] = fuseVisMeshPosition(mesh, vi);
+        pv[k] = fuseVisMeshPrevPosition(mesh, vi);
         c[k] = fuseVisClip(t, f.drawViewProj, v[k]);
     }
     const float2 ndc = fuseVisPixelNdc(p, f.width, f.height);
@@ -87,15 +89,19 @@ TmMotion fuseTmMotion(GpuSceneHeader* scene, TmMotionFrame f, uint2 p, uint2 vis
     if (s == 0.0) {
         return r;
     }
-    const float b0 = e0 / s;
-    const float b1 = e1 / s;
-    const float b2 = e2 / s;
+    const float b0 = fuseDivRn(e0, s);
+    const float b1 = fuseDivRn(e1, s);
+    const float b2 = fuseDivRn(e2, s);
     float3 obj;
     obj.x = b0 * v[0].x + b1 * v[1].x + b2 * v[2].x;
     obj.y = b0 * v[0].y + b1 * v[1].y + b2 * v[2].y;
     obj.z = b0 * v[0].z + b1 * v[1].z + b2 * v[2].z;
+    float3 prevObj;
+    prevObj.x = b0 * pv[0].x + b1 * pv[1].x + b2 * pv[2].x;
+    prevObj.y = b0 * pv[0].y + b1 * pv[1].y + b2 * pv[2].y;
+    prevObj.z = b0 * pv[0].z + b1 * pv[1].z + b2 * pv[2].z;
     const float4 cc = fuseVisClip(t, f.viewProj, obj);
-    const float4 pcl = fuseVisClip(fuseGpuScenePrevTransforms(scene)[instance], f.prevViewProj, obj);
+    const float4 pcl = fuseVisClip(fuseGpuScenePrevTransforms(scene)[instance], f.prevViewProj, prevObj);
     if (cc.w > 0.0) {
         r.depth = cc.w;
         if (pcl.w > 0.0) {

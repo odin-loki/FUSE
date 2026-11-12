@@ -84,7 +84,8 @@ set(_fuse_wp41_header "${_fuse_wp41_gen}/temporal_spv.h")
 add_custom_target(fuse_temporal_kernels)
 set(_fuse_wp41_embed_args "")
 set(_fuse_wp41_embed_deps "")
-file(GLOB _fuse_wp41_glsl_includes "${_fuse_wp41_shd}/*.glsl" "${_fuse_wp41_vis_shd}/*.glsl")
+file(GLOB _fuse_wp41_glsl_includes "${_fuse_wp41_shd}/*.glsl" "${_fuse_wp41_vis_shd}/*.glsl"
+    "${_fuse_wp41_root}/shaders/common/exact_math.glsl")
 
 foreach(_row IN LISTS _fuse_wp41_kernels)
     string(REPLACE "|" ";" _entry "${_row}")
@@ -151,11 +152,11 @@ endforeach()
 
 # --- Lavapipe gates ------------------------------------------------------------------------------------
 add_executable(fuse_rp_temporal ${_fuse_wp41_tests_dir}/test_rp_temporal.cpp)
-target_link_libraries(fuse_rp_temporal PRIVATE fuse_temporal fuse_material_resolve)
+target_link_libraries(fuse_rp_temporal PRIVATE fuse_temporal fuse_material_resolve fuse_skinning_gpu)
 fuse_apply_cxx23(fuse_rp_temporal)
 
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-set(_fuse_wp41_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+set(_fuse_wp41_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 set(_fuse_wp41_vk_tests "")
 foreach(_case "motion;set" "motion;buffer" "taau;set" "zero_alloc;set")
     list(GET _case 0 _mode)
@@ -163,14 +164,14 @@ foreach(_case "motion;set" "motion;buffer" "taau;set" "zero_alloc;set")
     set(_name "fuse_rp_temporal_vk_${_mode}_${_backend}")
     if(FUSE_VULKAN_BACKEND)
         add_test(NAME ${_name}
-                 COMMAND "${_fuse_wp41_lock}" "$<TARGET_FILE:fuse_rp_temporal>" --mode ${_mode} --backend ${_backend})
+                 COMMAND ${_fuse_wp41_lock} "$<TARGET_FILE:fuse_rp_temporal>" --mode ${_mode} --backend ${_backend})
     else()
         add_test(NAME ${_name} COMMAND fuse_rp_temporal --mode ${_mode} --backend ${_backend})
     endif()
     list(APPEND _fuse_wp41_vk_tests ${_name})
 endforeach()
 set_tests_properties(${_fuse_wp41_vk_tests} PROPERTIES
-    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
     TIMEOUT 900

@@ -1,0 +1,151 @@
+{
+ "description": "TAG_IMAGE answer that violates the schema",
+ "exchanges": [
+  {
+   "request": {
+    "body": {
+     "contents": [
+      {
+       "parts": [
+        {
+         "text": "Texture name: stone_wall_04\nKnown context: legacy texture, medieval town\nReturn descriptive tags, the material class, a physical category for the material library, the texture's role, whether it contains text or a logo, and your confidence."
+        },
+        {
+         "inlineData": {
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAABE0lEQVR4AQEIAff+AA2SCP8ihBf/GzsT/yY0G/9hXEf/d05X/0YgM/9RGjv/AA2SCP8ihBf/GzsT/yY0G/9hXEf/d05X/0YgM/9RGjv/AAZJBP8RQgv/N3cn/0xpN/8wLiP/Oycr/4xBZv+iNHf/AAZJBP8RQgv/N3cn/0xpN/8wLiP/Oycr/4xBZv+iNHf/AA2SCP8ihBf/GzsT/yY0G/9hXEf/d05X/0YgM/9RGjv/AA2SCP8ihBf/GzsT/yY0G/9hXEf/d05X/0YgM/9RGjv/AAZJBP8RQgv/N3cn/0xpN/8wLiP/Oycr/4xBZv+iNHf/AAZJBP8RQgv/N3cn/0xpN/8wLiP/Oycr/4xBZv+iNHf/DUJuRRLhE8gAAAAASUVORK5CYII=",
+          "mimeType": "image/png"
+         }
+        }
+       ],
+       "role": "user"
+      }
+     ],
+     "generationConfig": {
+      "candidateCount": 1,
+      "maxOutputTokens": 512,
+      "responseJsonSchema": {
+       "additionalProperties": false,
+       "properties": {
+        "confidence": {
+         "maximum": 1,
+         "minimum": 0,
+         "type": "number"
+        },
+        "is_text_or_logo": {
+         "type": "boolean"
+        },
+        "material_class": {
+         "enum": [
+          "stone",
+          "brick",
+          "concrete",
+          "plaster",
+          "tile",
+          "wood",
+          "metal/bare",
+          "metal/painted",
+          "fabric",
+          "leather",
+          "glass",
+          "plastic",
+          "ground/dirt",
+          "ground/grass",
+          "ground/sand",
+          "ground/snow",
+          "foliage",
+          "water",
+          "paper",
+          "skin",
+          "sky",
+          "ui",
+          "decal",
+          "other"
+         ],
+         "type": "string"
+        },
+        "physical_category": {
+         "maxLength": 64,
+         "pattern": "^[a-z][a-z0-9_]*(/[a-z0-9_]+)*$",
+         "type": "string"
+        },
+        "tags": {
+         "items": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]{0,31}$",
+          "type": "string"
+         },
+         "maxItems": 16,
+         "minItems": 1,
+         "type": "array",
+         "uniqueItems": true
+        },
+        "texture_role": {
+         "enum": [
+          "albedo",
+          "normal",
+          "lightmap",
+          "ui",
+          "decal",
+          "sky",
+          "font",
+          "mask",
+          "other"
+         ],
+         "type": "string"
+        }
+       },
+       "required": [
+        "tags",
+        "material_class",
+        "physical_category",
+        "texture_role",
+        "is_text_or_logo",
+        "confidence"
+       ],
+       "type": "object"
+      },
+      "responseMimeType": "application/json",
+      "seed": 7,
+      "temperature": 0
+     },
+     "systemInstruction": {
+      "parts": [
+       {
+        "text": "You classify game textures for a remastering pipeline. You see one thumbnail. Answer only with JSON that matches the response schema. Use lowercase tags. Do not describe people, brands or text content beyond flagging it."
+       }
+      ]
+     }
+    },
+    "method": "POST",
+    "path": "/v1beta/models/gemini-3.8-flash:generateContent"
+   },
+   "response": {
+    "body": {
+     "candidates": [
+      {
+       "content": {
+        "parts": [
+         {
+          "text": "{\"tags\": [\"Stone Wall\"], \"material_class\": \"marble-ish\", \"physical_category\": \"stone\", \"texture_role\": \"albedo\", \"is_text_or_logo\": \"no\", \"confidence\": 1.4, \"mood\": \"gloomy\"}"
+         }
+        ],
+        "role": "model"
+       },
+       "finishReason": "STOP",
+       "index": 0
+      }
+     ],
+     "modelVersion": "gemini-3.8-flash",
+     "responseId": "fixture",
+     "usageMetadata": {
+      "candidatesTokenCount": 70,
+      "promptTokenCount": 1290,
+      "totalTokenCount": 1360
+     }
+    },
+    "status": 200
+   }
+  }
+ ],
+ "provider": "gemini",
+ "schema": "fuse.ai-http-fixture/1"
+}

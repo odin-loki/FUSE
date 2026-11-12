@@ -1,10 +1,18 @@
 #version 460
-// WP-9.2 "gsplat.scan": one workgroup of 256 threads. Zeroes the tile ranges, computes the exclusive prefix sum
-// of every splat's tiles touched (its first sort entry; chunks of 256, Hillis-Steele in shared memory, a
-// running carry), writes the counters (entries emitted, entries over the capacity) and fills the sort entries
-// past the emitted ones with the padding key (tileCount << 32 | 0xFFFFFFFF, value 0xFFFFFFFF) so the
-// fixed-size sort puts them last. CPU reference: gs_render_reference (offsets / padding). GLSL twin of
-// gs_scan.slang.
+// WP-9.2 "gsplat.scan": the exclusive prefix sum of every splat's tiles touched (its first sort entry), the counters
+// (entries emitted, entries over the capacity), zeroed tile ranges and the sort entries past the emitted ones filled
+// with the padding key (tileCount << 32 | 0xFFFFFFFF, value 0xFFFFFFFF) so the fixed-size sort puts them last.
+// CPU reference: gs_render_reference (offsets / padding). GLSL twin of gs_scan.slang.
+//
+// pc.reserved selects the phase (GsplatRenderer records 0 alone, or 1 -> 2 -> 3):
+//   0  one workgroup does everything (chunks of 256, Hillis-Steele in shared memory, a running carry)
+//   1  "gsplat.scan.reduce": workgroup g sums the tiles touched of splats 256 g .. 256 g + 255 -> blocks[g]
+//   2  "gsplat.scan": one workgroup scans blocks[] in place (exclusive, chunks of 256 with a carry), writes the
+//      counters, zeroes the ranges and pads the sort entries
+//   3  "gsplat.scan.apply": workgroup g scans its 256 splats and adds blocks[g] -> offsets
+// blocks[] = the u32 scratch at F.reserved0 | F.reserved1 << 32 (the sort's values-temp buffer, unused until the
+// sort). The sums are u32 additions, so every offset and the carry are the single-workgroup values bit for bit;
+// with 1M splats the one-workgroup scan walked 3,907 chunks serially (5.5 ms on an RTX 3090).
 #extension GL_GOOGLE_include_directive : require
 #include "gs_common.glsl"
 
@@ -12,33 +20,22 @@ layout(local_size_x = 256) in;
 
 shared uint s_scan[256];
 
-void main() {
-    const uint tid = gl_LocalInvocationID.x;
-    GsUintsRef ranges = GsUintsRef(F.ranges);
-    for (uint t = tid; t < F.tileCount; t += GS_GROUP) {
-        ranges.v[t * 2u] = 0u;
-        ranges.v[t * 2u + 1u] = 0u;
-    }
-    GsUintsRef offsets = GsUintsRef(F.offsets);
-    const uint n = F.splatCount;
-    uint carry = 0u;
-    for (uint base = 0u; base < n; base += GS_GROUP) {
-        const uint i = base + tid;
-        const uint v = i < n ? gs_tiles_touched(gs_projected(i, 3u)) : 0u;
-        s_scan[tid] = v;
+// Inclusive scan of v over the workgroup (s_scan holds it afterwards).
+uint gs_scan_group(uint tid, uint v) {
+    s_scan[tid] = v;
+    barrier();
+    for (uint off = 1u; off < GS_GROUP; off <<= 1u) {
+        const uint add = tid >= off ? s_scan[tid - off] : 0u;
         barrier();
-        for (uint off = 1u; off < GS_GROUP; off <<= 1u) {
-            const uint add = tid >= off ? s_scan[tid - off] : 0u;
-            barrier();
-            s_scan[tid] += add;
-            barrier();
-        }
-        if (i < n) {
-            offsets.v[i] = carry + s_scan[tid] - v;
-        }
-        carry += s_scan[GS_GROUP - 1u];
+        s_scan[tid] += add;
         barrier();
     }
+    return s_scan[tid];
+}
+
+uint gs_touched(uint i) { return i < F.splatCount ? gs_tiles_touched(gs_projected(i, 3u)) : 0u; }
+
+void gs_finish(uint tid, uint carry) {
     if (tid == 0u) {
         GsUintsRef counters = GsUintsRef(F.counters);
         counters.v[0] = carry;
@@ -53,4 +50,65 @@ void main() {
         keys.v[e] = pad;
         values.v[e] = GS_PAD_VALUE;
     }
+}
+
+void gs_clear_ranges(uint tid) {
+    GsUintsRef ranges = GsUintsRef(F.ranges);
+    for (uint t = tid; t < F.tileCount; t += GS_GROUP) {
+        ranges.v[t * 2u] = 0u;
+        ranges.v[t * 2u + 1u] = 0u;
+    }
+}
+
+void main() {
+    const uint tid = gl_LocalInvocationID.x;
+    const uint mode = pc.reserved;
+    const uint n = F.splatCount;
+    GsUintsRef offsets = GsUintsRef(F.offsets);
+    GsUintsRef blocks = GsUintsRef(uint64_t(F.reserved0) | (uint64_t(F.reserved1) << 32));
+    if (mode == 1u) {
+        const uint g = gl_WorkGroupID.x;
+        const uint total = gs_scan_group(tid, gs_touched(g * GS_GROUP + tid));
+        if (tid == GS_GROUP - 1u) {
+            blocks.v[g] = total;
+        }
+        return;
+    }
+    if (mode == 3u) {
+        const uint g = gl_WorkGroupID.x;
+        const uint i = g * GS_GROUP + tid;
+        const uint v = gs_touched(i);
+        const uint inclusive = gs_scan_group(tid, v);
+        if (i < n) {
+            offsets.v[i] = blocks.v[g] + inclusive - v;
+        }
+        return;
+    }
+    gs_clear_ranges(tid);
+    uint carry = 0u;
+    if (mode == 2u) {
+        const uint blockCount = (n + GS_GROUP - 1u) / GS_GROUP;
+        for (uint base = 0u; base < blockCount; base += GS_GROUP) {
+            const uint b = base + tid;
+            const uint v = b < blockCount ? blocks.v[b] : 0u;
+            const uint inclusive = gs_scan_group(tid, v);
+            if (b < blockCount) {
+                blocks.v[b] = carry + inclusive - v;
+            }
+            carry += s_scan[GS_GROUP - 1u];
+            barrier();
+        }
+    } else {
+        for (uint base = 0u; base < n; base += GS_GROUP) {
+            const uint i = base + tid;
+            const uint v = gs_touched(i);
+            const uint inclusive = gs_scan_group(tid, v);
+            if (i < n) {
+                offsets.v[i] = carry + inclusive - v;
+            }
+            carry += s_scan[GS_GROUP - 1u];
+            barrier();
+        }
+    }
+    gs_finish(tid, carry);
 }

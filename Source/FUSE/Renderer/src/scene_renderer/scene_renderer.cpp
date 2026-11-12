@@ -396,6 +396,11 @@ void SceneRenderer::collectRetired(u64 completedSerial) {
     }
     m_composer.collectRetired(completedSerial);
     m_scene.collectRetired(completedSerial);
+    // Recycle finished upload batches. Without this the queue only reuses a batch once all kMaxBatches exist, so a
+    // device that stages GpuScene writes (device-local tables, e.g. NVIDIA) creates a new batch every frame until then.
+    if (m_upload != nullptr) {
+        (void)m_upload->retireCompleted();
+    }
     if (m_desc.manageBindlessSerial) {
         m_desc.bindless->collectRetired(completedSerial);
     }

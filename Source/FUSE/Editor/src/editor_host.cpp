@@ -9,6 +9,7 @@
 #include <fuse/ecs/registry.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/project/t3d_asset_vfs.hpp>
+#include <fuse/project/world_converter.hpp>
 #include <fuse/scene/project_io.hpp>
 
 #include <cctype>
@@ -291,6 +292,11 @@ bool EditorHost::openProject(const std::string& directory) {
                           : scene::resolveDefaultWorld2DPath(m_projectManifest);
         const scene::SceneDimension dimension =
             use3D ? scene::SceneDimension::World3D : scene::SceneDimension::World2D;
+        if (use3D && !fileExists(worldPath)) {
+            // Samples ship only the legacy .mis (golden reference or bundled): convert it once, as the runtime
+            // viewport does, so the project opens with its world instead of an empty scene.
+            (void)project::ensureDefault3DWorldReady(load);
+        }
         if (fileExists(worldPath)) {
             sceneOk = openScene(worldPath);
         } else {

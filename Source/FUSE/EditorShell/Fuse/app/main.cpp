@@ -1,6 +1,9 @@
 // fuse_editor_fuse: the FUSE editor with FUSE UI chrome (UI9, FUSE_EDITOR_SHELL=fuse), beside fuse_editor_qt.
 //   fuse_editor_fuse [scene.fscene] [--font-scale=1.25] [--screenshot=out.png]
 #include "fuse/app/native.hpp"
+#if defined(FUSE_EDITOR_HAS_A11Y)
+#include "fuse/app/accessibility.hpp"
+#endif
 #include "fuse/editor/fui/app_icon.hpp"
 #include "fuse/editor/fui/editor_shell.hpp"
 
@@ -43,6 +46,8 @@ int main(int argc, char** argv) {
     }
     controller.startGameLoop(60.f);
     fuse::app::NativeOptions nopt;
+    nopt.osPopups = true;  // menus / combo lists as their own OS windows (Qt QMenu)
+    nopt.osWindows = true; // floated panels as their own OS windows (Qt floating QDockWidget)
     if (scene) {
         nopt.adoptDevice = {scene->instanceHandle(), scene->physicalDeviceHandle(), scene->deviceHandle(),
                             scene->queueHandle(), scene->queueFamily()};
@@ -53,6 +58,11 @@ int main(int argc, char** argv) {
         fuse::app::NativePlatform native(app, nopt);
         native.show(win);
         native.setIcon(win, fuse::editor::fui::applicationIcon()); // window icon (Branding rasters; exe icon: .rc)
+        services.setNative(&native); // OS file dialogs (FUSE UI's own when the OS has none)
+#if defined(FUSE_EDITOR_HAS_A11Y)
+        // screen readers (UI Automation / AT-SPI through AccessKit): menus, panels and inspector fields
+        fuse::app::WindowAccessibility a11y(native, win);
+#endif
         if (scene) {
             if (native.gpuDraws(win))
                 shell.setSceneViewport(scene.get(), [&](const fuse::editor::SceneViewportFrame& f) {
@@ -64,6 +74,7 @@ int main(int argc, char** argv) {
         code = app.run();
         controller.stopGameLoop();
         shell.setSceneViewport(nullptr);
+        services.setNative(nullptr);
     } // presenter released before the device it adopted
     return code;
 }

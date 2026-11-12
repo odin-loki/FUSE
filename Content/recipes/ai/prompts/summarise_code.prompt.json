@@ -1,0 +1,58 @@
+{
+  "schema": "fuse.ai-prompt/1",
+  "id": "summarise_code",
+  "version": 1,
+  "task": "SUMMARISE_CODE",
+  "description": "Plan §4.5 step 3: legacy script module + call-graph context (fuse_remaster_tscript_dump analysis) -> a structured behaviour spec. The spec is our own text and is committed; it must not quote the original code.",
+  "system": "You analyse legacy game scripts for a clean-room port. You read one module and its call-graph context and write a behaviour specification: state, events with their guards and effects, timers, dependencies and invariants. Describe behaviour in your own words; never copy lines of the original code. Answer only with JSON that matches the response schema.",
+  "user": "Module: {module}\nLanguage: {language}\nTarget: FUSE Lua behaviours (see the context). Map every legacy event handler to an event named after the FUSE callback it becomes.",
+  "attach": "text",
+  "context": ["context/fuse_lua_api.md"],
+  "max_output_tokens": 4096,
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["module", "summary", "source_sha256", "state", "events", "timers", "dependencies", "invariants", "engine_api"],
+    "properties": {
+      "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
+      "summary": {"type": "string", "minLength": 20, "maxLength": 800},
+      "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+      "state": {
+        "type": "array", "maxItems": 64,
+        "items": {
+          "type": "object", "additionalProperties": false, "required": ["name", "type", "description"],
+          "properties": {
+            "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+            "type": {"type": "string", "enum": ["number", "string", "boolean", "entity", "vector"]},
+            "description": {"type": "string", "maxLength": 300}
+          }
+        }
+      },
+      "events": {
+        "type": "array", "minItems": 1, "maxItems": 64,
+        "items": {
+          "type": "object", "additionalProperties": false, "required": ["name", "legacy_handler", "params", "guards", "effects"],
+          "properties": {
+            "name": {"type": "string", "pattern": "^on_[a-z_]+$"},
+            "legacy_handler": {"type": "string", "maxLength": 128},
+            "params": {"type": "array", "items": {"type": "string", "maxLength": 200}},
+            "guards": {"type": "array", "items": {"type": "string", "maxLength": 300}},
+            "effects": {"type": "array", "minItems": 1, "items": {"type": "string", "maxLength": 400}}
+          }
+        }
+      },
+      "timers": {
+        "type": "array",
+        "items": {
+          "type": "object", "additionalProperties": false, "required": ["name", "period_s", "effect"],
+          "properties": {
+            "name": {"type": "string"}, "period_s": {"type": "number", "minimum": 0}, "effect": {"type": "string"}
+          }
+        }
+      },
+      "dependencies": {"type": "array", "items": {"type": "string", "maxLength": 200}},
+      "invariants": {"type": "array", "minItems": 1, "items": {"type": "string", "maxLength": 300}},
+      "engine_api": {"type": "array", "items": {"type": "string", "pattern": "^(Entity|Physics|Scene|Audio|Input|CVar|Remaster)\\.[a-z_]+$"}}
+    }
+  }
+}

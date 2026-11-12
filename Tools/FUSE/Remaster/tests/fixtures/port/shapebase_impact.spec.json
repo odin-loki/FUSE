@@ -1,0 +1,80 @@
+{
+ "dependencies": [
+  "datablock damage dispatch (ShapeBaseData::damage)",
+  "vector subtraction",
+  "object existence and damage-state queries"
+ ],
+ "engine_api": [
+  "Entity.alive",
+  "Entity.get_position",
+  "Physics.get_velocity",
+  "Remaster.get",
+  "Remaster.emit"
+ ],
+ "events": [
+  {
+   "effects": [
+    "emit damage with target = this object, source = other, position = own position minus vec, amount = len / min_impact_speed * collision_mul, kind = impact"
+   ],
+   "guards": [
+    "the object exists",
+    "its damage_state is not Destroyed"
+   ],
+   "legacy_handler": "ShapeBaseData::onCollision",
+   "name": "on_collision",
+   "params": [
+    "other: the object collided with",
+    "vec: this object's velocity at contact",
+    "len: the length of vec"
+   ]
+  },
+  {
+   "effects": [
+    "emit damage with target = this object, source = other, position = own position minus vec, amount = len / min_impact_speed * impact_mul, kind = impact"
+   ],
+   "guards": [
+    "the object exists",
+    "its damage_state is not Destroyed"
+   ],
+   "legacy_handler": "ShapeBaseData::onImpact",
+   "name": "on_impact",
+   "params": [
+    "other: the impacting object",
+    "vec: the impact vector",
+    "len: the impact speed"
+   ]
+  }
+ ],
+ "invariants": [
+  "no damage is applied to a missing or destroyed object",
+  "damage grows linearly with the hit speed",
+  "the damage kind is always impact",
+  "collision and impact use the same formula with different multipliers"
+ ],
+ "module": "shapebase_impact",
+ "source_sha256": "4887f46f9f00dea2c663254e31bfca97a42f079b292e3d155e1469fe7ff3ba8a",
+ "state": [
+  {
+   "description": "datablock: hit speed that deals 1x the multiplier",
+   "name": "min_impact_speed",
+   "type": "number"
+  },
+  {
+   "description": "datablock: damage multiplier for collisions",
+   "name": "collision_mul",
+   "type": "number"
+  },
+  {
+   "description": "datablock: damage multiplier for impacts",
+   "name": "impact_mul",
+   "type": "number"
+  },
+  {
+   "description": "per object, read only here: Enabled, Disabled or Destroyed",
+   "name": "damage_state",
+   "type": "string"
+  }
+ ],
+ "summary": "Impact damage for shape datablocks. When an object that still exists and is not destroyed is hit (a physics collision or a scripted impact), it takes 'impact' damage proportional to the hit speed divided by the datablock's minimum impact speed, applied at the object's position offset back along the hit vector. Collisions and impacts differ only in their damage multiplier.",
+ "timers": []
+}

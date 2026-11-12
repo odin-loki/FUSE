@@ -93,7 +93,8 @@ set(_fuse_wp61_header "${_fuse_wp61_gen}/ddgi_gpu_spv.h")
 add_custom_target(fuse_ddgi_gpu_kernels)
 set(_fuse_wp61_embed_args "")
 set(_fuse_wp61_embed_deps "")
-file(GLOB _fuse_wp61_glsl_includes "${_fuse_wp61_shd}/*.glsl" "${_fuse_wp61_root}/shaders/atmosphere/at_sample.glsl")
+file(GLOB _fuse_wp61_glsl_includes "${_fuse_wp61_shd}/*.glsl" "${_fuse_wp61_root}/shaders/atmosphere/at_sample.glsl"
+    "${_fuse_wp61_root}/shaders/common/exact_math.glsl")
 cmake_policy(PUSH)
 cmake_policy(SET CMP0007 NEW) # list(GET) keeps the empty fields
 foreach(_row IN LISTS _fuse_wp61_kernels)
@@ -180,19 +181,19 @@ target_compile_options(fuse_rp_ddgi_gpu PRIVATE ${_fuse_wp61_warn})
 fuse_apply_cxx23(fuse_rp_ddgi_gpu)
 
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-set(_fuse_wp61_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+set(_fuse_wp61_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 set(_fuse_wp61_vk_tests "")
 foreach(_mode parity_rq parity_sdf parity_rq_states parity_sdf_states converge leak tod shade zero_alloc cpu_import)
     set(_name "fuse_rp_ddgi_gpu_vk_${_mode}")
     if(FUSE_VULKAN_BACKEND)
-        add_test(NAME ${_name} COMMAND "${_fuse_wp61_lock}" "$<TARGET_FILE:fuse_rp_ddgi_gpu>" --mode ${_mode})
+        add_test(NAME ${_name} COMMAND ${_fuse_wp61_lock} "$<TARGET_FILE:fuse_rp_ddgi_gpu>" --mode ${_mode})
     else()
         add_test(NAME ${_name} COMMAND fuse_rp_ddgi_gpu --mode ${_mode})
     endif()
     list(APPEND _fuse_wp61_vk_tests ${_name})
 endforeach()
 set_tests_properties(${_fuse_wp61_vk_tests} PROPERTIES
-    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
     TIMEOUT 1500

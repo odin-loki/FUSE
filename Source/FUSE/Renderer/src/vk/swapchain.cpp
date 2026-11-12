@@ -54,6 +54,10 @@ VulkanSwapchain::~VulkanSwapchain() {
                                    nullptr);
                 image.view = nullptr;
             }
+            if (image.presentReady != nullptr) {
+                vkDestroySemaphore(static_cast<VkDevice>(m_device), static_cast<VkSemaphore>(image.presentReady), nullptr);
+                image.presentReady = nullptr;
+            }
         }
         if (m_presentRenderPass != nullptr) {
             vkDestroyRenderPass(static_cast<VkDevice>(m_device),
@@ -175,6 +179,10 @@ void VulkanSwapchain::shutdown(VulkanDevice& device) {
                                static_cast<VkImageView>(image.view),
                                nullptr);
             image.view = nullptr;
+        }
+        if (image.presentReady != nullptr && m_device != nullptr) {
+            vkDestroySemaphore(static_cast<VkDevice>(m_device), static_cast<VkSemaphore>(image.presentReady), nullptr);
+            image.presentReady = nullptr;
         }
     }
     m_images.clear();
@@ -316,6 +324,10 @@ bool VulkanSwapchain::createSwapchainResources(VulkanDevice& device, const Swapc
         m_images[i].image = swapchainImages[i];
         m_images[i].view = view;
         m_images[i].index = i;
+        VkSemaphoreCreateInfo semInfo{};
+        semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        VkSemaphore presentReady = VK_NULL_HANDLE;
+        if (vkCreateSemaphore(vkDevice, &semInfo, nullptr, &presentReady) == VK_SUCCESS) m_images[i].presentReady = presentReady;
     }
 
     VkAttachmentDescription colorAttachment{};
@@ -462,6 +474,10 @@ u32 VulkanSwapchain::acquireNextImage(void* imageAvailableSemaphore) {
     (void)imageAvailableSemaphore;
     return UINT32_MAX;
 #endif
+}
+
+void* VulkanSwapchain::presentSemaphore(u32 imageIndex, void* fallback) const {
+    return imageIndex < m_images.size() && m_images[imageIndex].presentReady != nullptr ? m_images[imageIndex].presentReady : fallback;
 }
 
 bool VulkanSwapchain::present(void* renderFinishedSemaphore, u32 imageIndex) {

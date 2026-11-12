@@ -16,14 +16,17 @@ const float SX_GI_TWO_PI = 6.28318548;
 vec3 sx_sample_direction(vec3 n, uint x, uint y, uint i, uint j, uint sampleSqrt) {
     const uint k = max(1u, sampleSqrt);
     const uint seed = (x * 73856093u) ^ (y * 19349663u) ^ ((i * k + j) * 83492791u);
-    precise float u1 = (float(i) + sx_hash_unit(seed)) / float(k);
-    precise float u2 = (float(j) + sx_hash_unit(seed ^ 0x9e3779b9u)) / float(k);
+    precise float u1n = float(i) + sx_hash_unit(seed);
+    precise float u2n = float(j) + sx_hash_unit(seed ^ 0x9e3779b9u);
+    const float u1 = fuse_div_rn(u1n, float(k));
+    const float u2 = fuse_div_rn(u2n, float(k));
     const vec3 helper = abs(n.x) < 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
     const vec3 tangent = sx_normalize(sx_cross(helper, n));
     const vec3 bitangent = sx_cross(n, tangent);
-    precise float r = sqrt(u1);
+    const float r = fuse_sqrt_rn(u1);
     precise float phi = SX_GI_TWO_PI * u2;
-    precise float lz = sqrt(max(0.0, 1.0 - u1));
+    precise float lz2 = 1.0 - u1;
+    const float lz = fuse_sqrt_rn(max(0.0, lz2));
     precise float rc = r * cos(phi);
     precise float rs = r * sin(phi);
     return sx_add(sx_add(sx_scale(tangent, rc), sx_scale(bitangent, rs)), sx_scale(n, lz));
@@ -40,6 +43,7 @@ vec3 sx_pixel_gather(uint64_t radianceIn, uint x, uint y) {
     P.maxDistance = F.giMaxDistance;
     P.fadeEdge = 0.0;
     P.refineSteps = F.giRefineSteps;
+    P.hiz = false;
     const vec3 p = sx_position_at(x, y);
     vec3 n = sx_normalize(sx_normal_at(x, y));
     if (sx_dot(n, p) > 0.0) {
@@ -69,7 +73,7 @@ vec3 sx_pixel_gather(uint64_t radianceIn, uint x, uint y) {
             sum = sx_add(sum, hit.color);
         }
     }
-    precise float inv = 1.0 / float(total);
+    const float inv = fuse_div_rn(1.0, float(total));
     return sx_scale(sum, inv);
 }
 

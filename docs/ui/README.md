@@ -21,7 +21,8 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer` |
 | `Source/FUSE/UI/Core` | `fuse_ui_core` | `UiContext` (tree, style, layout, paint, input, focus, signals, timers, animation, a11y), `DrawList` + `CpuRasterizer`, `Path` / `Painter` / `SvgImage` / built-in icons, `StyleEngine`, `immediate::ImmediateUi`, `platform_bridge.hpp` |
 | `Source/FUSE/UI/Widgets` | `fuse_ui_widgets` | Tier A + Tier B widgets + default dark theme (`widgets::install`) |
-| `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
+| `Source/FUSE/UI/Doc` | `fuse_ui_doc`, `fuse_ui_cook`, `fuse_ui_extract_strings` | `.fuseui` JSON documents, binding model, expression bytecode; the cooker and the string-extraction CLI |
+| `Source/FUSE/UI/L10n` | `fuse_ui_l10n_lib` | CLDR plural rules, ICU-style message formatting, locale number / date / time / currency formatting, string-table file format (standard library only, no ICU) |
 | `Source/FUSE/UI/Script` | `fuse_ui_script` | Lua `ui` table (vendored Lua 5.2) |
 | `Source/FUSE/UI/Render` | `fuse_ui_render`, `fuse_ui_vk` | GPU draw data packing, `ui.draw_list` compute kernel, `UiLayerGpu` render-graph pass and `UiFrameSource` (in tree with the Vulkan RHI) |
 | `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; samples `hello_app`, `notes_app`, `widget_gallery`, `game_menu` |
@@ -34,6 +35,12 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | `Source/FUSE/Core/include/fuse/platform/events_v2.hpp` | header | `KeyV2` / `EventV2` with lossless v1 mapping |
 
 `fuse_ui_core` does not depend on `fuse_core`; the platform bridge is header-only.
+
+The tree also holds source files that no target builds yet: the UI work of the merged branch
+`claude/magical-bassi-815825` that still has to be ported onto this code (Wayland backend, cooked / MSDF / variable
+fonts, the SVG icon cooker, window chrome, tray, AccessKit window adapters, GPU effects, `ProjectHost`, their tests
+and goldens). [`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md) lists every one of them, what blocks
+it and how to verify it once ported. Nothing in this document describes those files unless it says so.
 
 ## Build and test
 
@@ -161,7 +168,8 @@ The last four pieces of the catalogue (gates `fuse_ui_widget_chart_flame`, `_doc
 
 `.fuseui` files are JSON trees with `{expr}` and `{=two-way}` bindings (see `Doc/include/fuse/ui/doc/document.hpp` for
 the format and `tests/data/settings.fuseui` for an example); `fuse_ui_script` exposes the same context and model to Lua
-as a global `ui` table.
+as a global `ui` table. A Lua handler (`ui.on`) is released, with its registry reference and its connection, once
+its node is gone: `LuaUi` sweeps on `update()`, `ui.on` and `ui.destroy` (`handlerCount()`; gate `fuse_ui_script_bind`).
 
 A node's `"class"` is a registered widget class or a **document class**: the compound widgets and the widgets that
 need data are created by name too, with their own properties (the full list is in `document.hpp`):
@@ -403,9 +411,121 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
   mode takes everything). Device prompts (`GameUi::prompt`) swap glyphs on `noteDevice`.
 - `UiSurface` is a UI context placed in the world (centre, right / up axes, size). `surfaceRaycast` maps a ray to
   panel pixels, `surfacePointer` feeds it as pointer input and `surfaceRender` re-rasterises on damage.
-- `StringTable` holds per-locale `key=value` tables; bound nodes are re-texted on `setLocale` + `refresh`.
+- `StringTable` holds per-locale `key=value` tables; bound nodes are re-texted on `setLocale` + `refresh`. Lookups
+  fall back to the fallback locale (the first one added, or `setFallbackLocale`), then to the key; `tr(key, args)`
+  formats the value as an ICU-style message (see Localisation below).
 - The sound hook (`setSoundHook`) receives Move / Accept / Back / Open / Close; wiring it to `fuse_audio` and theme
   sound names is the game's job for now.
+
+## Localisation
+
+Two layers exist. `fuse/text/i18n.hpp` in `fuse_text` (see "Fonts, text styles and i18n" below) has the plural
+categories, `formatPlural` patterns, `formatNumber` and pseudo-localisation that `StringTable::trPlural` uses.
+`fuse_ui_l10n_lib` is the larger library merged from the `claude/magical-bassi-815825` branch: full ICU-style
+messages, dates, times, currencies, calendar names, the string-table file format and the extraction tool. Both are
+built and gated; folding the first into the second is an open item in
+[`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md).
+
+`fuse_ui_l10n_lib` (`fuse/ui/l10n/l10n.hpp`, namespace `fuse::ui::l10n`) has no ICU dependency. Locale tags are
+matched case-insensitively, region first (`de-CH`, `pt_PT`, `en-IN`), then the language; digits are always Latin.
+
+```cpp
+namespace l10n = fuse::ui::l10n;
+l10n::formatMessage("en", "{n, plural, =0 {No items} one {# item} other {# items}}", {{"n", 1000}}); // "1,000 items"
+l10n::formatMessage("ru", "{n, plural, one {# файл} few {# файла} many {# файлов} other {# файла}}", {{"n", 22}});
+l10n::formatMessage("en", "{g, select, female {She} other {They}} left on {d, date, long}",
+                    {{"g", "female"}, {"d", l10n::Date{2024, 3, 5}}});                        // "She left on March 5, 2024"
+l10n::formatNumber("de", 1234.5);       // "1.234,5"     formatNumber("hi", 1234567) -> "12,34,567"
+l10n::formatPercent("tr", 0.5);         // "%50"
+l10n::formatDate("ja", {2024, 3, 5}, l10n::DateStyle::Long); // "2024年3月5日"
+l10n::pluralCardinal("ar", l10n::PluralOperands::fromDouble(3)); // Plural::Few
+l10n::formatTime("en", {15, 5});        // "3:05 PM"     de "15:05", ko "오후 3:05"; HourCycle::H12 / H23 force a clock
+l10n::formatCurrency("de", 1234.5, "EUR"); // "1.234,50 €"  en "€1,234.50", nl "€ 1.234,50", ja JPY "￥1,234"
+l10n::formatMonthYear("ru", 2024, 3);   // "март 2024 г."   weekdayName("de", 1, DayWidth::Short) -> "Mo."
+l10n::setUiLocale(ui, "de");            // fuse/ui/l10n/ui_locale.hpp: widgets (the calendar) format for "de"
+```
+
+- Plural rules (CLDR 44, cardinal and ordinal) with the operands n, i, v, f, t, so `"1.0"` and `1.5` pick the decimal
+  categories: en, de, nl, sv, fi, da, nb, et, gl, fr, es, it, pt, pt-PT, ru, uk, pl, cs, sk, ar, he, tr, el, hu, bg,
+  hi, bn, fa, ja, zh, ko (and the root rule, other only, for anything else). Ordinals: en, fr, it, sv, uk, hi, bn;
+  others are other only. The compact-exponent operands (c / e) are not supported.
+- Messages follow ICU MessageFormat: `{name}`, `{n, number[, integer|percent]}`, `{d, date[, short|medium|long]}`,
+  `{n, plural, [offset:k] =0 {..} one {..} other {..}}`, `{n, selectordinal, ..}`, `{g, select, .. other {..}}`,
+  nesting, `#` (the plural number minus the offset, locale-formatted; literal inside a nested select, as in ICU),
+  ICU apostrophe quoting (`''` is `'`; `'{...}'` is literal; a lone `'` is literal). Arguments are text, numbers
+  or `Date`; a decimal string (`"1.50"`) keeps its visible fraction digits for plural selection and `#`. A missing
+  argument prints as `{name}`; a malformed pattern is an error (`formatMessageOr` returns the pattern instead).
+- Numbers: decimal / grouping separators, minimum grouping digits (es, pl, pt-PT: `1234` stays ungrouped), Indian
+  grouping (hi, en-IN), minus signs (U+2212 for sv, fi), percent placement; half-even rounding. Dates (gregorian
+  short / medium / long and month names): en, en-GB, en-IN, de, fr, es, it, pt, nl, sv, ru, pl, tr, ja, zh, ko, ar;
+  other locales use en. Calendar names (same locales, plus pt-PT): wide and short (column-header) weekday names,
+  stand-alone month names (ru, pl nominative), the month-year header (CLDR yMMMM: es "marzo de 2024", ru
+  "март 2024 г.", ko "2024년 3월") and the first day of the week by region (Sunday: en / en-US / en-IN, pt (BR), ja,
+  zh, ko; Saturday: ar; Monday elsewhere, including en-GB and pt-PT). Skeletons and non-Latin digits are not done.
+- Time of day (CLDR short / medium time patterns): 12-hour with the locale's day period for en, en-IN, hi
+  (`3:05 PM` / `3:05 pm`, narrow no-break space), ko (`오후 3:05`), ar (`3:05 م`); 24-hour elsewhere, zero-padded
+  (`09:05`: en-GB, de, fr, it, pt, nl, sv, ru, pl, tr, zh) or not (`9:05`: es, ja, cs, he; fi `15.05`).
+  `HourCycle::H12` / `H23` override the clock; `uses24HourClock`, `dayPeriodName`.
+- Currencies (`formatCurrency(locale, amount, "EUR")`): the locale's pattern (symbol first: en, en-GB, en-IN, hi,
+  tr, ja, zh, ko, and with a no-break space pt, nl, de-AT, de-CH; after the number with a no-break space: de, fr, es,
+  it, pt-PT, sv, fi, ru, uk, pl, cs, ar, he), its separators and grouping, the negative form (`-$1.00`; nl
+  `€ -1,00`; de-CH `CHF-1.00`), the symbol as the locale writes it (en `$` / `¥`, en-GB `US$`, fr `$US`, it `USD`,
+  ja `￥`, zh `¥` for CNY, sv `kr`, pl `zł`, ru `₽`, ...; CLDR root symbols otherwise, an unknown code prints itself)
+  with CLDR currency spacing (a letter beside the digits gets a no-break space: `CHF 1’234.50`, `XYZ 1.00`), and the
+  currency's fraction digits (JPY / KRW 0, KWD / BHD 3, else 2), rounded half-even. Accounting formats and
+  compact / plural currency names are not done.
+- Widgets: `UiContext::setLocale(tag, &hooks)` gives widgets a locale and its data through `LocaleHooks` (function
+  pointers), so core and widgets link no locale tables; `l10n::setUiLocale(ui, tag)` (header-only
+  `fuse/ui/l10n/ui_locale.hpp`) installs the fuse_ui_l10n ones. The calendar then shows the localised month header and
+  weekday names and starts its weeks on the locale's first day. Without hooks (or with an empty tag) it stays English,
+  Monday first. The date-time edit shows ISO numbers (`2024-03-05 15:05`), so it has no names to localise; its
+  calendar popup follows the locale.
+
+`StringTable` (in `fuse_ui_game`) on top of it:
+
+```cpp
+StringTable st;
+st.add("en", "items={n, plural, one {# item} other {# items}}\ngreet=Hello, {name}!");
+st.add("de", "items={n, plural, one {# Gegenstand} other {# Gegenstände}}");
+st.setLocale("de");
+st.tr("items", {{"n", 3}});        // "3 Gegenstände", formatted with the locale the string came from
+st.tr("greet", {{"name", "Ann"}}); // "Hello, Ann!" (fallback locale: the first added, or setFallbackLocale)
+st.tr("greet");                    // raw value
+st.trPlural("items", 3);           // the fuse/text/i18n.hpp plural patterns ("one {# item} other {# items}")
+st.bind(ui, label, "items", {{"n", 3}}); // re-texted on refresh()
+```
+
+Table files are one `key=value` per line, `#` comment lines, escapes `\\ \n \t` (and `\=`, a leading `\#` in keys).
+
+### `fuse_ui_extract_strings`
+
+```
+fuse_ui_extract_strings --out=de.strings [--locale=de] [--source] [--fn=tr,...] [--no-locations] [--drop-obsolete]
+                        <files or directories>...
+```
+
+Scans `.fuseui` documents (constant `text` except line / text edits, `items`, `a11yName`; strings with a `{`
+binding are skipped) and C++ sources (`.cpp .h .hpp ...`) for `tr("...")` calls whose first argument is a string
+literal or adjacent literals (escapes, `u8` and raw literals decoded; comments and other strings ignored), and writes
+the table sorted by key with `#: file:line` (or `file:node id`) location comments. An existing output file is merged:
+translations are kept, untranslated keys are written as `#? key` (ignored by `StringTable`, so lookups fall back),
+keys new since the last run are flagged `#, new`, and translations whose key left the sources move to
+`#~ key=value` at the end (restored if the key comes back; `--drop-obsolete` removes them). `--source` writes new
+keys as `key=key` for the source-language table. A summary and the new / obsolete keys are printed; exit code 1 on
+an unreadable input or a broken document. The output is deterministic for the same inputs.
+
+Documents are translated at load time with the same keys: pass a `doc::Translator` (source string -> translation;
+empty keeps the source) to `Document::load` / `loadCooked`, e.g. the active `StringTable`:
+
+```cpp
+auto doc = doc::Document::load(ui, json, &model, {}, [&st](std::string_view k) { return st.tr(k); });
+st.setLocale("fr");
+doc->retranslate();   // re-applies the table to every translatable string; returns how many nodes changed
+```
+
+Exactly what the extractor collects is translated (constant `text` except line / text edit contents, each `items`
+entry, `a11yName`; strings with a `{` binding are not). `reload()` translates the new tree with the same translator;
+`setTranslator({})` + `retranslate()` shows the source strings again.
 
 ## Data and editor widgets (UI6 Tier C/D)
 
@@ -687,6 +807,8 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
 | `fuse_text_font_styles` | face description, synthetic bold / oblique at pixel level, atlas keys, `FontFamily` matching (real face preferred), the font scanner over a temp directory (collection, corrupt files, no fonts), CSS font / decoration / spacing properties, render scale 2, `tests/golden/text_styles.png` (`text_styles_full.png` in FULL) |
 | `fuse_text_i18n` | CLDR plural categories per rule family, plural patterns, number formatting per locale, pseudo-localisation, `StringTable::trPlural` |
+| `fuse_ui_l10n` | `fuse_ui_l10n_lib`: CLDR plural samples (cardinal / ordinal), ICU-style messages, numbers, dates, calendar names, times, currencies, the calendar widget under `setUiLocale`, `StringTable` fallback and message formatting, `fuse_ui_extract_strings` (extraction, merge, obsolete keys), load-time document translation and `retranslate()` |
+| `fuse_ui_script_bind` | the whole Lua `ui` table: every function, errors, signals, handler lifetime (released with the node), steady frames |
 | `fuse_ui_drag_drop` | drag threshold, target by type / filter / modal scope, event order, `:drag-over`, Move / Copy / refuse / Escape, ghost, external drops, touch long-press drag vs pan, list reorder and list / table / grid row drags |
 | `fuse_ui_gestures` | double click (time, distance, third click), list activation, tap / double tap / long press, multi-touch ids, pinch and rotate phases |
 | `fuse_ui_actions` | shortcut text round trip, scope rules (window, subtree, modal, text fields, disabled), bound widgets, action menus, rebinding conflicts, save / load |

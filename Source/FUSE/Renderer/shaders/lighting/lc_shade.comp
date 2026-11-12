@@ -5,6 +5,14 @@
 // point / spot lights (ascending slot) with the Cook-Torrance BRDF. Writes the RGBA16F target (and
 // the f32 dump when pc.out_ != 0). CPU reference: lighting_gpu::ShadeKernel
 // (clustered_gpu_kernel.hpp). GLSL twin of lc_shade.slang.
+//
+// Tiled light loop (P2, 4,096 lights): the workgroup walks the distinct clusters of its pixels (smallest index
+// first). For each, the 64 invocations load the cluster's list 64 entries at a time and keep, in list order
+// (workgroup prefix sum), the entries that can light a pixel of the tile: a point / spot light whose sphere
+// (range x (1 + 1e-4) + 1e-6, conservative against the float rounding of the per-pixel distance) touches the
+// world AABB of those pixels' positions, and every other kind. The pixels of that cluster then run
+// fuse_lc_shade_cluster_light (the exact per-pixel test and shading) over the kept entries only. A dropped entry
+// is out of range at every pixel of the tile, where it adds an exact zero: the sums are the per-pixel loop's.
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_samplerless_texture_functions : require
 #include "lc_includes.glsl"
@@ -16,36 +24,143 @@ FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rgba16f) uniform writeonly image2D fuse_lc_im
 
 vec4 fuse_lc_fetch(uint handle, ivec2 p) { return texelFetch(fuse_textures_2d[fuse_handle_index(handle)], p, 0); }
 
+shared uint s_cluster;
+shared uint s_box[6]; // order-preserving keys of min xyz, max xyz
+shared uint s_scan[64];
+shared uint s_slots[64];
+shared uint s_vsm[64]; // fuse_lc_vsm_code of each kept entry (the per-light VSM search, once per tile)
+
+uint fuse_lc_key(float f) {
+    const uint k = floatBitsToUint(f);
+    return (k & 0x80000000u) != 0u ? ~k : (k | 0x80000000u);
+}
+float fuse_lc_unkey(uint k) { return uintBitsToFloat((k & 0x80000000u) != 0u ? (k & 0x7FFFFFFFu) : ~k); }
+
 void main() {
     const FuseLcFrame F = fuse_lc_frame();
     const uvec2 p = gl_GlobalInvocationID.xy;
-    if (p.x >= F.width || p.y >= F.height) {
-        return;
-    }
+    const uint t = gl_LocalInvocationIndex;
+    const bool inside = p.x < F.width && p.y < F.height;
     const ivec2 ip = ivec2(p);
     vec4 result = vec4(0.0);
-    precise float sx = (float(p.x) + 0.5) * F.invWidth;
-    precise float sy = (float(p.y) + 0.5) * F.invHeight;
-    const float depth = fuse_lc_fetch(F.gbufferDepth, ip).x;
-    const float viewDepth = fuse_lc_view_depth(depth, F.nearPlane, F.farPlane, (F.flags & FUSE_LC_FLAG_REVERSED_Z) != 0u);
+    bool shaded = false;
     uint cluster = 0u;
-    if (viewDepth > 0.0 && !isinf(viewDepth) && fuse_lc_map_cluster(sx, sy, viewDepth, F, cluster)) {
-        const vec4 rt0 = fuse_lc_fetch(F.gbufferNormalAo, ip);
-        const vec4 rt1 = fuse_lc_fetch(F.gbufferAlbedo, ip);
-        const vec4 rt2 = fuse_lc_fetch(F.gbufferRoughMetal, ip);
-        const vec4 rt5 = fuse_lc_fetch(F.gbufferEmissive, ip);
-        FuseLcSurface s;
-        s.position = fuse_lc_view_to_world(fuse_lc_view_position(sx, sy, viewDepth, F), F);
-        s.normal = fuse_lc_oct_decode(rt0.x, rt0.y);
-        s.ao = rt0.w;
-        s.albedo = rt1.xyz;
-        s.roughness = rt2.x;
-        s.metallic = rt2.y;
-        s.emissive = rt5.xyz;
-        precise vec3 toCamera = fuse_lc_vec3(F.cameraPosition) - s.position;
-        const vec3 v = fuse_lc_safe_normalize(toCamera, s.normal);
-        // The light loop (WP-2.2: shared with the forward transparency pass, lc_ltc.glsl).
-        vec3 radiance = fuse_lc_shade_lights_px(F, s, v, cluster, p); // WP-6.2: RT visibility
+    FuseLcSurface s;
+    vec3 v = vec3(0.0);
+    vec3 radiance = vec3(0.0);
+    FuseLcShadeState st;
+    if (inside) {
+        precise float sx = (float(p.x) + 0.5) * F.invWidth;
+        precise float sy = (float(p.y) + 0.5) * F.invHeight;
+        const float depth = fuse_lc_fetch(F.gbufferDepth, ip).x;
+        const float viewDepth = fuse_lc_view_depth(depth, F.nearPlane, F.farPlane, (F.flags & FUSE_LC_FLAG_REVERSED_Z) != 0u);
+        if (viewDepth > 0.0 && !isinf(viewDepth) && fuse_lc_map_cluster(sx, sy, viewDepth, F, cluster)) {
+            shaded = true;
+            const vec4 rt0 = fuse_lc_fetch(F.gbufferNormalAo, ip);
+            const vec4 rt1 = fuse_lc_fetch(F.gbufferAlbedo, ip);
+            const vec4 rt2 = fuse_lc_fetch(F.gbufferRoughMetal, ip);
+            const vec4 rt5 = fuse_lc_fetch(F.gbufferEmissive, ip);
+            s.position = fuse_lc_view_to_world(fuse_lc_view_position(sx, sy, viewDepth, F), F);
+            s.normal = fuse_lc_oct_decode(rt0.x, rt0.y);
+            s.ao = rt0.w;
+            s.albedo = rt1.xyz;
+            s.roughness = rt2.x;
+            s.metallic = rt2.y;
+            s.emissive = rt5.xyz;
+            precise vec3 toCamera = fuse_lc_vec3(F.cameraPosition) - s.position;
+            v = fuse_lc_safe_normalize(toCamera, s.normal);
+            // The light loop (WP-2.2: shared with the forward transparency pass, lc_ltc.glsl).
+            radiance = fuse_lc_shade_begin(F, s, v, p, st); // WP-6.2: RT visibility
+        }
+    }
+
+    // The cluster lights, tiled (workgroup-uniform control flow: every invocation reaches every barrier).
+    FuseGpuLightsRef lights = fuse_gpu_scene_lights(fuse_gpu_scene(F.scene));
+    FuseLcWordsRef grid = FuseLcWordsRef(F.grid);
+    FuseLcWordsRef list = FuseLcWordsRef(F.lightList);
+    const bool skipArea = (F.flags & FUSE_LC_FLAG_SKIP_AREA_LIGHTS) != 0u;
+    bool pending = shaded;
+    for (;;) {
+        if (t == 0u) {
+            s_cluster = 0xFFFFFFFFu;
+            s_box[0] = 0xFFFFFFFFu;
+            s_box[1] = 0xFFFFFFFFu;
+            s_box[2] = 0xFFFFFFFFu;
+            s_box[3] = 0u;
+            s_box[4] = 0u;
+            s_box[5] = 0u;
+        }
+        barrier();
+        if (pending) {
+            atomicMin(s_cluster, cluster);
+        }
+        barrier();
+        const uint current = s_cluster;
+        if (current == 0xFFFFFFFFu) {
+            break;
+        }
+        const bool mine = pending && cluster == current;
+        if (mine) {
+            atomicMin(s_box[0], fuse_lc_key(s.position.x));
+            atomicMin(s_box[1], fuse_lc_key(s.position.y));
+            atomicMin(s_box[2], fuse_lc_key(s.position.z));
+            atomicMax(s_box[3], fuse_lc_key(s.position.x));
+            atomicMax(s_box[4], fuse_lc_key(s.position.y));
+            atomicMax(s_box[5], fuse_lc_key(s.position.z));
+        }
+        barrier();
+        const vec3 boxMin = vec3(fuse_lc_unkey(s_box[0]), fuse_lc_unkey(s_box[1]), fuse_lc_unkey(s_box[2]));
+        const vec3 boxMax = vec3(fuse_lc_unkey(s_box[3]), fuse_lc_unkey(s_box[4]), fuse_lc_unkey(s_box[5]));
+        const uint offset = grid.v[current * 2u];
+        const uint count = grid.v[current * 2u + 1u];
+        for (uint base = 0u; base < count; base += 64u) {
+            uint slot = 0xFFFFFFFFu;
+            uint flag = 0u;
+            if (base + t < count) {
+                slot = list.v[offset + base + t];
+                if (slot < F.lightCount) {
+                    const uint type = lights.v[slot].type;
+                    if (type == FUSE_LIGHT_POINT || type == FUSE_LIGHT_SPOT) {
+                        const float range = lights.v[slot].range;
+                        if (range > 0.0) {
+                            const vec3 c = vec3(lights.v[slot].position[0], lights.v[slot].position[1], lights.v[slot].position[2]);
+                            const vec3 d = max(max(boxMin - c, c - boxMax), vec3(0.0));
+                            const float reach = range * 1.0001 + 1e-6;
+                            flag = dot(d, d) <= reach * reach ? 1u : 0u;
+                        }
+                    } else {
+                        flag = (skipArea && (type == FUSE_LIGHT_RECT || type == FUSE_LIGHT_DISK)) ? 0u : 1u;
+                    }
+                }
+            }
+            s_scan[t] = flag;
+            barrier();
+            for (uint step = 1u; step < 64u; step <<= 1u) {
+                const uint add = t >= step ? s_scan[t - step] : 0u;
+                barrier();
+                s_scan[t] += add;
+                barrier();
+            }
+            if (flag != 0u) {
+                s_slots[s_scan[t] - 1u] = slot;
+                s_vsm[s_scan[t] - 1u] = fuse_lc_vsm_code(uint64_t(F.shadowsLo) | (uint64_t(F.shadowsHi) << 32u), slot);
+            }
+            const uint kept = s_scan[63];
+            barrier();
+            if (mine) {
+                for (uint j = 0u; j < kept; ++j) {
+                    radiance = fuse_lc_shade_cluster_light(F, st, s, v, s_slots[j], s_vsm[j], radiance);
+                }
+            }
+            barrier();
+        }
+        if (mine) {
+            pending = false;
+        }
+        barrier();
+    }
+
+    if (shaded) {
         // WP-6.1: DDGI irradiance E as indirect diffuse (Lambert: albedo x (1 - metallic) / pi), x AO.
         const uint64_t ddgi = uint64_t(F.ddgiLo) | (uint64_t(F.ddgiHi) << 32u);
         if (ddgi != 0ul) {
@@ -58,8 +173,10 @@ void main() {
         }
         result = vec4(radiance, 1.0);
     }
-    imageStore(fuse_lc_images[fuse_handle_index(F.output_)], ip, result);
-    if (pc.out_ != 0ul) {
-        FuseLcDumpRef(pc.out_).v[p.y * F.width + p.x] = result;
+    if (inside) {
+        imageStore(fuse_lc_images[fuse_handle_index(F.output_)], ip, result);
+        if (pc.out_ != 0ul) {
+            FuseLcDumpRef(pc.out_).v[p.y * F.width + p.x] = result;
+        }
     }
 }

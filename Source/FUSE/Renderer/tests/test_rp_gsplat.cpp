@@ -9,7 +9,10 @@
 //   --mode passes       2000 splats (SH degree 3), 157 x 117 (partial tiles), 2 cameras, occluder over the left
 //                       half at mid-scene depth:
 //                         preprocess  == gs_preprocess_splat (radius / tile rect / view z bit for bit, the rest
-//                                        within 2e-6 relative)
+//                                        within 2e-6 relative; the kernel's divides / square roots are
+//                                        correctly rounded (fuse_div_rn / fuse_sqrt_rn), so a conformant device is bit
+//                                        exact - measured 0 on Lavapipe and the RTX 3090; the slack only
+//                                        covers a host compiler contracting the reference)
 //                         scan        offsets and counters == the reference's
 //                         emit + sort keys / values (whole capacity, incl. padding) == the reference's stable sort
 //                         ranges      == the reference's
@@ -52,6 +55,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------
@@ -246,8 +250,7 @@ int setup(Context& ctx, bool descriptorBuffer, bool validation) {
             return kSkip;
         }
         setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         setenv("VK_INSTANCE_LAYERS", "", 1);

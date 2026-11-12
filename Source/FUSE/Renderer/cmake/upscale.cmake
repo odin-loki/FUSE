@@ -109,7 +109,7 @@ if(FUSE_BUILD_CORE_TESTS)
     # CPU ports vs the vendored GLSL passes executed on a Vulkan device (Lavapipe in CI). The Vulkan loader
     # is opened at run time (no link dependency), so the gate also runs in stub (FUSE_VULKAN_BACKEND=OFF)
     # builds; SKIP (77) without shaders, a loader or a device.
-    set(_fuse_upscale_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+    set(_fuse_upscale_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
     add_executable(fuse_upscale_gpu_reference ${CMAKE_CURRENT_LIST_DIR}/../tests/test_upscale_gpu_reference.cpp)
     target_link_libraries(fuse_upscale_gpu_reference PRIVATE fuse_rhi ${CMAKE_DL_LIBS})
     target_include_directories(fuse_upscale_gpu_reference SYSTEM PRIVATE "${FUSE_NVIDIA_NIS_DIR}/NIS")
@@ -121,9 +121,9 @@ if(FUSE_BUILD_CORE_TESTS)
         target_compile_definitions(fuse_upscale_gpu_reference PRIVATE FUSE_UPSCALE_SHADERS_BUILT=1)
     endif()
     add_test(NAME fuse_upscale_gpu_reference
-             COMMAND "${_fuse_upscale_lock}" "$<TARGET_FILE:fuse_upscale_gpu_reference>")
+             COMMAND ${_fuse_upscale_lock} "$<TARGET_FILE:fuse_upscale_gpu_reference>")
     set_tests_properties(fuse_upscale_gpu_reference PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
         SKIP_RETURN_CODE 77
         TIMEOUT 900

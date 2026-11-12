@@ -37,6 +37,23 @@ enum GpuInstanceFlag : u32 {
     kInstanceTransparent = 1u << 5,
 };
 
+/// GpuMesh::flags bits (0 for every cooked / meshlet mesh: VPOS u16x4 + VNRM oct streams).
+enum GpuMeshFlag : u32 {
+    /// `positions` holds f32 x 4 per vertex (xyz, w = 0) instead of the quantised VPOS: the CURRENT positions at
+    /// positions[0, vertexCount) and the PREVIOUS frame's at positions[vertexCount, 2 vertexCount) (the GPU skinning
+    /// pass writes both, skinning/skinning_gpu.hpp). quantOffset / quantStep are ignored. The motion pass reprojects
+    /// the previous point from the previous positions (temporal/motion_kernel.hpp), every other position reader
+    /// (visibility raster / decode, material resolve, VSM raster) reads the current ones.
+    kMeshFloatPositions = 1u << 0,
+    /// `normals` holds f32 x 4 per vertex (xyz unit normal, w = 0) instead of the VNRM oct u32.
+    kMeshFloatNormals = 1u << 1,
+    /// Set by the GPU skinning pass on its per-instance mesh rows (informational; consumers test the two bits above).
+    kMeshSkinned = 1u << 2,
+};
+
+/// Byte stride of one vertex of a kMeshFloatPositions / kMeshFloatNormals stream.
+inline constexpr u32 kFloatVertexStride = 16u;
+
 /// One renderable instance. Instance slots are stable for the instance's lifetime (temporal GPU
 /// data such as last frame's visibility bit can be indexed by slot); a slot freed by
 /// removeInstance() is not reused before the next frame, and `generation` changes on every reuse.

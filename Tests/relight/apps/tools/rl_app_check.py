@@ -6,6 +6,7 @@ Subcommands
             or xvfb-run + wine when that runner is absent), validate every run's sidecar and dumps,
             and require the runs to agree: the sidecar byte-for-byte, the images byte-for-byte unless
             tolerances.json allows a per-app difference. Exit 77 when Wine or Xvfb is missing.
+            --runner native (Windows): the app runs directly on the system d3d9 / d3d8.
   validate  Validate one output directory (sidecar schema + consistency + dumps + probes).
   compare   Compare two output directories of the same app.
   selftest  Check the schema validator on generated good and bad sidecars (no Wine needed).
@@ -370,7 +371,13 @@ def run_once(args, run_dir, extra_env=None):
     if extra_env:
         env.update(extra_env)
     exe = os.path.abspath(args.exe)
-    if args.runner and os.path.isfile(args.runner):
+    if args.runner == "native":
+        # Native Windows: the system d3d9.dll / d3d8.dll on the real GPU.
+        if os.name != "nt":
+            print("SKIP: --runner native needs Windows")
+            return SKIP
+        cmd = [exe, "--out", ".", "--quiet"]
+    elif args.runner and os.path.isfile(args.runner):
         cmd = ["bash", args.runner, args.prefix_root, exe, "--out", ".", "--quiet"]
     else:
         # Fallback until cmake/toolchains/fuse-wine-xvfb-run.sh exists: xvfb-run + wine, own prefix.
@@ -555,7 +562,7 @@ def main():
     r.add_argument("--tolerances")
     r.add_argument("--out", required=True)
     r.add_argument("--runner", default="")
-    r.add_argument("--prefix-root", required=True)
+    r.add_argument("--prefix-root", default="")  # Wine prefixes (unused by --runner native)
     r.add_argument("--runs", type=int, default=2)
     r.add_argument("--thread-variant", action="store_true",
                    default=os.environ.get("RL_APP_THREAD_VARIANT") == "1",

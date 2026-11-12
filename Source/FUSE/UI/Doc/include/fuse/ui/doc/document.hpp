@@ -174,16 +174,24 @@ struct DocError {
 /// Event -> action callback: (action name, node, signal args).
 using ActionFn = InlineFn<void(std::string_view, NodeHandle, const SignalArgs&), 48>;
 
+/// Load-time localisation: maps a source string to its translation; an empty result (or the key itself) keeps the
+/// source. Documents translate exactly the strings fuse_ui_extract_strings extracts, keyed the same way (the source
+/// string): constant `text` (not of line / text edits), each `items` entry and `a11yName`; strings with a `{` (bindings)
+/// are left alone. With a StringTable (fuse_ui_game): `[&st](std::string_view k) { return st.tr(k); }`.
+using Translator = InlineFn<std::string_view(std::string_view), 32>;
+
 class Document {
 public:
     /// Parses `json` and builds the tree under `parent` (the context root when invalid). `model` may be null (bindings
     /// then fail to compile) and must outlive the document.
     static std::expected<std::unique_ptr<Document>, DocError> load(UiContext& ui, std::string_view json,
-                                                                   Model* model = nullptr, NodeHandle parent = {});
+                                                                   Model* model = nullptr, NodeHandle parent = {},
+                                                                   Translator translate = {});
     /// Builds from a cooked document (cookDocument() in fuse/ui/doc/cook.hpp): no JSON text, CSS or expression
     /// parsing; binding bytecode is loaded and its variables resolved against `model`. The blob is validated.
     static std::expected<std::unique_ptr<Document>, DocError> loadCooked(UiContext& ui, std::span<const u8> cooked,
-                                                                         Model* model = nullptr, NodeHandle parent = {});
+                                                                         Model* model = nullptr, NodeHandle parent = {},
+                                                                         Translator translate = {});
     ~Document(); ///< destroys the tree it built
     Document(const Document&) = delete;
     Document& operator=(const Document&) = delete;
@@ -200,6 +208,13 @@ public:
     /// Nodes reused by the last reload (identity kept).
     u32 reusedCount() const { return m_reused; }
     u32 bindingCount() const { return u32(m_bindings.size()); }
+    /// Replaces the translator (used by reload() and retranslate()); an empty one shows the source strings.
+    void setTranslator(Translator translate) { m_translate = translate; }
+    /// Re-applies the translator to every translatable string the document set (after a locale switch). Returns how
+    /// many nodes changed.
+    u32 retranslate();
+    /// Translatable strings the document set (text / items / a11yName properties).
+    u32 translatableCount() const { return u32(m_trEntries.size()); }
 
 private:
     Document(UiContext& ui, Model* model, NodeHandle parent) : m_ui(ui), m_model(model), m_parent(parent) {}
@@ -234,6 +249,19 @@ private:
     ActionFn m_action;
     u64 m_seen = 0;
     std::string m_scratch;
+    enum class TrKind : u8 { Text, Items, A11yName };
+    struct TrEntry {
+        NodeHandle node;
+        TrKind kind;
+        std::string source; ///< items: the entries joined with '\n'
+        std::string shown;  ///< what was last applied
+    };
+    Translator m_translate;
+    std::vector<TrEntry> m_trEntries;
+    std::string m_trScratch;
+    std::string_view translated(std::string_view source) const;
+    bool applyTranslated(TrEntry& e, bool force);
+    void addTranslatable(NodeHandle node, TrKind kind, std::string_view source);
     bool m_applying = false;
 };
 

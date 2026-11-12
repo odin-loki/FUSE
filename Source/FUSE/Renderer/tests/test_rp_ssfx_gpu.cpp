@@ -29,6 +29,14 @@
 //                  along the reflected world direction, 1e-3 relative, confidence == the gloss fade within 1e-5);
 //                  ssfx.ssgi with the sky == the sky-aware CPU gather (the --mode passes statistical gate); compose bit for
 //                  bit; the sky fallback lights > 50 SSR pixels and brightens the SSGI.
+//   --mode hiz     Hi-Z SSR (SsfxGpuSettings::ssrHiz, B5 SSRParams::use_hiz) on the room scene at 193 x 143 with a long
+//                  march (512 steps): ssfx.hiz pyramid == hiz_build bit for bit; ssfx.ssr == ssr_kernel (the --mode passes
+//                  checks: same hits, colours bit for bit) and == the GPU's own full march bit for bit; the pyramid
+//                  skips more march samples than are tested.
+//   --mode ao_denoise  ssfx.ao_blur == the B5 HBAO blur kernel (compute::screen_space_kernels::ao_blur) on the GPU's
+//                  raw GTAO bit for bit; ssfx.ao_temporal == ao_temporal_pixel on the GPU's inputs bit for bit over 12
+//                  jittered-GTAO frames (8 static, 4 with synthetic motion vectors: reprojection, edge and depth
+//                  rejection); compose applies the denoised AO; the denoise at least halves the static-frame flicker.
 //   --mode zero_alloc  64 steady-state frames (every pass, 2 SSGI bounces, camera moving): 0 operator-new calls
 //                  in SsfxGpu::beginFrame, the ssfx.* pass callbacks and the whole graph build (validated run
 //                  first; validation off for the count).
@@ -51,6 +59,8 @@
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 #include <fuse/ssfx/gtao_kernel.hpp>
+#include <fuse/compute/screen_space_kernels.hpp>
+#include <fuse/compute_kernel/launch.hpp>
 
 #include "test_rp_sky_source.hpp"
 #include "test_rp_ssfx_gpu_scene.hpp"
@@ -69,6 +79,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------
@@ -306,8 +317,7 @@ int setup(Context& ctx, bool descriptorBuffer, bool validation) {
             return kSkip;
         }
         setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         setenv("VK_INSTANCE_LAYERS", "", 1);
@@ -477,6 +487,8 @@ struct TestRecord {
 TestRecord g_record{};
 /// --mode sky: the synthetic sky source (null otherwise).
 const fuse::renderer::test_sky::SyntheticSky* g_sky = nullptr;
+/// --mode ao_denoise: the synthetic motion vectors (f32 x 2 UV per pixel, host-visible; null otherwise).
+const Buffer* g_motion = nullptr;
 
 void recordUpload(const rg::PassContext& pc, void* user) {
     const TestRecord& r = *static_cast<const TestRecord*>(user);
@@ -544,6 +556,10 @@ void buildGraph(Context& ctx, SsfxGpu& ssfx, rg::Graph& graph, bool readback) {
     if (g_sky != nullptr) {
         inputs.sky = graph.importBuffer(rg::ImportedBuffer{ctx.sky.handle, ctx.sky.desc.size, rg::kNoQueue, nullptr, "rp_ssfx.sky"});
     }
+    if (g_motion != nullptr) {
+        inputs.motion =
+            graph.importBuffer(rg::ImportedBuffer{g_motion->handle, g_motion->desc.size, rg::kNoQueue, nullptr, "rp_ssfx.motion"});
+    }
     ssfx.addPasses(graph, refs, inputs);
     if (readback) {
         r.readback = graph.importBuffer(rg::ImportedBuffer{ctx.readback.handle, ctx.readback.desc.size, ctx.readbackQueue,
@@ -576,6 +592,7 @@ SsfxFrameImages frameImages(Context& ctx, bool dump) {
     images.lit = &ctx.images[4];
     images.dumpAddress = dump ? ctx.dump.deviceAddress : 0u;
     images.skyAddress = g_sky != nullptr ? g_sky->address() : 0u;
+    images.motionAddress = g_motion != nullptr ? g_motion->deviceAddress : 0u;
     return images;
 }
 
@@ -888,6 +905,267 @@ int runPasses(Context& ctx) {
         std::printf("  slang vs glsl (%zu pixels over 4 frames): GTAO %u, SSR %u, composed %u bit-identical\n", total,
                     aoSame, ssrSame, dumpSame);
         expect(aoSame == total, "Slang GTAO == GLSL GTAO bit for bit");
+    }
+    return 0;
+}
+
+
+// --- Hi-Z SSR -------------------------------------------------------------------------------------------
+/// Copies extra work-buffer sections after a frame (the work buffer keeps them until the next frame).
+bool readSections(Context& ctx, SsfxGpu& ssfx, std::initializer_list<SsfxCopySource> sections, std::vector<std::vector<u8>>& out) {
+    u64 total = 0;
+    for (const SsfxCopySource s : sections) {
+        total += align256(ssfx.copyBytes(s));
+    }
+    Buffer host{};
+    BufferDesc d{};
+    d.size = static_cast<usize>(std::max<u64>(total, 256u));
+    d.usage = BufferUsage::TransferDst;
+    d.memoryUsage = MemoryUsage::GpuToCpu;
+    d.name = "rp_ssfx.extra";
+    if (!ctx.allocator->createBuffer(d, host) || host.mapped == nullptr) {
+        return false;
+    }
+    u8 queue = rg::kNoQueue;
+    rg::Graph graph;
+    const SsfxGraphRefs refs = ssfx.importInto(graph);
+    const rg::BufferRef dst = graph.importBuffer(rg::ImportedBuffer{host.handle, host.desc.size, queue, &queue, "rp_ssfx.extra"});
+    u64 at = 0;
+    for (const SsfxCopySource s : sections) {
+        ssfx.addCopy(graph, refs, s, dst, at);
+        at += align256(ssfx.copyBytes(s));
+    }
+    graph.addPass("test.extra_host", nullptr, nullptr).use(dst, rg::Access::HostRead);
+    const bool ok = ctx.executor->execute(graph).ok && ctx.executor->waitIdle();
+    out.clear();
+    at = 0;
+    for (const SsfxCopySource s : sections) {
+        const u8* src = static_cast<const u8*>(host.mapped) + at;
+        out.emplace_back(src, src + ssfx.copyBytes(s));
+        at += align256(ssfx.copyBytes(s));
+    }
+    ctx.allocator->destroyBuffer(host);
+    return ok;
+}
+
+int runHiz(Context& ctx) {
+    constexpr u32 kW = 193;
+    constexpr u32 kH = 143;
+    if (!ensureTargets(ctx, kW, kH)) {
+        std::fprintf(stderr, "FAIL: targets\n");
+        return 1;
+    }
+    u32 built = 0;
+    for (u32 l = 0; l < 2u; ++l) {
+        SsfxGpu ssfx;
+        if (!initSsfx(ctx, ssfx, kLangs[l].language)) {
+            std::printf("  [%s] kernels not built: skipped\n", kLangs[l].name);
+            continue;
+        }
+        ++built;
+        rg::Graph graph;
+        u64 skippedTotal = 0;
+        u64 testedTotal = 0;
+        u64 testedFull = 0;
+        for (u32 frame = 0; frame < 2u; ++frame) {
+            ssfx_test::RoomScene room;
+            ssfx_test::buildRoom(room, kW, kH, frame * 3u);
+            writeStaging(ctx, room.g);
+            Config cfg = configA();
+            cfg.name = "gtao + Hi-Z ssr (roughness, contact), long march";
+            cfg.settings.ssr_params.max_steps = 512;
+            cfg.settings.ssr_params.stride_px = 1.f;
+            cfg.settings.ssr_params.max_distance = 40.f;
+            // Full march first (the counters' baseline), then Hi-Z on the same frame.
+            Captured full;
+            expect(runFrame(ctx, ssfx, graph, cfg.settings, ssfx_test::cameraDesc(room.camera), room.ambient, full), "frame");
+            cfg.settings.ssrHiz = true;
+            Captured cap;
+            expect(runFrame(ctx, ssfx, graph, cfg.settings, ssfx_test::cameraDesc(room.camera), room.ambient, cap), "frame");
+            std::printf("  [%s] frame %u: %u passes (%u Hi-Z levels)\n", kLangs[l].name, frame, ssfx.stats().passes,
+                        ssfx.stats().hizLevels);
+            expect(ssfx.stats().hizLevels >= 5u, "Hi-Z pyramid has >= 5 levels at 193 x 143");
+            checkFrame(kLangs[l].name, cfg, room, ssfx, cap); // SSR == ssr_kernel: same hits, colours bit for bit
+            u32 sameAsFull = 0;
+            for (usize i = 0; i < cap.ssr.size(); ++i) {
+                sameAsFull += std::memcmp(&cap.ssr[i], &full.ssr[i], sizeof(Vec4)) == 0 ? 1u : 0u;
+            }
+            expect(sameAsFull == cap.ssr.size(), "Hi-Z SSR == full-march SSR bit for bit");
+            std::vector<std::vector<u8>> extra;
+            expect(readSections(ctx, ssfx, {SsfxCopySource::Hiz, SsfxCopySource::SsrSteps}, extra), "extra read-back");
+            // Pyramid == hiz_build on the GPU's prepared depth, bit for bit.
+            std::vector<f32> depth(cap.prepared.prepared.size());
+            for (usize i = 0; i < depth.size(); ++i) {
+                depth[i] = cap.prepared.prepared[i].x;
+            }
+            std::vector<f32> pyramid;
+            hiz_build(kW, kH, depth.data(), pyramid);
+            const bool pyramidSame = extra[0].size() >= pyramid.size() * 4u &&
+                                     std::memcmp(extra[0].data(), pyramid.data(), pyramid.size() * 4u) == 0;
+            expect(pyramidSame, "ssfx.hiz pyramid == hiz_build bit for bit");
+            const u32* steps = reinterpret_cast<const u32*>(extra[1].data());
+            u64 skipped = 0;
+            u64 tested = 0;
+            for (usize i = 0; i < cap.ssr.size(); ++i) {
+                skipped += steps[i * 2u];
+                tested += steps[i * 2u + 1u];
+            }
+            skippedTotal += skipped;
+            testedTotal += tested;
+            testedFull += skipped + tested;
+            std::printf("  [%s] frame %u: Hi-Z pyramid %zu texels == hiz_build: %s; march samples tested %llu, skipped "
+                        "%llu (%.1f%% of the full march's %llu tested)\n",
+                        kLangs[l].name, frame, pyramid.size(), pyramidSame ? "yes" : "NO",
+                        static_cast<unsigned long long>(tested), static_cast<unsigned long long>(skipped),
+                        100.0 * static_cast<f64>(tested) / static_cast<f64>(std::max<u64>(1u, skipped + tested)),
+                        static_cast<unsigned long long>(skipped + tested));
+        }
+        expect(skippedTotal > testedTotal, "Hi-Z skips more march samples than it tests");
+        std::printf("[%s] Hi-Z SSR: same hits and colours as the full march and ssr_kernel; %.1f%% of the samples tested\n",
+                    kLangs[l].name, 100.0 * static_cast<f64>(testedTotal) / static_cast<f64>(std::max<u64>(1u, testedFull)));
+        ssfx.destroy();
+    }
+    if (built == 0u) {
+        std::printf("SKIP: no screen-space kernel built\n");
+        return kSkip;
+    }
+    return 0;
+}
+
+// --- AO blur + temporal denoise ------------------------------------------------------------------------
+int runAoDenoise(Context& ctx) {
+    constexpr u32 kW = 97;
+    constexpr u32 kH = 71;
+    constexpr u32 kFrames = 12;
+    if (!ensureTargets(ctx, kW, kH)) {
+        std::fprintf(stderr, "FAIL: targets\n");
+        return 1;
+    }
+    const usize n = static_cast<usize>(kW) * kH;
+    Buffer motion{};
+    {
+        BufferDesc d{};
+        d.size = n * 8u;
+        d.usage = static_cast<BufferUsage>(static_cast<u32>(BufferUsage::Storage) |
+                                           static_cast<u32>(BufferUsage::ShaderDeviceAddress));
+        d.memoryUsage = MemoryUsage::CpuToGpu;
+        d.name = "rp_ssfx.motion";
+        if (!ctx.allocator->createBuffer(d, motion) || motion.mapped == nullptr || motion.deviceAddress == 0u) {
+            std::fprintf(stderr, "FAIL: motion buffer\n");
+            return 1;
+        }
+    }
+    g_motion = &motion;
+    u32 built = 0;
+    for (u32 l = 0; l < 2u; ++l) {
+        SsfxGpu ssfx;
+        if (!initSsfx(ctx, ssfx, kLangs[l].language)) {
+            std::printf("  [%s] kernels not built: skipped\n", kLangs[l].name);
+            continue;
+        }
+        ++built;
+        ssfx_test::RoomScene room;
+        ssfx_test::buildRoom(room, kW, kH, 0u);
+        writeStaging(ctx, room.g);
+        rg::Graph graph;
+        Config cfg = configB(); // jittered GTAO: the noise the temporal pass integrates
+        cfg.settings.ssr = false;
+        cfg.settings.ssgi = false;
+        cfg.settings.aoBlur = true;
+        cfg.settings.aoBlurDepth = 0.02f;
+        cfg.settings.aoBlurNormal = 0.9f;
+        cfg.settings.aoTemporal = true;
+        cfg.settings.aoTemporalAlpha = 0.15f;
+        u32 blurBad = 0, temporalBad = 0, composeBad = 0, historyUsed = 0, blurred = 0, reprojected = 0;
+        f64 rawFlicker = 0.0, outFlicker = 0.0;
+        std::vector<f32> prevRaw, prevOut;
+        for (u32 frame = 0; frame < kFrames; ++frame) {
+            // Frames 0..7: static camera (zero motion); 8..11: synthetic motion (left half shifts 1.5 px right, a
+            // band 2.3 px up, the rest still), which exercises the reprojection, the screen-edge and depth rejection.
+            f32* mv = static_cast<f32*>(motion.mapped);
+            for (u32 y = 0; y < kH; ++y) {
+                for (u32 x = 0; x < kW; ++x) {
+                    const usize i = static_cast<usize>(y) * kW + x;
+                    const bool moving = frame >= 8u;
+                    mv[i * 2u] = moving && x < kW / 2u ? 1.5f / static_cast<f32>(kW) : 0.f;
+                    mv[i * 2u + 1u] = moving && y > kH / 3u && y < kH / 2u ? -2.3f / static_cast<f32>(kH) : 0.f;
+                }
+            }
+            cfg.settings.gtao.frame = frame;
+            Captured cap;
+            expect(runFrame(ctx, ssfx, graph, cfg.settings, ssfx_test::cameraDesc(room.camera), room.ambient, cap), "frame");
+            const SsfxFrameConstants& c = ssfx.constants();
+            expect(ssfx.stats().aoBlurRan && ssfx.stats().aoTemporalRan, "ao_blur + ao_temporal ran");
+            historyUsed += ssfx.stats().aoHistoryUsed ? 1u : 0u;
+            std::vector<std::vector<u8>> extra;
+            expect(readSections(ctx, ssfx, {SsfxCopySource::AoBlurred, SsfxCopySource::AoDenoised, SsfxCopySource::AoHistoryIn},
+                                extra),
+                   "extra read-back");
+            const f32* gBlur = reinterpret_cast<const f32*>(extra[0].data());
+            const f32* gOut = reinterpret_cast<const f32*>(extra[1].data());
+            const f32* gHist = reinterpret_cast<const f32*>(extra[2].data());
+            // ssfx.ao_blur == the B5 HBAO blur kernel on the GPU's raw AO and prepared view.
+            std::vector<f32> depth(n);
+            for (usize i = 0; i < n; ++i) {
+                depth[i] = cap.prepared.prepared[i].x;
+            }
+            const fuse::ssfx::SsfxGBufferView view = prepared_view(c, depth, cap.prepared.normal);
+            std::vector<f32> cpuBlur(n);
+            namespace ssk = fuse::compute::screen_space_kernels;
+            ssk::ao_blur::Params bp{};
+            bp.view = view;
+            bp.thresholds = ssk::ao_blur::Thresholds{true, c.aoBlurDepth, c.aoBlurNormal};
+            bp.raw = cap.ao.data();
+            bp.out = cpuBlur.data();
+            expect(fuse::kernel::launch(fuse::kernel::Backend::CpuReference, ssk::ao_blur::make_launch(view), ssk::ao_blur::Kernel{}, bp).ok,
+                   "CPU ao_blur");
+            for (usize i = 0; i < n; ++i) {
+                blurBad += sameBits(gBlur[i], cpuBlur[i]) ? 0u : 1u;
+                blurred += gBlur[i] != cap.ao[i] ? 1u : 0u;
+            }
+            // ssfx.ao_temporal == ao_temporal_pixel on the GPU's blurred AO, depth, motion and history.
+            for (u32 y = 0; y < kH; ++y) {
+                for (u32 x = 0; x < kW; ++x) {
+                    const usize i = static_cast<usize>(y) * kW + x;
+                    const f32 e = ao_temporal_pixel(c, x, y, gBlur[i], depth[i], mv[i * 2u], mv[i * 2u + 1u], gHist);
+                    temporalBad += sameBits(gOut[i], e) ? 0u : 1u;
+                    reprojected += frame >= 8u && e != gBlur[i] && mv[i * 2u] != 0.f ? 1u : 0u;
+                    // compose applied the denoised AO (aoFinal).
+                    const Vec4 comp = compose_pixel(c, x, y, cap.prepared.prepared[i], cap.prepared.normal[i],
+                                                    cap.prepared.albedo[i], cap.prepared.radiance[i],
+                                                    cap.prepared.litAlpha[i], gOut[i], cap.ssr[i], cap.gi[i]);
+                    composeBad += std::memcmp(&comp, &cap.dump[i], sizeof(Vec4)) == 0 ? 0u : 1u;
+                }
+            }
+            // Flicker of the jittered GTAO vs the denoised output (static frames 4..7).
+            if (frame >= 4u && frame < 8u && !prevRaw.empty()) {
+                for (usize i = 0; i < n; ++i) {
+                    rawFlicker += std::fabs(static_cast<f64>(cap.ao[i]) - prevRaw[i]);
+                    outFlicker += std::fabs(static_cast<f64>(gOut[i]) - prevOut[i]);
+                }
+            }
+            prevRaw = cap.ao;
+            prevOut.assign(gOut, gOut + n);
+        }
+        std::printf("[%s] %u frames: ssfx.ao_blur == compute ao_blur: %u mismatches (%u pixels changed by the blur); "
+                    "ssfx.ao_temporal == ao_temporal_pixel: %u mismatches (history used %u frames, %u reprojected moving "
+                    "pixels); compose with the denoised AO: %u mismatches; frame-to-frame |dAO| static frames: GTAO %.4g, "
+                    "denoised %.4g (%.2fx)\n",
+                    kLangs[l].name, kFrames, blurBad, blurred, temporalBad, historyUsed, reprojected, composeBad, rawFlicker,
+                    outFlicker, outFlicker / std::max(1e-12, rawFlicker));
+        expect(blurBad == 0u && blurred > 100u, "ssfx.ao_blur == compute::screen_space_kernels::ao_blur bit for bit");
+        expect(temporalBad == 0u, "ssfx.ao_temporal == ao_temporal_pixel bit for bit");
+        expect(historyUsed == kFrames - 1u, "history valid from the second frame on");
+        expect(reprojected > 100u, "moving frames reproject the history");
+        expect(composeBad == 0u, "ssfx.compose applies the denoised AO (compose_pixel bit for bit)");
+        expect(rawFlicker > 0.0 && outFlicker < 0.5 * rawFlicker, "temporal denoise halves the jittered GTAO flicker");
+        ssfx.destroy();
+    }
+    g_motion = nullptr;
+    ctx.allocator->destroyBuffer(motion);
+    if (built == 0u) {
+        std::printf("SKIP: no screen-space kernel built\n");
+        return kSkip;
     }
     return 0;
 }
@@ -1244,6 +1522,10 @@ int main(int argc, char** argv) {
             rc = runAnalytic(ctx);
         } else if (mode == "sky") {
             rc = runSky(ctx);
+        } else if (mode == "hiz") {
+            rc = runHiz(ctx);
+        } else if (mode == "ao_denoise") {
+            rc = runAoDenoise(ctx);
         } else if (mode == "zero_alloc") {
             rc = runZeroAlloc(ctx, false);
         } else {

@@ -23,10 +23,14 @@
 #define SX_FLAG_AO_JITTER (1u << 7)
 #define SX_FLAG_SKY (1u << 8)
 #define SX_FLAG_SKY_GI (1u << 9)
+#define SX_FLAG_HIZ (1u << 10)
+#define SX_FLAG_AO_BLUR (1u << 11)
+#define SX_FLAG_AO_TEMPORAL (1u << 12)
+#define SX_HIZ_SKY 3.0e38
 
 #define SX_MAX_SLICES 32
 
-// SsfxFrameConstants, 592 bytes.
+// SsfxFrameConstants, 720 bytes.
 struct SxFrame {
     uint64_t prepared;
     uint64_t normals;
@@ -88,11 +92,30 @@ struct SxFrame {
     float giThickness;
     float giMaxDistance;
     float giIntensity;
+    uint64_t hiz;
+    uint64_t aoBlurred;
+    uint64_t aoDenoised;
+    uint64_t aoHistoryIn;
+    uint64_t aoHistoryOut;
+    uint64_t motion;
+    uint64_t aoFinal;
+    uint64_t ssrSteps;
+    uint hizLevels;
+    uint aoHistoryValid;
+    float aoBlurDepth;
+    float aoBlurNormal;
+    float aoTemporalAlpha;
+    float aoTemporalDepthReject;
+    uint reserved4;
+    uint reserved5;
+    uint hizOffset[8];
 };
 
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer SxFrameRef { SxFrame f; };
 layout(buffer_reference, std430, buffer_reference_align = 16) buffer SxTexelsRef { vec4 v[]; };
 layout(buffer_reference, std430, buffer_reference_align = 4) buffer SxFloatsRef { float v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 8) buffer SxVec2Ref { vec2 v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 8) buffer SxUvec2Ref { uvec2 v[]; };
 
 layout(push_constant) uniform SxPush {
     uint64_t frame;
@@ -114,12 +137,17 @@ vec4 sx_fetch(uint handle, ivec2 p) { return texelFetch(fuse_textures_2d[fuse_ha
 float sx_saturate(float v) { return max(0.0, min(1.0, v)); }
 float sx_clamp(float v, float lo, float hi) { return v < lo ? lo : (hi < v ? hi : v); }
 
+// Correctly rounded division / square root (fuse_div_rn / fuse_sqrt_rn, common/exact_math.glsl): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but the GTAO / SSR march positions and the integer pixels they
+// truncate to must be the oracle's.
+#include "../common/exact_math.glsl"
+
 float sx_dot(vec3 a, vec3 b) {
     precise float d = a.x * b.x + a.y * b.y + a.z * b.z;
     return d;
 }
 float sx_length(vec3 v) {
-    precise float l = sqrt(sx_dot(v, v));
+    const float l = fuse_sqrt_rn(sx_dot(v, v));
     return l;
 }
 vec3 sx_scale(vec3 v, float s) {
@@ -139,7 +167,7 @@ vec3 sx_normalize(vec3 v) {
     if (len < 1e-8) {
         return vec3(0.0);
     }
-    precise float inv = 1.0 / len;
+    const float inv = fuse_div_rn(1.0, len);
     return sx_scale(v, inv);
 }
 vec3 sx_cross(vec3 a, vec3 b) {
@@ -158,8 +186,10 @@ vec3 sx_color_at(uint64_t address, uint i) { return SxTexelsRef(address).v[i].xy
 // glslang's `precise` propagation fails (unbounded allocation) on unused functions with precise locals.
 #ifdef SX_VIEW_HELPERS
 vec3 sx_ray_direction(float px, float py) {
-    precise float a = (px - F.cx) / F.fx;
-    precise float b = (py - F.cy) / F.fy;
+    precise float an = px - F.cx;
+    precise float bn = py - F.cy;
+    const float a = fuse_div_rn(an, F.fx);
+    const float b = fuse_div_rn(bn, F.fy);
     return vec3(a, b, 1.0);
 }
 vec3 sx_unproject(float px, float py, float viewZ) { return sx_scale(sx_ray_direction(px, py), viewZ); }
@@ -174,8 +204,12 @@ bool sx_project(vec3 p, out float px, out float py) {
     if (p.z < F.nearZ) {
         return false;
     }
-    precise float x = F.fx * p.x / p.z + F.cx;
-    precise float y = F.fy * p.y / p.z + F.cy;
+    precise float xn = F.fx * p.x;
+    precise float yn = F.fy * p.y;
+    const float xq = fuse_div_rn(xn, p.z);
+    const float yq = fuse_div_rn(yn, p.z);
+    precise float x = xq + F.cx;
+    precise float y = yq + F.cy;
     px = x;
     py = y;
     return true;

@@ -19,10 +19,10 @@ if(FUSE_BUILD_CORE_TESTS)
     target_link_libraries(fuse_ddgi_atlas_upload PRIVATE fuse_rhi)
     # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
     add_test(NAME fuse_ddgi_atlas_upload
-             COMMAND "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh"
+             COMMAND ${FUSE_VULKAN_TEST_LAUNCHER}
                      "$<TARGET_FILE:fuse_ddgi_atlas_upload>")
     set_tests_properties(fuse_ddgi_atlas_upload PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE
     )
 endif()

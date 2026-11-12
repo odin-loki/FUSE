@@ -67,7 +67,7 @@ foreach(_entry IN LISTS _fuse_qt_gate_tests)
     set(_env)
     if(NOT WIN32)
         # Linux CI / WSL: Mesa lavapipe; xcb under Xvfb (Wayland on WSLg aborts during Qt teardown).
-        list(APPEND _env "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+        list(APPEND _env "${FUSE_VULKAN_LVP_ENV}")
         list(APPEND _env "QT_QPA_PLATFORM=xcb")
     endif()
     if(_name MATCHES "^font_(.*)$")
@@ -159,7 +159,7 @@ foreach(_shell_gate IN LISTS _fuse_shell_qt_gates)
     set_tests_properties(fuse_editor_qt_shell_${_shell_gate} PROPERTIES
         LABELS "gate;qt;gui"
         SKIP_RETURN_CODE 77
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;${FUSE_VULKAN_LVP_ENV}"
         TIMEOUT 180
     )
 endforeach()

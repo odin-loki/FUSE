@@ -36,17 +36,16 @@ target_link_libraries(fuse_relight_radiance_cache_vk_tests PRIVATE fuse_relight_
                       fuse_rhi)
 _rl_rc_cxx23(fuse_relight_radiance_cache_vk_tests)
 if(NOT CMAKE_CROSSCOMPILING)
-    set(_rl_rc_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
     foreach(_lang slang glsl)
-        if(EXISTS "${_rl_rc_lock}")
+        if(EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
             add_test(NAME rl_radiance_cache_vk_${_lang}
-                     COMMAND "${_rl_rc_lock}" "$<TARGET_FILE:fuse_relight_radiance_cache_vk_tests>" --language ${_lang})
+                     COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_relight_radiance_cache_vk_tests>" --language ${_lang})
         else()
             add_test(NAME rl_radiance_cache_vk_${_lang}
                      COMMAND fuse_relight_radiance_cache_vk_tests --language ${_lang})
         endif()
         set_tests_properties(rl_radiance_cache_vk_${_lang} PROPERTIES
-            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+            ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
             RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 1800 LABELS "gate;vulkan;relight")
     endforeach()
     return()
@@ -70,7 +69,7 @@ if(EXISTS "/usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json" O
              COMMAND "${_rl_rc_runner}" "${_rl_rc_prefix}" "$<TARGET_FILE:fuse_relight_radiance_cache_vk_tests>"
                      --external-validation)
     set_tests_properties(rl_pe.radiance_cache_vk_validation PROPERTIES
-        ENVIRONMENT "VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation;VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
+        ENVIRONMENT "VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
         LABELS "relight;wine;renderer_pe;vulkan;gate" SKIP_RETURN_CODE 77 RESOURCE_LOCK fuse_relight_renderer_pe
         TIMEOUT 1800)
 endif()

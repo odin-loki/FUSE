@@ -451,8 +451,9 @@ float3 fuseLcLightMs(GpuLight light, LcSurface s, float3 v, FuseLcTerms t, float
 // The shade's light loop, shared by light.shade (lc_shade.slang) and the forward transparency pass
 // (fuseFwShade); twin of fuse_lc_shade_lights (lc_ltc.glsl). CPU reference: lighting_gpu::shade_pixel.
 // WP-3.2: one light's contribution scaled by its shadow visibility (unchanged without shadows).
+// A light that contributes nothing skips the shadow lookup (twin of fuse_lc_shadowed): visibility in [0, 1].
 float3 fuseLcShadowed(uint64_t shadows, uint slot, LcSurface s, float3 c) {
-    if (shadows == 0ull) {
+    if (shadows == 0ull || (c.x == 0.0 && c.y == 0.0 && c.z == 0.0)) {
         return c;
     }
     const float visibility = fuseVsmShadow(shadows, slot, s.position, s.normal);
@@ -497,39 +498,147 @@ float3 fuseLcShadowedPx(uint64_t shadows, uint64_t rt, uint2 pixel, uint slot, L
     return fuseLcShadowed(shadows, slot, s, c);
 }
 
-// The light loop with the pixel light.shade shades (WP-6.2 ray-traced visibility); `pixel` = ~0u: none.
-float3 fuseLcShadeLightsPx(LcFrame F, LcSurface s, float3 v, uint cluster, uint2 pixel) {
-    GpuLight* lights = fuseGpuSceneLights(fuseGpuScene(F.scene));
-    const uint64_t shadows = uint64_t(F.shadowsLo) | (uint64_t(F.shadowsHi) << 32u);
-    const uint64_t rt = pixel.x == 0xFFFFFFFFu ? 0ull : (uint64_t(F.rtShadowsLo) | (uint64_t(F.rtShadowsHi) << 32u));
-    float3 radiance = s.emissive + fuseLcVec3(F.ambient) * s.albedo * s.ao;
-    const bool compensated = F.brdfLut != 0ull;
-    float* lut = (float*)F.brdfLut;
-    FuseLcTerms terms = {};
-    if (compensated) {
-        terms = fuseLcSurfaceTerms(s, v, lut);
+// The light loop in pieces (twin of fuse_lc_shade_begin / fuse_lc_shade_cluster_light, lc_ltc.glsl):
+// fuseLcShadeBegin = emissive + ambient + the directional list; fuseLcShadeClusterLight = one entry of the
+// cluster list. light.shade's tiled loop (lc_shade.slang) calls the latter for its compacted entries only.
+static const uint kFuseLcVsmSearch = 0xFFFFFFFFu; // the generic lookup (fuseLcShadowed)
+static const uint kFuseLcVsmNone = 0xFFFFFFFEu;   // no VSM shadow for this light: visibility 1
+
+struct LcShadeState {
+    GpuLight* lights;
+    uint64_t shadows;
+    bool compensated;
+    bool skipArea;
+    float* lut;
+    FuseLcTerms terms;
+    // WP-6.2: the pixel's RtfxShadowView, read once (fuseLcRtVisibility per light read it per light)
+    bool rtValid;
+    uint rtCount;
+    uint rtSlots[4];
+    uint64_t rtVisibility;
+    uint rtPlane;
+    uint rtPixel;
+};
+
+// The VSM lookup of light `slot`: kFuseLcVsmSearch (directional), its VsmShadowConstants local index, or
+// kFuseLcVsmNone; fuseVsmrShadowSample's own dispatch, so fuseLcShadowedCode == fuseLcShadowed.
+uint fuseLcVsmCode(uint64_t shadows, uint slot) {
+    if (shadows == 0ull) {
+        return kFuseLcVsmNone;
     }
+    VsmShadow* S = (VsmShadow*)shadows;
+    if (slot == S.directionalSlot && S.vsm != 0ull) {
+        return kFuseLcVsmSearch;
+    }
+    const uint count = min(S.localCount, kFuseVsmrMaxLocal);
+    for (uint k = 0u; k < count; ++k) {
+        if (S.local[k].slot == slot) {
+            return k;
+        }
+    }
+    return kFuseLcVsmNone;
+}
+
+float3 fuseLcShadowedCode(LcShadeState st, uint slot, LcSurface s, float3 c, uint code) {
+    if (st.rtValid) {
+        for (uint k = 0u; k < st.rtCount; ++k) {
+            if (st.rtSlots[k] == slot) {
+                const float visibility = ((float*)st.rtVisibility)[k * st.rtPlane + st.rtPixel];
+                return float3(c.x * visibility, c.y * visibility, c.z * visibility);
+            }
+        }
+    }
+    if (code == kFuseLcVsmSearch) {
+        return fuseLcShadowed(st.shadows, slot, s, c);
+    }
+    if (code == kFuseLcVsmNone || (c.x == 0.0 && c.y == 0.0 && c.z == 0.0)) {
+        return c; // c x 1 == c
+    }
+    VsmShadow* S = (VsmShadow*)st.shadows;
+    const float visibility = fuseVsmrLocalVisibility(S, S.local[code], s.position, s.normal).visibility;
+    return float3(c.x * visibility, c.y * visibility, c.z * visibility);
+}
+
+float3 fuseLcShadeBegin(LcFrame F, LcSurface s, float3 v, uint2 pixel, out LcShadeState st) {
+    st.lights = fuseGpuSceneLights(fuseGpuScene(F.scene));
+    st.shadows = uint64_t(F.shadowsLo) | (uint64_t(F.shadowsHi) << 32u);
+    const uint64_t rt = pixel.x == 0xFFFFFFFFu ? 0ull : (uint64_t(F.rtShadowsLo) | (uint64_t(F.rtShadowsHi) << 32u));
+    st.compensated = F.brdfLut != 0ull;
+    st.skipArea = pixel.x != 0xFFFFFFFFu && (F.flags & kFuseLcFlagSkipAreaLights) != 0u;
+    st.lut = (float*)F.brdfLut;
+    st.terms = {};
+    if (st.compensated) {
+        st.terms = fuseLcSurfaceTerms(s, v, st.lut);
+    }
+    st.rtValid = false;
+    st.rtCount = 0u;
+    for (uint k = 0u; k < 4u; ++k) {
+        st.rtSlots[k] = 0u;
+    }
+    st.rtVisibility = 0ull;
+    st.rtPlane = 0u;
+    st.rtPixel = 0u;
+    if (rt != 0ull) {
+        const LcRtView view = ((LcRtView*)rt)[0];
+        if (pixel.x < view.width && pixel.y < view.height) {
+            st.rtValid = true;
+            st.rtCount = min(view.count, 4u);
+            st.rtSlots = view.slots;
+            st.rtVisibility = view.visibility;
+            st.rtPlane = view.width * view.height;
+            st.rtPixel = pixel.y * view.width + pixel.x;
+        }
+    }
+    float3 radiance = s.emissive + fuseLcVec3(F.ambient) * s.albedo * s.ao;
     uint* directional = (uint*)F.directional;
     const uint directionalCount = ((uint*)F.listHeader)[kFuseLcHeaderDirectional];
     for (uint i = 0u; i < directionalCount; ++i) {
         const uint slot = directional[i];
         if (slot < F.lightCount) {
-            radiance = radiance + fuseLcShadowedPx(shadows, rt, pixel, slot, s,
-                                                   compensated ? fuseLcLightMs(lights[slot], s, v, terms, lut) : fuseLcLight(lights[slot], s, v));
+            radiance = radiance + fuseLcShadowedCode(st, slot, s,
+                                                     st.compensated ? fuseLcLightMs(st.lights[slot], s, v, st.terms, st.lut)
+                                                                    : fuseLcLight(st.lights[slot], s, v),
+                                                     kFuseLcVsmSearch);
         }
     }
+    return radiance;
+}
+
+// `vsmCode`: fuseLcVsmCode(st.shadows, slot) when the caller has it (light.shade: once per tile), else
+// kFuseLcVsmSearch.
+float3 fuseLcShadeClusterLight(LcFrame F, LcShadeState st, LcSurface s, float3 v, uint slot, uint vsmCode, float3 radiance) {
+    if (slot >= F.lightCount) {
+        return radiance;
+    }
+    const uint type = st.lights[slot].type;
+    if (st.skipArea && (type == kFuseLightRect || type == kFuseLightDisk)) {
+        return radiance;
+    }
+    if (type == kFuseLightPoint || type == kFuseLightSpot) {
+        // Range pre-test (twin of fuse_lc_shade_cluster_light): the falloff's own test on the same bits, from the
+        // light's position and range only; out of range the light adds an exact zero.
+        const float3 toLight = float3(st.lights[slot].position[0], st.lights[slot].position[1], st.lights[slot].position[2]) - s.position;
+        const float range = st.lights[slot].range;
+        if (!(range > 0.0) || !(fuseLcLength(toLight) < range)) {
+            return radiance + float3(0.0, 0.0, 0.0);
+        }
+    }
+    return radiance + fuseLcShadowedCode(st, slot, s,
+                                         st.compensated ? fuseLcLightMs(st.lights[slot], s, v, st.terms, st.lut)
+                                                        : fuseLcLight(st.lights[slot], s, v),
+                                         vsmCode);
+}
+
+// The light loop with the pixel light.shade shades (WP-6.2 ray-traced visibility); `pixel` = ~0u: none.
+float3 fuseLcShadeLightsPx(LcFrame F, LcSurface s, float3 v, uint cluster, uint2 pixel) {
+    LcShadeState st;
+    float3 radiance = fuseLcShadeBegin(F, s, v, pixel, st);
     uint* grid = (uint*)F.grid;
     uint* list = (uint*)F.lightList;
     const uint offset = grid[cluster * 2u];
     const uint count = grid[cluster * 2u + 1u];
-    const bool skipArea = pixel.x != 0xFFFFFFFFu && (F.flags & kFuseLcFlagSkipAreaLights) != 0u;
     for (uint i = 0u; i < count; ++i) {
-        const uint slot = list[offset + i];
-        if (slot < F.lightCount &&
-            !(skipArea && (lights[slot].type == kFuseLightRect || lights[slot].type == kFuseLightDisk))) {
-            radiance = radiance + fuseLcShadowedPx(shadows, rt, pixel, slot, s,
-                                                   compensated ? fuseLcLightMs(lights[slot], s, v, terms, lut) : fuseLcLight(lights[slot], s, v));
-        }
+        radiance = fuseLcShadeClusterLight(F, st, s, v, list[offset + i], kFuseLcVsmSearch, radiance);
     }
     return radiance;
 }

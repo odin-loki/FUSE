@@ -7,20 +7,24 @@
 // each into its own depth + ID target, plus the plain WP-1.3 indirect-count draw (one pipeline) into a
 // third target. The bucket pipelines differ by a specialization constant and write (slot << 6) | bucket.
 //
-//   --mode parity    device from VulkanDevice::create (the local 1.3.275 headers cannot enable DGC, so
-//                    A falls back and must report why); validation + sync validation, 0 messages.
+//   --mode parity    device from VulkanDevice::create: A runs DGC where it enabled the extension
+//                    (NVIDIA, new headers) and falls back otherwise (Lavapipe with the 1.3.275 headers,
+//                    which cannot enable it; A must report why); validation + sync validation, 0 messages.
 //                    Per frame and kernel language: GPU sequences == CPU reference (dgc_generate_reference
 //                    of the read-back culled args) word for word; GPU bucket args == reference per bucket;
 //                    the CPU emulation of the indirect-commands layout over the GPU sequences == the
-//                    indirect-count draw list of the GPU bucket args; A image == B image (bit exact) ==
+//                    indirect-count draw list of the GPU bucket args; A image == B image (bit exact, but
+//                    for isolated equal-depth ties decided by the different draw orders) ==
 //                    the WP-1.3 image with each slot's bucket; Slang == GLSL.
 //   --mode dgc       device created here with VK_EXT_device_generated_commands + VK_KHR_maintenance5 and
 //                    wrapped with VulkanDevice::adopt (feature chain handed to the selector): A runs real
 //                    DGC on Lavapipe. Same checks, plus A records 2 commands vs 2 x buckets for B. The
 //                    Khronos validation layer here is 1.3.275 and predates the extension, so this mode
 //                    runs without it (--validate forces it on to list what the old layer reports).
-//   --mode fallback  capability reporting: a standard device reports ExtensionNotEnabled / FeatureState-
-//                    Unknown, an adopted DGC device without the chain reports FeatureStateUnknown, and
+//   --mode fallback  capability reporting: a device created with optional features off (never DGC, on
+//                    any hardware) reports ExtensionNotEnabled / FeatureStateUnknown, an adopted DGC
+//                    device without the chain reports FeatureStateUnknown (old headers) or capable (the
+//                    adopted caps carry the feature), and
 //                    ForceFallback reports ForcedFallback; the fallback renders the reference image.
 //   --mode zero_alloc  steady-state frames: 0 operator-new calls in the selector calls (beginFrame,
 //                    importInto, addGenerate, useDraws) and the dgc.* / draw callbacks.
@@ -57,6 +61,8 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------
@@ -284,7 +290,10 @@ struct FeatureChain {
 };
 constexpr VkStructureType kSTypeDgcFeatures = static_cast<VkStructureType>(1000572000);
 
-enum class DeviceKind : u8 { Standard, Dgc };
+/// Standard: VulkanDevice::create defaults (enables DGC wherever the headers and the device have it).
+/// Baseline: VulkanDevice::create with optional features off, so never DGC on any device.
+/// Dgc: created here with VK_EXT_device_generated_commands, adopted.
+enum class DeviceKind : u8 { Standard, Baseline, Dgc };
 
 struct Context {
     std::unique_ptr<VulkanInstance> instance;
@@ -475,8 +484,7 @@ int setup(Context& ctx, DeviceKind kind, bool descriptorBuffer, bool validation)
             return kSkip;
         }
         setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         setenv("VK_INSTANCE_LAYERS", "", 1);
@@ -513,7 +521,9 @@ int setup(Context& ctx, DeviceKind kind, bool descriptorBuffer, bool validation)
             return rc;
         }
     } else {
-        ctx.device = VulkanDevice::create(*ctx.instance, VulkanDeviceDesc{});
+        VulkanDeviceDesc deviceDesc{};
+        deviceDesc.enableOptionalFeatures = kind != DeviceKind::Baseline;
+        ctx.device = VulkanDevice::create(*ctx.instance, deviceDesc);
     }
     if (ctx.device == nullptr || !ctx.device->isValid()) {
         std::printf("SKIP: no Vulkan device\n");
@@ -1093,8 +1103,12 @@ struct FrameCheck {
     u32 seqCount = 0;
     std::vector<u32> sequenceWords;
     u32 pixelsCovered = 0;
+    u32 depthTies = 0; ///< A != B ID pixels explained by an equal-depth tie (draw order decides)
     u32 bucketHistogram[kBuckets] = {};
 };
+
+/// A handful of isolated tie pixels per frame (seen: 1 of 49152 on NVIDIA); more means a real bug.
+constexpr u32 kMaxDepthTiePixels = 16;
 
 /// Every comparison of one frame (see the file comment).
 void checkFrame(Context& ctx, Rig& rig, const SceneData& sd, const FrameState& fs, FrameCheck& out) {
@@ -1162,7 +1176,34 @@ void checkFrame(Context& ctx, Rig& rig, const SceneData& sd, const FrameState& f
     const u32* idA = reinterpret_cast<const u32*>(rbAt(ctx, l.id[0]));
     const u32* idB = reinterpret_cast<const u32*>(rbAt(ctx, l.id[1]));
     const u32* idR = reinterpret_cast<const u32*>(rbAt(ctx, l.id[2]));
-    expect(std::memcmp(idA, idB, kImageBytes) == 0, "ID image: A (DGC / Auto) == B (indirect-count fallback), bit exact");
+    // A draws in culled order (as the WP-1.3 draw does), B bucket by bucket. Where two instances
+    // reach a pixel at exactly the same D32 depth (LESS keeps the first), the draw order picks the
+    // ID: Lavapipe never produced such a tie on this scene, NVIDIA's rasterizer does on the odd pixel.
+    // A pixel may differ only as such a tie: same depth in A and B, and B's ID a valid encoding of
+    // another drawn slot (its own bucket). Anything else is a real mismatch.
+    const float* depthA = reinterpret_cast<const float*>(rbAt(ctx, l.depth[0]));
+    const float* depthB = reinterpret_cast<const float*>(rbAt(ctx, l.depth[1]));
+    auto validId = [&sd](u32 id) {
+        const u32 slot = id >> 6u;
+        if (id == 0xFFFFFFFFu || slot >= sd.materialOfSlot.size()) {
+            return false;
+        }
+        const u32 bucket = dgc_select_bucket(sd.materialOfSlot[slot], sd.materialBuckets.data(), kMaterials, kBuckets, 2u);
+        return (id & 63u) == bucket;
+    };
+    u32 depthTies = 0;
+    u32 unexplained = 0;
+    for (u32 p = 0; p < kWidth * kHeight; ++p) {
+        if (idA[p] == idB[p]) {
+            continue;
+        }
+        const bool tie = std::memcmp(&depthA[p], &depthB[p], sizeof(float)) == 0 && validId(idA[p]) && validId(idB[p]);
+        depthTies += tie ? 1u : 0u;
+        unexplained += tie ? 0u : 1u;
+    }
+    out.depthTies = depthTies;
+    expect(unexplained == 0u, "ID image: A (DGC / Auto) == B (indirect-count fallback), bit exact outside depth ties");
+    expect(depthTies <= kMaxDepthTiePixels, "ID image: equal-depth ties stay isolated pixels");
     expect(std::memcmp(rbAt(ctx, l.depth[0]), rbAt(ctx, l.depth[1]), kImageBytes) == 0, "depth: A == B, bit exact");
     expect(std::memcmp(rbAt(ctx, l.depth[0]), rbAt(ctx, l.depth[2]), kImageBytes) == 0,
            "depth: A == WP-1.3 indirect-count draw, bit exact");
@@ -1182,6 +1223,13 @@ void checkFrame(Context& ctx, Rig& rig, const SceneData& sd, const FrameState& f
         std::fprintf(stderr, "FAIL: %u pixels differ from the WP-1.3 image with bucket colours\n", mismatches);
         ++g_failures;
     }
+}
+
+/// Whether selector A (DgcMode::Auto) must take the DGC path on a VulkanDevice::create device: it
+/// enables VK_EXT_device_generated_commands wherever the headers define it and the device has it
+/// (NVIDIA; Lavapipe with headers newer than the 1.3.275 the gates were written against).
+bool deviceEnablesDgc(const Context& ctx) {
+    return ctx.device->info().caps.has(RenderFeature::DeviceGeneratedCommands);
 }
 
 /// Runs the frames for every language; `expectDgc` = selector A must have DGC active.
@@ -1250,6 +1298,9 @@ int runFrames(Context& ctx, bool expectDgc, bool dgcChain, u32 frames) {
             for (u32 b = 0; b < kBuckets; ++b) {
                 std::printf(" %u", fc.bucketHistogram[b]);
             }
+            if (fc.depthTies != 0u) {
+                std::printf("  (A/B depth-tie pixels: %u)", fc.depthTies);
+            }
             std::printf("\n");
         }
         std::printf("  A: %u DGC executes, preprocess %llu B; B: %u indirect-count draws\n", rig.a.stats().executes,
@@ -1270,10 +1321,12 @@ int runFrames(Context& ctx, bool expectDgc, bool dgcChain, u32 frames) {
 
 int runFallbackReasons(bool validation) {
     int rc = 0;
-    // 1. Standard device: the local headers cannot enable DGC.
+    // 1. A device without DGC enabled. VulkanDevice::create enables DGC wherever the headers and the
+    //    device have it (NVIDIA; Lavapipe with new headers), so the fallback is forced at device level:
+    //    optional features off (T0 set only) on any hardware.
     {
         Context ctx;
-        const int s = setup(ctx, DeviceKind::Standard, false, validation);
+        const int s = setup(ctx, DeviceKind::Baseline, false, validation);
         if (s != 0) {
             return s;
         }
@@ -1284,18 +1337,21 @@ int runFallbackReasons(bool validation) {
         desc.bindless = &ctx.bindless;
         desc.bucketCount = kBuckets;
         expect(sel.init(desc), "fallback selector init");
-        expect(!sel.dgcCapable() && sel.pipelineCreateFlags2() == 0u, "standard device: no DGC");
+        expect(!sel.dgcCapable() && sel.pipelineCreateFlags2() == 0u, "device without DGC enabled: no DGC");
         expect(sel.reason() == DgcReason::ExtensionNotEnabled || sel.reason() == DgcReason::FeatureStateUnknown ||
-                   sel.reason() == DgcReason::Maintenance5NotEnabled,
-               "standard device reason");
-        std::printf("  standard device: '%s'\n", sel.reasonText());
+                   sel.reason() == DgcReason::FeatureNotEnabled || sel.reason() == DgcReason::Maintenance5NotEnabled,
+               "device without DGC enabled: reason");
+        std::printf("  device without DGC enabled: '%s'\n", sel.reasonText());
         desc.mode = DgcMode::ForceFallback;
         DgcPipelineSelector forced;
         expect(forced.init(desc) && forced.reason() == DgcReason::ForcedFallback, "ForceFallback reason");
         std::printf("  ForceFallback: '%s'\n", forced.reasonText());
         rc |= runFrames(ctx, false, false, 2u);
     }
-    // 2. Adopted DGC device without the feature chain: the feature state cannot be read back.
+    // 2. Adopted DGC device without the feature chain on the selector. With headers that define
+    //    VK_EXT_device_generated_commands, VulkanDevice::adopt reads the feature from the creator's
+    //    chain into its caps, so the selector knows the state; with older headers (Linux CI,
+    //    1.3.275) it cannot be read back.
     {
         Context ctx;
         const int s = setup(ctx, DeviceKind::Dgc, false, false);
@@ -1306,7 +1362,12 @@ int runFallbackReasons(bool validation) {
             desc.allocator = ctx.allocator.get();
             desc.bindless = &ctx.bindless;
             desc.bucketCount = kBuckets;
-            expect(sel.init(desc) && sel.reason() == DgcReason::FeatureStateUnknown, "no chain -> FeatureStateUnknown");
+            if (ctx.device->info().caps.has(RenderFeature::DeviceGeneratedCommands)) {
+                expect(sel.init(desc) && sel.dgcCapable(), "no chain, feature in the adopted caps -> capable");
+            } else {
+                expect(sel.init(desc) && sel.reason() == DgcReason::FeatureStateUnknown,
+                       "no chain -> FeatureStateUnknown");
+            }
             std::printf("  DGC device, no feature chain: '%s'\n", sel.reasonText());
             desc.enabledFeatureChain = &ctx.chain.core;
             DgcPipelineSelector with;
@@ -1441,12 +1502,15 @@ int main(int argc, char** argv) {
         if (s != 0) {
             return s;
         }
-        rc = runFrames(ctx, false, false, 4u);
+        rc = runFrames(ctx, deviceEnablesDgc(ctx), false, 4u);
     } else if (mode == "dgc") {
         // The 1.3.275 validation layer predates VK_EXT_device_generated_commands (it cannot parse its
-        // structs / flags): unvalidated unless --validate.
+        // structs / flags): unvalidated unless --validate. Layers from 1.3.296 (the extension's
+        // release) validate it, and then the real DGC path runs under validation + sync validation.
+        const bool layerKnowsDgc =
+            fuse::renderer::test::validationLayerSpecVersion() >= VK_MAKE_API_VERSION(0, 1, 3, 296);
         Context ctx;
-        const int s = setup(ctx, DeviceKind::Dgc, buffer, forceValidate);
+        const int s = setup(ctx, DeviceKind::Dgc, buffer, forceValidate || layerKnowsDgc);
         if (s != 0) {
             return s;
         }
@@ -1460,7 +1524,7 @@ int main(int argc, char** argv) {
             if (s != 0) {
                 return s;
             }
-            rc = runFrames(ctx, false, false, 2u);
+            rc = runFrames(ctx, deviceEnablesDgc(ctx), false, 2u);
         }
         const u32 validatedMessages = g_messages;
         for (DeviceKind kind : {DeviceKind::Standard, DeviceKind::Dgc}) {

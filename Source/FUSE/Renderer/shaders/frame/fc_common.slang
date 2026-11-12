@@ -10,12 +10,14 @@ static const uint kFcModeShadowPack = 3u;
 static const uint kFcModeRestir = 4u;
 static const uint kFcModeReflect = 5u;
 static const uint kFcModeRcPack = 6u;
+static const uint kFcModePathTrace = 7u;
 
 static const uint kFcFlagSky = 1u << 0;
 static const uint kFcFlagAerial = 1u << 1;
 static const uint kFcFlagSunDisk = 1u << 2;
 static const uint kFcFlagClouds = 1u << 3;
 static const uint kFcFlagSplats = 1u << 4;
+static const uint kFcFlagPtRemodulate = 32u;
 
 // FrameConstants, 224 bytes.
 struct FcFrame {

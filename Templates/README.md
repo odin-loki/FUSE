@@ -1,6 +1,10 @@
-# Torque-era templates (reference only)
+# Templates
 
-`Templates/` holds legacy Torque 3D project trees (`BaseGame/`, `Modules/`, …). They are kept for import/converter golden sources and historical comparison—not as shippable FUSE projects.
+**FUSE project templates:** [`FuseUIApp/`](FuseUIApp/README.md) is the "Application (FUSE UI)" template (`project.json` schema 2, `"kind": "app"`), used by the New Project wizard and `fuse_project_tool --new-app`; the `fuse_project_schema2` gate loads it.
+
+## Torque-era templates (reference only)
+
+`Templates/` also holds legacy Torque 3D project trees (`BaseGame/`, `Modules/`, …). They are kept for import/converter golden sources and historical comparison—not as shippable FUSE projects.
 
 **Not in FUSE product CI.** The umbrella build and `ctest` gates do not compile or test these trees. A few workflows may still call `fuse_import` against a single `.mis` under `BaseGame/` as a smoke import; that is not full template validation.
 

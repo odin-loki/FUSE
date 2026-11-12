@@ -2,8 +2,10 @@
 
 > **Path note (2026-10):** `Engine/lib/` in this document means `vendor/`; Torque addon submodules and `third_party/` are no longer in the repo.
 
-Status: plan, not yet started. Author date 2026-09-23. Companion to
-[`FUSE_RENDERER_PLAN.md`](FUSE_RENDERER_PLAN.md) and [`FUSE_MASTER_PLAN.md`](FUSE_MASTER_PLAN.md).
+Status (2026-11-05): **Wave 0 mostly in the tree** (W0.1–W0.9 landed, W0.10 Blender not started; see
+§0.1 and the Wave 0 table), plus the importer work of round 4a–4e (DTS / DAE shapes, `.fuseanim`, the remaining
+§5.3 gates, cook kinds, audio import options). Waves 1–8 (content) not started. Author date 2026-09-23.
+Companion to [`FUSE_RENDERER_PLAN.md`](FUSE_RENDERER_PLAN.md) and [`FUSE_MASTER_PLAN.md`](FUSE_MASTER_PLAN.md).
 
 **Goal.** Build a content library that looks as close to photographic as FUSE's renderer allows and
 still stays small on disk, in VRAM and in cook time. It should cover every major Earth biome, built
@@ -46,6 +48,29 @@ culling, meshlets and virtual geometry (Phase 1/5, meshoptimizer), virtual shado
 DDGI (Phase 6), volumetrics and atmosphere (Phase 8), neural techniques as optional T3 (Phase 9).
 Content is authored so that it works on T0 (no mesh shaders, discrete LODs plus impostors) and scales
 up on T1+ (cluster DAG).
+
+### 0.1 Implementation status (2026-11-05)
+
+The §0 survey above is the 2026-09-23 starting point. Since then:
+
+| Area | In the tree | Gates (ctest `asset;gate` unless noted) |
+|---|---|---|
+| Mesh cook | FMSH v2 streams (tangent, uv1, colour, skin, quantisation), meshopt codecs, LOD chain, meshlets, cluster DAG, `.fusepages` (W0.1 / W0.2) | `fuse_asset_fmsh_v2`, `fuse_asset_mesh_{lod,codec,compat,meshlets,dag}`, `fuse_asset_mesh_cook_complete` |
+| Shape import (4a, L-DTS) | Clean-room Torque `.dts` reader `Tools/FUSE/Cook/src/dts_import.cpp` (format versions 24–28: guarded 32/16/8-bit streams, nodes / objects / details / meshes, strips + fans, skins, the v27+ shared vertex buffer; highest visible detail, node default pose, Z-up → Y-up, clockwise → counter-clockwise); `import_mesh_file` dispatches `.dts` to it and `.dae` to the vendored assimp. `project::cookT3DMissionShapes` cooks a mission's TSStatic shapes to `game:/cooked/…fusemesh`; `World3D::setCookedAssetRoot` resolves `ecs::MeshAssets::mesh` at level load; `HybridSceneRenderer` uploads the meshes (`CookedAssetRegistry::addMesh`) and binds `ecs::Mesh::vertex_buffer` (`syncEntities`), so TSStatics draw | `fuse_asset_dts_import` (all 21 template `.dts` + 11 `.dae`; `asset;gate;cook`), `fuse_world3d_level_gates` (TSStatic level), `fuse_u8_demo_3d_empty` (vertex buffer bound, pixels change on Lavapipe) |
+| Texture cook | BC1/BC4/BC5/BC6H/BC7, arrays, KTX2 transport (W0.3 / W0.4); runtime BC sampling (E06) | `fuse_asset_texture_bcn`, `fuse_asset_ktx2`, `fuse_cooked_assets_*` |
+| Animation (4b) | assimp clip → quantised `.fuseanim` (§5.1 row) + runtime reader `fuse::animation::read_cooked_anim` → `AnimationClip` | `fuse_asset_anim_cook` (`asset;gate;cook`) |
+| Cook kinds (4d) | `CookAssetKind::Material` (`.fusemat.json` / `.fusemat`), `Anim`, `Look` (`.fuselook` canonical JSON) with cook-cache keys, liveness checks and manifest parsing | `fuse_asset_cook_kinds` |
+| Audio (4e) | `AssetCooker::cook_audio` honours `AudioImportDesc::normalise` (BS.1770 to −16 / −23 LUFS + −1 dBFS limiter), `trim_silence` (−60 dB rel. peak, 1 ms / 20 ms pads), `ogg_quality` (Vorbis VBR q) | `fuse_asset_audio_cook` (`asset;gate;audio`) |
+| Licences (W0.5) | `Content/licences.lock.json`, `Content/CREDITS.md`, `fuse_lint asset-licences` | `fuse_lint_asset_licences` |
+| Validation (W0.6 + 4c) | `fuse_assetcheck` with every §5.3 gate below except `asset_licences` (lint) and `asset_determinism` (AssetGen); rules shared header-only with the cooker (`Tools/FUSE/AssetCheck/include/fuse/assetcheck/asset_rules.hpp`); strict cooks refuse failing meshes / textures / audio (`CookStatus::AssetGateFailed`), `--lenient` keeps them with a warning | `fuse_assetcheck_<gate>` (14 gates, each with failing fixtures), `fuse_asset_cook_refuses_invalid` |
+| Materials (W0.7) | `.fusemat`, layered materials, detail, triplanar, stochastic tiling (`renderer/material_layers`) | `asset_golden_material_balls` |
+| Golden renders (W0.8) | `Samples/content_golden` reference scenes + vendored NVIDIA FLIP | `asset_golden_flip` |
+| AssetGen (W0.9) | `Tools/FUSE/AssetGen` (recipes, seeds, cache, licence records) | `asset_determinism` |
+| Blender (W0.10) | not started | – |
+
+Known content findings: the strict cook refuses five template `.dae` files (Playerbot, car, flier, hoverboat,
+DemoRoomLrg: 2–5 zero-area triangles each, the §5.3 `asset_geometry` rule); `torusknowpreview.dts` is a
+zero-byte file and is refused as empty.
 
 ---
 
@@ -659,20 +684,21 @@ Americas and Africa rows.
 
 | Format | Status | Change |
 |---|---|---|
-| `.fusemesh` (`FMSH`) | v1: pos/normal/uv0 f32 | **v2**: optional streams with a stream table: tangent (oct-encoded + sign), uv1, colour0 (RGBA8), joints (u8×4/u16×4) + weights (unorm8/16×4), quantised positions (unorm16 in bounds), meshopt vertex/index codec, discrete LOD table (per LOD index range + error), meshlet table (≤ 64 v / 124 t, cone + sphere bounds), cluster DAG (groups, parent error, bounds), per-submesh material slot names. Stays deterministic with the FNV-1a trailer and the no-repair rule. |
-| `.fusetex` | BC7 mode 6 only | Real BC1/BC4/BC5/BC6H/BC7 through `ispc_texcomp` (hook exists), texture arrays, cube maps, explicit colour space, per-mip RDO, optional zstd; header records `srgb`, `normal_convention=gl`, `texel_m` (metres per texel at mip 0). |
-| `.fusemat` (new) | – | JSON source → binary: shading model, texture slots (bindless indices resolved at load), layer stack (≤ 3 height-blended layers), detail map + scale, stochastic tiling flag, triplanar flag, procedural function id + params, physical category (for footsteps/impacts/audio), wind profile. |
+| `.fusemesh` (`FMSH`) | **v2 done** (W0.1/W0.2) | **v2**: optional streams with a stream table: tangent (oct-encoded + sign), uv1, colour0 (RGBA8), joints (u8×4/u16×4) + weights (unorm8/16×4), quantised positions (unorm16 in bounds), meshopt vertex/index codec, discrete LOD table (per LOD index range + error), meshlet table (≤ 64 v / 124 t, cone + sphere bounds), cluster DAG (groups, parent error, bounds), per-submesh material slot names. Stays deterministic with the FNV-1a trailer and the no-repair rule. |
+| `.fusetex` | **done** (W0.3: BC1/4/5/6H/7, arrays) | Real BC1/BC4/BC5/BC6H/BC7 through `ispc_texcomp` (hook exists), texture arrays, cube maps, explicit colour space, per-mip RDO, optional zstd; header records `srgb`, `normal_convention=gl`, `texel_m` (metres per texel at mip 0). |
+| `.fusemat` (new) | **done** (W0.7; cook kind `Material`, 4d) | JSON source → binary: shading model, texture slots (bindless indices resolved at load), layer stack (≤ 3 height-blended layers), detail map + scale, stochastic tiling flag, triplanar flag, procedural function id + params, physical category (for footsteps/impacts/audio), wind profile. |
 | `.fuseveg` (new) | – | Species: LOD meshes, impostor atlas refs, wind hierarchy, seasonal ramps, placement rules (slope, altitude, moisture, density, clustering). |
 | `.fuseimp` (new) | – | Octahedral impostor: grid size, view count, atlas refs (albedo/alpha BC7, normal+depth BC7), bounds. |
 | `.fusesdf` (new) | – | Sparse brick SDF (R16F or BC4-encoded bricks), voxel size, bounds; also used by rock LOD ray marching. |
-| `.fuseanim` (new) | – | Clip: skeleton hash, sample rate, quantised tracks, root motion, events (footsteps). |
+| `.fuseanim` (new) | **v2 done** (4b; DTS / DSQ sources 2026-11-05) | Clip: skeleton hash, sample rate, quantised tracks, root motion, events (footsteps). Layout (little-endian, 4-byte aligned): header `"FANM"`, version 2 (v1 still reads), flags (bit 0 looping, bit 1 root motion), frame count, sample rate, duration, `u64` skeleton hash (v2: FNV-1a 64 over the joints in order, each name then a 0 byte then its parent index as 4 little-endian bytes, −1 for a root; the same rule as the `asset_skin` gate; v1 files hashed names only and are re-hashed on read), joint / event counts, clip name; per joint name, parent (an earlier joint or −1) and T / R / S tracks (absent / constant / quantised: translation and scale as unorm16 in a per-track box, rotation as 64-bit smallest-three); root-motion track (cumulative dx, dy, dz, dyaw per frame, Y-up); events (time, name) sorted; FNV-1a 64 trailer. Frames are uniform: count = ceil(duration × rate) + 1. |
 | `.fusebank` (new) | – | Audio bank: Vorbis clips + ambience scheduler data + IR refs. |
-| `.fuselook` | exists | Add per-biome presets and weather variants; LUTs (33³ or 65³ `.cube` → RGBA16F 3D texture) in `Samples/Looks/luts`. |
+| `.fuselook` | exists (cook kind `Look`, 4d: validated, canonical JSON) | Add per-biome presets and weather variants; LUTs (33³ or 65³ `.cube` → RGBA16F 3D texture) in `Samples/Looks/luts`. |
 | `.fusebiome` (new) | – | Biome pack: terrain layer set, splat rules, vegetation/rock/prop scatter tables, ambience bank, look preset, weather table, residency group id. |
 
 The cook manifest (`cook_manifest.hpp` `CookAssetKind`) gains `Material, Vegetation, Impostor, Sdf,
 Anim, AudioBank, Look, Biome`, and every entry gets a `licence_id` that points into
-`licences.lock.json`.
+`licences.lock.json`. Status: `Material`, `Anim` and `Look` exist (4d, with cook-cache support); the others and
+`licence_id` are open.
 
 ### 5.2 Directory layout
 
@@ -711,6 +737,16 @@ Rule: **nothing large in git**. Recipes + locks are small and enough to rebuild 
 
 Gates run on CPU. The cook refuses (strict mode, which is already the default) assets that fail
 any gate; `--lenient` only for local iteration.
+
+Status (2026-11-05): every gate exists. `asset_licences` is `fuse_lint_asset_licences`, `asset_determinism` is the
+AssetGen ctest, the other twelve (plus `lod_chain` and `uv_bounds`) are `fuse_assetcheck_<gate>` with passing and
+failing fixtures. The strict cook applies the rules it can check without a descriptor (mesh geometry + skin
+weights, normal maps linear BC5, audio rate / clipping / loudness / loop seam) and refuses with
+`CookStatus::AssetGateFailed`; descriptor-level rules (naming, class budgets, texel density, golden, skeleton hash,
+view distance) run in `fuse_assetcheck check`. Skeleton hash (aligned 2026-11-05): `.fuseanim` v2 hashes joint names
++ parent indices with the assetcheck `skin` gate's rule (FNV-1a 64 over name bytes, a 0 byte and the parent as s32
+little endian), so a clip and an FSKL rig match by hash; v1 files (names only) still read and are restated with the
+v2 hash (`fuse_asset_anim_cook`, `fuse_asset_dts_import` and `remaster_legacy_ts_import` check the equality).
 
 ### 5.4 Golden renders on reference scenes
 
@@ -754,20 +790,20 @@ any gate; `--lenient` only for local iteration.
 Each wave is a set of agent-sized tasks (1 task ≈ one PR, one session). Exit criteria are checked by
 ctest gates. CPU times are estimates for an 8–16 core container.
 
-### Wave 0: pipeline foundations (≈ 10 tasks) **[P0]**
+### Wave 0: pipeline foundations (≈ 10 tasks) **[P0]** — 9 of 10 done (2026-11-05)
 
 | Task | Output | Exit criteria |
 |---|---|---|
-| W0.1 `FMSH` v2 streams (tangent, uv1, colour, skin, quantisation) | `mesh_cook.cpp` + tests | round-trip tests; v1 still loads |
-| W0.2 Vendor meshoptimizer with a `VERSION` pin; LODs + meshlets + cluster DAG in the cook | `vendor/meshoptimizer` | `fuse_lint_vendored_pins_meshoptimizer`; LOD error monotonic test  Import/CLI wiring (GREP-COOK-1, RE-P1-7, 2026-09-30): `MeshImportDesc::generate_lods/lod_count` → `optimize.lods` (`lod_options_for_count`), `compress` → quantised positions + normals (both opt-in now, defaults off so plain cooks stay FMSH v1), `meshlets/cluster_dag/cluster_pages` → sections + `.fusepages`; the lenient `write_mesh_stub` honours lod_count / compressed; `fuse_cook --lods N --compress --meshlets --dag --pages`; gate `fuse_asset_mesh_cook_complete` |
-| W0.3 Real BC1/BC4/BC5/BC6H/BC7 through ispc_texcomp; texture arrays | `texture_cook.cpp` | per-format PSNR thresholds; normal maps BC5  Runtime (E06 / AP-RT-COOKED, 2026-09-30): the renderer samples them as `VK_FORMAT_BC*` images (CPU-decode fallback without `textureCompressionBC`), `.fusemat` materials and FMSH v2 meshlets / DAG load through `renderer::cooked_assets::CookedAssetRegistry` (the `IRenderUploadSink`); gates `fuse_cooked_assets_*` |
-| W0.4 KTX2 import/export (transport only) | `fuse_cook --texture` accepts `.ktx2` | round-trip test |
-| W0.5 Licence lock + `fuse_lint asset-licences` | `Content/licences.lock.json`, lint mode | ctest `fuse_lint_asset_licences` green |
-| W0.6 Validation gates (§5.3) as `fuse_assetcheck` | tool + ctest | each gate has a failing fixture |
-| W0.7 `.fusemat` + layered material + detail + triplanar + stochastic tiling in the renderer | renderer material system | material-ball golden scene renders on Lavapipe |
-| W0.8 Golden render harness (FLIP C++ vendored) | `Samples/content_golden` | deterministic re-render FLIP = 0 |
-| W0.9 `Tools/FUSE/AssetGen` skeleton: recipe schema, seed plumbing, cache, licence records | python package | `asset_determinism` gate |
-| W0.10 Blender headless in container (install pinned Blender LTS into cache, smoke script) | script + doc | exports a glTF cube via `--background` |
+| W0.1 `FMSH` v2 streams (tangent, uv1, colour, skin, quantisation) | `mesh_cook.cpp` + tests | round-trip tests; v1 still loads — **Done** |
+| W0.2 Vendor meshoptimizer with a `VERSION` pin; LODs + meshlets + cluster DAG in the cook | `vendor/meshoptimizer` | `fuse_lint_vendored_pins_meshoptimizer`; LOD error monotonic test  Import/CLI wiring (GREP-COOK-1, RE-P1-7, 2026-09-30): `MeshImportDesc::generate_lods/lod_count` → `optimize.lods` (`lod_options_for_count`), `compress` → quantised positions + normals (both opt-in now, defaults off so plain cooks stay FMSH v1), `meshlets/cluster_dag/cluster_pages` → sections + `.fusepages`; the lenient `write_mesh_stub` honours lod_count / compressed; `fuse_cook --lods N --compress --meshlets --dag --pages`; gate `fuse_asset_mesh_cook_complete` — **Done** |
+| W0.3 Real BC1/BC4/BC5/BC6H/BC7 through ispc_texcomp; texture arrays | `texture_cook.cpp` | per-format PSNR thresholds; normal maps BC5  Runtime (E06 / AP-RT-COOKED, 2026-09-30): the renderer samples them as `VK_FORMAT_BC*` images (CPU-decode fallback without `textureCompressionBC`), `.fusemat` materials and FMSH v2 meshlets / DAG load through `renderer::cooked_assets::CookedAssetRegistry` (the `IRenderUploadSink`); gates `fuse_cooked_assets_*` — **Done** |
+| W0.4 KTX2 import/export (transport only) | `fuse_cook --texture` accepts `.ktx2` | round-trip test — **Done** |
+| W0.5 Licence lock + `fuse_lint asset-licences` | `Content/licences.lock.json`, lint mode | ctest `fuse_lint_asset_licences` green — **Done** |
+| W0.6 Validation gates (§5.3) as `fuse_assetcheck` | tool + ctest | each gate has a failing fixture — **Done** (all §5.3 gates + cook refusal, 4c) |
+| W0.7 `.fusemat` + layered material + detail + triplanar + stochastic tiling in the renderer | renderer material system | material-ball golden scene renders on Lavapipe — **Done** |
+| W0.8 Golden render harness (FLIP C++ vendored) | `Samples/content_golden` | deterministic re-render FLIP = 0 — **Done** (`asset_golden_flip`) |
+| W0.9 `Tools/FUSE/AssetGen` skeleton: recipe schema, seed plumbing, cache, licence records | python package | `asset_determinism` gate — **Done** (`asset_determinism`) |
+| W0.10 Blender headless in container (install pinned Blender LTS into cache, smoke script) | script + doc | exports a glTF cube via `--background` — **Not started** |
 
 ### Wave 1: shared material library (≈ 8 tasks) **[P0]**
 

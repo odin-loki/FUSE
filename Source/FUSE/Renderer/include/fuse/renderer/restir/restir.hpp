@@ -21,7 +21,10 @@ namespace fuse::renderer::restir {
 struct RestirSettings {
     bool di = true;                 ///< ReSTIR DI chain
     bool gi = true;                 ///< ReSTIR GI chain
-    bool unbiased = false;          ///< Talbot / generalized-balance MIS with visibility-tested targets
+    /// Talbot / generalized-balance MIS with visibility-tested targets. Default on: the biased mode loses energy
+    /// (P7 on an RTX 3090, 10k emissive triangles vs a 4096-spp reference: biased -6.4 %, biased + SVGF -5.5 %;
+    /// unbiased +0.6 % / +0.4 %, relMSE 1.4e-2 vs 5.8e-2; docs/unification/RENDERER-HW-RUN.md section 6).
+    bool unbiased = true;
     bool visibilityReuse = true;    ///< DI initial: zero W of an occluded candidate
     bool diTemporal = true;
     bool giTemporal = true;

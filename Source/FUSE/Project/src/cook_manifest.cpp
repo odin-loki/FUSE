@@ -163,13 +163,20 @@ const char* cookAssetKindName(CookAssetKind kind) {
         return "shader";
     case CookAssetKind::Script:
         return "script";
+    case CookAssetKind::Material:
+        return "material";
+    case CookAssetKind::Anim:
+        return "anim";
+    case CookAssetKind::Look:
+        return "look";
     }
     return "unknown";
 }
 
 bool parseCookAssetKindName(std::string_view token, CookAssetKind& out) {
     static constexpr CookAssetKind kKinds[] = {CookAssetKind::Mesh, CookAssetKind::Texture, CookAssetKind::Audio,
-                                               CookAssetKind::Shader, CookAssetKind::Script};
+                                               CookAssetKind::Shader, CookAssetKind::Script,
+                                               CookAssetKind::Material, CookAssetKind::Anim, CookAssetKind::Look};
     for (const CookAssetKind kind : kKinds) {
         if (token == cookAssetKindName(kind)) {
             out = kind;
@@ -189,6 +196,34 @@ u64 hashScriptCookInput(const std::string& source_path, const std::string& outpu
     }
     static constexpr char kTag[] = "fuse.cook.script.v1";
     u64 hash = fnv1a64_bytes(reinterpret_cast<const u8*>(kTag), sizeof(kTag) - 1u);
+    hash = fnv1a64_combine(hash, fnv1a64_bytes(reinterpret_cast<const u8*>(source_path.data()), source_path.size()));
+    hash = fnv1a64_combine(hash, fnv1a64_bytes(reinterpret_cast<const u8*>(output_path.data()), output_path.size()));
+    return fnv1a64_combine(hash, file_hash);
+}
+
+u64 hashCookKindInput(CookAssetKind kind, const std::string& source_path, const std::string& output_path) {
+    if (kind == CookAssetKind::Anim) {
+        AnimImportDesc desc;
+        desc.input_path = source_path;
+        desc.output_path = output_path;
+        return hash_anim_import(desc);
+    }
+    const char* tag = nullptr;
+    if (kind == CookAssetKind::Material) {
+        tag = "fuse.cook.material.v1";
+    } else if (kind == CookAssetKind::Look) {
+        tag = "fuse.cook.look.v1";
+    } else if (kind == CookAssetKind::Script) {
+        return hashScriptCookInput(source_path, output_path);
+    }
+    if (tag == nullptr || source_path.empty() || output_path.empty()) {
+        return 0;
+    }
+    const u64 file_hash = hash_file_content(source_path);
+    if (file_hash == 0) {
+        return 0;
+    }
+    u64 hash = fnv1a64_bytes(reinterpret_cast<const u8*>(tag), std::char_traits<char>::length(tag));
     hash = fnv1a64_combine(hash, fnv1a64_bytes(reinterpret_cast<const u8*>(source_path.data()), source_path.size()));
     hash = fnv1a64_combine(hash, fnv1a64_bytes(reinterpret_cast<const u8*>(output_path.data()), output_path.size()));
     return fnv1a64_combine(hash, file_hash);
@@ -218,6 +253,8 @@ const char* cookStatusName(CookStatus status) {
         return "importer_unavailable";
     case CookStatus::ScriptSyntaxError:
         return "script_syntax_error";
+    case CookStatus::AssetGateFailed:
+        return "asset_gate_failed";
     }
     return "unknown";
 }

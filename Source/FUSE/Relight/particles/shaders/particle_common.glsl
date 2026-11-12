@@ -38,6 +38,10 @@
 #ifndef FUSE_RELIGHT_PARTICLE_COMMON_GLSL
 #define FUSE_RELIGHT_PARTICLE_COMMON_GLSL
 
+// Division and sqrt are correctly rounded (fuse_div_rn / fuse_sqrt_rn): Vulkan allows 2.5 ulp and NVIDIA uses it,
+// which compounded over 150 simulated frames past the parity tolerance.
+#include "../../../Renderer/shaders/common/exact_math.glsl"
+
 // ---- layouts (particle_types.hpp) -----------------------------------------------------------------------------------
 
 struct SystemDesc {
@@ -200,21 +204,30 @@ vec3 lerp3(vec3 a, vec3 b, float t) { return vec3(lerpp(a.x, b.x, t), lerpp(a.y,
 vec4 lerp4(vec4 a, vec4 b, float t) {
     return vec4(lerpp(a.x, b.x, t), lerpp(a.y, b.y, t), lerpp(a.z, b.z, t), lerpp(a.w, b.w, t));
 }
-float dot3(vec3 a, vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-vec3 cross3(vec3 a, vec3 b) { return vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); }
-float length3(vec3 a) { return sqrt(dot3(a, a)); }
+// The vector helpers are `precise` too: an FMA contraction (NVIDIA) changes their rounding vs the CPU reference.
+float dot3(vec3 a, vec3 b) {
+    precise float r = a.x * b.x + a.y * b.y + a.z * b.z;
+    return r;
+}
+vec3 cross3(vec3 a, vec3 b) {
+    precise vec3 r = vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+    return r;
+}
+float length3(vec3 a) { return fuse_sqrt_rn(dot3(a, a)); }
 vec3 safeNormalize3(vec3 a, vec3 fallback) {
     float l2 = dot3(a, a);
-    return l2 > 0.0 ? a * (1.0 / sqrt(l2)) : fallback;
+    return l2 > 0.0 ? a * fuse_div_rn(1.0, fuse_sqrt_rn(l2)) : fallback;
 }
 vec3 transform34(float rows[12], vec3 p, float w) {
-    return vec3(rows[0] * p.x + rows[1] * p.y + rows[2] * p.z + rows[3] * w,
+    precise vec3 r = vec3(rows[0] * p.x + rows[1] * p.y + rows[2] * p.z + rows[3] * w,
                 rows[4] * p.x + rows[5] * p.y + rows[6] * p.z + rows[7] * w,
                 rows[8] * p.x + rows[9] * p.y + rows[10] * p.z + rows[11] * w);
+    return r;
 }
 vec4 transform44(float m[16], vec3 p) {
-    return vec4(m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12], m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13],
+    precise vec4 r = vec4(m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12], m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13],
                 m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14], m[3] * p.x + m[7] * p.y + m[11] * p.z + m[15]);
+    return r;
 }
 
 // ---- portable sine / cosine (psin / pcos of particle_kernels.hpp) ------------------------------------------------
@@ -324,7 +337,7 @@ vec3 curlOfValueNoise(vec3 pos, float time) {
     vec3 fmy = noiseField(pmy, time);
     vec3 fpz = noiseField(ppz, time);
     vec3 fmz = noiseField(pmz, time);
-    precise float k = 0.5 / e;
+    precise float k = fuse_div_rn(0.5, e);
     precise vec3 dFdx = (fpx - fmx) * k;
     precise vec3 dFdy = (fpy - fmy) * k;
     precise vec3 dFdz = (fpz - fmz) * k;
@@ -337,19 +350,22 @@ vec3 curlOfValueNoise(vec3 pos, float time) {
 float signNotZero(float v) { return v >= 0.0 ? 1.0 : -1.0; }
 void orthonormalBasis(vec3 n, out vec3 tangent, out vec3 bitangent) {
     float sgn = signNotZero(n.z);
-    float a = -1.0 / (sgn + n.z);
-    float b = n.x * n.y * a;
-    tangent = vec3(1.0 + sgn * n.x * n.x * a, sgn * b, -sgn * n.x);
-    bitangent = vec3(b, sgn + n.y * n.y * a, -n.y);
+    float a = fuse_div_rn(-1.0, sgn + n.z);
+    precise float b = n.x * n.y * a;
+    precise vec3 t = vec3(1.0 + sgn * n.x * n.x * a, sgn * b, -sgn * n.x);
+    precise vec3 bt = vec3(b, sgn + n.y * n.y * a, -n.y);
+    tangent = t;
+    bitangent = bt;
 }
 vec3 sampleDirectionInCone(vec3 axis, float cosConeHalfAngle, float u0, float u1) {
-    float phi = kTwoPi * u0;
+    precise float phi = kTwoPi * u0;
     float cosTheta = lerpp(cosConeHalfAngle, 1.0, u1);
-    float sinTheta = sqrt(maxf(0.0, 1.0 - cosTheta * cosTheta));
-    vec3 local = vec3(sinTheta * pcos(phi), sinTheta * psin(phi), cosTheta);
+    precise float sinTheta = fuse_sqrt_rn(maxf(0.0, 1.0 - cosTheta * cosTheta));
+    precise vec3 local = vec3(sinTheta * pcos(phi), sinTheta * psin(phi), cosTheta);
     vec3 t, b;
     orthonormalBasis(axis, t, b);
-    return t * local.x + b * local.y + axis * local.z;
+    precise vec3 dir = t * local.x + b * local.y + axis * local.z;
+    return dir;
 }
 
 // ---- the particle -------------------------------------------------------------------------------------------------
@@ -360,15 +376,15 @@ float initialTimeToLive(SystemDesc d, float randSeed) {
     precise float r = maxf(kMinimumParticleLife, lerpp(d.minTimeToLive, d.maxTimeToLive, randSeed));
     return r;
 }
-float normalizedLife(SystemDesc d, Particle p) { return p.timeToLive / initialTimeToLive(d, p.randSeed); }
+float normalizedLife(SystemDesc d, Particle p) { return fuse_div_rn(p.timeToLive, initialTimeToLive(d, p.randSeed)); }
 
 vec4 animationTexel(uint base, uint row, uint x) { return animation[base + row * kAnimationWidth + x]; }
 vec4 sampleAnimation(uint base, uint row, float u, bool randomize, float seed) {
-    float tx = clampf(u * float(kAnimationWidth) - 0.5, 0.0, float(kAnimationWidth - 1u));
+    precise float tx = clampf(u * float(kAnimationWidth) - 0.5, 0.0, float(kAnimationWidth - 1u)); // picks the texel
     float fx = floor(tx);
     uint x0 = uint(fx);
     uint x1 = x0 + 1u < kAnimationWidth ? x0 + 1u : kAnimationWidth - 1u;
-    float f = tx - fx;
+    precise float f = tx - fx;
     vec4 a = lerp4(animationTexel(base, row, x0), animationTexel(base, row, x1), f);
     if (!randomize) {
         return a;

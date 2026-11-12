@@ -1,0 +1,39 @@
+{
+  "$id": "fuse.poco/1/entity.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Kind 'entity' payload; also the element of level.entities.",
+  "properties": {
+    "archetype": {
+      "type": "string"
+    },
+    "assetRefs": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "components": {
+      "items": {
+        "$ref": "entity_component.schema.json"
+      },
+      "type": "array"
+    },
+    "legacyClass": {
+      "type": "string"
+    },
+    "legacyName": {
+      "type": "string"
+    },
+    "transform": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 16,
+      "minItems": 16,
+      "type": "array"
+    }
+  },
+  "title": "entity",
+  "type": "object"
+}

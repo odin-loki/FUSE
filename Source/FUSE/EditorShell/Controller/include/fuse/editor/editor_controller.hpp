@@ -164,6 +164,9 @@ public:
     /// New Project wizard: also writes the module toggles to project.json and reopens it (Qt createProject).
     bool newProject(const std::string& directory, const std::string& name, u32 dimensionFlags,
                     const project::ModuleSettings& modules);
+    /// New Project wizard "Application (FUSE UI)": project.json schema 2 kind app + ui/main.fuseui
+    /// (project::createAppProject, Templates/FuseUIApp), then opens it.
+    bool newAppProject(const std::string& directory, const std::string& name);
     bool openProject(const std::string& directory);
     /// File > Recent Projects (Qt rebuildRecentProjectsMenu): reopen by index; missing project.json fails.
     bool openRecentProject(u32 index);
@@ -191,6 +194,9 @@ public:
     /// Entity menu / context-menu action on the current selection (create spawns at the origin). True on change.
     bool runEntityAction(ContextMenuAction action);
     [[nodiscard]] EntityRef lastCreated() const { return m_lastCreated; }
+    /// Hierarchy context menu "Create Child": a create action (CreateEmpty, CreateCube, ...) whose new entity is
+    /// parented under `parent` (at the parent's origin), selected, one undo step. Null parent: a top-level create.
+    bool createChild(ContextMenuAction action, EntityRef parent);
     /// Entity > Duplicate (Qt): whole subtrees with their display names, one undo step; the copies are selected.
     bool duplicateSelection();
     /// Entity > Group Selection / Ungroup (Qt, shared groupSelection / ungroupSelection; one undo step each).
@@ -201,6 +207,36 @@ public:
     [[nodiscard]] std::string selectedScriptPath();
     /// Entity > Open Script: ShellServices::openExternal on selectedScriptPath(). False when there is none.
     bool openScript();
+    /// Edit > Cut / Copy / Paste (Qt EntityClipboard: subtrees with names; cut and paste are one undo step each).
+    bool cutSelection();
+    bool copySelection();
+    bool pasteClipboard();
+    [[nodiscard]] bool clipboardEmpty() const;
+    /// Edit > Select All (every entity with a Transform) / Deselect All.
+    void selectAll();
+    void deselectAll();
+    /// Hierarchy rename (Qt F2 / row edit): one RenameEntityCommand undo step; "" clears the name.
+    bool renameEntity(EntityRef entity, std::string_view name);
+    /// Hierarchy double-click (Qt entityActivated): selects the entity and frames it.
+    bool activateEntity(EntityRef entity);
+    /// Qt HierarchyWidget::matchesSearch: every space-separated term must hit the label (case-insensitive), a
+    /// component name, or "#<index>".
+    [[nodiscard]] static bool hierarchyMatches(std::string_view label, std::span<const std::string> components, u32 index,
+                                               std::string_view query);
+    // ---- prefabs (Qt Entity menu; Qt-free commands posted to the game thread) ----------------------------------
+    bool savePrefab(const std::string& path);        ///< selection -> .prefab
+    bool instantiatePrefab(const std::string& path);
+    bool prefabLinkAction(const std::string& op, const std::string& path = {}); ///< revert / apply / variant / reload / unlink
+    // ---- project tools (File menu) ---------------------------------------------------------------------------
+    [[nodiscard]] std::string projectRoot() const;
+    /// File > Import Asset: copies into assets/<kind>/ and cooks models / textures / audio with fuse_cook.
+    /// Returns the project-relative paths imported.
+    std::vector<std::string> importAssets(const std::vector<std::string>& files);
+    /// After Project Settings saved project.json: reopen the project (unsaved-changes prompt first).
+    bool reopenProject();
+    // ---- Play from Spawn Point (Qt Play menu) -----------------------------------------------------------------
+    void setPlayFromSpawn(bool on) { m_playFromSpawn = on; }
+    [[nodiscard]] bool playFromSpawn() const { return m_playFromSpawn; }
 
     // ---- console ----------------------------------------------------------------------------------------------
     [[nodiscard]] ConsolePanel& console() { return m_console; }
@@ -373,6 +409,12 @@ private:
     void addRecentProject_(const std::string& root);
     bool colliderPointer_(const ViewportPointerEvent& e);
     EditorPreferences m_prefs;
+    std::unique_ptr<class EntityClipboard> m_clipboard;
+    bool m_playFromSpawn = false;
+    bool m_spawnCameraSaved = false;
+    ViewportCamera m_spawnSavedCamera{};
+    TransportState m_lastTransport = TransportState::Stopped;
+    void playCameraTransition_(TransportState from, TransportState to);
     bool refreshGizmo_(); // m_mutex held
     bool gizmoPress_(f32 px, f32 py);
     void gizmoMove_(f32 px, f32 py);

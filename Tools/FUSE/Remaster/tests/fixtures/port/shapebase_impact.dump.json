@@ -1,0 +1,721 @@
+{
+  "diagnostics": [],
+  "ast": {
+    "kind": "Script",
+    "line": 26,
+    "col": 1,
+    "kids": [
+      {
+        "kind": "FunctionDecl",
+        "text": "ShapeBaseData::onCollision",
+        "line": 26,
+        "col": 1,
+        "kids": [
+          {
+            "kind": "List",
+            "text": "params",
+            "line": 26,
+            "col": 36,
+            "kids": [
+              {
+                "kind": "Param",
+                "text": "%this",
+                "line": 26,
+                "col": 37
+              },
+              {
+                "kind": "Param",
+                "text": "%obj",
+                "line": 26,
+                "col": 44
+              },
+              {
+                "kind": "Param",
+                "text": "%collObj",
+                "line": 26,
+                "col": 50
+              },
+              {
+                "kind": "Param",
+                "text": "%vec",
+                "line": 26,
+                "col": 60
+              },
+              {
+                "kind": "Param",
+                "text": "%len",
+                "line": 26,
+                "col": 66
+              }
+            ]
+          },
+          {
+            "kind": "Block",
+            "line": 27,
+            "col": 1,
+            "kids": [
+              {
+                "kind": "If",
+                "line": 28,
+                "col": 4,
+                "kids": [
+                  {
+                    "kind": "Binary",
+                    "text": "||",
+                    "line": 28,
+                    "col": 8,
+                    "kids": [
+                      {
+                        "kind": "Unary",
+                        "text": "!",
+                        "line": 28,
+                        "col": 8,
+                        "kids": [
+                          {
+                            "kind": "Call",
+                            "text": "isObject",
+                            "line": 28,
+                            "col": 9,
+                            "kids": [
+                              {
+                                "kind": "LocalVar",
+                                "text": "%obj",
+                                "line": 28,
+                                "col": 18
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "Binary",
+                        "text": "$=",
+                        "line": 28,
+                        "col": 32,
+                        "kids": [
+                          {
+                            "kind": "MethodCall",
+                            "text": "getDamageState",
+                            "line": 28,
+                            "col": 32,
+                            "kids": [
+                              {
+                                "kind": "LocalVar",
+                                "text": "%obj",
+                                "line": 28,
+                                "col": 27
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "String",
+                            "text": "Destroyed",
+                            "line": 28,
+                            "col": 52
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "Return",
+                    "line": 29,
+                    "col": 7
+                  },
+                  {
+                    "kind": "None",
+                    "line": 32,
+                    "col": 5
+                  }
+                ]
+              },
+              {
+                "kind": "ExprStmt",
+                "line": 32,
+                "col": 5,
+                "kids": [
+                  {
+                    "kind": "Assign",
+                    "text": "=",
+                    "line": 32,
+                    "col": 5,
+                    "kids": [
+                      {
+                        "kind": "LocalVar",
+                        "text": "%dmgPos",
+                        "line": 32,
+                        "col": 5
+                      },
+                      {
+                        "kind": "Call",
+                        "text": "VectorSub",
+                        "line": 32,
+                        "col": 15,
+                        "kids": [
+                          {
+                            "kind": "MethodCall",
+                            "text": "getPosition",
+                            "line": 32,
+                            "col": 30,
+                            "kids": [
+                              {
+                                "kind": "LocalVar",
+                                "text": "%obj",
+                                "line": 32,
+                                "col": 25
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "LocalVar",
+                            "text": "%vec",
+                            "line": 32,
+                            "col": 45
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "ExprStmt",
+                "line": 33,
+                "col": 5,
+                "kids": [
+                  {
+                    "kind": "Assign",
+                    "text": "=",
+                    "line": 33,
+                    "col": 5,
+                    "kids": [
+                      {
+                        "kind": "LocalVar",
+                        "text": "%dmgAmt",
+                        "line": 33,
+                        "col": 5
+                      },
+                      {
+                        "kind": "Binary",
+                        "text": "*",
+                        "line": 33,
+                        "col": 15,
+                        "kids": [
+                          {
+                            "kind": "Binary",
+                            "text": "/",
+                            "line": 33,
+                            "col": 15,
+                            "kids": [
+                              {
+                                "kind": "LocalVar",
+                                "text": "%len",
+                                "line": 33,
+                                "col": 15
+                              },
+                              {
+                                "kind": "Field",
+                                "text": "minImpactSpeed",
+                                "line": 33,
+                                "col": 26,
+                                "kids": [
+                                  {
+                                    "kind": "LocalVar",
+                                    "text": "%this",
+                                    "line": 33,
+                                    "col": 20
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "Field",
+                            "text": "collisionMul",
+                            "line": 33,
+                            "col": 49,
+                            "kids": [
+                              {
+                                "kind": "LocalVar",
+                                "text": "%this",
+                                "line": 33,
+                                "col": 43
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "ExprStmt",
+                "line": 35,
+                "col": 5,
+                "kids": [
+                  {
+                    "kind": "MethodCall",
+                    "text": "damage",
+                    "line": 35,
+                    "col": 11,
+                    "kids": [
+                      {
+                        "kind": "LocalVar",
+                        "text": "%this",
+                        "line": 35,
+                        "col": 5
+                      },
+                      {
+                        "kind": "LocalVar",
+                        "text": "%obj",
+                        "line": 35,
+                        "col": 18
+                      },
+                      {
+                        "kind": "LocalVar",
+                        "text": "%collObj",
+                        "line": 35,
+                        "col": 24
+                      },
+                      {
+                        "kind": "LocalVar",
+                        "text": "%dmgPos",
+                        "line": 35,
+                        "col": 34
+                      },
+                      {
+                        "kind": "LocalVar",
+                        "text": "%dmgAmt",
+                        "line": 35,
+                        "col": 43
+                      },
+                      {
+                        "kind": "String",
+                        "text": "impact",
+                        "line": 35,
+                        "col": 52
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "FunctionDecl",
+        "text": "ShapeBaseData::onImpact",
+        "line": 38,
+        "col": 1,
+        "kids": [
+          {
+            "kind": "List",
+            "text": "params",
+            "line": 38,
+            "col": 33,
+            "kids": [
+              {
+                "kind": "Param",
+                "text": "%this",
+                "line": 38,
+                "col": 34
+              },
+              {
+                "kind": "Param",
+                "text": "%obj",
+                "line": 38,
+                "col": 41
+              },
+              {
+                "kind": "Param",
+                "text": "%collObj",
+                "line": 38,
+                "col": 47
+              },
+              {
+                "kind": "Param",
+                "text": "%vec",
+                "line": 38,
+                "col": 57
+              },
+              {
+                "kind": "Param",
+                "text": "%len",
+                "line": 38,
+                "col": 63
+              }
+            ]
+          },
+          {
+            "kind": "Block",
+            "line": 39,
+            "col": 1,
+            "kids": [
+              {
+                "kind": "If",
+                "line": 40,
+                "col": 4,
+                "kids": [
+                  {
+                    "kind": "Binary",
+                    "text": "||",
+                    "line": 40,
+                    "col": 8,
+                    "kids": [
+                      {
+                        "kind": "Unary",
+                        "text": "!",
+                        "line": 40,
+                        "col": 8,
+                        "kids": [
+                          {
+                            "kind": "Call",
+                            "text": "isObject",
+                            "line": 40,
+                            "col": 9,
+                            "kids": [
+                              {
+                                "kind": "LocalVar",
+                                "text": "%obj",
+                                "line": 40,
+                                "col": 18
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "Binary",
+                        "text": "$=",
+                        "line": 40,
+                        "col": 32,
+                        "kids": [
+                          {
+                            "kind": "MethodCall",
+                            "text": "getDamageState",
+                            "line": 40,
+                            "col": 32,
+                            "kids": [
+                              {
+                                "kind": "LocalVar",
+                                "text": "%obj",
+                                "line": 40,
+                                "col": 27
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "String",
+                            "text": "Destroyed",
+                            "line": 40,
+                            "col": 52
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "Return",
+                    "line": 41,
+                    "col": 7
+                  },
+                  {
+                    "kind": "None",
+                    "line": 44,
+                    "col": 5
+                  }
+                ]
+              },
+              {
+                "kind": "ExprStmt",
+                "line": 44,
+                "col": 5,
+                "kids": [
+                  {
+                    "kind": "Assign",
+                    "text": "=",
+                    "line": 44,
+                    "col": 5,
+                    "kids": [
+                      {
+                        "kind": "LocalVar",
+                        "text": "%dmgPos",
+                        "line": 44,
+                        "col": 5
+                      },
+                      {
+                        "kind": "Call",
+                        "text": "VectorSub",
+                        "line": 44,
+                        "col": 15,
+                        "kids": [
+                          {
+                            "kind": "MethodCall",
+                            "text": "getPosition",
+                            "line": 44,
+                            "col": 30,
+                            "kids": [
+                              {
+                                "kind": "LocalVar",
+                                "text": "%obj",
+                                "line": 44,
+                                "col": 25
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "LocalVar",
+                            "text": "%vec",
+                            "line": 44,
+                            "col": 45
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "ExprStmt",
+                "line": 45,
+                "col": 5,
+                "kids": [
+                  {
+                    "kind": "Assign",
+                    "text": "=",
+                    "line": 45,
+                    "col": 5,
+                    "kids": [
+                      {
+                        "kind": "LocalVar",
+                        "text": "%dmgAmt",
+                        "line": 45,
+                        "col": 5
+                      },
+                      {
+                        "kind": "Binary",
+                        "text": "*",
+                        "line": 45,
+                        "col": 15,
+                        "kids": [
+                          {
+                            "kind": "Binary",
+                            "text": "/",
+                            "line": 45,
+                            "col": 15,
+                            "kids": [
+                              {
+                                "kind": "LocalVar",
+                                "text": "%len",
+                                "line": 45,
+                                "col": 15
+                              },
+                              {
+                                "kind": "Field",
+                                "text": "minImpactSpeed",
+                                "line": 45,
+                                "col": 26,
+                                "kids": [
+                                  {
+                                    "kind": "LocalVar",
+                                    "text": "%this",
+                                    "line": 45,
+                                    "col": 20
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "Field",
+                            "text": "impactMul",
+                            "line": 45,
+                            "col": 49,
+                            "kids": [
+                              {
+                                "kind": "LocalVar",
+                                "text": "%this",
+                                "line": 45,
+                                "col": 43
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "ExprStmt",
+                "line": 47,
+                "col": 5,
+                "kids": [
+                  {
+                    "kind": "MethodCall",
+                    "text": "damage",
+                    "line": 47,
+                    "col": 11,
+                    "kids": [
+                      {
+                        "kind": "LocalVar",
+                        "text": "%this",
+                        "line": 47,
+                        "col": 5
+                      },
+                      {
+                        "kind": "LocalVar",
+                        "text": "%obj",
+                        "line": 47,
+                        "col": 18
+                      },
+                      {
+                        "kind": "LocalVar",
+                        "text": "%collObj",
+                        "line": 47,
+                        "col": 24
+                      },
+                      {
+                        "kind": "LocalVar",
+                        "text": "%dmgPos",
+                        "line": 47,
+                        "col": 34
+                      },
+                      {
+                        "kind": "LocalVar",
+                        "text": "%dmgAmt",
+                        "line": 47,
+                        "col": 43
+                      },
+                      {
+                        "kind": "String",
+                        "text": "impact",
+                        "line": 47,
+                        "col": 52
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "analysis": {
+    "file": "shapebase_impact.tscript",
+    "packages": [],
+    "functions": [
+      {
+        "key": "ShapeBaseData::onCollision",
+        "params": [
+          "%this",
+          "%obj",
+          "%collObj",
+          "%vec",
+          "%len"
+        ],
+        "file": "shapebase_impact.tscript",
+        "line": 26
+      },
+      {
+        "key": "ShapeBaseData::onImpact",
+        "params": [
+          "%this",
+          "%obj",
+          "%collObj",
+          "%vec",
+          "%len"
+        ],
+        "file": "shapebase_impact.tscript",
+        "line": 38
+      }
+    ],
+    "calls": [
+      {
+        "caller": "ShapeBaseData::onCollision",
+        "callee": "isObject",
+        "kind": "plain",
+        "file": "shapebase_impact.tscript",
+        "line": 28,
+        "col": 9
+      },
+      {
+        "caller": "ShapeBaseData::onCollision",
+        "callee": ".getDamageState",
+        "kind": "method",
+        "file": "shapebase_impact.tscript",
+        "line": 28,
+        "col": 32
+      },
+      {
+        "caller": "ShapeBaseData::onCollision",
+        "callee": "VectorSub",
+        "kind": "plain",
+        "file": "shapebase_impact.tscript",
+        "line": 32,
+        "col": 15
+      },
+      {
+        "caller": "ShapeBaseData::onCollision",
+        "callee": ".getPosition",
+        "kind": "method",
+        "file": "shapebase_impact.tscript",
+        "line": 32,
+        "col": 30
+      },
+      {
+        "caller": "ShapeBaseData::onCollision",
+        "callee": ".damage",
+        "kind": "method",
+        "file": "shapebase_impact.tscript",
+        "line": 35,
+        "col": 11
+      },
+      {
+        "caller": "ShapeBaseData::onImpact",
+        "callee": "isObject",
+        "kind": "plain",
+        "file": "shapebase_impact.tscript",
+        "line": 40,
+        "col": 9
+      },
+      {
+        "caller": "ShapeBaseData::onImpact",
+        "callee": ".getDamageState",
+        "kind": "method",
+        "file": "shapebase_impact.tscript",
+        "line": 40,
+        "col": 32
+      },
+      {
+        "caller": "ShapeBaseData::onImpact",
+        "callee": "VectorSub",
+        "kind": "plain",
+        "file": "shapebase_impact.tscript",
+        "line": 44,
+        "col": 15
+      },
+      {
+        "caller": "ShapeBaseData::onImpact",
+        "callee": ".getPosition",
+        "kind": "method",
+        "file": "shapebase_impact.tscript",
+        "line": 44,
+        "col": 30
+      },
+      {
+        "caller": "ShapeBaseData::onImpact",
+        "callee": ".damage",
+        "kind": "method",
+        "file": "shapebase_impact.tscript",
+        "line": 47,
+        "col": 11
+      }
+    ],
+    "objects": []
+  }
+}

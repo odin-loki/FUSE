@@ -16,7 +16,7 @@ float sxAcosPoly(float x) {
     p = p * a + 0.0889789909;
     p = p * a - 0.214598805;
     p = p * a + 1.57079625;
-    const float r = sqrt(1.0 - a) * p;
+    const float r = fuseSqrtRn(1.0 - a) * p;
     return c < 0.0 ? kSxPi - r : r;
 }
 
@@ -46,18 +46,36 @@ float sxArc(float h, float gamma, float cosN, float sinG) {
     return 0.25 * (cosN + twoH * sinG - sxCosPoly(twoH - gamma));
 }
 
+// The columns' / rows' ray directions around the 8 x 8 tile, once per workgroup (twin of sx_gtao.comp).
+static const int kSxGtaoHalo = 72;
+static const int kSxGtaoLut = 152; // 8 + 2 x halo
+groupshared float s_rayX[152];
+groupshared float s_rayY[152];
+static int g_lutX0 = 0;
+static int g_lutY0 = 0;
+
+float3 sxGtaoPosition(uint x, uint y) {
+    const int ix = int(x) - g_lutX0;
+    const int iy = int(y) - g_lutY0;
+    if (ix >= 0 && ix < kSxGtaoLut && iy >= 0 && iy < kSxGtaoLut) {
+        const float z = sxDepthAt(x, y);
+        return float3(s_rayX[ix] * z, s_rayY[iy] * z, 1.0 * z); // sxScale(sxRayDirection(...), z)
+    }
+    return sxPositionAt(x, y);
+}
+
 float sxGtao(uint x, uint y) {
     if (x >= F.width || y >= F.height || sxDepthAt(x, y) <= 0.0) {
         return 1.0;
     }
-    const float3 p = sxPositionAt(x, y);
+    const float3 p = sxGtaoPosition(x, y);
     float3 n = sxNormalize(sxNormalAt(x, y));
     if (sxDot(n, p) > 0.0) {
         n = sxNeg(n);
     }
     const float3 viewVec = sxNormalize(sxNeg(p));
 
-    const float radiusPx = min(F.aoMaxRadiusPx, F.aoRadius * F.fx / p.z);
+    const float radiusPx = min(F.aoMaxRadiusPx, fuseDivRn(F.aoRadius * F.fx, p.z));
     if (radiusPx < 1.0) {
         return 1.0;
     }
@@ -75,10 +93,10 @@ float sxGtao(uint x, uint y) {
         const uint seed = (x * 73856093u) ^ (y * 19349663u) ^ (F.aoFrame * 83492791u);
         const float u = sxHashUnit(seed) - 0.5;
         const float v = sxHashUnit(seed ^ 0x9e3779b9u) - 0.5;
-        const float len = sqrt(u * u + v * v);
+        const float len = fuseSqrtRn(u * u + v * v);
         if (len > 1e-4) {
-            ra = u / len;
-            rb = v / len;
+            ra = fuseDivRn(u, len);
+            rb = fuseDivRn(v, len);
         }
         offset = 1.0 - sxHashUnit(seed ^ 0x85ebca6bu);
     }
@@ -91,12 +109,12 @@ float sxGtao(uint x, uint y) {
         const float3 d = sxAdd(sxScale(viewT, c), sxScale(viewB, s));
         float sdx = F.fx * (d.x * p.z - p.x * d.z);
         float sdy = F.fy * (d.y * p.z - p.y * d.z);
-        const float slen = sqrt(sdx * sdx + sdy * sdy);
+        const float slen = fuseSqrtRn(sdx * sdx + sdy * sdy);
         if (slen < 1e-20) {
             continue;
         }
-        sdx = sdx / slen;
-        sdy = sdy / slen;
+        sdx = fuseDivRn(sdx, slen);
+        sdy = fuseDivRn(sdy, slen);
 
         const float3 axis = sxNormalize(sxCross(d, viewVec));
         const float3 projN = sxSub(n, sxScale(axis, sxDot(n, axis)));
@@ -105,9 +123,9 @@ float sxGtao(uint x, uint y) {
             continue;
         }
         const float signN = sxDot(d, projN) >= 0.0 ? 1.0 : -1.0;
-        const float cosN = sxSaturate(sxDot(projN, viewVec) / projNLen);
+        const float cosN = sxSaturate(fuseDivRn(sxDot(projN, viewVec), projNLen));
         const float gamma = signN * sxAcosPoly(cosN);
-        const float sinG = signN * sqrt(max(0.0, 1.0 - cosN * cosN));
+        const float sinG = signN * fuseSqrtRn(max(0.0, 1.0 - cosN * cosN));
 
         float lowCos[2] = { -sinG, sinG };
         float horizonCos[2] = { lowCos[0], lowCos[1] };
@@ -117,7 +135,7 @@ float sxGtao(uint x, uint y) {
             int lastX = int(x);
             int lastY = int(y);
             for (uint st = 1u; st <= steps; ++st) {
-                const float t = radiusPx * (float(st - 1u) + offset) / float(steps);
+                const float t = fuseDivRn(radiusPx * (float(st - 1u) + offset), float(steps));
                 const float sx = cxp + dirX * t;
                 const float sy = cyp + dirY * t;
                 if (!sxInside(sx, sy)) {
@@ -135,18 +153,18 @@ float sxGtao(uint x, uint y) {
                 if (sxDepthAt(ux, uy) <= 0.0) {
                     continue;
                 }
-                const float3 h = sxSub(sxPositionAt(ux, uy), p);
+                const float3 h = sxSub(sxGtaoPosition(ux, uy), p);
                 const float dist = sxLength(h);
                 if (dist < 1e-6 || dist > F.aoRadius) {
                     continue;
                 }
-                const float3 hn = sxScale(h, 1.0 / dist);
+                const float3 hn = sxScale(h, fuseDivRn(1.0, dist));
                 if (sxDot(hn, n) <= F.aoBias) {
                     continue;
                 }
                 float hc = sxDot(hn, viewVec);
                 if (F.aoFalloff > 0.0) {
-                    const float w = sxSaturate((F.aoRadius - dist) / (F.aoFalloff * F.aoRadius));
+                    const float w = sxSaturate(fuseDivRn(F.aoRadius - dist, F.aoFalloff * F.aoRadius));
                     hc = lowCos[side] + (hc - lowCos[side]) * w;
                 }
                 horizonCos[side] = max(horizonCos[side], hc);
@@ -168,14 +186,23 @@ float sxGtao(uint x, uint y) {
     if (!(denominator > 0.0)) {
         return 1.0;
     }
-    const float visibility = sxSaturate(numerator / denominator);
+    const float visibility = sxSaturate(fuseDivRn(numerator, denominator));
     return F.aoStrength == 1.0 ? visibility : pow(visibility, F.aoStrength);
 }
 
 [numthreads(8, 8, 1)]
-void main(uint3 tid: SV_DispatchThreadID) {
+void main(uint3 tid: SV_DispatchThreadID, uint3 group: SV_GroupID, uint t: SV_GroupIndex) {
     sxBegin();
     const uint2 p = tid.xy;
+    g_lutX0 = int(group.x * 8u) - kSxGtaoHalo;
+    g_lutY0 = int(group.y * 8u) - kSxGtaoHalo;
+    for (uint k = t; k < uint(kSxGtaoLut); k += 64u) {
+        const float px = float(g_lutX0 + int(k)) + 0.5;
+        const float py = float(g_lutY0 + int(k)) + 0.5;
+        s_rayX[k] = fuseDivRn(px - F.cx, F.fx);
+        s_rayY[k] = fuseDivRn(py - F.cy, F.fy);
+    }
+    GroupMemoryBarrierWithGroupSync();
     if (p.x >= F.width || p.y >= F.height) {
         return;
     }

@@ -193,6 +193,10 @@ void DeferredFramePipeline::buildGraph(RenderGraph& graph,
                                               RGImageLayout::Undefined);
     }
 
+    // Depth prepass: formally DROPPED (docs/plans/FUSE_MASTER_PLAN.md per-pass budgets, 2026-11-05). The WP-1.4
+    // visibility buffer replaced the prepass + G-buffer split (one two-phase culled raster writes depth and the
+    // visibility word); this legacy pipeline keeps the node empty (no draws) so pass ids, names and the B5 harness
+    // stay stable. Do not implement it here.
     RGTextureAccess depthWrite = makeGBufferAccess(depthTexture, RGResourceAccess::DepthAttachmentWrite);
     addDeferredPass(graph, DeferredPassId::DepthPrepass, false, &depthWrite, 1u);
 

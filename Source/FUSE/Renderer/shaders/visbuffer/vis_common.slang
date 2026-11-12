@@ -3,6 +3,7 @@
 // #include after gpu_scene.slang and vis_format.slang. Compile with -fp-mode precise (Slang does not
 // honour `precise` per variable), so no multiply-add is contracted.
 #pragma once
+#include "../common/exact_math.slang" // fuseDivRn: the CPU kernel's IEEE quotients
 
 static const uint kFuseVisDecodeEmpty = 0u;
 static const uint kFuseVisDecodeOk = 1u;
@@ -10,6 +11,10 @@ static const uint kFuseVisDecodeBadId = 2u;
 static const uint kFuseVisDecodeDegenerate = 3u;
 
 float3 fuseVisMeshPosition(GpuMesh mesh, uint vertex) {
+    if ((mesh.flags & kFuseMeshFloatPositions) != 0u) {
+        float4* fp = (float4*)mesh.positions;
+        return fp[vertex].xyz;
+    }
     uint* words = (uint*)mesh.positions;
     const uint xy = words[vertex * 2u];
     const uint zw = words[vertex * 2u + 1u];
@@ -18,6 +23,15 @@ float3 fuseVisMeshPosition(GpuMesh mesh, uint vertex) {
     p.y = mesh.quantOffset[1] + float(xy >> 16u) * mesh.quantStep[1];
     p.z = mesh.quantOffset[2] + float(zw & 0xFFFFu) * mesh.quantStep[2];
     return p;
+}
+
+// Previous-frame position (fuse_vis_mesh_prev_position).
+float3 fuseVisMeshPrevPosition(GpuMesh mesh, uint vertex) {
+    if ((mesh.flags & kFuseMeshFloatPositions) != 0u) {
+        float4* fp = (float4*)mesh.positions;
+        return fp[mesh.vertexCount + vertex].xyz;
+    }
+    return fuseVisMeshPosition(mesh, vertex);
 }
 
 float4 fuseVisClip(GpuTransform t, float4 viewProj[4], float3 p) {
@@ -54,12 +68,12 @@ VisDecoded fuseVisDecodeClip(float4 c0, float4 c1, float4 c2, float2 ndc) {
         r.flags = kFuseVisDecodeDegenerate;
         return r;
     }
-    const float b0 = e0 / s;
-    const float b1 = e1 / s;
-    const float b2 = e2 / s;
+    const float b0 = fuseDivRn(e0, s);
+    const float b1 = fuseDivRn(e1, s);
+    const float b2 = fuseDivRn(e2, s);
     const float z = b0 * c0.z + b1 * c1.z + b2 * c2.z;
     const float w = b0 * c0.w + b1 * c1.w + b2 * c2.w;
-    r.depth = z / w;
+    r.depth = fuseDivRn(z, w);
     r.b1 = b1;
     r.b2 = b2;
     r.flags = kFuseVisDecodeOk;

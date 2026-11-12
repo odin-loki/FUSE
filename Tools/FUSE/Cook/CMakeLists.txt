@@ -4,19 +4,25 @@ add_library(fuse_cook_stubs STATIC
     src/ktx2.cpp
     src/cook_stub_writer.cpp
     src/mesh_cook.cpp
+    src/dts_import.cpp
+    src/dts_write.cpp
     src/mesh_cook_meshopt.cpp
     src/mesh_cook_meshopt.hpp
     src/texture_cook.cpp
     src/ispc_texcomp_hook.cpp
     src/audio_cook.cpp
     src/collision_cook.cpp
+    src/anim_cook.cpp
     include/fuse/cook/audio_cook.hpp
     include/fuse/cook/collision_cook.hpp
+    include/fuse/cook/anim_cook.hpp
     include/fuse/cook/bc7_encoder.hpp
     include/fuse/cook/bcn_encoder.hpp
     include/fuse/cook/ktx2.hpp
     include/fuse/cook/cook_stub_writer.hpp
     include/fuse/cook/mesh_cook.hpp
+    include/fuse/cook/dts_import.hpp
+    include/fuse/cook/dts_write.hpp
     include/fuse/cook/texture_cook.hpp
     include/fuse/cook/ispc_texcomp_hook.hpp
 )
@@ -29,9 +35,19 @@ target_include_directories(fuse_cook_stubs
 )
 
 target_link_libraries(fuse_cook_stubs PUBLIC fuse_core fuse_asset)  # UNI-U7-ASSET-1: readers live in fuse_asset
+# FUSE_ASSET_PLAN §5.3: the validation rules (header only) shared with the fuse_assetcheck gate tool; the
+# strict cook (fuse_project AssetCooker) refuses assets that fail them, and the audio chain's loudness /
+# seam meters are the rule header's.
+if(NOT TARGET fuse_asset_rules)
+    add_library(fuse_asset_rules INTERFACE)
+    target_include_directories(fuse_asset_rules INTERFACE "${CMAKE_SOURCE_DIR}/Tools/FUSE/AssetCheck/include")
+endif()
+target_link_libraries(fuse_cook_stubs PUBLIC fuse_asset_rules)
 # E18 collision cook (src/collision_cook.cpp): quickhull, the triangle-mesh BVH and the .fusecol writer live in
 # fuse_physics (the runtime loads the same format).
 target_link_libraries(fuse_cook_stubs PUBLIC fuse_physics)
+# 4b anim cook (src/anim_cook.cpp): the .fuseanim writer / reader live in fuse_animation (the runtime loads them).
+target_link_libraries(fuse_cook_stubs PUBLIC fuse_animation)
 if(COMMAND fuse_apply_cxx23)
     fuse_apply_cxx23(fuse_cook_stubs)
 endif()

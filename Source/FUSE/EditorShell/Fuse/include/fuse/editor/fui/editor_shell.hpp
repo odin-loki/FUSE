@@ -5,15 +5,19 @@
 // fuse_editor_qt_* ones.
 //
 // Layout: menu bar / toolbar (main + transport) / dock area (left: Hierarchy | Project Hub | Asset Browser,
-// right: Inspector | Material Editor | SDF Sculpt, bottom: Console | Profiler | Sequencer | Timeline; FUSE UI docks
-// stack, so each side is one dock holding a tab widget) around a software-rendered viewport / status bar.
+// right: Inspector | Material Editor | SDF Sculpt, bottom: Console | Profiler | Sequencer | Timeline; each side starts
+// as one dock holding a tab stack, and dock splits add more stacks per side in nested splitters) around a
+// software-rendered viewport / status bar.
 #include <fuse/editor/editor_controller.hpp>
+#include <fuse/editor/editor_project_tools.hpp>
 #include <fuse/editor/entity_context_menu.hpp>
 #include <fuse/editor/editor_panel_models.hpp>
 #include <fuse/editor/scene_viewport_host.hpp>
 
 #include "fuse/app/app.hpp"
+#include <fuse/ui/icons.hpp>
 
+#include <array>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -23,12 +27,19 @@
 #include <string_view>
 #include <vector>
 
+namespace fuse::app {
+class NativePlatform;
+}
+
 namespace fuse::editor::fui {
 
 using fuse::ui::NodeHandle;
 
 struct EditorShellOptions {
     f32 fontScale = 1.f; ///< 1, 1.25, 1.5, 2 (the Qt font_* gates)
+    std::string iconPack = defaultIconPack(); ///< .fuseicons for toolbar icons ("" = text only)
+    /// The starter pack built with the editor (FUSE_UI_ICON_PACK), else fuse_ui_icons.fuseicons beside the executable.
+    static std::string defaultIconPack();
 };
 
 /// One panel of the Qt shell's dock set: its Qt objectName-style id, tab title and side.
@@ -57,8 +68,50 @@ public:
     void frame();
     /// Restores the default dock layout and tab pages (View > Reset Layout).
     void resetLayout();
-    /// Makes `panelId`'s tab current (e.g. "dock.console").
+    /// Makes `panelId`'s tab current (e.g. "dock.console"); shows it first when it was hidden.
     bool showPanel(std::string_view panelId);
+    // ---- per-panel docking (Qt QDockWidget parity: View menu toggles, float, move, saved layouts) --------------
+    /// Hides / shows one panel (View menu check). A side with no visible panel closes.
+    bool setPanelVisible(std::string_view panelId, bool on);
+    /// Floats a panel in its own frame (title with Dock / Close, resize grip); false docks it back to its home side.
+    /// On a NativePlatform with tool windows (NativeOptions::osWindows) the frame is its own top-level OS window
+    /// owned by the editor window (Qt floating QDockWidget); headless it is drawn over the main window.
+    bool setPanelFloating(std::string_view panelId, bool on);
+    /// Moves a panel to another side's tabs (and shows it).
+    bool movePanel(std::string_view panelId, fuse::ui::widgets::DockSide side);
+    /// Dock splits (Qt QMainWindow::splitDockWidget / tabifyDockWidget): moves `panelId` into a new tab stack beside
+    /// the stack holding `targetPanelId` (Left / Right / Top / Bottom split that stack's place: nested splitters, a
+    /// handle between the stacks) or into that stack's tabs (Center). A panel dragged over a stack's edge zone splits
+    /// it on release, over its centre it tabifies. A stack whose last panel leaves goes away (its split collapses).
+    /// Split stacks are "dock.split.N" (tab widget "tabs.split.N"); the layout text keeps them.
+    bool splitPanel(std::string_view panelId, std::string_view targetPanelId, fuse::ui::widgets::DockEdge edge);
+    /// Tab stacks holding at least one shown panel.
+    [[nodiscard]] u32 dockStackCount() const;
+    /// The dock widget of the tab stack holding a docked panel (invalid when floating / hidden).
+    [[nodiscard]] NodeHandle panelStackNode(std::string_view panelId) const;
+    [[nodiscard]] bool panelShown(std::string_view panelId) const; ///< not hidden (docked or floating)
+    [[nodiscard]] bool panelFloating(std::string_view panelId) const;
+    [[nodiscard]] std::string panelSideName(std::string_view panelId) const; ///< "left" / "right" / "bottom" / "float"
+    /// Layout text: per panel side / visibility / float position, current tabs, dock region sizes.
+    [[nodiscard]] std::string saveLayout() const;
+    bool restoreLayout(std::string_view layout);
+    /// Qt saveSettingsLayout / restoreSettingsLayout: the layout in the app settings ("layout.editor"). Saved on
+    /// close; restored at startup when Preferences > Restore layout is on.
+    void saveSettingsLayout();
+    bool restoreSettingsLayout();
+    /// File > Project Settings... (Qt ProjectSettingsDialog): name, default worlds, worker threads, dimensions and
+    /// modules from project.json. Ids "projset.*"; OK saves (empty name / no 3D+2D refused) and reopens the project.
+    void openProjectSettings();
+    [[nodiscard]] bool projectSettingsOpen() const { return m_projSettings.valid(); }
+    /// File > Build / Package... (Qt BuildPackageDialog): output, runtime, cook, clean, configuration, excludes,
+    /// archive; Build runs packageProject with a live log, Open Folder opens the result. Ids "package.*"; the options
+    /// are remembered per project in the app settings.
+    void openBuildPackage();
+    [[nodiscard]] bool buildPackageOpen() const { return m_packageDialog.valid(); }
+    [[nodiscard]] const PackageResult& lastPackage() const { return m_package; }
+    /// Runs the Build button (blocking; log lines appear in package.log).
+    bool runPackage();
+    [[nodiscard]] PackageOptions packageOptions() const;
     /// File > New Project...: the New Project wizard dialog (name, location, dimension, UI layer, modules; Qt
     /// NewProjectWizard parity). Ids "wizard.*"; Create writes project.json and opens the project.
     void openNewProjectWizard();
@@ -95,6 +148,9 @@ public:
     /// The Qt-free models behind the seven UI9 panels.
     [[nodiscard]] EditorPanels& panels() { return *m_models; }
     [[nodiscard]] NodeHandle viewportNode() const { return m_viewport; }
+    /// Toolbar icon name of an action ("file-plus", "save", ...; "" = text only) and whether the pack has it.
+    [[nodiscard]] static std::string_view toolIcon(ActionId id);
+    [[nodiscard]] bool hasToolIcon(ActionId id) const;
     [[nodiscard]] const fuse::ui::Image& viewportImage() const { return m_image; }
     [[nodiscard]] u32 viewportRenders() const { return m_renders; }
 
@@ -153,8 +209,15 @@ private:
     EditorShellOptions m_opt;
 
     NodeHandle m_root, m_menuBar, m_toolbar, m_dockArea, m_viewport, m_viewportInfo, m_status;
-    NodeHandle m_docks[3]{};
-    NodeHandle m_tabs[3]{};
+    /// A tab stack: a dock widget with a tab bar over its panels' pages. 0..2 are the side stacks (dock.left /
+    /// dock.right / dock.bottom, never removed); dock splits add more ("dock.split.N").
+    struct DockStack {
+        NodeHandle dock, tabs;
+        std::vector<u32> order; ///< shown panels in tab order
+    };
+    std::vector<DockStack> m_stacks;
+    std::vector<u32> m_panelStack; ///< per panel: its stack while docked
+    u32 m_nextStackId = 1;
     std::vector<NodeHandle> m_menus;
     std::vector<std::vector<i32>> m_menuMap; ///< per menu, per line: ActionId, -1 separator, -(2 + i) recent file i
     std::vector<std::pair<ActionId, NodeHandle>> m_toolButtons;
@@ -220,13 +283,107 @@ private:
     std::chrono::steady_clock::time_point m_playClock{};
     std::unique_ptr<EditorPanels> m_models;
     std::unique_ptr<class ShellPanelPages> m_pages;
+    std::unique_ptr<fuse::ui::IconSet> m_icons;
+    // per-panel docking
+    i32 panelIndex_(std::string_view panelId) const;
+    void relayoutPanels_();
+    void showStackPage_(u32 stack);
+    bool panelTabMenu_(u32 stack, fuse::ui::Vec2 at);
+    u32 newStack_(u32 side, std::string_view title, std::string id);
+    u32 stackSide_(u32 stack) const;
+    void clearStacks_();
+    bool splitInto_(u32 panel, u32 stack, fuse::ui::widgets::DockEdge edge);
+    NodeHandle m_hiddenPages{};
+    std::vector<NodeHandle> m_pagesNode, m_floatFrame;
+    std::vector<u32> m_panelSide; ///< 0 left, 1 right, 2 bottom, 3 floating
+    std::vector<bool> m_panelVisible;
+    std::vector<std::array<f32, 2>> m_floatPos;
+    // project tools dialogs
+    NodeHandle m_projSettings{}, m_packageDialog{};
+    project::ProjectManifest m_projBase;
+    PackageResult m_package;
+    std::string m_packageRoot;
+    void closeProjectSettings_();
+    void closeBuildPackage_();
+    std::string packageKey_() const;
+    // hierarchy rename row (F2) and double-click framing
+    NodeHandle m_hierRenameRow{}, m_hierRename{};
+    EntityRef m_renaming;
+    u32 m_hierClickLine = ~0u;
+    std::chrono::steady_clock::time_point m_hierClickAt{};
+    // floating frames: size per panel, resize grip
+    std::vector<std::array<f32, 2>> m_floatSize;
+    i32 m_floatResize = -1;
+    void placeFloat_(u32 i);
+    // panel drag (a tab dragged out of a dock / a floating title dragged) and the drop zones over the dock area
+    i32 m_panelDrag = -1, m_tabDragStack = -1, m_dropSide = -1, m_dropStack = -1, m_dropEdge = -1;
+    bool m_panelDragActive = false;
+    fuse::ui::Vec2 m_panelDragStart{}, m_panelDragGrab{};
+    NodeHandle m_dropZone[3]{}, m_splitZone{};
+    bool panelDragEvent_(const fuse::ui::Event& e, NodeHandle target);
+    void endPanelDrag_();
+    [[nodiscard]] fuse::ui::Rect dropZoneRect_(u32 side) const;
+    void showDropZones_(bool on);
+    // hierarchy drag and drop (Qt QTreeWidget InternalMove -> reparent commands)
+    i32 m_hierDragLine = -1, m_hierDropLine = -2;
+    bool m_hierDragActive = false;
+    fuse::ui::Vec2 m_hierDragStart{};
+    NodeHandle m_hierDropMark{};
+    bool hierarchyDragEvent_(const fuse::ui::Event& e, NodeHandle target);
+    void endHierarchyDrag_();
+    // hierarchy context menu
+    std::vector<i32> m_hierMenuCodes;
+    std::vector<std::string> m_hierMenuItems;
+    EntityRef m_hierMenuEntity;
+    void hierarchyMenuPicked_(u32 line);
+
+public:
+    /// Hierarchy F2 (Qt beginRename): opens the inline name row for `entity` (hierarchy.rename; Enter commits).
+    void beginRename(EntityRef entity);
+    /// Hierarchy double-click (Qt entityActivated): select + frame.
+    bool activateHierarchyRow(u32 line);
+    /// Hierarchy right click (Qt customContextMenuRequested): selects the row under `at` (context coordinates) and
+    /// opens "hierarchy.context" with Rename / Create Child / Duplicate / Delete / prefab actions / Clear Parent; on
+    /// empty space the create items only. Returns false when `at` is outside the tree.
+    bool openHierarchyContextMenu(fuse::ui::Vec2 at);
+    /// The last hierarchy context menu's lines ("-" = separator; a leading '!' marks a disabled item).
+    [[nodiscard]] const std::vector<std::string>& hierarchyContextMenuItems() const { return m_hierMenuItems; }
+    /// Panel drag and drop (Qt QDockWidget): a tab dragged out of its dock floats the panel under the pointer; a
+    /// floating panel dragged by its title shows drop zones ("dock.dropzone.left|right|bottom") over the dock area and
+    /// docks on release over one (Ctrl held: no docking). True while such a drag runs; dropZone() is the hot zone's
+    /// side (0 left, 1 right, 2 bottom, -1 none).
+    [[nodiscard]] bool panelDragging() const { return m_panelDrag >= 0 && m_panelDragActive; }
+    [[nodiscard]] i32 dropZone() const { return m_dropSide; }
+    /// Over a tab stack during such a drag: the zone under the pointer (DockEdge: Left / Right / Top / Bottom split,
+    /// Center tabifies; -1 none) and the stack's dock widget. The hot zone shows as "dock.dropzone.split".
+    [[nodiscard]] i32 dropEdge() const { return m_dropEdge; }
+    [[nodiscard]] NodeHandle dropStackNode() const;
+    /// Floating panel frame size (logical px); setFloatSize resizes it like the frame's grip does.
+    [[nodiscard]] std::array<f32, 2> floatSize(std::string_view panelId) const;
+    bool setFloatSize(std::string_view panelId, f32 w, f32 h);
+    /// Hierarchy drag and drop: true while rows are dragged; the drop target line (-1 = top level, -2 = none).
+    [[nodiscard]] bool hierarchyDragging() const { return m_hierDragActive; }
+    [[nodiscard]] i32 hierarchyDropLine() const { return m_hierDropLine; }
 };
 
-/// ShellServices on FUSE UI dialogs (file dialog, message boxes). Each call runs a nested Application::step loop until
-/// the dialog closes, like QFileDialog::getOpenFileName.
+/// Which dialogs DialogServices takes from the OS (fuse_app platform dialogs) instead of FUSE UI.
+struct DialogOptions {
+    bool nativeFileDialogs = true;  ///< Win32 IFileDialog / zenity (Qt QFileDialog's native dialogs); FUSE UI fallback
+    bool nativeColorDialog = false; ///< Win32 ChooseColor / zenity; default the FUSE colour dialog (alpha, Qt QColorDialog look)
+};
+
+/// ShellServices on dialogs. File pickers are the OS dialogs when a NativePlatform shows the window (FUSE UI's file
+/// dialog otherwise, or when the OS has none); colours come from a modal FUSE UI colour dialog (colorPicker + hex
+/// field) or ChooseColor; message boxes are FUSE UI. FUSE UI dialogs run a nested Application::step loop until they
+/// close, like QFileDialog::getOpenFileName.
 class DialogServices final : public ShellServices {
 public:
-    DialogServices(fuse::app::Application& app, fuse::app::AppWindow& window);
+    DialogServices(fuse::app::Application& app, fuse::app::AppWindow& window, fuse::app::NativePlatform* native = nullptr,
+                   DialogOptions options = {});
+    void setNative(fuse::app::NativePlatform* native) { m_native = native; }
+    [[nodiscard]] DialogOptions& options() { return m_opt; }
+    /// "native" or "fuse": which dialog the last pick used (tests).
+    [[nodiscard]] const char* lastBackend() const { return m_lastBackend; }
     std::optional<std::string> pickOpenFile(std::string_view title, std::string_view filter, std::string_view directory) override;
     std::optional<std::string> pickSaveFile(std::string_view title, std::string_view filter, std::string_view directory) override;
     std::optional<std::string> pickDirectory(std::string_view title, std::string_view directory) override;
@@ -237,9 +394,14 @@ public:
 
 private:
     std::optional<std::string> file_(std::string_view title, std::string_view filter, std::string_view directory, bool save);
+    std::optional<std::string> nativeFile_(std::string_view title, std::string_view filter, std::string_view directory, int kind,
+                                           bool& handled);
     i32 buttons_(std::string_view title, std::string_view text, std::string_view buttons);
     fuse::app::Application& m_app;
     fuse::app::AppWindow& m_win;
+    fuse::app::NativePlatform* m_native = nullptr;
+    DialogOptions m_opt;
+    const char* m_lastBackend = "";
 };
 
 } // namespace fuse::editor::fui

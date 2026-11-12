@@ -233,3 +233,6 @@ build-verify-gate-*.log
 
 # Relight package payload (README, rtx.conf, licences): not a build output
 !/Source/FUSE/Relight/package/dist/
+
+# Remaster fuse_ai test meshes (small hand-written OBJ fixtures)
+!Tools/FUSE/Remaster/tests/fixtures/**/*.obj

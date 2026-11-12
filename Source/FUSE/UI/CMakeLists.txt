@@ -154,6 +154,14 @@ if(FUSE_UI_ACCESSIBILITY)
     endif()
 endif()
 
+# ---- fuse_ui_l10n_lib: CLDR plural rules, ICU-style messages, locale number / date / time / currency formatting and
+# string tables (standard library only). fuse_ui_game's StringTable formats with it; widgets reach it through
+# UiContext::setLocale hooks (fuse/ui/l10n/ui_locale.hpp), so binaries that never localise do not link the tables.
+add_library(fuse_ui_l10n_lib STATIC L10n/src/plural.cpp L10n/src/format.cpp L10n/src/message.cpp L10n/src/table.cpp)
+target_include_directories(fuse_ui_l10n_lib PUBLIC L10n/include)
+target_include_directories(fuse_ui_l10n_lib PRIVATE Text/include) # header-only fuse/text/from_chars.hpp; no link to fuse_text
+target_compile_features(fuse_ui_l10n_lib PUBLIC cxx_std_23)
+
 option(FUSE_BUILD_UI_DOC "Build fuse_ui_doc (.fuseui documents + bindings)" ON)
 if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp Doc/src/cook.cpp Doc/src/hot_reload.cpp
@@ -163,6 +171,9 @@ if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
     # UI8 cooker: .fuseui / .fusestyle -> cooked blobs + generated widget-registration list
     add_executable(fuse_ui_cook Doc/tools/fuse_ui_cook.cpp)
     target_link_libraries(fuse_ui_cook PRIVATE fuse_ui_doc)
+    # string extraction: tr("...") in C++ and translatable .fuseui text -> merged string-table file
+    add_executable(fuse_ui_extract_strings Doc/tools/fuse_ui_extract_strings.cpp)
+    target_link_libraries(fuse_ui_extract_strings PRIVATE fuse_ui_doc fuse_ui_l10n_lib)
 endif()
 
 # ---- fuse_ui_script: Lua bindings (vendored Lua 5.2, the fuse_script backend) ----
@@ -315,7 +326,7 @@ endif()
 if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_game STATIC Game/src/game_ui.cpp Game/src/game_extras.cpp)
     target_include_directories(fuse_ui_game PUBLIC Game/include)
-    target_link_libraries(fuse_ui_game PUBLIC fuse_ui_widgets)
+    target_link_libraries(fuse_ui_game PUBLIC fuse_ui_widgets fuse_ui_l10n_lib)
     # engine bridges (in tree only): UiSurface as an ECS component, theme sounds through fuse_audio
     if(TARGET fuse_ecs)
         add_library(fuse_ui_game_ecs STATIC Game/src/ecs_surface.cpp)

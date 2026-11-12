@@ -20,6 +20,15 @@ struct JsonValue {
     std::vector<JsonValue> array;
     std::vector<std::pair<std::string, JsonValue>> object; ///< insertion order kept
 
+    // defined in json.cpp: Clang (< 19, libstdc++ 14) instantiates the constexpr vector destructor of an implicit
+    // destructor while JsonValue is still incomplete
+    JsonValue();
+    JsonValue(const JsonValue&);
+    JsonValue(JsonValue&&) noexcept;
+    JsonValue& operator=(const JsonValue&);
+    JsonValue& operator=(JsonValue&&) noexcept;
+    ~JsonValue();
+
     bool isNull() const { return type == Type::Null; }
     bool isBool() const { return type == Type::Bool; }
     bool isNumber() const { return type == Type::Number; }

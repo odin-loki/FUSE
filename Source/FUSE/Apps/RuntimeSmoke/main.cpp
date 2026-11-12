@@ -16,6 +16,27 @@
 #include <fuse/world3d/world_3d.hpp>
 #endif
 
+#if defined(FUSE_SMOKE_HAS_BOOT_SCENE)
+#include <fuse/audio/audio_engine.hpp>
+#include <fuse/audio/audio_registry.hpp>
+#include <fuse/frame/frame_ctx.hpp>
+#include <fuse/world3d/scene_object_3d.hpp>
+#include <fuse/world3d/world_3d.hpp>
+
+#include <algorithm>
+#include <cmath>
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <vector>
+#endif
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 #if defined(FUSE_SMOKE_HAS_SCRIPT)
 #include <fuse/ecs/components/script.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -31,6 +52,7 @@
 #endif
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -219,16 +241,146 @@ void runGpuFrameSmoke() {
 }
 #endif
 
+/// Boot phase clock for --boot-budget-ms: wall time of each phase since the previous mark.
+struct BootPhases {
+    static constexpr int kMax = 12;
+    const char* name[kMax] = {};
+    double ms[kMax] = {};
+    int count = 0;
+    std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
+    void mark(const char* phase) {
+        const auto now = std::chrono::steady_clock::now();
+        if (count < kMax) {
+            name[count] = phase;
+            ms[count] = std::chrono::duration<double, std::milli>(now - last).count();
+            ++count;
+        }
+        last = now;
+    }
+    void print() const {
+        for (int i = 0; i < count; ++i) {
+            std::printf("  boot phase %-34s %9.1f ms\n", name[i], ms[i]);
+        }
+    }
+};
+
+/// Milliseconds the process ran before main() (loader, static init): Windows process creation time;
+/// 0 elsewhere (the boot clock then starts at main()).
+double preMainMs() {
+#if defined(_WIN32)
+    FILETIME creation{};
+    FILETIME exitTime{};
+    FILETIME kernelTime{};
+    FILETIME userTime{};
+    if (GetProcessTimes(GetCurrentProcess(), &creation, &exitTime, &kernelTime, &userTime) == 0) {
+        return 0.0;
+    }
+    FILETIME now{};
+    GetSystemTimePreciseAsFileTime(&now);
+    const auto ticks = [](const FILETIME& t) {
+        return (static_cast<unsigned long long>(t.dwHighDateTime) << 32u) | t.dwLowDateTime;
+    };
+    const unsigned long long a = ticks(creation);
+    const unsigned long long b = ticks(now);
+    return b > a ? static_cast<double>(b - a) / 1e4 : 0.0; // 100 ns ticks
+#else
+    return 0.0;
+#endif
+}
+
+#if defined(FUSE_SMOKE_HAS_BOOT_SCENE)
+/// B7.10 boot row (--boot-budget-ms): after engine init + renderer bring-up, a 3D level is saved and
+/// loaded from a `.fuselevel` file (scene loads), physics drops a body for 30 fixed steps (physics runs)
+/// and the audio engine mixes a tone into its output (audio plays; Null output with capture, so a
+/// headless run is silent and checkable). The editor is not part of this process.
+void runBootScene() {
+    namespace w3 = fuse::world3d;
+    std::error_code ec;
+    const std::filesystem::path dir = std::filesystem::temp_directory_path(ec) / "fuse_runtime_smoke_boot";
+    std::filesystem::create_directories(dir, ec);
+    const std::string level = (dir / "boot.fuselevel").generic_string();
+    {
+        w3::World3D authored;
+        const float floorCenter[3] = {0.f, -0.1f, 0.f};
+        const float floorHalf[3] = {8.f, 0.1f, 8.f};
+        const float cubeCenter[3] = {0.f, 0.5f, -2.f};
+        const float cubeHalf[3] = {0.5f, 0.5f, 0.5f};
+        (void)authored.spawnMesh(w3::BuiltinMesh::Cube, 0u, floorCenter, floorHalf);
+        (void)authored.spawnMesh(w3::BuiltinMesh::Cube, 1u, cubeCenter, cubeHalf);
+        const float toSun[3] = {0.45f, 0.8f, 0.4f};
+        const float sunColor[3] = {1.f, 0.95f, 0.85f};
+        (void)authored.spawnDirectionalLight(toSun, sunColor, 2.5f);
+        std::string error;
+        check(authored.saveWorld(level, &error), "boot: level saved");
+    }
+    w3::World3D world;
+    const w3::World3DLevelLoadResult loaded = world.loadWorldFromFuselevel(level);
+    check(loaded.ok && loaded.ecsEntities >= 3u, "boot: scene loads from .fuselevel");
+
+    world.setPhysicsEnabled(true);
+    auto ball = std::make_unique<fuse::SceneObject3D>("boot ball");
+    ball->setPhysicsShape(fuse::PhysicsShape2D::Circle);
+    ball->setPhysicsRadius(0.5f);
+    ball->setPosition3D(0.f, 5.f, 0.f);
+    world.addObject(ball.get());
+    fuse::frame::FrameCtx ctx{};
+    for (fuse::u32 f = 0; f < 30u; ++f) {
+        ctx.dt = 1.f / 60.f;
+        ctx.frameIndex = f;
+        world.tick(ctx);
+    }
+    const float y = ball->worldTranslation().y;
+    check(world.physics().bodyCount() >= 1u && y < 4.5f, "boot: physics runs (the dropped body fell)");
+    world.removeObject(ball.get());
+
+    fuse::audio::AudioEngine engine;
+    fuse::audio::AudioDesc audioDesc{};
+    audioDesc.output = fuse::audio::AudioOutputRequest::Null;
+    audioDesc.cuda_reverb = false;
+    audioDesc.frames_per_buf = 512;
+    audioDesc.capture_frames = 512u * 8u;
+    engine.init(audioDesc);
+    fuse::audio::AudioRegistry registry;
+    (void)registry.set_listener(registry.create_entity());
+    std::vector<float> tone(4800);
+    for (std::size_t i = 0; i < tone.size(); ++i) {
+        tone[i] = 0.25f * std::sin(6.2831853f * 440.f * static_cast<float>(i) / 48000.f);
+    }
+    fuse::audio::AudioClip clip;
+    (void)clip.load_from_pcm(tone.data(), static_cast<fuse::u32>(tone.size()), 1u, 48000u);
+    const fuse::Handle<fuse::audio::AudioClip> handle = engine.register_clip(std::move(clip));
+    engine.play_2d(handle, 0.8f);
+    for (int b = 0; b < 4; ++b) {
+        engine.update(registry, 1.f / 60.f);
+    }
+    float peak = 0.f;
+    for (float v : engine.output_capture()) {
+        peak = std::max(peak, std::fabs(v));
+    }
+    check(engine.blocks_rendered() == 4u && peak > 0.05f, "boot: audio plays (tone reached the output)");
+    engine.destroy();
+    std::filesystem::remove_all(dir, ec);
+}
+#endif
+
 } // namespace
 
 int main(int argc, char** argv) {
+    const auto mainStart = std::chrono::steady_clock::now();
+    BootPhases phases;
+    const double beforeMain = preMainMs();
     bool gpuFrame = false;
+    double bootBudgetMs = 0.0; // --boot-budget-ms N: B7.10 "boots ... in < 3 s" timing gate
     for (int i = 1; i < argc; ++i) {
         gpuFrame = gpuFrame || std::strcmp(argv[i], "--gpu-frame") == 0;
+        if (std::strcmp(argv[i], "--boot-budget-ms") == 0 && i + 1 < argc) {
+            bootBudgetMs = std::atof(argv[++i]);
+        }
     }
     fuse::log::info("fuse_runtime_smoke: starting FUSE product smoke");
 
     check(fuse::core::initialize(), "fuse_core initialize");
+    phases.mark("core initialize (jobs, VFS, logging)");
     check(fuse::jobs::JobScheduler::instance().isInitialized(), "job scheduler initialized");
 
     fuse::io::VirtualFileSystem::instance().mount(fuse::io::MountKind::Game, ".", "/game");
@@ -236,13 +388,16 @@ int main(int argc, char** argv) {
 
     runJobSmoke();
     runWorldSmoke();
+    phases.mark("job + world facades");
 
 #if defined(FUSE_HAS_B7_INTEGRATION)
     check(fuse::core::B7TestRegistry::runIntegrationSmoke(), "B7 cross-module integration smoke");
+    phases.mark("B7 integration smoke");
 #endif
 
 #if defined(FUSE_SMOKE_HAS_SCRIPT)
     runScriptSmoke();
+    phases.mark("script host + Script component");
 #endif
 
 #if defined(FUSE_HAS_VULKAN_RHI)
@@ -253,16 +408,38 @@ int main(int argc, char** argv) {
         check(rendererBootstrap != nullptr, "RendererBootstrap allocated in smoke process");
         check(rendererBootstrap->isReady(), "RendererBootstrap init/shutdown path OK");
         rendererBootstrap->shutdown();
+        phases.mark("RendererBootstrap init + shutdown");
     }
 #endif
 
 #if defined(FUSE_SMOKE_HAS_HYBRID)
     if (gpuFrame) {
         runGpuFrameSmoke();
+        phases.mark("hybrid renderer + 4 GPU frames");
     }
 #else
     (void)gpuFrame;
 #endif
+
+    if (bootBudgetMs > 0.0) {
+#if defined(FUSE_SMOKE_HAS_BOOT_SCENE)
+        const auto sceneStart = std::chrono::steady_clock::now();
+        runBootScene();
+        phases.mark(".fuselevel load + physics + audio");
+        const auto end = std::chrono::steady_clock::now();
+        const double engineMs = std::chrono::duration<double, std::milli>(sceneStart - mainStart).count();
+        const double sceneMs = std::chrono::duration<double, std::milli>(end - sceneStart).count();
+        const double totalMs = beforeMain + engineMs + sceneMs;
+        std::printf("fuse_runtime_smoke boot: process start -> main %.1f ms, engine boot (core, jobs, VFS, B7, scripts, "
+                    "renderer%s) %.1f ms, level load + physics + audio %.1f ms, total %.1f ms (budget %.0f ms)\n",
+                    beforeMain, gpuFrame ? ", GPU frame" : "", engineMs, sceneMs, totalMs, bootBudgetMs);
+        phases.print();
+        check(totalMs < bootBudgetMs, "boot: engine boots, scene loads, physics runs, audio plays within the budget");
+#else
+        std::printf("fuse_runtime_smoke boot: level / audio libraries are not linked in this build\n");
+        check(false, "boot timing gate needs fuse_world3d + fuse_audio + fuse_project");
+#endif
+    }
 
     fuse::core::shutdown();
 

@@ -40,7 +40,12 @@ FuseVsmShadowRef fuse_vsmr_shadow() { return FuseVsmShadowRef(pc.shadow); }
 
 // --- vertices -------------------------------------------------------------------------------------
 // decode_kernel::mesh_position (exact dequantisation).
+// Skinned rows (FUSE_MESH_FLOAT_POSITIONS): the f32x4 current position.
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseVsmrFloat4Ref { vec4 v[]; };
 vec3 fuse_vsmr_mesh_position(FuseGpuMesh mesh, uint vertex) {
+    if ((mesh.flags & FUSE_MESH_FLOAT_POSITIONS) != 0u) {
+        return FuseVsmrFloat4Ref(mesh.positions).v[vertex].xyz;
+    }
     FuseVsmrWordsRef words = FuseVsmrWordsRef(mesh.positions);
     const uint xy = words.v[vertex * 2u];
     const uint zw = words.v[vertex * 2u + 1u];

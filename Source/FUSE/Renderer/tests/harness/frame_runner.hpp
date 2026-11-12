@@ -121,6 +121,8 @@ public:
     u32 runSyncHazardControl();
     const HarnessOptions& options() const { return m_options; }
     std::string deviceName() const;
+    /// VkPhysicalDeviceLimits::subPixelPrecisionBits of the device (0 in the stub build).
+    u32 subPixelPrecisionBits() const;
 
     struct Impl;
 

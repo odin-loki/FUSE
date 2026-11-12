@@ -1,7 +1,7 @@
 // WP-6.1 DDGI: volume sampling (twin: ddgi_sample.slang). A line-by-line port of the CPU oracle
 // ddgi_kernel::sample_irradiance / probe_irradiance / probe_distance / sample_tile / encode_direction
 // (include/fuse/renderer/gi/ddgi_probe_kernel.hpp): the same operations in the same order, `precise`
-// (no contraction), so the GPU and the CPU sample agree to rounding of sqrt / division.
+// (no contraction) and correctly rounded division / sqrt (exact_math), so the GPU sample is the CPU one.
 //
 // Self-contained (buffer references only): the DDGI kernels and the WP-2.1 light.shade include it.
 //   vec3 E = fuse_ddgi_sample_irradiance(volumeAddress, position, normal);   // irradiance E, 0 when address == 0
@@ -14,6 +14,7 @@
 
 #extension GL_EXT_buffer_reference : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#include "../common/exact_math.glsl" // fuse_div_rn / fuse_sqrt_rn: the oracle's IEEE quotients and roots
 
 #define FUSE_DDGI_PI 3.14159265358979323846
 
@@ -41,11 +42,11 @@ layout(buffer_reference, std430, buffer_reference_align = 4) buffer FuseDdgiFloa
 // ddgi_kernel::is_empty_direction / resolve_direction / Vec3::normalized.
 vec3 fuse_ddgi_normalized(vec3 d) {
     precise float dd = d.x * d.x + d.y * d.y + d.z * d.z;
-    const float len = sqrt(dd);
+    const float len = fuse_sqrt_rn(dd);
     if (len < 1e-8) {
         return vec3(0.0);
     }
-    precise float inv = 1.0 / len;
+    precise float inv = fuse_div_rn(1.0, len);
     precise vec3 r = vec3(d.x * inv, d.y * inv, d.z * inv);
     return r;
 }
@@ -69,7 +70,7 @@ vec3 fuse_ddgi_resolve_direction_or(vec3 d, vec3 fallback) {
 
 float fuse_ddgi_length(vec3 d) {
     precise float dd = d.x * d.x + d.y * d.y + d.z * d.z;
-    return sqrt(dd);
+    return fuse_sqrt_rn(dd);
 }
 
 // ddgi_kernel::encode_direction: octahedral UV in [0, 1]^2.
@@ -77,7 +78,7 @@ vec2 fuse_ddgi_encode_direction(vec3 direction) {
     vec3 n = fuse_ddgi_resolve_direction(direction);
     precise float sum = abs(n.x) + abs(n.y) + abs(n.z);
     if (sum > 1e-8) {
-        precise float inv = 1.0 / sum;
+        precise float inv = fuse_div_rn(1.0, sum);
         precise vec3 s = vec3(n.x * inv, n.y * inv, n.z * inv);
         n = s;
     }
@@ -94,10 +95,11 @@ vec2 fuse_ddgi_encode_direction(vec3 direction) {
 
 // ddgi_kernel::sample_tile: bordered-tile bilinear fetch. `base` = first float of the tile, `comps` =
 // floats per texel (3 irradiance, 2 distance); returns the first `comps` components.
-vec3 fuse_ddgi_sample_tile(uint64_t atlas, uint base, uint comps, uint res, vec3 direction) {
+// The tile fetch at an already encoded direction (fuse_ddgi_encode_direction): the 8-probe irradiance loop
+// encodes the shading normal once instead of per probe (same bits, DDGI was 2.1 ms of light.shade at 1440p).
+vec3 fuse_ddgi_sample_tile_uv(uint64_t atlas, uint base, uint comps, uint res, vec2 uv) {
     FuseDdgiFloatsRef t = FuseDdgiFloatsRef(atlas);
     const uint stride = res + 2u;
-    const vec2 uv = fuse_ddgi_encode_direction(direction);
     precise float px = 1.0 + uv.x * float(res) - 0.5;
     precise float py = 1.0 + uv.y * float(res) - 0.5;
     const float fx = clamp(px, 0.0, float(res));
@@ -122,16 +124,26 @@ vec3 fuse_ddgi_sample_tile(uint64_t atlas, uint base, uint comps, uint res, vec3
     return result;
 }
 
-// ddgi_kernel::probe_irradiance (E, texel * pi) / probe_distance (moments).
-vec3 fuse_ddgi_probe_irradiance(FuseDdgiVolume V, uint probe, vec3 direction) {
+vec3 fuse_ddgi_sample_tile(uint64_t atlas, uint base, uint comps, uint res, vec3 direction) {
+    return fuse_ddgi_sample_tile_uv(atlas, base, comps, res, fuse_ddgi_encode_direction(direction));
+}
+
+// The encoded irradiance lookup direction of fuse_ddgi_probe_irradiance (independent of the probe).
+vec2 fuse_ddgi_irradiance_uv(vec3 direction) { return fuse_ddgi_encode_direction(fuse_ddgi_resolve_direction(direction)); }
+
+vec3 fuse_ddgi_probe_irradiance_uv(FuseDdgiVolume V, uint probe, vec2 uv) {
     if (probe >= V.probeCount) {
         return vec3(0.0);
     }
-    const vec3 dir = fuse_ddgi_resolve_direction(direction);
     const uint tile = (V.irradianceRes + 2u) * (V.irradianceRes + 2u);
-    const vec3 s = fuse_ddgi_sample_tile(V.irradiance, probe * tile * 3u, 3u, V.irradianceRes, dir);
+    const vec3 s = fuse_ddgi_sample_tile_uv(V.irradiance, probe * tile * 3u, 3u, V.irradianceRes, uv);
     precise vec3 e = vec3(s.x * float(FUSE_DDGI_PI), s.y * float(FUSE_DDGI_PI), s.z * float(FUSE_DDGI_PI));
     return e;
+}
+
+// ddgi_kernel::probe_irradiance (E, texel * pi) / probe_distance (moments).
+vec3 fuse_ddgi_probe_irradiance(FuseDdgiVolume V, uint probe, vec3 direction) {
+    return fuse_ddgi_probe_irradiance_uv(V, probe, fuse_ddgi_irradiance_uv(direction));
 }
 
 vec2 fuse_ddgi_probe_distance(FuseDdgiVolume V, uint probe, vec3 direction) {
@@ -176,8 +188,8 @@ bool fuse_ddgi_probe_active(FuseDdgiVolume V, uint probe) {
 vec3 fuse_ddgi_sample_volume_biased(FuseDdgiVolume V, vec3 position, vec3 n, vec3 biased) {
     precise vec3 grid = vec3(0.0);
     if (V.spacing[0] > 0.0 && V.spacing[1] > 0.0 && V.spacing[2] > 0.0) {
-        grid = vec3((biased.x - V.origin[0]) / V.spacing[0], (biased.y - V.origin[1]) / V.spacing[1],
-                    (biased.z - V.origin[2]) / V.spacing[2]);
+        grid = vec3(fuse_div_rn(biased.x - V.origin[0], V.spacing[0]), fuse_div_rn(biased.y - V.origin[1], V.spacing[1]),
+                    fuse_div_rn(biased.z - V.origin[2], V.spacing[2]));
     }
     uint base[3];
     float alpha[3];
@@ -191,6 +203,7 @@ vec3 fuse_ddgi_sample_volume_biased(FuseDdgiVolume V, vec3 position, vec3 n, vec
     }
     precise vec3 sum = vec3(0.0);
     precise float weightSum = 0.0;
+    const vec2 irradianceUv = fuse_ddgi_irradiance_uv(n);
     for (uint corner = 0u; corner < 8u; ++corner) {
         precise float trilinear = 1.0;
         uint c[3];
@@ -213,21 +226,22 @@ vec3 fuse_ddgi_sample_volume_biased(FuseDdgiVolume V, vec3 position, vec3 n, vec
         const float toProbeLen = fuse_ddgi_length(toProbe);
         if (toProbeLen > 1e-6) {
             precise float d = toProbe.x * n.x + toProbe.y * n.y + toProbe.z * n.z;
-            precise float wrap = (d / toProbeLen + 1.0) * 0.5;
+            precise float wrap = (fuse_div_rn(d, toProbeLen) + 1.0) * 0.5;
             weight *= wrap * wrap + 0.2;
         }
 
         precise vec3 probeToPoint = vec3(biased.x - probePos.x, biased.y - probePos.y, biased.z - probePos.z);
         const float dist = fuse_ddgi_length(probeToPoint);
         if (dist > 1e-6) {
-            precise float inv = 1.0 / dist;
+            precise float inv = fuse_div_rn(1.0, dist);
             precise vec3 dir = vec3(probeToPoint.x * inv, probeToPoint.y * inv, probeToPoint.z * inv);
             const vec2 moments = fuse_ddgi_probe_distance(V, probe, dir);
             const float mean = moments.x;
             if (dist > mean) {
                 precise float variance = abs(moments.y - mean * mean);
                 precise float delta = dist - mean;
-                precise float chebyshev = variance / max(variance + delta * delta, 1e-12);
+                precise float spread = variance + delta * delta;
+                precise float chebyshev = fuse_div_rn(variance, max(spread, 1e-12));
                 chebyshev = max(chebyshev * chebyshev * chebyshev, 0.0);
                 weight *= max(chebyshev, 0.05);
             }
@@ -235,18 +249,18 @@ vec3 fuse_ddgi_sample_volume_biased(FuseDdgiVolume V, vec3 position, vec3 n, vec
         weight = max(weight, 1e-6);
         const float crush = V.weightCrushThreshold;
         if (crush > 0.0 && weight < crush) {
-            weight *= (weight * weight) / (crush * crush);
+            weight *= fuse_div_rn(weight * weight, crush * crush);
         }
         weight *= trilinear;
 
-        const vec3 e = fuse_ddgi_probe_irradiance(V, probe, n);
+        const vec3 e = fuse_ddgi_probe_irradiance_uv(V, probe, irradianceUv);
         sum = vec3(sum.x + e.x * weight, sum.y + e.y * weight, sum.z + e.z * weight);
         weightSum += weight;
     }
     if (weightSum <= 0.0) {
         return vec3(0.0);
     }
-    precise float invSum = 1.0 / weightSum;
+    precise float invSum = fuse_div_rn(1.0, weightSum);
     precise vec3 result = vec3(sum.x * invSum, sum.y * invSum, sum.z * invSum);
     return result;
 }

@@ -35,6 +35,10 @@ struct MeshImportDesc {
     bool cluster_dag = false;
     bool cluster_pages = false;
     u32 page_bytes = 64u * 1024u; ///< `.fusepages` page payload capacity (multiple of 16, >= 1024)
+    /// fuse::cook::MeshCookOptions::repair_degenerate: drop zero-area / repeated-index triangles after import
+    /// instead of refusing them at the asset_geometry gate. Off by default (the strict cook never repairs on its
+    /// own); folded into the cache key only when set.
+    bool repair_degenerate = false;
 };
 
 /// Texture import descriptor (B7.9 stub).
@@ -66,6 +70,20 @@ struct ShaderImportDesc {
     enum class Stage : u8 { Vertex, Fragment, Compute } stage = Stage::Fragment;
     u32 target_version = 450;
     bool debug_info = false;
+};
+
+/// 4b: animation clip import descriptor (assimp clip -> `.fuseanim`, Tools/FUSE/Cook anim_cook.hpp).
+struct AnimImportDesc {
+    std::string input_path;
+    std::string output_path;
+    f32 sample_rate = 30.f;
+    u32 clip_index = 0;
+    std::string clip_name;   ///< selects the clip by name when set
+    bool looping = true;
+    bool root_motion = true;
+    std::string root_joint;  ///< empty: the first joint
+    /// Events sidecar ({"events": [{"name", "time"}]}); empty: `<input_path>.events.json` when it exists.
+    std::string events_path;
 };
 
 } // namespace fuse::project

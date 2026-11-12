@@ -36,7 +36,7 @@ void main() {
     precise float g = lit.y;
     precise float b = lit.z;
     if ((F.flags & SX_FLAG_AO) != 0u) {
-        const float ao = SxFloatsRef(F.ao).v[i];
+        const float ao = SxFloatsRef(F.aoFinal).v[i]; // GTAO, blurred or temporally denoised (aoFinal)
         float vr = ao;
         float vg = ao;
         float vb = ao;

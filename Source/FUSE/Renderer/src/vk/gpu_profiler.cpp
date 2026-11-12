@@ -92,6 +92,7 @@ struct GpuProfiler::Impl {
     PFN_vkCmdResetQueryPool cmdResetQueryPool = nullptr;
     PFN_vkGetQueryPoolResults getQueryPoolResults = nullptr;
     PFN_vkDestroyQueryPool destroyQueryPool = nullptr;
+    PFN_vkResetQueryPool hostResetQueryPool = nullptr; ///< hostQueryReset enabled on the device
 #if FUSE_GPU_PROFILER_TRACY
     tracy::VkCtx* tracyCtx[rg::kQueueClassCount] = {nullptr, nullptr, nullptr};
     bool tracyOwner[rg::kQueueClassCount] = {false, false, false}; ///< distinct queues own a context
@@ -209,7 +210,14 @@ bool GpuProfiler::initialize(VulkanDevice& device, const GpuProfilerDesc& desc) 
     for (u32 q = 0; q < rg::kQueueClassCount; ++q) {
         const u32 family = familyOf[q];
         const u32 bits = family < familyCount && queueOf[q] != VK_NULL_HANDLE ? families[family].timestampValidBits : 0u;
-        impl.supported[q] = bits > 0u;
+        // Zones (and Tracy's context setup / Collect) reset their queries in-band with
+        // vkCmdResetQueryPool, which needs a graphics or compute family
+        // (VUID-vkCmdResetQueryPool-commandBuffer-cmdpool). A dedicated transfer-only family
+        // (discrete GPUs; Lavapipe has none) is therefore treated as unsupported: its zones are
+        // skipped and counted.
+        const bool inBandReset =
+            family < familyCount && (families[family].queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) != 0;
+        impl.supported[q] = bits > 0u && inBandReset;
         impl.mask[q] = bits >= 64u ? ~u64{0} : ((u64{1} << bits) - 1u);
     }
     if (!impl.supported[0]) {
@@ -229,6 +237,10 @@ bool GpuProfiler::initialize(VulkanDevice& device, const GpuProfilerDesc& desc) 
         impl.destroyQueryPool == nullptr) {
         m_message = "GpuProfiler: query entry points missing";
         return false;
+    }
+    if (device.info().hostQueryReset) {
+        impl.hostResetQueryPool =
+            reinterpret_cast<PFN_vkResetQueryPool>(vkGetDeviceProcAddr(impl.device, "vkResetQueryPool"));
     }
 
     impl.slots.resize(impl.desc.framesInFlight);
@@ -339,8 +351,18 @@ void GpuProfiler::beginFrame() {
     ++impl.frame;
     impl.slot = static_cast<u32>(impl.frame % impl.slots.size());
     Slot& slot = impl.slots[impl.slot];
+    bool inFlight = false;
     if (slot.pending && !resolveSlot(impl.slot, true)) {
         ++m_stats.framesDropped; // still in flight: never block the frame loop on it
+        inFlight = true;
+    }
+    // The slot's queries still hold the previous occupant's results, *available*. Zones reset their
+    // pair in-band, so until the GPU reaches each reset a non-blocking resolve of this frame would
+    // accept the stale values (seen on NVIDIA: the newest frame's later zones read one ring cycle
+    // old). A host reset makes them unavailable until this frame writes them. Not possible while
+    // the old frame is still in flight (contract violation: framesInFlight too small).
+    if (impl.hostResetQueryPool != nullptr && !inFlight) {
+        impl.hostResetQueryPool(impl.device, impl.pool, impl.queryBase(impl.slot), impl.desc.maxZonesPerFrame * 2u);
     }
     slot.pending = false;
     slot.frame = impl.frame;
@@ -481,10 +503,11 @@ bool GpuProfiler::resolveSlot(u32 slotIndex, bool publish) {
             return false;
         }
         for (u32 zone = 0; zone < slot.count; ++zone) {
-            if (!slot.zones[zone].ended) {
-                continue; // end query never written: excluded below
-            }
-            if (impl.results[zone * 4u + 1u] == 0u || impl.results[zone * 4u + 3u] == 0u) {
+            // An unended zone's end query is never written (excluded below), but its begin write
+            // must have landed before the slot can be host-reset for reuse.
+            const bool beginReady = impl.results[zone * 4u + 1u] != 0u;
+            const bool endReady = !slot.zones[zone].ended || impl.results[zone * 4u + 3u] != 0u;
+            if (!beginReady || !endReady) {
                 return false;
             }
         }
