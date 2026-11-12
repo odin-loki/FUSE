@@ -1,5 +1,7 @@
 # FUSE UI
 
+What is not done and what has never been run on real hardware: [`KNOWN_GAPS.md`](KNOWN_GAPS.md).
+
 FUSE's own GUI framework ([plan](../plans/FUSE_UI_PLAN.md)). One retained core, styled with a CSS subset, drawn
 through a backend-neutral draw list, plus an immediate-mode front-end on the same primitives. Engine rules apply:
 handles, not pointers; `std::expected`; one owner thread (other threads `post()`); no steady-state allocation.
