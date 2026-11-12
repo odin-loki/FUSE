@@ -2873,6 +2873,133 @@ void testRasterizeTranslateGizmo() {
     expectTrue(!wroteBehind, "axes behind the camera are skipped");
 }
 
+void testRasterizeRotateGizmo() {
+    const fuse::math::Mat4 view =
+        fuse::math::lookAt({0.f, 0.f, 5.f}, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f});
+    const fuse::math::Mat4 projection = fuse::math::perspective(60.f, 1.f, 0.1f, 100.f);
+    const fuse::math::Mat4 viewProjection = fuse::math::multiply(projection, view);
+
+    constexpr fuse::u32 width = 64;
+    constexpr fuse::u32 height = 64;
+    const fuse::usize pixelCount = static_cast<fuse::usize>(width) * height;
+    std::vector<fuse::u8> pixels(pixelCount * 4u, 0);
+    pixels[3] = 1;
+
+    fuse::editor::rasterizeRotateGizmo(viewProjection, {0.f, 0.f, 0.f}, width, height,
+                                       pixels.data());
+
+    expectTrue(pixels[3] == 1, "rasterizeRotateGizmo does not clear the buffer");
+
+    int redIndex = -1;
+    int greenIndex = -1;
+    int blueIndex = -1;
+    for (fuse::usize i = 0; i < pixelCount; ++i) {
+        const fuse::u8* pixel = pixels.data() + i * 4u;
+        if (redIndex < 0 && pixel[0] != 0 && pixel[1] == 0 && pixel[2] == 0) {
+            redIndex = static_cast<int>(i);
+        }
+        if (greenIndex < 0 && pixel[1] != 0 && pixel[0] == 0 && pixel[2] == 0) {
+            greenIndex = static_cast<int>(i);
+        }
+        if (blueIndex < 0 && pixel[2] != 0 && pixel[0] == 0 && pixel[1] == 0) {
+            blueIndex = static_cast<int>(i);
+        }
+    }
+    expectTrue(redIndex >= 0, "rotate gizmo writes a red ring pixel");
+    expectTrue(greenIndex >= 0, "rotate gizmo writes a green ring pixel");
+    expectTrue(blueIndex >= 0, "rotate gizmo writes a blue ring pixel");
+    expectTrue(redIndex >= 0 && greenIndex >= 0 && redIndex != greenIndex,
+               "red and green rotate pixels are not the same pixel");
+
+    std::vector<fuse::u8> behind(pixelCount * 4u, 0);
+    const fuse::math::Mat4 away =
+        fuse::math::lookAt({0.f, 0.f, -5.f}, {0.f, 0.f, -6.f}, {0.f, 1.f, 0.f});
+    fuse::editor::rasterizeRotateGizmo(fuse::math::multiply(projection, away), {0.f, 0.f, 0.f},
+                                       width, height, behind.data());
+    bool wroteBehind = false;
+    for (fuse::u8 byte : behind) {
+        if (byte != 0) {
+            wroteBehind = true;
+            break;
+        }
+    }
+    expectTrue(!wroteBehind, "rotate rings behind the camera are skipped");
+}
+
+void testRasterizeScaleGizmo() {
+    const fuse::math::Mat4 view =
+        fuse::math::lookAt({0.f, 0.f, 5.f}, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f});
+    const fuse::math::Mat4 projection = fuse::math::perspective(60.f, 1.f, 0.1f, 100.f);
+    const fuse::math::Mat4 viewProjection = fuse::math::multiply(projection, view);
+
+    constexpr fuse::u32 width = 64;
+    constexpr fuse::u32 height = 64;
+    const fuse::usize pixelCount = static_cast<fuse::usize>(width) * height;
+    std::vector<fuse::u8> pixels(pixelCount * 4u, 0);
+    pixels[3] = 1;
+
+    fuse::editor::rasterizeScaleGizmo(viewProjection, {0.f, 0.f, 0.f}, width, height,
+                                      pixels.data());
+
+    expectTrue(pixels[3] == 1, "rasterizeScaleGizmo does not clear the buffer");
+
+    int redIndex = -1;
+    int whiteCount = 0;
+    for (fuse::usize i = 0; i < pixelCount; ++i) {
+        const fuse::u8* pixel = pixels.data() + i * 4u;
+        if (redIndex < 0 && pixel[0] != 0 && pixel[1] == 0 && pixel[2] == 0) {
+            redIndex = static_cast<int>(i);
+        }
+        if (pixel[0] == 255 && pixel[1] == 255 && pixel[2] == 255) {
+            ++whiteCount;
+        }
+    }
+    expectTrue(redIndex >= 0, "scale gizmo writes a red axis pixel");
+    expectTrue(whiteCount >= 1, "scale gizmo writes a white uniform-scale marker");
+
+    std::vector<fuse::u8> behind(pixelCount * 4u, 0);
+    const fuse::math::Mat4 away =
+        fuse::math::lookAt({0.f, 0.f, -5.f}, {0.f, 0.f, -6.f}, {0.f, 1.f, 0.f});
+    fuse::editor::rasterizeScaleGizmo(fuse::math::multiply(projection, away), {0.f, 0.f, 0.f},
+                                      width, height, behind.data());
+    bool wroteBehind = false;
+    for (fuse::u8 byte : behind) {
+        if (byte != 0) {
+            wroteBehind = true;
+            break;
+        }
+    }
+    expectTrue(!wroteBehind, "scale axes behind the camera are skipped");
+}
+
+void testRasterizeGizmoDispatch() {
+    const fuse::math::Mat4 view =
+        fuse::math::lookAt({0.f, 0.f, 5.f}, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f});
+    const fuse::math::Mat4 projection = fuse::math::perspective(60.f, 1.f, 0.1f, 100.f);
+    const fuse::math::Mat4 viewProjection = fuse::math::multiply(projection, view);
+
+    constexpr fuse::u32 width = 64;
+    constexpr fuse::u32 height = 64;
+    const fuse::usize byteCount = static_cast<fuse::usize>(width) * height * 4u;
+    std::vector<fuse::u8> viaTranslate(byteCount, 0);
+    std::vector<fuse::u8> viaDispatch(byteCount, 0);
+    std::vector<fuse::u8> viaRotate(byteCount, 0);
+    std::vector<fuse::u8> viaRotateDispatch(byteCount, 0);
+
+    fuse::editor::rasterizeTranslateGizmo(viewProjection, {0.f, 0.f, 0.f}, width, height,
+                                          viaTranslate.data());
+    fuse::editor::rasterizeGizmo(fuse::editor::GizmoMode::Translate, viewProjection, {0.f, 0.f, 0.f},
+                                 width, height, viaDispatch.data());
+    expectTrue(viaTranslate == viaDispatch, "rasterizeGizmo(Translate) matches rasterizeTranslateGizmo");
+
+    fuse::editor::rasterizeRotateGizmo(viewProjection, {0.f, 0.f, 0.f}, width, height,
+                                       viaRotate.data());
+    fuse::editor::rasterizeGizmo(fuse::editor::GizmoMode::Rotate, viewProjection, {0.f, 0.f, 0.f},
+                                 width, height, viaRotateDispatch.data());
+    expectTrue(viaRotate == viaRotateDispatch, "rasterizeGizmo(Rotate) matches rasterizeRotateGizmo");
+    expectTrue(viaTranslate != viaRotate, "rotate raster differs from translate raster");
+}
+
 void testSnapToGrid() {
     expectTrue(fuse::editor::snap_to_grid(1.2f, 0.5f) == 1.f, "snap_to_grid(1.2, 0.5) == 1");
     expectTrue(fuse::editor::snap_to_grid(1.25f, 0.5f) == 1.5f, "snap_to_grid(1.25, 0.5) == 1.5");
@@ -2998,6 +3125,9 @@ int main() {
     testSnapDragRejectReasonGuards();
     testInteractionRejectReasonHelpers();
     testRasterizeTranslateGizmo();
+    testRasterizeRotateGizmo();
+    testRasterizeScaleGizmo();
+    testRasterizeGizmoDispatch();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test failure(s)\n", g_failures);

@@ -790,6 +790,21 @@ f32 gizmoWorldScale(const math::Vec3& cameraPosition, const math::Vec3& gizmoPos
 void rasterizeTranslateGizmo(const math::Mat4& viewProjection, const math::Vec3& worldOrigin,
                              u32 viewportWidth, u32 viewportHeight, u8* rgba8);
 
+/// CPU raster of the rotate gizmo. Draws three axis rings (YZ / XZ / XY, red / green / blue) of
+/// radius GizmoSystem::kAxisLength centered on worldOrigin. The buffer is not cleared. A ring
+/// segment is skipped when either endpoint is behind the camera (clip-space w <= 0).
+void rasterizeRotateGizmo(const math::Mat4& viewProjection, const math::Vec3& worldOrigin,
+                          u32 viewportWidth, u32 viewportHeight, u8* rgba8);
+
+/// CPU raster of the scale gizmo. Draws the translate axes plus a white 3x3 uniform-scale marker
+/// at the projected origin. The buffer is not cleared.
+void rasterizeScaleGizmo(const math::Mat4& viewProjection, const math::Vec3& worldOrigin,
+                         u32 viewportWidth, u32 viewportHeight, u8* rgba8);
+
+/// Dispatch mode to the matching in-viewport rasterizer (B6.4).
+void rasterizeGizmo(GizmoMode mode, const math::Mat4& viewProjection, const math::Vec3& worldOrigin,
+                    u32 viewportWidth, u32 viewportHeight, u8* rgba8);
+
 /// Stable text form of a gizmo transform ("px,py,pz,rx,ry,rz,rw,sx,sy,sz", round-trip exact)
 /// carried by the `transform.trs` editor command.
 std::string formatGizmoTransform(const GizmoTransform& transform);

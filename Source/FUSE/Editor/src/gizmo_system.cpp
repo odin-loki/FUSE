@@ -1958,6 +1958,95 @@ void rasterizeTranslateGizmo(const math::Mat4& viewProjection, const math::Vec3&
     }
 }
 
+void rasterizeRotateGizmo(const math::Mat4& viewProjection, const math::Vec3& worldOrigin,
+                          u32 viewportWidth, u32 viewportHeight, u8* rgba8) {
+    if (rgba8 == nullptr || viewportWidth == 0 || viewportHeight == 0) {
+        return;
+    }
+
+    constexpr f32 kTwoPi = 6.28318530717958647692f;
+    constexpr int kRingSegments = 32;
+    const f32 radius = GizmoSystem::kAxisLength;
+    const u8 colors[3][3] = {
+        {255, 0, 0},
+        {0, 255, 0},
+        {0, 0, 255},
+    };
+    for (int axis = 0; axis < 3; ++axis) {
+        for (int segment = 0; segment < kRingSegments; ++segment) {
+            const f32 theta0 = kTwoPi * static_cast<f32>(segment) / static_cast<f32>(kRingSegments);
+            const f32 theta1 = kTwoPi * static_cast<f32>(segment + 1) / static_cast<f32>(kRingSegments);
+            const f32 cos0 = std::cos(theta0);
+            const f32 sin0 = std::sin(theta0);
+            const f32 cos1 = std::cos(theta1);
+            const f32 sin1 = std::sin(theta1);
+            math::Vec3 p0 = worldOrigin;
+            math::Vec3 p1 = worldOrigin;
+            if (axis == 0) {
+                p0.y += radius * cos0;
+                p0.z += radius * sin0;
+                p1.y += radius * cos1;
+                p1.z += radius * sin1;
+            } else if (axis == 1) {
+                p0.x += radius * cos0;
+                p0.z += radius * sin0;
+                p1.x += radius * cos1;
+                p1.z += radius * sin1;
+            } else {
+                p0.x += radius * cos0;
+                p0.y += radius * sin0;
+                p1.x += radius * cos1;
+                p1.y += radius * sin1;
+            }
+            RasterScreenPoint a{};
+            RasterScreenPoint b{};
+            if (!projectTranslateGizmoPoint(viewProjection, p0, viewportWidth, viewportHeight, a) ||
+                !projectTranslateGizmoPoint(viewProjection, p1, viewportWidth, viewportHeight, b)) {
+                continue;
+            }
+            drawTranslateGizmoSegment(rgba8, viewportWidth, viewportHeight, a.x, a.y, b.x, b.y,
+                                      colors[axis][0], colors[axis][1], colors[axis][2]);
+        }
+    }
+}
+
+void rasterizeScaleGizmo(const math::Mat4& viewProjection, const math::Vec3& worldOrigin,
+                         u32 viewportWidth, u32 viewportHeight, u8* rgba8) {
+    rasterizeTranslateGizmo(viewProjection, worldOrigin, viewportWidth, viewportHeight, rgba8);
+    if (rgba8 == nullptr || viewportWidth == 0 || viewportHeight == 0) {
+        return;
+    }
+
+    RasterScreenPoint origin{};
+    if (!projectTranslateGizmoPoint(viewProjection, worldOrigin, viewportWidth, viewportHeight,
+                                    origin)) {
+        return;
+    }
+    const int originX = static_cast<int>(std::lround(origin.x));
+    const int originY = static_cast<int>(std::lround(origin.y));
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            writeTranslateGizmoPixel(rgba8, viewportWidth, viewportHeight, originX + dx,
+                                     originY + dy, 255, 255, 255);
+        }
+    }
+}
+
+void rasterizeGizmo(GizmoMode mode, const math::Mat4& viewProjection, const math::Vec3& worldOrigin,
+                    u32 viewportWidth, u32 viewportHeight, u8* rgba8) {
+    switch (mode) {
+    case GizmoMode::Translate:
+        rasterizeTranslateGizmo(viewProjection, worldOrigin, viewportWidth, viewportHeight, rgba8);
+        break;
+    case GizmoMode::Rotate:
+        rasterizeRotateGizmo(viewProjection, worldOrigin, viewportWidth, viewportHeight, rgba8);
+        break;
+    case GizmoMode::Scale:
+        rasterizeScaleGizmo(viewProjection, worldOrigin, viewportWidth, viewportHeight, rgba8);
+        break;
+    }
+}
+
 std::string formatGizmoTransform(const GizmoTransform& transform) {
     const f32 values[] = {transform.posX,   transform.posY,   transform.posZ, transform.rotX,
                           transform.rotY,   transform.rotZ,   transform.rotW, transform.scaleX,
