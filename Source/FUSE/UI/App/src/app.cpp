@@ -1,5 +1,6 @@
 // fuse_app (plan UI5): Application, AppWindow, on-demand loop, settings store, command line, single instance.
 #include "fuse/app/app.hpp"
+#include "fuse/text/from_chars.hpp"
 
 #include "fuse/ui/doc/document.hpp"
 
@@ -25,7 +26,7 @@
 #include <unistd.h>
 #endif
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -33,7 +34,7 @@
 #define STB_IMAGE_WRITE_STATIC
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 
@@ -43,7 +44,7 @@ using namespace fuse::ui;
 namespace {
 bool parseDouble(std::string_view s, double& out) {
     if (s.empty()) return false;
-    const auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), out);
+    const auto [p, ec] = fuse::text::fromChars(s.data(), s.data() + s.size(), out);
     return ec == std::errc{} && p == s.data() + s.size();
 }
 double steadyNow(void*) {
@@ -79,6 +80,26 @@ std::string unescape(std::string_view s) {
     return o;
 }
 } // namespace
+
+namespace {
+std::string& dataRootStorage() {
+    static std::string s;
+    return s;
+}
+ResourceReader g_resources;
+} // namespace
+void setDataRoot(std::string path) { dataRootStorage() = std::move(path); }
+const std::string& dataRoot() { return dataRootStorage(); }
+void setResourceReader(const ResourceReader& reader) { g_resources = reader; }
+bool readResource(std::string_view path, std::string& out) {
+    if (std::ifstream f{std::string(path), std::ios::binary}; f) {
+        std::stringstream ss;
+        ss << f.rdbuf();
+        out = ss.str();
+        return true;
+    }
+    return g_resources.read && g_resources.read(g_resources.user, path, out);
+}
 
 const fuse::text::Font& defaultFont() {
     static fuse::text::Font f = [] {
@@ -129,13 +150,18 @@ double CommandLine::number(std::string_view key, double fallback) const {
 
 // ---- Settings ------------------------------------------------------------------------------------------------------
 std::string Settings::defaultDir(std::string_view app) {
+    if (!dataRoot().empty()) return dataRoot() + "/" + std::string(app);
 #if defined(_WIN32)
     const char* base = std::getenv("APPDATA");
     return std::string(base ? base : ".") + "\\" + std::string(app);
 #else
     if (const char* x = std::getenv("XDG_CONFIG_HOME"); x && *x) return std::string(x) + "/" + std::string(app);
     const char* home = std::getenv("HOME");
+#if defined(__APPLE__)
+    return std::string(home ? home : ".") + "/Library/Application Support/" + std::string(app);
+#else
     return std::string(home ? home : ".") + "/.config/" + std::string(app);
+#endif
 #endif
 }
 bool Settings::load() {
@@ -203,7 +229,7 @@ void Settings::set(std::string_view key, std::string_view value) {
 }
 void Settings::set(std::string_view key, double value) {
     char buf[64];
-    const auto [p, ec] = std::to_chars(buf, buf + sizeof buf, value);
+    const auto [p, ec] = fuse::text::toChars(buf, buf + sizeof buf, value);
     set(key, std::string_view(buf, ec == std::errc{} ? std::size_t(p - buf) : 0));
 }
 void Settings::remove(std::string_view key) {
@@ -216,6 +242,9 @@ AppWindow::AppWindow(Application& app, const WindowDesc& d, u32 id)
     : m_app(app), m_ui({.viewport = {f32(d.width), f32(d.height)}, .font = &defaultFont()}), m_title(d.title), m_id(id) {
     widgets::install(m_ui);
     m_presenter = {this, &AppWindow::presentHeadless, nullptr};
+    m_pixelW = d.width;
+    m_pixelH = d.height;
+    if (d.dpiScale != 1.f) setScale(d.dpiScale);
 }
 AppWindow::~AppWindow() {
     m_doc.reset();
@@ -228,8 +257,33 @@ void AppWindow::setPresenter(const Presenter& p) {
 }
 void AppWindow::resize(u32 width, u32 height) {
     m_ui.setViewport({f32(width), f32(height)});
+    const f32 s = m_ui.renderScale();
+    m_pixelW = u32(std::max(1.f, std::round(f32(width) * s)));
+    m_pixelH = u32(std::max(1.f, std::round(f32(height) * s)));
     m_ui.markAllDirty();
     m_forceRedraw = true;
+}
+void AppWindow::setScale(f32 scale) {
+    const f32 before = m_ui.renderScale();
+    m_ui.setRenderScale(scale);
+    const f32 s = m_ui.renderScale();
+    const Size v = m_ui.viewport();
+    m_pixelW = u32(std::max(1.f, std::round(v.w * s)));
+    m_pixelH = u32(std::max(1.f, std::round(v.h * s)));
+    m_ui.markAllDirty();
+    m_forceRedraw = true;
+    notifyScale(before);
+}
+void AppWindow::resizePixels(u32 pixelWidth, u32 pixelHeight, f32 scale) {
+    const f32 before = m_ui.renderScale();
+    m_ui.setRenderScale(scale);
+    const f32 s = m_ui.renderScale();
+    m_pixelW = std::max(1u, pixelWidth);
+    m_pixelH = std::max(1u, pixelHeight);
+    m_ui.setViewport({f32(m_pixelW) / s, f32(m_pixelH) / s});
+    m_ui.markAllDirty();
+    m_forceRedraw = true;
+    notifyScale(before);
 }
 std::expected<void, std::string> AppWindow::loadText(std::string_view json, doc::Model* model) {
     m_doc.reset();
@@ -243,14 +297,12 @@ std::expected<void, std::string> AppWindow::loadText(std::string_view json, doc:
     return {};
 }
 std::expected<void, std::string> AppWindow::load(std::string_view path, doc::Model* model) {
-    std::ifstream f{std::string(path), std::ios::binary};
-    if (!f) return std::unexpected("cannot open " + std::string(path));
-    std::stringstream ss;
-    ss << f.rdbuf();
-    return loadText(ss.str(), model);
+    std::string text;
+    if (!readResource(path, text)) return std::unexpected("cannot open " + std::string(path));
+    return loadText(text, model);
 }
 bool AppWindow::presentHeadless(void*, AppWindow& w, Rect damage) {
-    const int iw = int(w.m_ui.viewport().w), ih = int(w.m_ui.viewport().h);
+    const int iw = int(w.m_pixelW), ih = int(w.m_pixelH);
     const bool full = w.m_image.width != iw || w.m_image.height != ih;
     if (full) w.m_image.resize(iw, ih, 0xFF000000u);
     w.m_raster.setGlyphAtlas(w.m_ui.atlas().pixels(), w.m_ui.atlas().size());
@@ -276,7 +328,7 @@ bool AppWindow::frame(f32 dt) {
     m_ui.update(dt); // advances timers; presents only when something repainted
     if (m_doc && m_doc->refresh()) m_ui.update(0.f);
     if (!m_ui.stats().repainted && !m_forceRedraw && m_policy == RedrawPolicy::OnDemand) return false;
-    const Rect dmg = m_forceRedraw ? Rect{0.f, 0.f, m_ui.viewport().w, m_ui.viewport().h} : m_ui.damage();
+    const Rect dmg = m_forceRedraw ? Rect{0.f, 0.f, f32(m_pixelW), f32(m_pixelH)} : m_ui.deviceDamage();
     m_forceRedraw = false;
     if (!m_presenter.present || !m_presenter.present(m_presenter.user, *this, dmg)) return false;
     ++m_frames;
@@ -300,7 +352,8 @@ Application::Application(const AppDesc& d) : m_name(d.name), m_args(d.argc, d.ar
         m_lock = h;
 #else
         const char* rt = std::getenv("XDG_RUNTIME_DIR");
-        const std::string path = std::string(rt && *rt ? rt : "/tmp") + "/fuse_app_" + m_name + "_" + std::to_string(::getuid()) + ".lock";
+        const std::string base = !dataRoot().empty() ? dataRoot() : std::string(rt && *rt ? rt : "/tmp");
+        const std::string path = base + "/fuse_app_" + m_name + "_" + std::to_string(::getuid()) + ".lock";
         const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
         m_primary = fd >= 0 && ::flock(fd, LOCK_EX | LOCK_NB) == 0;
         if (fd >= 0) m_lock = reinterpret_cast<void*>(std::intptr_t(fd) + 1);

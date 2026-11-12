@@ -116,6 +116,55 @@ private:
     u32 m_twoWay = ~0u;
 };
 
+/// Document classes: the names a node's "class" may use besides the widget classes registered with the context.
+/// Built in (doc_classes.cpp), with their extra properties:
+///   doublespinbox, plaintextedit, scrollarea, toolbar, mainwindow (children go to the central region)
+///   listview / treeview / tabbar / header / combobox  "items": [text...] (tree lines start with tabs for depth)
+///   menubutton (in a menubar)   "text": title, "items": [entry...]
+///   modellistview, gridview     "items": [text...]; gridview also "tileWidth", "tileHeight"
+///   tableview                   "columns": [title...], "rows": [[cell...]...]   (the document owns the model)
+///   treemodelview               "columns": [title...], "items": [line...] - the tabs at the start of a line are its
+///                               depth, the tabs after them separate the cells; "editable": bool, "expanded": bool
+///                               (the document owns a StringTreeModel)
+///   svgimage                    "icon": a built-in icon name (fuse/ui/icons.hpp: "save", "folder", ...) or "svg":
+///                               inline SVG source; sized by the style
+///   button / toolbutton         "icon": a built-in icon name (drawn left of the text)
+///   tabwidget                   "tabs": [title...]; child k is the content of page k; "value" = current tab
+///   stack                       every child is a page; "value" = current page (bindable)
+///   splitter                    "stacked": bool; every child gets a pane (a child's "paneSize" px fixes it)
+///   dockarea / dock             dock children ("text" title, "side": left|right|bottom|center, "float": [x,y,w,h])
+///                               become dock widgets, other children go to the centre
+///   groupbox                    "text" title, "checkable", "checked"; children go to the body
+///   statusbar                   "text" = the message; children are permanent widgets
+///   dialog                      "text" title; children go to the body; "visible" (bindable) opens / closes it.
+///                               The node with the id is the dialog's popup scope (its first child is the card)
+///   propertygrid                "rows": [{ "name", "kind": group|bool|number|text|enum|color, "value", "min", "max",
+///                               "step", "options": [...] }]
+///   codeedit "language": lua|cpp|css|plain;  colorpicker "color": "#RRGGBB[AA]";  calendar "date": "YYYY-MM-DD";
+///   datetimeedit "date": "YYYY-MM-DD HH:MM";  markdown "text";  fontpicker "families": [...], "size"
+///   chart "kind": line|bar|area|scatter|flame, "series": [{ "name", "color", "values": [...] }] or "spans": [{ "name",
+///   "start", "duration", "depth", "color" }];  nodegraph "nodes": [{ "title", "x", "y", "inputs", "outputs" }],
+///   "links": [[fromNode, outPin, toNode, inPin]];  curveeditor "range": [t0, t1, v0, v1], "keys": [[t, v]...];
+///   timeline "duration", "tracks": [{ "name", "clips": [{ "start", "end", "text", "color" }] }];
+///   viewport "image", "imageWidth", "imageHeight";  video "source": "testpattern";  kineticscroll "profile"
+/// Any node: "tooltip": text, "contextMenu": [entry...] (Submitted on the node).
+/// Not document nodes (they open at once, from code): messageBox, wizard, popover, toast, popupMenu, fileDialog.
+/// Apps and other modules add their own with registerDocumentClass (e.g. the game HUD widgets, whose library the
+/// document module does not link).
+struct DocumentClass {
+    std::string name;
+    /// Creates the node under `parent`; `node` is its JSON object (creation-time properties).
+    NodeHandle (*make)(UiContext&, NodeHandle parent, std::string_view id, const JsonValue& node) = nullptr;
+    /// Optional: applies a class-specific property; returns false for keys it does not know.
+    bool (*prop)(UiContext&, NodeHandle, std::string_view key, const JsonValue& value) = nullptr;
+    /// Optional: the parent for the document's child `index` of the node (default: the node).
+    NodeHandle (*child)(UiContext&, NodeHandle, std::size_t index, const JsonValue& child) = nullptr;
+};
+/// Process-wide; a class registered again replaces the earlier one, and a custom class overrides a built-in name.
+void registerDocumentClass(DocumentClass c);
+bool isDocumentClass(std::string_view name);
+std::vector<std::string> documentClassNames(); ///< sorted
+
 struct DocError {
     std::string path; ///< node path, e.g. root/children[2]
     std::string message;
@@ -168,7 +217,9 @@ private:
         std::vector<u32> deps;
     };
     friend struct CookAccess;
-    std::expected<NodeHandle, DocError> makeOrReuse(std::string_view cls, NodeHandle parent, std::string_view id);
+    std::expected<NodeHandle, DocError> makeOrReuse(std::string_view cls, NodeHandle parent, std::string_view id,
+                                                    const JsonValue& n);
+    std::vector<NodeHandle> m_detached; ///< nodes built outside the document's tree (dialog scopes in the overlay)
     UiContext& m_ui;
     Model* m_model;
     std::vector<std::pair<std::string, Template>> m_cooked; ///< cooked load: binding source -> compiled template

@@ -78,9 +78,9 @@ inline bool feed(UiContext& ui, const fuse::platform::EventV2& e, float dpiScale
     case T::TextComposition:
         if (pump != nullptr) return ui.textComposition(pump->composition(), pump->compositionCursor());
         return ui.textComposition(e.textView(), i32(e.textView().size()));
-    case T::TouchDown: return ui.pointerDown(p);
-    case T::TouchMove: return ui.pointerMove(p);
-    case T::TouchUp: return ui.pointerUp(p);
+    case T::TouchDown: return ui.touchDown(p); // tap = click, drag = pan + fling (UiContext touch path)
+    case T::TouchMove: return ui.touchMove(p);
+    case T::TouchUp: return ui.touchUp(p);
     case T::WindowResized: ui.setViewport({float(e.width) / dpiScale, float(e.height) / dpiScale}); return false;
     default: return false;
     }

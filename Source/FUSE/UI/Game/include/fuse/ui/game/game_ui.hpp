@@ -73,7 +73,7 @@ enum class Action : u8 { Accept, Back, Menu, Interact, Count };
 std::string_view promptGlyph(InputDevice d, Action a);
 
 struct GamepadState {
-    Vec2 stick;               ///< left stick, +y down
+    Vec2 stick{};             ///< left stick, +y down
     bool up = false, down = false, left = false, right = false;
     bool a = false, b = false, start = false;
 };
@@ -133,6 +133,10 @@ public:
     bool setLocale(std::string_view locale);
     std::string_view locale() const { return m_locale; }
     std::string_view tr(std::string_view key) const; ///< falls back to the key
+    /// Plural-aware lookup: the entry is an ICU-style pattern ("items=one {# item} other {# items}", exact "=0 {...}"
+    /// branches allowed); the branch is chosen by the CLDR plural rules of the current locale and every '#' becomes
+    /// `n` with the locale's digit grouping (fuse/text/i18n.hpp). An entry without branches is returned as is.
+    std::string trPlural(std::string_view key, long long n) const;
     void bind(UiContext& ui, NodeHandle n, std::string_view key);
     void refresh(UiContext& ui);
 

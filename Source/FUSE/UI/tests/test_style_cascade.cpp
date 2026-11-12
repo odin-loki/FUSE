@@ -72,7 +72,7 @@ panel:hover { border-color: #abcdef; }
     UI_CHECK_EQ(ui.computed(lb).fontSize, 20.f);
 
     // later sheet with equal specificity wins; computed styles are deduplicated
-    ui.addStyleSheet("panel { background: #999999; }");
+    (void)ui.addStyleSheet("panel { background: #999999; }");
     ui.update();
     UI_CHECK(ui.computed(p).background == Color::rgb(0x999999));
     const u32 before = ui.styles().tableSize();

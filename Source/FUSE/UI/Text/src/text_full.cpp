@@ -16,6 +16,7 @@ extern "C" {
 }
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_OUTLINE_H
 
 #include <cmath>
 #include <algorithm>
@@ -64,15 +65,15 @@ struct FullFace {
     std::vector<std::uint8_t> levelTmp;
 };
 
-FullFace* fullCreate(std::span<const std::uint8_t> bytes) {
+FullFace* fullCreate(std::span<const std::uint8_t> bytes, int faceIndex) {
     auto* f = new FullFace;
     f->blob = hb_blob_create(reinterpret_cast<const char*>(bytes.data()), unsigned(bytes.size()),
                              HB_MEMORY_MODE_READONLY, nullptr, nullptr);
-    f->face = hb_face_create(f->blob, 0);
+    f->face = hb_face_create(f->blob, unsigned(faceIndex));
     f->font = hb_font_create(f->face); // scale defaults to upem: positions come back in font units
     f->buffer = hb_buffer_create();
     FT_Library lib = ftLibrary();
-    if (!lib || FT_New_Memory_Face(lib, bytes.data(), FT_Long(bytes.size()), 0, &f->ft) != 0 ||
+    if (!lib || FT_New_Memory_Face(lib, bytes.data(), FT_Long(bytes.size()), FT_Long(faceIndex), &f->ft) != 0 ||
         !hb_buffer_allocation_successful(f->buffer)) {
         fullDestroy(f);
         return nullptr;
@@ -211,7 +212,7 @@ bool isSpaceByte(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r
 } // namespace
 
 void fullLayout(FullFace* f, float unitScale, std::string_view s, float maxWidth, float lineHeight, float ascent,
-                std::vector<ShapedGlyph>& g, std::vector<TextLine>& lines) {
+                float extraAdvance, std::vector<ShapedGlyph>& g, std::vector<TextLine>& lines) {
     g.clear();
     lines.clear();
     const std::size_t n = s.size();
@@ -256,6 +257,10 @@ void fullLayout(FullFace* f, float unitScale, std::string_view s, float maxWidth
         (void)before;
         i = j;
     }
+
+    if (extraAdvance != 0.f)
+        for (ShapedGlyph& gl : g)
+            if (gl.advance > 0.f) gl.advance += extraAdvance;
 
     // Break lines over the logical glyph sequence.
     const std::uint32_t gn = std::uint32_t(g.size());
@@ -345,20 +350,28 @@ void fullLayout(FullFace* f, float unitScale, std::string_view s, float maxWidth
 }
 
 namespace {
-bool loadRendered(FullFace* f, std::uint32_t glyph, float emPx) {
+bool loadRendered(FullFace* f, std::uint32_t glyph, float emPx, float slant) {
     const FT_F26Dot6 size = FT_F26Dot6(std::lround(emPx * 64.f));
     if (size != f->ftSize) {
         if (FT_Set_Char_Size(f->ft, 0, size, 72, 72) != 0) return false;
         f->ftSize = size;
     }
     if (FT_Load_Glyph(f->ft, glyph, FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP) != 0) return false;
+    if (slant != 0.f && f->ft->glyph->format == FT_GLYPH_FORMAT_OUTLINE) { // synthetic oblique
+        FT_Matrix m;
+        m.xx = 0x10000L;
+        m.xy = FT_Fixed(std::lround(slant * 65536.f));
+        m.yx = 0;
+        m.yy = 0x10000L;
+        FT_Outline_Transform(&f->ft->glyph->outline, &m);
+    }
     return FT_Render_Glyph(f->ft->glyph, FT_RENDER_MODE_NORMAL) == 0;
 }
 } // namespace
 
-void fullGlyphBox(FullFace* f, std::uint32_t glyph, float emPx, int& x0, int& y0, int& x1, int& y1) {
+void fullGlyphBox(FullFace* f, std::uint32_t glyph, float emPx, float slant, int& x0, int& y0, int& x1, int& y1) {
     x0 = y0 = x1 = y1 = 0;
-    if (!loadRendered(f, glyph, emPx)) return;
+    if (!loadRendered(f, glyph, emPx, slant)) return;
     const FT_GlyphSlot g = f->ft->glyph;
     x0 = g->bitmap_left;
     y0 = -g->bitmap_top;
@@ -366,8 +379,8 @@ void fullGlyphBox(FullFace* f, std::uint32_t glyph, float emPx, int& x0, int& y0
     y1 = y0 + int(g->bitmap.rows);
 }
 
-void fullRasterise(FullFace* f, std::uint32_t glyph, float emPx, std::uint8_t* dst, int w, int h, int stride) {
-    if (!loadRendered(f, glyph, emPx)) return;
+void fullRasterise(FullFace* f, std::uint32_t glyph, float emPx, float slant, std::uint8_t* dst, int w, int h, int stride) {
+    if (!loadRendered(f, glyph, emPx, slant)) return;
     const FT_Bitmap& b = f->ft->glyph->bitmap;
     const int rows = std::min(h, int(b.rows)), cols = std::min(w, int(b.width));
     for (int y = 0; y < rows; ++y) std::memcpy(dst + y * stride, b.buffer + y * b.pitch, std::size_t(cols));

@@ -8,6 +8,7 @@
 // CPU into the window's image (tests, screenshots, servers); desktop / mobile presenters plug in the same way.
 #pragma once
 
+#include "fuse/app/services.hpp"
 #include "fuse/ui/ui.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
@@ -63,7 +64,8 @@ public:
     void set(std::string_view key, double value);
     void remove(std::string_view key);
     u32 size() const { return u32(m_items.size()); }
-    /// Platform config directory for an app: $XDG_CONFIG_HOME/<app> (~/.config/<app>), %APPDATA%\<app>.
+    /// Platform config directory for an app: <dataRoot()>/<app> when a data root is set (mobile), else
+    /// $XDG_CONFIG_HOME/<app> (~/.config/<app>), ~/Library/Application Support/<app> (macOS), %APPDATA%\<app>.
     static std::string defaultDir(std::string_view app);
 
 private:
@@ -76,6 +78,9 @@ private:
 struct WindowDesc {
     std::string_view title = "FUSE";
     u32 width = 800, height = 600;
+    /// Render scale (HiDPI): device pixels per logical unit. `width` / `height` are logical; the window's image is
+    /// width x scale by height x scale pixels. NativePlatform::show replaces it with the display's scale on macOS /
+    /// iOS / Android (see NativeOptions::scale).
     f32 dpiScale = 1.f;
 };
 enum class RedrawPolicy : fuse::ui::u8 {
@@ -86,7 +91,8 @@ enum class RedrawPolicy : fuse::ui::u8 {
 class Application;
 class AppWindow;
 
-/// Shows a window's frame. `damage` is the union of changed rects (whole window on the first frame / resize).
+/// Shows a window's frame. `damage` is the union of changed rects in device pixels of AppWindow::pixelSize() (==
+/// logical units at scale 1); the whole window on the first frame / resize.
 struct Presenter {
     void* user = nullptr;
     bool (*present)(void* user, AppWindow& w, fuse::ui::Rect damage) = nullptr;
@@ -104,31 +110,44 @@ public:
     Application& app() { return m_app; }
     u32 id() const { return m_id; }
     const std::string& title() const { return m_title; }
-    void setTitle(std::string_view t) { m_title = t; }
+    void setTitle(std::string_view t); ///< also retitles the OS window when shown
     /// Loads a .fuseui document (file path) into the window root, replacing a previous one. `model` may be null.
     std::expected<void, std::string> load(std::string_view path, fuse::ui::doc::Model* model = nullptr);
     std::expected<void, std::string> loadText(std::string_view json, fuse::ui::doc::Model* model = nullptr);
     fuse::ui::doc::Document* document() { return m_doc.get(); }
 
-    void resize(u32 width, u32 height); ///< logical units; forces a full repaint
-    fuse::ui::Size size() const { return m_ui.viewport(); }
+    void resize(u32 width, u32 height); ///< logical units (pixelSize() = size x scale, rounded); forces a full repaint
+    fuse::ui::Size size() const { return m_ui.viewport(); } ///< logical units
+    /// Render scale (HiDPI): device pixels per logical unit (WindowDesc::dpiScale, default 1). size(), resize(), input
+    /// positions and every UiContext coordinate stay logical; image() / rasterize() / writePng() and the native
+    /// presenters work at pixelSize() = size() x scale, and text is rasterised at that resolution
+    /// (UiContext::setRenderScale). Forces a full repaint.
+    void setScale(f32 scale);
+    f32 scale() const { return m_ui.renderScale(); }
+    /// The frame's size in device pixels.
+    fuse::ui::Size pixelSize() const { return {f32(m_pixelW), f32(m_pixelH)}; }
+    /// Native backends: the surface is exactly `pixelWidth` x `pixelHeight` device pixels at `scale`; the logical size
+    /// becomes pixels / scale (fractional when the scale does not divide the surface). Forces a full repaint.
+    void resizePixels(u32 pixelWidth, u32 pixelHeight, f32 scale);
     void setRedrawPolicy(RedrawPolicy p) { m_policy = p; }
     RedrawPolicy redrawPolicy() const { return m_policy; }
     void setPresenter(const Presenter& p);
     /// Frames presented so far (the idle gate checks this stays flat).
     u64 framesPresented() const { return m_frames; }
+    /// Closes unconditionally (programmatic). The user's close (title-bar button, Alt+F4, Cmd+W) goes through
+    /// tryClose(), which asks the close guard first.
     void requestClose() { m_closing = true; }
     bool closing() const { return m_closing; }
     void requestRedraw() { m_forceRedraw = true; }
-    /// Headless presenter target: the last CPU-rasterised frame.
+    /// Headless presenter target: the last CPU-rasterised frame, pixelSize() pixels.
     const fuse::ui::Image& image() const { return m_image; }
     bool writePng(const std::string& path) const;
     /// Registers an app-owned image with the CPU rasteriser (viewportWidget / image index). The image must outlive the
     /// window; call ui().invalidate(node) after changing its pixels.
     u32 addImage(const fuse::ui::Image* img) { return m_raster.addImage(img); }
     const fuse::ui::CpuRasterizer& rasterizer() const { return m_raster; }
-    /// CPU-rasterises `damage` (whole window when empty / resized) into image(): the headless presenter, also used by
-    /// native presenters that upload the CPU raster.
+    /// CPU-rasterises `damage` (device pixels; whole window when empty / resized) into image(): the headless presenter,
+    /// also used by native presenters that upload the CPU raster.
     const fuse::ui::Image& rasterize(fuse::ui::Rect damage) {
         presentHeadless(nullptr, *this, damage);
         return m_image;
@@ -142,10 +161,72 @@ public:
     void key(fuse::ui::Key k, fuse::ui::u8 mods = 0) { m_ui.keyDown(k, mods); m_ui.keyUp(k, mods); }
     void text(std::string_view utf8) { m_ui.textInput(utf8); }
 
+    // ---- window management (services.hpp). Without an OS backend (headless) the window is its own window system:
+    // requests take effect at once and emit the matching WindowEvent. With one (NativePlatform::show) they are
+    // forwarded and the state follows what the OS reports back; a platform that cannot do something leaves it as is.
+    /// Size limits in logical units (0 = none). Headless: also clamps the current size.
+    void setMinimumSize(fuse::ui::Size s);
+    void setMaximumSize(fuse::ui::Size s);
+    fuse::ui::Size minimumSize() const { return m_minSize; }
+    fuse::ui::Size maximumSize() const { return m_maxSize; }
+    fuse::ui::Size clampSize(fuse::ui::Size s) const; ///< `s` within the limits
+    void setMode(WindowMode m);
+    WindowMode mode() const { return m_mode; }
+    WindowMode requestedMode() const { return m_wantMode; }
+    void maximize() { setMode(WindowMode::Maximized); }
+    void minimize() { setMode(WindowMode::Minimized); }
+    /// Back from minimised to what it was before, else to Normal.
+    void restore() { setMode(m_mode == WindowMode::Minimized && m_restoreMode != WindowMode::Minimized ? m_restoreMode : WindowMode::Normal); }
+    void setFullscreen(bool on) { setMode(on ? WindowMode::Fullscreen : WindowMode::Normal); }
+    bool fullscreen() const { return m_mode == WindowMode::Fullscreen; }
+    void setVisible(bool on);
+    bool visible() const { return m_visible; }
+    bool requestedVisible() const { return m_wantVisible; }
+    /// Top-left of the client area on screen, logical units.
+    void setPosition(fuse::ui::Vec2 p);
+    fuse::ui::Vec2 position() const { return m_position; }
+    fuse::ui::Vec2 requestedPosition() const { return m_wantPosition; }
+    void activate(); ///< raise + keyboard focus
+    bool active() const { return m_active; }
+    void setEventHandler(const WindowEventHandler& h) { m_events = h; }
+    void setCloseGuard(const CloseGuard& g) { m_closeGuard = g; }
+    /// The user asked to close: runs the close guard; closes (true) unless it vetoes. Backends call this.
+    bool tryClose();
+    /// Follow the system light / dark preference and accent: applyTheme() now (when known) and on every change.
+    void setFollowSystemTheme(bool on);
+    /// Re-colours the default widget theme (themeTokensCss) by adding a token override sheet; restyles the window.
+    void applyTheme(const SystemTheme& t);
+
+    // ---- menu bar (plan UI10): one description, the native bar on macOS, the in-window widgets::menuBar elsewhere
+    /// Installs the menu. In-window: a menu bar is created as the first child of `parent` (the root when invalid).
+    /// Activation (click, shortcut through menuShortcut, native menu) toggles a checkable item and calls `handler`.
+    void setMenu(const MenuDesc& d, MenuHandler handler, fuse::ui::NodeHandle parent = {});
+    const MenuDesc& menu() const { return m_menu; }
+    bool nativeMenu() const { return m_nativeMenu; }           ///< the OS shows it (no in-window bar)
+    fuse::ui::NodeHandle menuBarNode() const { return m_menuBar; } ///< the in-window bar (invalid with a native menu)
+    bool activateMenuItem(fuse::ui::u32 id);                    ///< false: unknown, disabled or a submenu
+    bool menuShortcut(fuse::ui::Key key, fuse::ui::u8 mods);    ///< backends call it for keys the UI did not consume
+    bool setMenuItemEnabled(fuse::ui::u32 id, bool on);
+    bool setMenuItemChecked(fuse::ui::u32 id, bool on);
+    bool menuItemChecked(fuse::ui::u32 id) const;
+
+    // backends: the OS side of the above
+    void setWindowBackend(const WindowBackend& b);
+    void notifyMode(WindowMode m);
+    void notifyActive(bool on);
+    void notifyMoved(fuse::ui::Vec2 p);
+    void notifyVisible(bool on);
+    void notifyTheme(const SystemTheme& t);
+
 private:
     friend class Application;
     bool frame(f32 dt); ///< update + present when needed; true when presented
     static bool presentHeadless(void* user, AppWindow& w, fuse::ui::Rect damage);
+    void emitWindowEvent(const WindowEvent& e);
+    bool ask(WindowRequest r);
+    void clampToLimits();
+    void notifyScale(fuse::ui::f32 before);
+    void rebuildMenu();
 
     Application& m_app;
     fuse::ui::UiContext m_ui;
@@ -157,7 +238,21 @@ private:
     RedrawPolicy m_policy = RedrawPolicy::OnDemand;
     u64 m_frames = 0;
     u32 m_id;
+    u32 m_pixelW = 0, m_pixelH = 0; ///< device-pixel size of the frame (logical size x scale)
     bool m_closing = false, m_forceRedraw = true;
+    // window state (services.cpp)
+    WindowBackend m_backend;
+    WindowEventHandler m_events;
+    CloseGuard m_closeGuard;
+    fuse::ui::Size m_minSize, m_maxSize;
+    fuse::ui::Vec2 m_position, m_wantPosition;
+    WindowMode m_mode = WindowMode::Normal, m_wantMode = WindowMode::Normal, m_restoreMode = WindowMode::Normal;
+    bool m_visible = true, m_wantVisible = true, m_active = false, m_followTheme = false, m_nativeMenu = false;
+    MenuDesc m_menu;
+    MenuHandler m_menuHandler;
+    fuse::ui::NodeHandle m_menuBar, m_menuParent;
+    std::vector<fuse::ui::NodeHandle> m_menuButtons;
+    std::vector<std::vector<fuse::ui::u32>> m_menuLines; ///< per top-level menu: item id of each line
 };
 
 // ---- application ---------------------------------------------------------------------------------------------------
@@ -217,6 +312,10 @@ public:
     /// Seconds until some window needs a frame (0 = now, +inf = idle).
     f32 nextWake() const;
     double now() const;
+    /// The desktop's light / dark preference and accent as last reported (NativePlatform reports it at start and on
+    /// change; tests and hosts may set it). A change notifies every window (WindowEvent::ThemeChanged).
+    const SystemTheme& systemTheme() const { return m_theme; }
+    void setSystemTheme(const SystemTheme& t);
 
 private:
     std::string m_name;
@@ -231,7 +330,24 @@ private:
     u32 m_nextId = 1;
     int m_exit = 0;
     bool m_quit = false, m_primary = true;
+    SystemTheme m_theme;
 };
+
+/// Per-user data root for platforms without XDG / %APPDATA% conventions (Android: the activity's internal data path;
+/// iOS: <sandbox>/Library/Application Support). The mobile backends set it before the user's main runs; when set,
+/// Settings::defaultDir(app) is <root>/<app> and the single-instance lock lives under it. Empty = desktop defaults.
+void setDataRoot(std::string path);
+const std::string& dataRoot();
+
+/// Reads app resources that are not plain files (Android APK assets, an iOS / macOS bundle's Resources).
+/// AppWindow::load() tries the file system first, then this. Mobile backends install it before main runs.
+struct ResourceReader {
+    void* user = nullptr;
+    bool (*read)(void* user, std::string_view path, std::string& out) = nullptr;
+};
+void setResourceReader(const ResourceReader& reader);
+/// File system first, then the ResourceReader. False when neither has `path`.
+bool readResource(std::string_view path, std::string& out);
 
 /// Writes an RGBA8 image as PNG.
 bool writePng(const fuse::ui::Image& image, const std::string& path);

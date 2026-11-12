@@ -1,4 +1,5 @@
 // FUSE UI7 game UI (plan §4.15). See game_ui.hpp.
+#include "fuse/text/i18n.hpp"
 #include "fuse/ui/game/game_ui.hpp"
 #include "fuse/ui/game/game_extras.hpp"
 
@@ -128,6 +129,7 @@ std::string_view radialItem(std::string_view s, int i) {
 }
 struct Radial {
     static constexpr std::string_view kName = "radialmenu";
+    static constexpr bool kCapturesDrag = true; // touch: the drag picks a sector
     static constexpr A11yRole kRole = A11yRole::List;
     static constexpr bool kFocusable = true;
     static Size measure(UiContext&, NodeHandle, Size) { return {240.f, 240.f}; }
@@ -449,6 +451,9 @@ std::string_view StringTable::tr(std::string_view key) const {
     for (const Entry& e : m_entries)
         if (e.locale == m_locale && e.key == key) return e.value;
     return key;
+}
+std::string StringTable::trPlural(std::string_view key, long long n) const {
+    return fuse::text::formatPlural(tr(key), m_locale, n);
 }
 void StringTable::bind(UiContext& ui, NodeHandle n, std::string_view key) {
     m_bound.emplace_back(n, std::string(key));

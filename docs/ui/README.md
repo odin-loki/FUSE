@@ -1,5 +1,7 @@
 # FUSE UI
 
+What is not done and what has never been run on real hardware: [`KNOWN_GAPS.md`](KNOWN_GAPS.md).
+
 FUSE's own GUI framework ([plan](../plans/FUSE_UI_PLAN.md)). One retained core, styled with a CSS subset, drawn
 through a backend-neutral draw list, plus an immediate-mode front-end on the same primitives. Engine rules apply:
 handles, not pointers; `std::expected`; one owner thread (other threads `post()`); no steady-state allocation.
@@ -17,12 +19,12 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | Path | Target | What |
 |---|---|---|
 | `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer` |
-| `Source/FUSE/UI/Core` | `fuse_ui_core` | `UiContext` (tree, style, layout, paint, input, focus, signals, timers, animation, a11y), `DrawList` + `CpuRasterizer`, `StyleEngine`, `immediate::ImmediateUi`, `platform_bridge.hpp` |
+| `Source/FUSE/UI/Core` | `fuse_ui_core` | `UiContext` (tree, style, layout, paint, input, focus, signals, timers, animation, a11y), `DrawList` + `CpuRasterizer`, `Path` / `Painter` / `SvgImage` / built-in icons, `StyleEngine`, `immediate::ImmediateUi`, `platform_bridge.hpp` |
 | `Source/FUSE/UI/Widgets` | `fuse_ui_widgets` | Tier A + Tier B widgets + default dark theme (`widgets::install`) |
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc` | `.fuseui` JSON documents, binding model, expression bytecode |
 | `Source/FUSE/UI/Script` | `fuse_ui_script` | Lua `ui` table (vendored Lua 5.2) |
 | `Source/FUSE/UI/Render` | `fuse_ui_render`, `fuse_ui_vk` | GPU draw data packing, `ui.draw_list` compute kernel, `UiLayerGpu` render-graph pass and `UiFrameSource` (in tree with the Vulkan RHI) |
-| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; samples `hello_app`, `notes_app` |
+| `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; samples `hello_app`, `notes_app`, `widget_gallery`, `game_menu` |
 | `Source/FUSE/UI/Game` | `fuse_ui_game` | HUD widgets, world markers, `UiSurface` world panels, gamepad navigation, input arbitration, prompts, time domains, locale table, subtitles, dialogue; samples `hud_demo`, `world_panel_demo` |
 | `Source/FUSE/UI/Sql` | `fuse_ui_sql` | `SqliteModel`: an `ItemModel` over a SQLite query (option `FUSE_BUILD_UI_SQL`) |
 | `Source/FUSE/UI/A11y` | `fuse_ui_a11y` | Accessibility bridge (snapshot diff, action queue); AccessKit adapter when `FUSE_UI_ACCESSKIT_DIR` is set |
@@ -102,7 +104,7 @@ NodeHandle bar = widgets::menuBar(ui, ui.root());
 NodeHandle file = widgets::menuBarMenu(ui, bar, "File", "New\nOpen\n-\nQuit");
 ui.connect(file, SignalKind::Submitted, [](UiContext&, NodeHandle, const SignalArgs& a) { /* a.value = index, a.text */ });
 NodeHandle list = widgets::listView(ui, parent, items);           // virtualised: paints visible rows only
-NodeHandle tree = widgets::treeView(ui, parent, "Scene\n\tCamera\n\tLights");  // tabs = depth
+NodeHandle tree = widgets::treeView(ui, parent, "Scene\n\tCamera\n\tLights");  // tabs = depth (models: treeModelView)
 NodeHandle tabs = widgets::tabWidget(ui, parent, "General\nRender");
 widgets::label(ui, widgets::tabPage(ui, tabs, 0), "...");
 NodeHandle dlg = widgets::dialog(ui, "Delete asset?");
@@ -113,11 +115,78 @@ widgets::setTooltip(ui, someButton, "Explains the button");
 
 With Tier B installed (`widgets::install` does both tiers), a combo box opens a popup list instead of cycling.
 
+### The rest of the catalogue
+
+`groupBox` (optionally checkable), `stack`, `toolBar` / `toolBarAction`, `statusBar` / `statusMessage`, `mainWindow`
+(menu bar + tool bar + dock area + status bar), `setContextMenu`, `messageBox`, `wizard`, `popover`, `toast`,
+`headerView`, `textEdit` (word wrapped, undo, clipboard, IME), `plainTextEdit`, `richText` (inline markup with
+links) and `doubleSpinBox`. Gate: `fuse_ui_tier_b3`, one `fuse_ui_widget_<name>` ctest per widget.
+
+The last four pieces of the catalogue (gates `fuse_ui_widget_chart_flame`, `_dock_tabs`, `_dock_float`,
+`_dock_layout_tabs_float`, `_minimap`, `_ammo_counter`):
+
+- **Flame graph**: `chart(ui, parent, ChartKind::Flame)` + `chartSetFlame(ui, chart, spans)` with
+  `FlameSpan {name, start, duration, depth, color}`. Bars are stacked by depth (0 at the top) and scaled to the total
+  time range; a label is cut to its bar. Hover sets `value()` to the span index (-1 outside), a click emits
+  `Submitted {value = index, text = name}`. `chartFlameSpanRect` / `chartFlameSpanAt` give the geometry.
+- **Tabbed docks**: `dockTabify(ui, dock, withDock)` puts `dock` in `withDock`'s region as a tab. The group shows a
+  tab strip instead of title bars and only the current dock's body; `dockRaise` (or a click on a tab, Left / Right on
+  the strip) changes it, `dockCurrent` / `dockTabBar` / `dockTabRect` query it. `dockTo` takes a dock out of its group.
+- **Floating docks**: `dockFloat(ui, dock, rect)` moves the dock into the overlay layer as a panel that is dragged by
+  its title bar; `dockTo` docks it again; `dockFloating` / `dockFloatRect` query it. A floating dock holds no tabs, and
+  it is a panel inside the window, not an OS window.
+- **Dock drag and drop**: dragging a docked dock's title bar, or its tab in a tab strip, more than 8 px tears it off
+  into a floating dock that follows the pointer. While the pointer is over the dock area, indicators show for Left /
+  Right / Bottom (area edges), Center (centre region) and Tab (middle of the docked dock under the pointer); the one
+  under the pointer is hot and a translucent preview shows where the dock will land. Releasing on a hot zone docks it
+  (`dockTo`) or makes it the current tab of that dock's group; anywhere else it stays floating. Escape (the dragged
+  dock's title holds the focus during the drag), `dockCancelDrag` or a cancelled touch puts it back where it came from
+  (region and order, tab group / index / current tab, or floating rect). `dockDragged`, `dockDropZone`,
+  `dockDropTarget`, `dockDropPreview` report the drag; `dockDropIndicator(ui, area, zone, tabWith)` is where a zone's
+  indicator sits. Works with the mouse and with touch. Gates `fuse_ui_dock_drag_*`.
+- `dockSaveLayout` adds `tab <id> <group> <index> current|back` and `float <id> <x> <y> <w> <h> open|closed` lines
+  only when docks are tabbed or floating; layouts written before still restore, and restoring one un-tabs and docks
+  the docks it names.
+- **Minimap** (`fuse/ui/game/game_extras.hpp`): `minimap(ui, parent, id)`, `setMinimapRange` (world units that reach
+  the frame), `setMinimapHeading(ui, map, degrees, rotateMap)` (heading-up or north-up), `setMinimapShape` (circle /
+  square), `setMinimapImage` (rasteriser image index, drawn north-up) and `minimapSetBlips` (`MinimapBlip {pos, color,
+  kind}`, position relative to the player, +x east, +y north). Blips beyond the range sit on the frame edge;
+  `minimapBlipPos` returns where a blip is drawn.
+- **Ammo counter**: `ammoCounter(ui, parent, id)`, `setAmmo(ui, node, inMagazine, magazineSize, reserve)` shows
+  "12 / 90" and one pip per round (a bar above `kAmmoMaxPips` = 40), turns to the danger colour at or below 25 % of
+  the magazine (`setAmmoLowFraction`), `setAmmoReload(ui, node, progress01)` shows a reload bar. A count change emits
+  `ValueChanged`.
+
 ### Documents and Lua
 
 `.fuseui` files are JSON trees with `{expr}` and `{=two-way}` bindings (see `Doc/include/fuse/ui/doc/document.hpp` for
 the format and `tests/data/settings.fuseui` for an example); `fuse_ui_script` exposes the same context and model to Lua
 as a global `ui` table.
+
+A node's `"class"` is a registered widget class or a **document class**: the compound widgets and the widgets that
+need data are created by name too, with their own properties (the full list is in `document.hpp`):
+
+```json
+{ "class": "tabwidget", "tabs": ["Audio", "Video"], "children": [
+    { "class": "groupbox", "text": "Volume", "children": [
+        { "class": "slider", "min": 0, "max": 1, "value": "{=audio.master}", "tooltip": "Master volume" } ] },
+    { "class": "tableview", "columns": ["Name", "Size"], "rows": [["scene.fuse", 1204], ["hero.png", 88]] } ] }
+```
+
+`tabwidget` (child k = page k), `stack` (`"value"` = page, bindable), `splitter`, `dockarea` / `dock`, `groupbox`,
+`scrollarea`, `toolbar`, `statusbar`, `mainwindow`, `dialog` (`"visible"` opens / closes it), `propertygrid`,
+`tableview` / `modellistview` / `gridview` over inline data, `treemodelview` over inline `"items"` (the tabs at the
+start of a line are its depth, the tabs after them separate the cells; `"columns"`, `"editable"`, `"expanded"`),
+`svgimage` (`"icon": "folder"` names a built-in icon, `"svg"` is inline source), `chart`, `nodegraph`, `curveeditor`,
+`timeline`, `calendar`, `datetimeedit`, `colorpicker`, `codeedit`, `markdown`, `fontpicker`, `viewport`, `video`, ...;
+any node takes `"tooltip"` and `"contextMenu"` (also the views and inputs that use the press themselves: a right
+press makes a view's row current, then opens the menu), a `button` / `toolbutton` takes `"icon"`. Message box,
+wizard, popover, toast and file dialog open from code.
+`doc::registerDocumentClass` adds your own (the game HUD widgets, for instance). Compound widgets are rebuilt on a
+hot reload; plain widgets with an id inside them keep their identity. The cooker's registration list
+(`registrationList`) resolves document classes to the widget classes they build. Cooked blobs carry
+`kCookedVersion` (3 now: it moves whenever the property set or the stored form changes; a blob of another version is
+refused, so re-cook after updating). `App/samples/ui/gallery.fuseui` uses every one of them. Gates `fuse_ui_doc_*`.
 
 ## Application shell (UI5)
 
@@ -136,6 +205,179 @@ Without a native platform the app runs headless (tests, `--screenshot=`). `Prese
 (`Vulkan` draws the draw list on the GPU with `UiVkRenderer`, or uploads CPU-rasterised damage with
 `VkDrawMode::CpuUpload`; `Software` blits). `NativePlatform::capture` reads back what the OS shows (used by `fuse_app_native_window`).
 Under Xvfb set `VK_ICD_FILENAMES` to lavapipe; under Wine the Win32 path and the Vulkan presenter both run.
+
+### Platforms: Android, macOS, iOS, FreeBSD
+
+`fuse_app_native` has one window backend per platform; `NativePlatform` is the same API on all of them.
+
+| Platform | Backend | Present | Entry |
+|---|---|---|---|
+| Linux (X11), Windows | `App/src/native.cpp` | Vulkan swapchain; GDI on Win32 without Vulkan | `main` |
+| FreeBSD (X11) | `App/src/native.cpp` (same backend as Linux; `libX11.so.6` is loaded at run time) | Vulkan swapchain (`VK_KHR_xlib_surface`) when the build finds a Vulkan loader, else the CPU raster presenters only | `main` |
+| macOS | `App/src/native_apple.mm` (Cocoa `NSWindow`, `NSTextInputClient` IME, `NSPasteboard`) | Vulkan over a `CAMetalLayer` (MoltenVK) when the build finds a Vulkan loader, else the CPU raster as the layer contents | `main` |
+| iOS | `App/src/native_apple.mm` (UIKit `UIWindow`, touch, software keyboard through `UIKeyInput`) + `entry_ios.mm` | same as macOS | `UIApplicationMain`, which runs your `FUSE_APP_MAIN` |
+| Android | `App/src/native_android.cpp` (NativeActivity + NDK app glue, touch / mouse / keys, soft keyboard, clipboard over JNI) + `entry_android.cpp` | Vulkan (`VK_KHR_android_surface`), else the CPU raster through `ANativeWindow_lock` | `android_main`, which runs your `FUSE_APP_MAIN` |
+
+```cpp
+#include "fuse/app/app.hpp"
+#include "fuse/app/native.hpp"
+#include "fuse/app/main.hpp"   // FUSE_APP_MAIN: main on desktop; called by the platform entry point on Android / iOS
+
+int FUSE_APP_MAIN(int argc, char** argv) {
+    fuse::app::Application app{{.name = "hello", .argc = argc, .argv = argv}};
+    fuse::app::NativePlatform native(app);
+    auto& window = app.createWindow({.title = "Hello"});
+    native.show(window);
+    return app.run();
+}
+```
+
+```cmake
+fuse_app_add_executable(hello hello.cpp)   # executable; .app bundle on iOS; libhello.so for NativeActivity on Android
+```
+
+```bash
+# Android (NDK r26+): libraries, gates and the sample apps as lib<name>.so
+cmake -S Source/FUSE/UI -B build-ui-android -G Ninja -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
+      -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 && cmake --build build-ui-android
+# macOS (optional Vulkan presenter: brew install molten-vk vulkan-headers vulkan-loader)
+cmake -S Source/FUSE/UI -B build-ui-macos -G Ninja && cmake --build build-ui-macos
+# iOS simulator
+cmake -S Source/FUSE/UI -B build-ui-ios -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
+      -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 && cmake --build build-ui-ios
+# FreeBSD 14 (base clang / libc++; optional Vulkan presenter: pkg install vulkan-headers vulkan-loader)
+pkg install cmake ninja && cmake -S Source/FUSE/UI -B build-ui-freebsd -G Ninja && cmake --build build-ui-freebsd
+```
+
+Things that differ on these platforms:
+
+- **One OS window** on Android and iOS: the first window shown gets the surface, later ones stay headless.
+- **Scale (HiDPI).** The UI works in logical units (dp / points): style, layout, events, hit testing, `rect()` and
+  `AppWindow::size()` never see pixels. The frame is rasterised at the display's physical pixel size:
+  `UiContext::setRenderScale(s)` makes `drawList()` (and popup surfaces) device pixels = logical x `s`, with glyphs
+  shaped at the logical font size and rasterised at font size x `s`, so text is as sharp as the screen. Widgets and
+  custom `paint` callbacks keep drawing in logical units. `AppWindow::setScale` / `WindowDesc::dpiScale` set it for a
+  window; `image()`, `writePng()` and the presenters then work at `pixelSize()`. On macOS / iOS / Android the backend
+  sets the display's scale (`NativeOptions::scale` overrides the factor); X11 / Win32 windows run at scale 1.
+  `NativePlatform::scale()` and `safeArea()` report the scale and the area clear of notches and system bars.
+- **Resources.** `AppWindow::load("ui/main.fuseui")` falls back to `fuse::app::readResource`, which reads APK assets
+  on Android and the bundle's `Resources` on iOS / macOS. Settings live under `fuse::app::dataRoot()` on mobile.
+- **Fonts.** Open Sans is embedded in the binary on Android / iOS (`FUSE_TEXT_EMBED_FONT`). The fallback faces
+  (Noto, Twemoji) load from `fonts/<vendor path>` in the assets / bundle when you ship them.
+- **Lifecycle.** Without a surface (Android `TERM_WINDOW`) the presenter goes headless and comes back with the next
+  surface; a paused / inactive app blocks in the event pump and renders nothing.
+- **macOS modifiers.** Command reports as `kModCtrl` (Cmd+C / V / Z drive the widgets' shortcuts), Control as `kModSuper`.
+- **Touch.** Fingers go through `UiContext::touchDown / touchMove / touchUp / touchCancel` (a mouse on Android keeps
+  `pointerDown / Move / Up` and the wheel). A tap clicks. A drag past the slop (8 px, `setTouchScroll`) cancels the
+  press (`PointerUp` with `Event::cancel`, no `Click`) and pans the nearest ancestor that can scroll along the drag
+  axis 1:1: a scroll container (`overflow: scroll`), or a list / table / grid / text edit / code edit, which receive
+  Wheel events in whole rows. A container at its end in the drag direction hands the gesture to its ancestor.
+  Releasing in motion flings (velocity from the last 100 ms, exponential decay, stops at the extents, no
+  overscroll); `needsUpdate()` / `nextWakeSeconds()` keep the on-demand loop running until it stops, and a new touch
+  stops it without clicking. Widgets that own their drags keep them: `WidgetClass::capturesDrag` (`kCapturesDrag`:
+  slider, dial, scroll bar, splitter handle, dock title, colour picker, node graph, curve editor, timeline,
+  viewport, `kineticScrollArea`, the game sticks / slots) or a per-press `touchDrag` hook (table scroll bar and
+  column edges, header sections, video seek bar); `setCapturesDrag(node, true)` does it for one node. On touch a
+  drag over a text / code edit scrolls it; selecting by dragging is a mouse feature. Lists and tables select the row
+  on the press, so a pan that starts on a row selects it. One finger drives the UI; there is no pinch.
+- Popups are overlays inside the window (`osPopups` is X11 / Win32 only). Packaging: see below.
+
+These backends are compiled in CI (`fuse-core-android.yml`, `fuse-core-ios.yml`) and have not been run on a device.
+
+### Platform services (plan §4.13)
+
+One platform-neutral API (`fuse/app/services.hpp`, on `AppWindow` / `NativePlatform`), one implementation per
+backend, and an honest `false` / no-op where a platform cannot do it. Everything on `AppWindow` also works headless
+(the window is then its own window system), which is what the gates drive.
+
+```cpp
+fuse::app::NativePlatform native(app);            // scale 0 = the display's (see below)
+auto& w = app.createWindow({.title = "Editor"});
+w.setMinimumSize({480, 320});
+w.setEventHandler({&state, [](void* u, fuse::app::AppWindow& w, const fuse::app::WindowEvent& e) { /* FocusLost, Moved ... */ }});
+w.setCloseGuard({&state, [](void* u, fuse::app::AppWindow&) { return !static_cast<State*>(u)->unsaved; }});
+w.setFollowSystemTheme(true);                     // light / dark + accent, now and on change
+w.setMenu(menuDesc, {&state, &onMenu});           // macOS: the menu bar; elsewhere: an in-window widgets::menuBar
+native.show(w);
+w.setFullscreen(true);  w.maximize();  w.minimize();  w.restore();  w.setPosition({100, 80});  w.activate();
+native.openFileDialog(w, {.title = "Open", .filter = "*.fuseui"}, {&state, &onPath}); // native, else widgets::fileDialog
+fuse::app::openUrl("https://example.org");
+```
+
+- **Mouse cursors.** A node asks for a cursor with the `cursor` style property (`auto | default | text | pointer |
+  ew-resize | col-resize | ns-resize | row-resize | nwse-resize | nesw-resize | move | crosshair | not-allowed | wait |
+  none`; `fuse::ui::Cursor`). It is not inherited: `UiContext::cursor()` walks up from the pressed node (a drag keeps
+  its cursor) or the hovered one and takes the first `WidgetClass::cursor(ui, node, pos)` hook or `cursor` style that
+  is not `auto`. The default theme sets `text` on line / text / code edits, `pointer` on links and `not-allowed` on
+  anything `:disabled`; splitter handles, header section edges and table column edges answer through the hook.
+  `setCursorOverride(Cursor::Wait)` is the busy cursor. The backends apply it after each event pump: X11 (themed
+  cursors through an optional `libXcursor`, else the core cursor font), Win32 (`WM_SETCURSOR`), macOS (`NSCursor`);
+  iOS / Android have none.
+- **Clipboard.** `show()` installs the system clipboard as the window's `ClipboardHooks`; also
+  `NativePlatform::setClipboardText / clipboardText`. X11: the `CLIPBOARD` selection as `UTF8_STRING` (no INCR, and no
+  clipboard-manager hand-over when the app exits); Win32: `CF_UNICODETEXT`.
+- **HiDPI.** `NativeOptions::scale`: 0 = the display's scale, 1 = physical pixels, anything else forces it. X11:
+  `$FUSE_UI_SCALE`, else `Xft.dpi / 96`, else `$GDK_SCALE`, else 1 (one scale for the connection). Win32: per-monitor
+  DPI awareness, `GetDpiForWindow`, `WM_DPICHANGED`. The OS window is logical size x scale pixels, the frame is
+  rendered at that size (`AppWindow::resizePixels`), pointer positions are divided by the scale and OS popup windows
+  use it. `NativePlatform::postClick` and `screenOrigin` stay in window / screen pixels.
+- **Window management** is on `AppWindow`: `setTitle`, `setMinimumSize / setMaximumSize`, `setMode` (`maximize`,
+  `minimize`, `restore`, `setFullscreen`), `setVisible`, `setPosition`, `activate`, the queries `mode()`, `visible()`,
+  `position()`, `active()`, and `WindowEvent`s (focus gained / lost, moved, mode changed, shown / hidden, close
+  requested / vetoed, theme changed, scale changed). `tryClose()` is the user's close and asks the close guard;
+  `requestClose()` stays unconditional. X11: maximise / fullscreen / minimise / activate are EWMH requests, so without
+  a window manager the mode stays as it is. iOS / Android: one fullscreen surface, every request answers "cannot".
+- **System theme and displays.** `Application::systemTheme()` holds the light / dark preference and accent the backend
+  reports (`NativePlatform::systemTheme()` queries now). Win32: registry + change messages; macOS: effective
+  appearance + accent, with notification; iOS: trait collection; Android: night mode (the activity needs
+  `android:configChanges="uiMode"`); X11: `$GTK_THEME`, else `gsettings` once, else Unknown, and no change
+  notification. `AppWindow::applyTheme` / `setFollowSystemTheme` re-colour the default theme by adding a token sheet
+  (`themeTokensCss`). `NativePlatform::displays()` lists bounds, work area, scale and refresh rate where known.
+- **File dialogs.** `NativePlatform::fileDialog` is the modal native one: Win32 `GetOpenFileNameW` /
+  `GetSaveFileNameW` / `SHBrowseForFolderW`, macOS `NSOpenPanel` / `NSSavePanel`, Linux / BSD `zenity` or `kdialog`
+  when installed; otherwise `Unavailable`. `openFileDialog` tries it and falls back to `widgets::fileDialog`.
+- **Menus.** `MenuDesc` (titles, items, shortcuts, submenus, separators, enabled, checkable / checked) builds an
+  `NSMenu` tree on macOS and the in-window `widgets::menuBar` elsewhere; activation calls the `MenuHandler` with the
+  item id either way, and `AppWindow::menuShortcut` handles shortcuts the UI did not consume. The in-window bar shows
+  checkable items as `[x]` / `[ ]` and does not grey out disabled items (they do not fire).
+- **Shell.** `openUrl` (xdg-open / `ShellExecuteW` / `NSWorkspace` / `UIApplication` / an `ACTION_VIEW` Intent) and
+  `revealFile` (Explorer / Finder select the file; Linux / BSD open its folder; false on mobile).
+- Without Vulkan an X11 window now shows the CPU raster (`XPutImage`, `PresenterKind::Software`).
+
+The macOS / iOS parts are compiled in CI only; the Win32 parts are cross-compiled with MinGW and have not been run.
+
+### Samples
+
+| Sample | Shows | Headless gate |
+|---|---|---|
+| `hello_app`, `notes_app` | a document with bindings; settings, text editing | `fuse_app_hello_sample`, `fuse_app_notes_sample` |
+| `widget_gallery [--page=N]` | every widget of the catalogue on seven tabbed pages (`ui/gallery.fuseui` plus the call-only widgets and the game HUD page), with icon buttons and SVG images, a multi-selection table beside an editable tree table, rich text in real bold / italic and an Edit menu built from an `ActionRegistry`: the manual test bed for a device | `fuse_app_widget_gallery_page0..6` |
+| `game_menu [--pad=script]` | main / pause / settings menu on `ui/game_menu.fuseui`: bindings, tabs, sliders, key rebinding, confirm dialog; keyboard, gamepad navigation (`GamepadNav`; left / right change the focused slider or tab), mouse, touch | `fuse_app_game_menu_sample` (a scripted session over all four input paths, every step checked) |
+
+All are `fuse_app_add_executable` targets with `fuse/app/main.hpp` (`int FUSE_APP_MAIN(int, char**)`), load their documents through
+`fuse::app::readResource` on Android / iOS, and take `--screenshot=<png>`. `game_menu` has no gamepad backend of its
+own: feed your platform's pad into the `GamepadState` in its loop (`--pad=udlrabs.` plays a script).
+
+### Packaging and installing
+
+- **Install / `find_package`.** `cmake --install <build> --prefix <prefix>` installs the static libraries, the public
+  headers (`include/fuse/...`) and `lib/cmake/FuseUI/FuseUIConfig.cmake`. A project elsewhere does
+  `find_package(FuseUI REQUIRED)` and links `FuseUI::widgets`, `FuseUI::doc`, `FuseUI::app`, `FuseUI::app_native`, ...
+  (`FuseUI_TARGETS` lists them; they carry includes, definitions, C++23 and their dependencies). Unless configured with
+  `-DFUSE_TEXT_EMBED_FONT=ON`, the default font is still read from the source tree's `vendor/fonts`. Gate
+  `fuse_ui_install_consumer` installs, then builds and runs `tests/consumer` against the install tree only.
+- **Apple bundles.** `fuse_app_add_executable` makes an iOS `.app` with `App/apple/Info.plist.ios.in` (`UILaunchScreen`,
+  orientations; id / versions from `FUSE_APP_BUNDLE_ID_PREFIX`, `FUSE_APP_BUNDLE_VERSION`,
+  `FUSE_APP_BUNDLE_SHORT_VERSION`) and, with `-DFUSE_APP_MACOS_BUNDLE=ON`, a macOS `.app` with
+  `Info.plist.macos.in` and an icon built from `Source/FUSE/Branding/fuse_256.png` (sips + iconutil).
+  `fuse_app_bundle_resources(target BASE dir FILES ...)` copies files into the bundle's `Resources` keeping their
+  path under `BASE`; the samples ship `ui/*.fuseui` and the fallback fonts that way. Written on Linux: these rules
+  have not been run on macOS yet.
+- **Android.** `App/android/` is a Gradle project template (`build.gradle`, `settings.gradle`, the manifest):
+  `gradle -PfuseApp=hello_app assembleDebug` builds `lib<app>.so` through `externalNativeBuild` from this CMake project
+  and packs `assets/ui` + `assets/fonts`. It has never produced an APK (the machine it was written on has no Android
+  SDK): expect to adjust versions. `fuse_app_stage_assets(target OUT dir UI_DIR dir FONTS)` (target `<name>_assets`)
+  stages the same assets tree from CMake; gate `fuse_app_stage_assets`.
 
 ## Game UI (UI7)
 
@@ -174,9 +416,127 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
 - Tier D editor widgets: `fontPicker`, `fileDialog`, `nodeGraph`, `curveEditor`, `timeline`, `viewportWidget` (forwards input to your callback, paints your image), `codeEdit` (line numbers, highlighting), `dateTimeEdit` (`value()` = days since 1970, `dateTimeEditMinutes`), `videoWidget` (frame-source stub).
 - `fuse_ui_sql::SqliteModel`: `open`/`attach`, `setQuery`, `sortBy`, `refresh`; pass `model()` to `tableView`. Only the visible window of rows is fetched.
 - Platform feel (`platform_feel.hpp`): `setHapticsHandler`, `ScrollProfile::desktop()/ios()/android()`, `kineticScrollArea` (drag/fling with rubber band; a drag never clicks).
-- Accessibility (`fuse/ui/a11y/a11y.hpp`): `Bridge::sync` diffs `UiContext::snapshotA11y`, `perform`/`enqueue`/`drain` run assistive-tech actions on the UI thread. AccessKit needs a Rust toolchain and a prebuilt accesskit-c (tested with 0.22.3); without it the bridge still builds.
+- Accessibility. The core keeps the tree: `UiContext::snapshotA11y` returns one `A11ySnapshotNode` per accessible node with role (button ... menu, menu item, dialog, tree / tree item, table / row / cell / column header, tab list / tab / tab panel, tool bar, status bar, tooltip, alert), name, value (numeric with range, or `valueText`: a text field's content, a combo's selection, a date), states (focused, checked, disabled, expanded, selected, modal), live region, tree level, position in set and the actions it accepts. Widgets that paint their own items (list, tree, table, grid view, tab bar, dock tabs, header, rich-text links) expose the VISIBLE ones as virtual children (`child` id, stable while the item exists; a 1M-row table is a handful of entries). The item views of `modelview.hpp` do it in one place: a table is a header row of column headers plus rows of cells (selected rows or, with cell selection, selected cells from the `SelectionModel`; check cells are `checked` and toggle on Click; editable cells take SetValue; hidden or scrolled-out columns are left out), a model list is a list of list items, a `treeModelView` is a tree of tree items with level and expanded / collapsed (Expand / Collapse; a tree table's items carry their cells; ids follow the item, not the row), and the in-place editor is an ordinary child named after its column. `UiContext::performA11yAction(node, action, value, child, text)` is the one way in for assistive technology and tests: Focus, Click, Increment / Decrement, SetValue (number or text), Expand / Collapse, Select, ScrollUp / Down / Left / Right, ScrollIntoView; it asks the widget class first (`WidgetClass::a11y` / `a11yAction` are the hooks for your own classes). `setA11yLive(node, Polite | Assertive)` marks a live region (status-bar messages and toasts are marked already). `dumpA11y(out, actions)` prints the tree for gates. Bridge (`fuse/ui/a11y/a11y.hpp`): `Bridge::sync` diffs snapshots, `idOf(node, child)` / `resolve` map 64-bit platform ids, `perform` / `enqueue` / `drain` run actions on the UI thread, `takeAnnouncements` returns what live regions said since the last call. AccessKit needs a Rust toolchain and a prebuilt accesskit-c (the original backend was tested with 0.22.3; the roles, states and actions added since are behind `FUSE_UI_ACCESSKIT_EXTENDED`, default on, and have not been compiled against accesskit-c: build with `-DFUSE_UI_ACCESSKIT_EXTENDED=0` if your accesskit-c lacks a symbol); without AccessKit the bridge still builds. Gates `fuse_ui_a11y_tree_dump`, `fuse_ui_a11y_bridge`, `fuse_ui_a11y_family_*`.
 - Designer: `fuse_ui_designer [file.fuseui] [--save=out] [--screenshot=png]`. `DesignDocument` saves exactly what it loaded; keys starting with `x-` are kept for tools and stripped from the live preview.
 - `dockSaveLayout(dock)` returns a text layout (`fusedock 1`); `dockRestoreLayout(dock, text)` checks the whole text before applying it and ignores unknown panel ids.
+
+## Model / view (plan §4.11)
+
+Header `fuse/ui/widgets/modelview.hpp` (included by `widgets.hpp`). `tableView`, `modelListView` and `treeModelView`
+are one virtualised view class: the `setView*` / `view*` calls work on all three, the selection calls also on
+`gridView`. Models, delegates and shared selection models are not owned and must outlive their views.
+
+- **Models.** `ItemModel` is still `rows` + `data` for a flat model. Optional members add typed roles (`role`: Edit,
+  Decoration, CheckState, ToolTip, Foreground, Background, TextAlign, User), `flags` (`kItemEditable`,
+  `kItemCheckable`, ...), `setData`, a hierarchy (`childCount` / `childAt` / `hasChildren` / `itemData` over opaque
+  `ItemId`s, `kRootItem` = the invisible root), lazy children (`canFetchMore` / `fetchMore`) and a `notifier`.
+  `StringTreeModel` is the ready-made tree (`add`, `remove`, `setCell`), as `StringTableModel` is for tables.
+- **Notifications.** A model with a `ModelNotifier` calls `rowsInserted` / `rowsRemoved` / `rowsMoved` / `dataChanged`
+  / `reset` after changing its data; views then keep the selection and the first visible row on the same rows, and
+  a `dataChanged` outside the window repaints nothing. Without a notifier, call `tableModelChanged(view)`.
+- **Tree.** `treeModelView(parent, &model)`: only expanded nodes are tracked, so a node with a million children costs
+  one record; lazy children are fetched when a node opens and as its end scrolls into view. `setTreeRowExpanded`,
+  `setTreeItemExpanded`, `treeItemAt(row)`, `treeRowDepth`, `treeRowOf`, `treeCollapseAll`. Keys: arrows, Home / End,
+  PageUp / PageDown, Right / Left to expand / collapse / step in / step out, type-ahead. More than one column with a
+  header makes it a tree table. The string `treeView` now collapses any line (no 64-row limit).
+- **Selection.** `setViewSelectionMode(view, SelectionMode::Single | Multi | Extended | None, SelectionUnit::Rows |
+  Cells)`; `viewSelectionModel(view)` gives the `SelectionModel` (ranges, `isSelected`, `selectedRows`, current /
+  anchor, `subscribe`). Extended: click, Ctrl+click, Shift+click, Shift+arrows, Ctrl+A, Space. Share one model
+  between views of the same flat model with `setViewSelectionModel`. In the default plain single mode `value()` is
+  the selected row as before; with a selection model `value()` is the *current* row. `ValueChanged` fires on every
+  selection or current change. A tree's selection is in visible rows (`treeItemAt` maps them to ids).
+- **Editing.** Cells whose `flags` say `kItemEditable` open an editor on double click, F2 or typing
+  (`setViewEditTriggers`); Enter commits through `setData(ItemRole::Edit)`, Escape cancels, Tab / Shift+Tab move to
+  the next / previous editable cell. The editor is one child node over the cell. Delegates choose it:
+  `lineEditDelegate()` (default), `spinBoxDelegate(&spec)`, `comboBoxDelegate(&items)`, or your own `createEditor` /
+  `setEditorData` / `commit` on `CellDelegate`. `kItemCheckable` cells with a CheckState role toggle in place.
+  `viewEdit`, `viewEditor`, `viewCommitEdit`, `viewCancelEdit`.
+- **Columns and rows.** Columns wider than the view scroll horizontally (Shift + wheel, Left / Right, the bottom bar;
+  `setViewScrollX`). `setViewColumnsMovable` (header drag), `moveViewColumn`, `setViewColumnHidden`,
+  `resizeViewColumnToContents` (also a double click on a header edge), `setViewFrozenColumns`, `setViewRowHeight`,
+  `setViewAlternatingRows`, `setViewSortIndicator`, `viewCellRect`. Cell text is one line; a clipped cell shows its
+  text in a tooltip (`setViewToolTips`). `setViewContextMenu(view, fn)` is called on a right press with the cell.
+- **Proxies.** `SortFilterProxy`: `sortBy` + `addSortKey` (stable multi-key sort), `setFilterAllColumns`,
+  `setFilterWildcard` (`*`, `?`); proxies stack (`SortFilterProxy b(&a.model())`) and rebuild when the source reports
+  a change. `TreeFilterProxy` filters a tree and keeps the ancestors of matches.
+- **Async.** `AsyncModel(ui, columns, pageRows, maxPages)`: `setSource(fetch, user)`, `setRowCount`. Rows that are
+  not cached show a placeholder and are requested once per page; answer with `deliver(ticket, cells)` from any
+  thread. The page is committed on the UI thread at the next `update()` and only views showing those rows repaint.
+
+```cpp
+widgets::StringTreeModel scene("Name\tKind");
+ItemId lights = scene.add(widgets::kRootItem, "Lights\tgroup");
+scene.add(lights, "Sun\tdirectional");
+NodeHandle tree = widgets::treeModelView(ui, parent, &scene.model());
+widgets::setViewSelectionMode(ui, tree, widgets::SelectionMode::Extended);
+scene.add(lights, "Fill\tpoint");                       // the view updates through the notifier
+```
+
+## Drawing: paths, Painter, SVG, icons
+
+Headers `fuse/ui/path.hpp`, `draw_list.hpp`, `painter.hpp`, `svg.hpp`, `icons.hpp` (all in `fuse_ui_core`).
+
+**Paths.** `Path` has `moveTo / lineTo / quadTo / cubicTo / arcTo / close`, `addRect / addRoundedRect / addEllipse /
+addCircle / addArc / addPolyline / addPath`, `Path::fromSvg("M10 10 L...")` (fails with the byte offset on bad data)
+and `bounds()`. `Affine` is the 2x3 matrix (`translation`, `scaling`, `rotation`, `*`, `invert`).
+
+**Draw list ops.** `DrawList::fillPath(path, brush, FillRule, xf)`, `strokePath(path, StrokeStyle, brush, xf)`
+(width, butt / round / square caps, miter / round / bevel joins, miter limit, dashes + offset),
+`gradientRect(rect, Gradient, radii)` (N-stop `Gradient::linear / radial / conic`, pad / repeat / reflect),
+`ninePatch(image, dst, insets, src)` / `imageRect(image, dst, src)`, `pushClipPath(path)`,
+`pushClipRounded(rect, radii)` (per-corner), `pushLayer(opacity, bounds)`; all end with `popClip()`. Paths are stored
+unflattened and flattened by the rasteriser in device pixels (0.05 px), so `setRenderScale` / `DrawList::scale` keep
+them sharp. Coverage is exact-area antialiasing; small paths are cached by shape (`pathCacheStats()`), so an icon
+drawn again at a whole-pixel position costs a lookup (~0.005 ms at 24 px, ~0.03 ms from scratch).
+
+**Painter** (QPainter equivalent) records into a draw list with a state stack:
+
+```cpp
+static void paint(const PaintContext& pc, DrawList& dl) {   // a widget class's paint callback
+    Painter p(pc, dl);                                       // node opacity + render scale
+    p.translate(pc.content.x, pc.content.y);
+    p.setBrush(Gradient::linear({0, 0}, {120, 0}, stops));
+    p.setPen(Color::rgb(0xFFFFFF), 1.5f);
+    p.drawRoundedRect({0, 0, 120, 40}, 8);
+    p.save();
+    p.rotate(0.3f);
+    p.clipPath(star);                                        // closed by restore()
+    p.drawEllipse({60, 20}, 30, 12);
+    p.restore();
+    drawIcon(p, Icon::Search, {4, 12, 16, 16}, pc.style.color);
+    p.drawText("label", {26, 0, 90, 40}, pc.style.color, 13);
+}
+```
+
+`save / restore`, `translate / scale / rotate / transform / setTransform`, `setOpacity`, `setBrush` (colour or
+gradient), `setPen`, `setFillRule`, `clipRect / clipRoundedRect / clipPath`, `beginLayer(opacity) / endLayer`,
+`drawPath / drawRect / drawRoundedRect / drawEllipse / drawCircle / drawLine / drawPolyline / drawPolygon / drawArc`,
+`fillPath / strokePath / fillRect` with an explicit brush, `drawText`, `drawImage`, `drawNinePatch`. It never
+allocates once warm. Limits: text follows translation and scale but is drawn upright under rotation / skew (glyphs
+come from the atlas); `drawImage` / `drawNinePatch` return `false` and draw nothing under rotation, skew or mirroring;
+a brush set through `setBrush(Gradient)` keeps 16 stops.
+
+**SVG.** `SvgImage::parse(xml)` -> `std::expected<SvgImage, SvgError>`; `image.render(painter, rect, currentColor)`.
+Subset: `svg` (viewBox), `g`, `defs`, transforms, `path / rect / circle / ellipse / line / polyline / polygon`,
+`fill / stroke` (names, `#hex`, `rgb()`, `none`, `currentColor`, `url(#gradient)`), `fill-rule`, opacities, stroke
+width / cap / join / miter limit / dashes, `style=""`, `linearGradient / radialGradient`. Not supported (counted in
+`unsupportedElements()`): text, `use`, `image`, clip paths, masks, filters, CSS sheets. Malformed XML or path data is
+an error, never a crash.
+
+**Icons.** `Icon::{ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Close, Check, Search, Folder, File, Save, Undo,
+Redo, Plus, Minus, Settings, Warning, Info, Error, Menu}`; `iconImage(icon)`, `iconSvg(icon)`, `iconName` /
+`findIcon`, `drawIcon(painter, icon, box, color)`.
+
+**Widgets** (`widgets.hpp`): `svgCreate(xml)` -> `SvgHandle`, `svgImage(ui, parent, handle, w, h)` (drawn in the
+node's `color`), `setIcon(ui, button, Icon::Save)` / `setIcon(ui, button, handle, size)` on buttons and tool buttons,
+`iconButton(ui, parent, Icon::Undo)`.
+
+**GPU.** The compute kernel has no path op. `packDrawList` pre-rasterises every vector op (and every clip-path /
+layer group as a whole) on the CPU into an image and draws it with the kernel's Image op; the reference rasteriser
+composites these ops as 8-bit texels with the same blend, so both paths agree by construction (gate
+`fuse_ui_gpu_pack_vector` checks this with a CPU model of the kernel; a real GPU run is `fuse_ui_vk_parity`).
+`GpuDrawData::bakedOps / bakedPixels / unsupportedOps` report it; ops beyond 16 M baked pixels per frame are dropped
+and counted.
 
 ## Styling (CSS subset, D4)
 
@@ -189,7 +549,122 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 (visible/clip/scroll), `display`, `pointer-events`. Paint: `background` (colour or `linear-gradient`),
 `background-end` (gradient end; widgets use it as the accent), `border`, `border-width/color`, `border-*-radius`,
 `box-shadow`, `shadow-x/y/blur/color`, `opacity`, `color`, `font-size`, `text-align`. Selectors also accept
-`:active`, `:selected`.
+`:active`, `:selected`, `:drag-over`. Motion and direction properties (`transition`, `enter-animation`,
+`exit-animation`, `enter-duration`, `exit-duration`, `direction`, `padding-start`, `padding-end`) are described under
+"Interaction" below. `cursor` (see Platform services) is the mouse cursor a node asks for.
+
+### Fonts, text styles and i18n
+
+Text properties: `font-weight` (`normal` / `bold` / 1..1000), `font-style` (`normal` / `italic`), `font-family` (comma
+list), `letter-spacing`, `line-height` (`normal`, a multiplier, px or %) are inherited; `text-decoration` (`underline`,
+`line-through`, both) is not. Labels, buttons and every widget that paints through `paintString` /
+`paintTextLayout` / `measureString` follow them.
+
+```cpp
+#include <fuse/text/font_family.hpp>
+#include <fuse/text/i18n.hpp>
+
+ui.setCss(title, "font-weight", "bold");                  // synthesised from the context's regular face
+ui.setCss(note, "font-family", "\"DejaVu Sans\", sans-serif"); // an installed family, else the context's font
+fuse::text::FontFamily brand("Brand");                    // an application family with real faces
+brand.add(*fuse::text::Font::fromFile("Brand-Regular.ttf"));
+brand.add(*fuse::text::Font::fromFile("Brand-Bold.ttf")); // weight / slant read from the file (OS/2, head)
+ui.addFontFamily(brand);                                  // font-family: Brand now uses the real bold
+for (const auto& f : fuse::text::systemFonts()) { /* family, style, path, faceIndex, weight, italic, monospace */ }
+auto mono = fuse::text::Font::fromSystem("DejaVu Sans Mono", 700, false);
+
+fuse::text::formatPlural("one {# file} other {# files}", "ru", 5); // CLDR category of the locale, '#' = the number
+fuse::text::formatNumber("de", 1234567.891, 2);            // "1.234.567,89"
+fuse::text::pseudoLocalize("Save {name}");                 // "[Šávé {name} ··]"
+```
+
+- A family answers a (weight, italic) request with its nearest real face (CSS weight matching). Without one it
+  synthesises: bold smears the rasterised coverage sideways by a fraction of the em (and widens advances), italic shears
+  the outline before rasterisation. Both happen where glyphs enter the atlas, so the CPU rasteriser and the GPU glyph
+  path draw the same texels, at the render scale. Fallback-chain faces (other scripts, emoji) are not restyled.
+- `font-family` names are matched case-insensitively: families registered with `addFontFamily`, then installed
+  fonts, then the context's font. `sans-serif` / `system-ui` are the context's font; `serif` / `monospace` pick a
+  well-known installed family. `setSystemFontLookup(false)` keeps a context to its own and registered fonts.
+- `systemFonts()` scans the platform font directories once (Linux / BSD: XDG data dirs, `~/.fonts`,
+  `/usr/share/fonts`, `/usr/local/share/fonts`; macOS / iOS: `/System/Library/Fonts`, `/Library/Fonts`,
+  `~/Library/Fonts`; Android: `/system/fonts`; Windows: `%WINDIR%\Fonts`) and reads each file's name / OS/2 tables
+  itself: `.ttf`, `.otf` (glyf or CFF) and `.ttc` collections. It is empty, not an error, on a machine without fonts.
+  `setSystemFontDirectories` points it elsewhere (a font folder shipped with the app, tests).
+- `fontPicker` lists the bundled and generic families followed by the installed ones and previews the chosen face
+  with its Bold / Italic boxes. `richText` draws `<b>` / `<i>` in the family's bold / italic face; `markdownView` does
+  the same for `**bold**` / `*italic*`, and its headings are bold.
+- `letter-spacing` and `line-height` apply to a node's own text (labels, text blocks); `letter-spacing` also to
+  strings painted with `paintString`. Text edits ignore both.
+- Plural rules cover the common CLDR families (one/other, French, East and South Slavic, Polish, Czech, Slovenian,
+  Baltic, Romanian, Arabic, Hebrew, Welsh, Irish, and the no-plural languages); number formatting has a built-in
+  separator table and always writes Western digits. `StringTable::trPlural(key, n)` applies both to an entry.
+- Not there: variable-font axes (a variable font is its default instance), CFF2 and bitmap-only fonts, dates and
+  currencies, a string-extraction tool, cooked `.fusefont` files (`FUSE_UI_TEXT=COOKED` still builds MINIMAL).
+
+## Interaction: drag and drop, gestures, actions, motion, RTL
+
+All of this is in `fuse_ui_core` (`ui.hpp`, `actions.hpp`, `style.hpp`); the widget glue is
+`fuse/ui/widgets/interaction.hpp` (included by `widgets.hpp`).
+
+**Drag and drop.** A drag carries a `DragData` (`type` = `dragType("application/x-thing")`, two inline `u64`, an
+optional pointer and text). Sources: `ui.setDragSource(node, fn)` (or `WidgetClass::dragStart`) is asked when a press
+moves past `GestureConfig::dragThreshold`, or call `ui.beginDrag(source, data, image)` yourself. Targets:
+`ui.setDropTypes(node, {types...})`, `ui.setDropFilter(node, fn)` or `WidgetClass::acceptsDrop`. The target gets
+`DragEnter / DragMove / DragLeave / Drop` events, has the `:drag-over` style state, and may call
+`ui.setDropAction(DropAction::None)` to refuse or `ui.setDropIndicator(rect)` to show where the data lands; the
+source gets `DragEnd` with the result (`Move`, `Copy` with Ctrl, `None`). Escape cancels. The ghost (a chip with the
+text, a translucent copy of a node, or your draw callback) is painted over everything in the draw list. Touch: a
+swipe on a drag source inside something scrollable still pans; a long press picks it up. Platform layers inject OS
+file drops with `ui.dropExternal(pos, data)` (`kDragFiles`, paths in `text`), `dragExternalMove` / `dragExternalLeave`
+for hover feedback; no backend calls them yet.
+
+```cpp
+w::setListDragDrop(ui, list, w::kViewDragDrop);       // reorder rows, drag them to other views, accept theirs
+w::setTableDragDrop(ui, table, w::kViewDragReorder);  // model views report: RowMoved {value = from, value2 = to}
+ui.connect(table, SignalKind::RowMoved, [](UiContext&, NodeHandle, const SignalArgs& a) { /* move the model row */ });
+```
+
+A string `listView` edits its own items; `tableView` / `modelListView` / `gridView` emit `RowMoved`, `Dropped` and
+`DragEnded` and leave the model to the application.
+
+**Gestures.** `Event::clicks` counts presses; the second click of a double click sends `DoubleClick` after its
+`Click` (unconsumed: `SignalKind::DoubleClicked`), and list / table / grid views treat it as Enter (`Submitted`).
+Touch: `GestureTap`, `GestureDoubleTap`, `GestureLongPress` (0.5 s within the slop; timer in the context's time, so
+call `update(dt)`); with pointer ids (`touchDown(id, p)` ...) two fingers send `GesturePinch` (`scale`, centre in
+`pos`) and `GestureRotate` (`rotation` in radians) with `gesturePhase` Begin / Update / End. The single-finger pan /
+fling is unchanged. Listen with a `SignalKind::Event` slot or in a widget class's `onEvent`. No backend feeds pointer
+ids yet (Android and iOS pass the primary touch).
+
+**Actions and shortcuts.** `ActionRegistry reg(ui);` then
+`reg.add({.id = "file.save", .text = "Save", .shortcut = primaryShortcut(Key::S)}, callback)`. Shortcuts fire on a
+KeyDown the focused widget did not consume: Subtree-scoped actions while the focus is inside their node, Window
+actions otherwise, none of the window's actions while a modal scope is open, and plain typing keys never while a
+text field has the focus. `reg.bind(action, button)` keeps text / enabled / checked in sync and triggers on click;
+`w::actionMenuBarMenu(ui, reg, bar, "File", reg.addList({...}))` and `w::actionPopupMenu` build menus that show the
+shortcut right-aligned. `parseShortcut("Ctrl+Shift+S")` / `shortcutToString`, `reg.rebind(a, s)` (returns the
+conflicting action unless told to steal), `saveShortcuts()` / `loadShortcuts()`. `primaryModifier()` is Cmd on Apple
+platforms and Ctrl elsewhere. The registry does not use fuse_core's `ActionMap`; ids and shortcut strings are what an
+adapter needs.
+
+**Motion.** `transition: background 0.15s ease-out, border-radius 0.1s` (or `all`) fades animatable properties when
+a node's style changes; `enter-animation` / `exit-animation: fade | slide-up | slide-down` with `enter-duration` /
+`exit-duration` play when a node first shows / is hidden (popups stay alive for their exit time).
+`ui.animateProperty(node, Prop::Width, PropValue::ofLength(Length::px(240)), AnimSpec::springy())` tweens or springs
+a style property and leaves the end value inline; `ui.animateKeyframes(...)` runs up to 6 keys. Animated nodes use a
+scratch slot of the style table, so nothing is interned or allocated per frame and an idle context sleeps.
+`ui.setReducedMotion(true)` turns all of it (and `animate()`) into jumps. The default theme declares no motion; opt
+in per node with the classes `.fx` (hover / focus colours fade), `.fx-fade`, `.fx-slide`, or for every popup with a
+rule such as `popup { enter-animation: fade; exit-animation: fade; }`. Descendants inherit the cascade's final value
+of `color`, not the in-flight one: give them their own `transition` if they should fade too.
+
+**RTL.** `direction: rtl` (inherited; `ltr` switches a subtree back) mirrors Box layouts along x, swaps `left` /
+`right` of Anchor children, makes `padding-start` / `padding-end` the right / left padding and flips `text-align:
+start / end` (`left` / `right` are aliases of start / end and flip too). Overlay popups keep their screen position.
+Widgets that paint their own content (lists, sliders, check marks) are not mirrored inside.
+
+**Hot reload.** `doc::DocumentFileWatcher watch(path);` then `watch.poll(document)` each frame (one `stat`) reloads a
+`.fuseui` file when it changes; nodes with an id keep their handle, focus, scroll, value and edit text
+(`Document::reload`).
 
 ## Immediate mode
 
@@ -210,14 +685,39 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
+| `fuse_text_font_styles` | face description, synthetic bold / oblique at pixel level, atlas keys, `FontFamily` matching (real face preferred), the font scanner over a temp directory (collection, corrupt files, no fonts), CSS font / decoration / spacing properties, render scale 2, `tests/golden/text_styles.png` (`text_styles_full.png` in FULL) |
+| `fuse_text_i18n` | CLDR plural categories per rule family, plural patterns, number formatting per locale, pseudo-localisation, `StringTable::trPlural` |
+| `fuse_ui_drag_drop` | drag threshold, target by type / filter / modal scope, event order, `:drag-over`, Move / Copy / refuse / Escape, ghost, external drops, touch long-press drag vs pan, list reorder and list / table / grid row drags |
+| `fuse_ui_gestures` | double click (time, distance, third click), list activation, tap / double tap / long press, multi-touch ids, pinch and rotate phases |
+| `fuse_ui_actions` | shortcut text round trip, scope rules (window, subtree, modal, text fields, disabled), bound widgets, action menus, rebinding conflicts, save / load |
+| `fuse_ui_style_motion` | `transition` parsing, fades in context time, idle afterwards, zero allocation / no style-table growth, tween / spring / keyframes, popup enter / exit, reduced motion, static default theme |
+| `fuse_ui_rtl_layout` | layout dumps of one tree in `ltr` and `rtl`, logical padding, text alignment, popups unmoved |
+| `fuse_ui_hot_reload_file` | file-time poll reloads a `.fuseui` file keeping handles, focus, edit text, value and scroll; broken / missing file |
+| `fuse_ui_interaction_golden` | action menu with shortcut texts and a list row drag (ghost, insertion line) against `tests/golden/interaction.png` (MINIMAL profile only) |
+| `fuse_ui_mv_notify`, `_selection`, `_tree`, `_editing`, `_view`, `_proxy`, `_async`, `_dir_model` | model / view: notifications, selection modes, tree view, in-place editing, column features, proxies, async model, a lazy `std::filesystem` model |
+| `fuse_ui_mv_selection_1m`, `fuse_ui_mv_tree_1m` | range selection over 1M rows allocates nothing per row; a lazy tree with > 1M nodes scrolls with a constant node count and bounded model reads |
+| `fuse_ui_mv_golden_tree`, `fuse_ui_mv_golden_table_edit` | tree table and multi-selection + open editor against `tests/golden/modelview_*.png` |
+| `fuse_ui_paths` | path fill / stroke coverage (areas of known shapes, fill rules, caps, joins, miter limit, dashes), N-stop gradients, clip path, layers, 9-slice, `translate` / `scale` of every vector op, coverage cache, bad geometry |
+| `fuse_ui_painter` | Painter state stack, transforms, pens under non-uniform scale, clips, layers, text and image limits, a widget painting at render scale 1 and 2 |
+| `fuse_ui_svg` | SVG subset parse + render, malformed and fuzzed documents, the built-in icons, `svgimage` and button icons |
+| `fuse_ui_vector_steady` | zero allocations with vector ops (update + CPU raster), no vector ops in a classic tree, icon raster budget (cached < 0.02 ms, uncached < 0.5 ms at 24 px), large-path cost |
+| `fuse_ui_vector_golden_{paths,icons}` | `tests/golden/vector_paths.png`, `vector_icons.png` |
+| `fuse_ui_gpu_pack_vector` | vector ops packed as kernel Image commands reproduce the CPU frame exactly (CPU model of the kernel's Image op), statistics, over-budget drop |
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
+| `fuse_app_cursor_resolution`, `fuse_app_menu_description`, `fuse_app_dpi_scale`, `fuse_app_theme_restyle`, `fuse_app_window_state`, `fuse_app_file_dialog_fallback` | platform services, headless: cursor from styles / hooks / hover / drag, `MenuDesc` -> in-window menu bar, scale detection maths and pixel mapping, theme change -> restyle, window state API + events + close guard, toolkit file-dialog fallback and helper command lines |
+| `fuse_app_native_services` | the same on real X11 windows under Xvfb: scale-2 window and popup vs the CPU raster, clicks in window pixels, applied cursors, CLIPBOARD between two connections, position / show / hide / focus / size limits, displays, `zenity` / `xdg-open` helpers (skips 77 without a display) |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
 | `fuse_ui_gamepad_nav` | navigation with delay + repeat, A / B, radial menu by stick, prompt glyph swap, focus sounds |
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
 | `fuse_ui_input_arbitration` | pointer / keyboard / gamepad ownership between UI and game |
 | `fuse_ui_pause_time_domain` | pause and slow motion affect game-time HUD only; locale switching |
+
+Finishing gates: `fuse_ui_dock_drag_*` (dock drag and drop), `fuse_ui_gap_*` (public widget functions no other gate
+called), `fuse_ui_widget_golden_spinmenu`, `fuse_ui_a11y_family_*`, `fuse_ui_doc_*` (document classes, cooked
+registration for them), `fuse_app_widget_gallery_page*`, `fuse_app_game_menu_sample`, `fuse_ui_install_consumer`,
+`fuse_app_stage_assets`. Their CMake wiring is in `tests/finishing.cmake` and at the end of the UI `CMakeLists.txt`.
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,
 `fuse_ui_relight_equivalence`, `fuse_ui_platform_keys_v2`, `fuse_ui_text_input`, `fuse_ui_doc_load`,

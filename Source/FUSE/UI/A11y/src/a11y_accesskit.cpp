@@ -4,6 +4,15 @@
 #if FUSE_UI_HAVE_ACCESSKIT
 #include "accesskit.h"
 
+// The roles, states and actions added with the accessibility completeness work (menus, trees, tables, expanded /
+// selected / live, value text, expand / collapse / scroll actions) use accesskit-c API beyond what the first backend
+// called. They were written against accesskit-c 0.22 but could not be compiled where they were written: if your
+// accesskit-c lacks one of them, build with -DFUSE_UI_ACCESSKIT_EXTENDED=0 to get the original API surface (the new
+// roles then map to the nearest old one and the extra states / actions are not reported).
+#ifndef FUSE_UI_ACCESSKIT_EXTENDED
+#define FUSE_UI_ACCESSKIT_EXTENDED 1
+#endif
+
 namespace fuse::ui::a11y {
 
 bool accessKitAvailable() { return true; }
@@ -31,6 +40,30 @@ accesskit_role roleOf(A11yRole r) {
     case A11yRole::SpinBox: return ACCESSKIT_ROLE_SPIN_BUTTON;
     case A11yRole::ScrollBar: return ACCESSKIT_ROLE_SCROLL_BAR;
     case A11yRole::Tab: return ACCESSKIT_ROLE_TAB;
+#if FUSE_UI_ACCESSKIT_EXTENDED
+    case A11yRole::Menu: return ACCESSKIT_ROLE_MENU;
+    case A11yRole::MenuItem: return ACCESSKIT_ROLE_MENU_ITEM;
+    case A11yRole::MenuBar: return ACCESSKIT_ROLE_MENU_BAR;
+    case A11yRole::Dialog: return ACCESSKIT_ROLE_DIALOG;
+    case A11yRole::Tree: return ACCESSKIT_ROLE_TREE;
+    case A11yRole::TreeItem: return ACCESSKIT_ROLE_TREE_ITEM;
+    case A11yRole::Table: return ACCESSKIT_ROLE_TABLE;
+    case A11yRole::Row: return ACCESSKIT_ROLE_ROW;
+    case A11yRole::Cell: return ACCESSKIT_ROLE_CELL;
+    case A11yRole::ColumnHeader: return ACCESSKIT_ROLE_COLUMN_HEADER;
+    case A11yRole::TabList: return ACCESSKIT_ROLE_TAB_LIST;
+    case A11yRole::TabPanel: return ACCESSKIT_ROLE_TAB_PANEL;
+    case A11yRole::ToolBar: return ACCESSKIT_ROLE_TOOLBAR;
+    case A11yRole::StatusBar: return ACCESSKIT_ROLE_STATUS;
+    case A11yRole::Tooltip: return ACCESSKIT_ROLE_TOOLTIP;
+    case A11yRole::Alert: return ACCESSKIT_ROLE_ALERT;
+#else // the roles the original backend used: the nearest of them
+    case A11yRole::Menu: case A11yRole::Tree: case A11yRole::Table: case A11yRole::TabList: return ACCESSKIT_ROLE_LIST;
+    case A11yRole::MenuItem: case A11yRole::TreeItem: case A11yRole::Row: return ACCESSKIT_ROLE_LIST_ITEM;
+    case A11yRole::Cell: case A11yRole::ColumnHeader: case A11yRole::Tooltip: case A11yRole::Alert: return ACCESSKIT_ROLE_LABEL;
+    case A11yRole::Dialog: return ACCESSKIT_ROLE_WINDOW;
+    case A11yRole::MenuBar: case A11yRole::TabPanel: case A11yRole::ToolBar: case A11yRole::StatusBar: return ACCESSKIT_ROLE_GROUP;
+#endif
     case A11yRole::None: break;
     }
     return ACCESSKIT_ROLE_UNKNOWN;
@@ -51,23 +84,43 @@ void* buildAccessKitUpdate(const Bridge& b, bool includeTree) {
         if (!s.name.empty()) accesskit_node_set_label_with_length(n, s.name.data(), s.name.size());
         accesskit_node_set_bounds(n, {double(s.bounds.x), double(s.bounds.y), double(s.bounds.x + s.bounds.w), double(s.bounds.y + s.bounds.h)});
         if (s.disabled) accesskit_node_set_disabled(n);
-        if (s.focusable) accesskit_node_add_action(n, ACCESSKIT_ACTION_FOCUS);
-        if (s.focusable && !ranged(s.role) && s.role != A11yRole::TextField) accesskit_node_add_action(n, ACCESSKIT_ACTION_CLICK);
+        // the actions the UI accepts for this node (UiContext::performA11yAction), as the snapshot lists them
+        if (s.hasAction(A11yAction::Focus)) accesskit_node_add_action(n, ACCESSKIT_ACTION_FOCUS);
+        if (s.hasAction(A11yAction::Click) || s.hasAction(A11yAction::Select)) accesskit_node_add_action(n, ACCESSKIT_ACTION_CLICK); // (Select arrives as Click)
+        if (s.hasAction(A11yAction::Increment)) accesskit_node_add_action(n, ACCESSKIT_ACTION_INCREMENT);
+        if (s.hasAction(A11yAction::Decrement)) accesskit_node_add_action(n, ACCESSKIT_ACTION_DECREMENT);
+        if (s.hasAction(A11yAction::SetValue)) accesskit_node_add_action(n, ACCESSKIT_ACTION_SET_VALUE);
+#if FUSE_UI_ACCESSKIT_EXTENDED
+        if (s.hasAction(A11yAction::Expand)) accesskit_node_add_action(n, ACCESSKIT_ACTION_EXPAND);
+        if (s.hasAction(A11yAction::Collapse)) accesskit_node_add_action(n, ACCESSKIT_ACTION_COLLAPSE);
+        if (s.hasAction(A11yAction::ScrollUp)) accesskit_node_add_action(n, ACCESSKIT_ACTION_SCROLL_UP);
+        if (s.hasAction(A11yAction::ScrollDown)) accesskit_node_add_action(n, ACCESSKIT_ACTION_SCROLL_DOWN);
+        if (s.hasAction(A11yAction::ScrollLeft)) accesskit_node_add_action(n, ACCESSKIT_ACTION_SCROLL_LEFT);
+        if (s.hasAction(A11yAction::ScrollRight)) accesskit_node_add_action(n, ACCESSKIT_ACTION_SCROLL_RIGHT);
+        if (s.hasAction(A11yAction::ScrollIntoView)) accesskit_node_add_action(n, ACCESSKIT_ACTION_SCROLL_INTO_VIEW);
+#endif
         if (toggles(s.role)) accesskit_node_set_toggled(n, s.checked ? ACCESSKIT_TOGGLED_TRUE : ACCESSKIT_TOGGLED_FALSE);
-        if (ranged(s.role)) {
+        if (ranged(s.role) && !s.child) {
             accesskit_node_set_numeric_value(n, double(s.value));
             accesskit_node_set_min_numeric_value(n, double(s.lo));
             accesskit_node_set_max_numeric_value(n, double(s.hi));
-            if (s.role != A11yRole::ProgressBar) {
-                accesskit_node_add_action(n, ACCESSKIT_ACTION_INCREMENT);
-                accesskit_node_add_action(n, ACCESSKIT_ACTION_DECREMENT);
-                accesskit_node_add_action(n, ACCESSKIT_ACTION_SET_VALUE);
-            }
         }
+#if FUSE_UI_ACCESSKIT_EXTENDED
+        if (!s.valueText.empty()) accesskit_node_set_value_with_length(n, s.valueText.data(), s.valueText.size());
+        if (s.expandable) accesskit_node_set_expanded(n, s.expanded);
+        if (s.selectable) accesskit_node_set_selected(n, s.selected);
+        if (s.modal) accesskit_node_set_modal(n);
+        if (s.live != A11yLive::Off) accesskit_node_set_live(n, s.live == A11yLive::Assertive ? ACCESSKIT_LIVE_ASSERTIVE : ACCESSKIT_LIVE_POLITE);
+        if (s.level) accesskit_node_set_level(n, s.level);
+        if (s.posInSet) {
+            accesskit_node_set_position_in_set(n, s.posInSet);
+            accesskit_node_set_size_of_set(n, s.setSize);
+        }
+#endif
         kids.clear();
-        for (u32 c : b.children(i)) kids.push_back(idOf(v[c].node));
+        for (u32 c : b.children(i)) kids.push_back(idOf(v[c]));
         if (!kids.empty()) accesskit_node_set_children(n, kids.size(), kids.data());
-        accesskit_tree_update_push_node(u, idOf(s.node), n); // takes ownership
+        accesskit_tree_update_push_node(u, idOf(s), n); // takes ownership
     }
     if (includeTree && !v.empty()) {
         accesskit_tree* t = accesskit_tree_new(idOf(v[0].node));
@@ -103,9 +156,21 @@ void onAction(accesskit_action_request* req, void* user) {
     case ACCESSKIT_ACTION_CLICK: r.action = Action::Click; break;
     case ACCESSKIT_ACTION_INCREMENT: r.action = Action::Increment; break;
     case ACCESSKIT_ACTION_DECREMENT: r.action = Action::Decrement; break;
+#if FUSE_UI_ACCESSKIT_EXTENDED
+    case ACCESSKIT_ACTION_EXPAND: r.action = Action::Expand; break;
+    case ACCESSKIT_ACTION_COLLAPSE: r.action = Action::Collapse; break;
+    case ACCESSKIT_ACTION_SCROLL_UP: r.action = Action::ScrollUp; break;
+    case ACCESSKIT_ACTION_SCROLL_DOWN: r.action = Action::ScrollDown; break;
+    case ACCESSKIT_ACTION_SCROLL_LEFT: r.action = Action::ScrollLeft; break;
+    case ACCESSKIT_ACTION_SCROLL_RIGHT: r.action = Action::ScrollRight; break;
+    case ACCESSKIT_ACTION_SCROLL_INTO_VIEW: r.action = Action::ScrollIntoView; break;
+#endif
     case ACCESSKIT_ACTION_SET_VALUE:
         r.action = Action::SetValue;
         if (req->data.has_value && req->data.value.tag == ACCESSKIT_ACTION_DATA_NUMERIC_VALUE) r.value = f32(req->data.value.numeric_value);
+#if FUSE_UI_ACCESSKIT_EXTENDED
+        else if (req->data.has_value && req->data.value.tag == ACCESSKIT_ACTION_DATA_VALUE && req->data.value.value) r.text = req->data.value.value;
+#endif
         break;
     default: accesskit_action_request_free(req); return;
     }

@@ -1,4 +1,5 @@
 #include "fuse/ui/designer/designer.hpp"
+#include "fuse/text/from_chars.hpp"
 
 #include "fuse/ui/widgets/widgets.hpp"
 
@@ -58,7 +59,7 @@ void quote(std::string& out, std::string_view s) {
 }
 std::string numText(double d) {
     char b[32];
-    const auto r = std::to_chars(b, b + sizeof b, d);
+    const auto r = fuse::text::toChars(b, b + sizeof b, d);
     return std::string(b, r.ptr);
 }
 bool scalar(const JsonValue& v) { return !v.isArray() && !v.isObject(); }
@@ -488,6 +489,7 @@ Designer* designerOf(UiContext& ui, NodeHandle canvas) {
 // (design mode), so buttons do not click and fields do not take focus.
 struct CanvasW {
     static constexpr std::string_view kName = "designcanvas";
+    static constexpr bool kCapturesDrag = true; // touch: design-mode drags (select / move)
     static constexpr A11yRole kRole = A11yRole::Group;
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Capture && ec.phase != Phase::Target) return false;
@@ -505,6 +507,11 @@ struct CanvasW {
 // The designer's root: sees every pointer event first (capture) to run palette -> canvas and canvas -> canvas drags.
 struct RootW {
     static constexpr std::string_view kName = "designerroot";
+    // touch: a pending palette -> canvas / canvas -> canvas drag stays with the designer
+    static TouchDrag touchDrag(UiContext& ui, NodeHandle n, Vec2) {
+        const Designer* d = designerOf(ui, n);
+        return {d && d->dragPending() ? TouchDrag::Mode::Capture : TouchDrag::Mode::Pan, {}, {}};
+    }
     static constexpr A11yRole kRole = A11yRole::Group;
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Capture) return false;
@@ -544,7 +551,7 @@ JsonValue parseValue(std::string_view key, std::string_view text) {
     }
     if (key != "id" && key != "text") {
         double d = 0.0;
-        const auto r = std::from_chars(text.data(), text.data() + text.size(), d);
+        const auto r = fuse::text::fromChars(text.data(), text.data() + text.size(), d);
         if (r.ec == std::errc{} && r.ptr == text.data() + text.size()) return num(d);
     }
     return str(text);
@@ -559,7 +566,7 @@ Designer::Designer(UiContext& ui, NodeHandle parent) : m_ui(ui) {
     w::install(ui);
     if (ui.registry().find("designcanvas") == 0xFFFFFFFFu) ui.registry().registerWidget<CanvasW>();
     if (ui.registry().find("designerroot") == 0xFFFFFFFFu) ui.registry().registerWidget<RootW>();
-    ui.addStyleSheet(R"(
+    (void)ui.addStyleSheet(R"(
         .designer { gap: 0px; padding: 0px; flex-grow: 1; }
         .designer-bar { gap: 4px; padding: 6px; background: var(--surface); border: 1px var(--border); }
         .designer-side { width: 220px; gap: 6px; padding: 6px; }

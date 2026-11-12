@@ -4,6 +4,7 @@
 // Output is premultiplied RGBA8 (R in the low byte) in display space, matching frame.ui_composite.
 #pragma once
 
+#include "fuse/ui/path.hpp"
 #include "fuse/ui/types.hpp"
 
 #include <array>
@@ -21,13 +22,91 @@ enum class DrawOp : u8 {
     PushClip, ///< intersect the clip with `rect` (rounded clips: radius[0])
     PopClip,
     Backdrop, ///< frosted glass: blurs what is already drawn under the rounded `rect` (radius `blur`), then `fill` over it
+    // ---- vector ops (appended: the values above are the GPU kernel's) ----
+    Path,         ///< filled or stroked path: side record paths()[data]; solid `fill` or a gradient; `rect` = bounds
+    NinePatch,    ///< sub-rect / 9-slice of image `image` into `rect`: side record patches()[data]; `fill.a` = opacity
+    PushClipPath, ///< group: the commands up to the matching PopClip are composited through the path's coverage
+    PushLayer,    ///< group: the commands up to the matching PopClip are composited with opacity `fill.a` (`rect` = bounds)
+};
+
+enum class GradientKind : u8 { Linear, Radial, Conic };
+enum class GradientSpread : u8 { Pad, Repeat, Reflect };
+struct GradientStop {
+    f32 offset = 0.f; ///< 0..1
+    Color color;
+    friend bool operator==(const GradientStop&, const GradientStop&) = default;
+};
+/// An N-stop gradient. Colours are interpolated premultiplied (CSS / Qt), so a transparent stop does not darken.
+///   Linear  t runs 0..1 from `p0` to `p1`
+///   Radial  t = distance from the centre `p0` / radius `p1.x` (no focal point)
+///   Conic   t runs 0..1 once around the centre `p0`, clockwise on screen, starting at angle `p1.x` (radians, 0 = +x)
+/// `stops` is a non-owning view (copied when a command is recorded); a single stop paints its colour. `transform`
+/// maps the gradient's geometry into the space it is used in (SVG gradientTransform / objectBoundingBox units): a
+/// non-uniform one turns a radial gradient into an elliptical one.
+struct Gradient {
+    GradientKind kind = GradientKind::Linear;
+    GradientSpread spread = GradientSpread::Pad;
+    Vec2 p0, p1;
+    std::span<const GradientStop> stops;
+    Affine transform;
+    static Gradient linear(Vec2 from, Vec2 to, std::span<const GradientStop> stops, GradientSpread spread = GradientSpread::Pad) {
+        return {GradientKind::Linear, spread, from, to, stops, {}};
+    }
+    static Gradient radial(Vec2 centre, f32 radius, std::span<const GradientStop> stops, GradientSpread spread = GradientSpread::Pad) {
+        return {GradientKind::Radial, spread, centre, {radius, 0.f}, stops, {}};
+    }
+    static Gradient conic(Vec2 centre, f32 startAngle, std::span<const GradientStop> stops) {
+        return {GradientKind::Conic, GradientSpread::Repeat, centre, {startAngle, 0.f}, stops, {}};
+    }
+};
+/// What a path is painted with: a solid colour or a gradient (the gradient is copied; its stops stay a view).
+struct Brush {
+    Color color;
+    Gradient gradient;
+    bool hasGradient = false;
+    f32 opacity = 1.f; ///< multiplies a gradient's stops (a solid colour carries it in its alpha)
+    Brush() = default;
+    Brush(Color c) : color(c) {}
+    Brush(const Gradient& g) : gradient(g), hasGradient(true) {}
+};
+
+/// DrawOp::Path / PushClipPath side record: ranges into DrawList::pathVerbs() / pathPoints() (list coordinates).
+struct DrawPath {
+    u32 firstVerb = 0, verbCount = 0, firstPoint = 0, pointCount = 0;
+    i32 paint = -1; ///< paints()[paint], -1 = the command's solid `fill`
+    FillRule rule = FillRule::NonZero;
+    bool stroked = false;
+    StrokeStyle stroke; ///< when `stroked` (list units)
+};
+/// A recorded gradient: `toUnit` maps list coordinates to gradient space (linear: t = x; radial: t = |(x, y)|;
+/// conic: t = angle of (x, y) / 2 pi). `opacity` multiplies the stops.
+struct DrawPaint {
+    GradientKind kind = GradientKind::Linear;
+    GradientSpread spread = GradientSpread::Pad;
+    u32 firstStop = 0, stopCount = 0;
+    f32 opacity = 1.f;
+    Affine toUnit;
+};
+/// DrawOp::NinePatch side record. `src` is in image texels (empty = the whole image); the insets cut the source and
+/// the destination into 3x3 cells: corners keep their size, edges stretch along one axis, the centre along both.
+/// Zero insets draw `src` scaled to the rect.
+struct DrawPatch {
+    Rect src;
+    Edges srcInsets; ///< image texels
+    Edges dstInsets; ///< list units
+    bool smooth = false; ///< bilinear instead of nearest
 };
 
 struct DrawCmd {
     DrawOp op = DrawOp::Rect;
     u8 gradient = 0; ///< 0 none, 1 vertical, 2 horizontal
+    /// Glyph: `rect` is already in device pixels (UiContext rasterises glyphs at fontSize x renderScale while it
+    /// records the rest of the list in logical units). DrawList::scale leaves such a command alone and clears the flag,
+    /// so a finished list never carries it.
+    u8 devicePx = 0;
     u16 u = 0, v = 0, tw = 0, th = 0; ///< Glyph: atlas texels
     u32 image = 0;
+    u32 data = 0; ///< Path / PushClipPath: index into paths(); NinePatch: index into patches()
     u32 node = 0xFFFFFFFFu; ///< source node index (inspector, damage)
     Rect rect;
     Color fill, fill2, border;
@@ -38,7 +117,10 @@ struct DrawCmd {
 
 class DrawList {
 public:
-    void clear() { m_cmds.clear(); }
+    void clear() {
+        m_cmds.clear();
+        if (m_vector) clearSide();
+    }
     void reserve(std::size_t n) { m_cmds.reserve(n); }
     void push(const DrawCmd& c) { m_cmds.push_back(c); }
     void rect(const Rect& r, Color fill, f32 radius = 0.f);
@@ -49,17 +131,75 @@ public:
     /// Backdrop blur (CSS backdrop-filter: blur()): everything drawn before this command under `r` is blurred.
     void backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint = {});
     void pushClip(const Rect& r, f32 radius = 0.f);
-    void popClip();
+    void popClip(); ///< ends pushClip / pushClipRounded / pushClipPath / pushLayer
+
+    // ---- vector ops: paths, N-stop gradients, 9-slice images, path clips, opacity layers ----
+    // Paths are stored unflattened in list coordinates (`xf` is applied while recording) and flattened by the
+    // rasteriser in device pixels, so they stay smooth at any render scale. These ops composite as premultiplied
+    // RGBA8 texels with the Image blend equation (see CpuRasterizer), which is what lets the GPU packer pre-rasterise
+    // them. Nothing here allocates once the list's buffers are warm.
+    /// Fills `path` (transformed by `xf`) with a colour or gradient; a gradient's geometry is in the path's space.
+    void fillPath(const Path& path, const Brush& brush, FillRule rule = FillRule::NonZero, const Affine& xf = {});
+    /// Strokes `path`. Under `xf` the stroke width and dashes scale by xf.meanScale(): exact for similarities
+    /// (Painter outlines the stroke in user space first when the transform is not one).
+    void strokePath(const Path& path, const StrokeStyle& stroke, const Brush& brush, const Affine& xf = {});
+    /// Rounded rect filled with an N-stop linear / radial / conic gradient (gradient geometry in list coordinates).
+    void gradientRect(const Rect& r, const Gradient& g, const std::array<f32, 4>& radii = {});
+    /// Image `image` cut 3x3 by `srcInsets` (texels) into `dst`; `dstInsets` default to the source insets. `src`
+    /// (texels) selects a sub-image (empty = all). `opacity` multiplies the image.
+    void ninePatch(u32 image, const Rect& dst, const Edges& srcInsets, const Rect& src = {}, const Edges* dstInsets = nullptr,
+                   f32 opacity = 1.f, bool smooth = false);
+    /// Sub-rect `src` (texels) of image `image` scaled into `dst`.
+    void imageRect(u32 image, const Rect& dst, const Rect& src, f32 opacity = 1.f, bool smooth = false) {
+        ninePatch(image, dst, {}, src, nullptr, opacity, smooth);
+    }
+    /// Clip to a rounded rect with per-corner radii (tl, tr, br, bl). Equal radii record a plain PushClip; different
+    /// ones a path clip group.
+    void pushClipRounded(const Rect& r, const std::array<f32, 4>& radii);
+    /// Clip group: the commands up to popClip() are rendered to a layer and composited through the path's coverage.
+    void pushClipPath(const Path& path, FillRule rule = FillRule::NonZero, const Affine& xf = {});
+    /// Opacity group: the commands up to popClip() are rendered to a layer over `bounds` (empty = the current clip)
+    /// and composited once with `opacity`, so overlapping children do not show through each other.
+    void pushLayer(f32 opacity, const Rect& bounds = {});
+    std::span<const DrawPath> paths() const { return m_paths; }
+    std::span<const PathVerb> pathVerbs() const { return m_verbs; }
+    std::span<const Vec2> pathPoints() const { return m_points; }
+    std::span<const DrawPaint> paints() const { return m_paints; }
+    std::span<const GradientStop> stops() const { return m_stops; }
+    std::span<const DrawPatch> patches() const { return m_patches; }
+    /// True when the list holds any of the vector ops (hosts / packers skip their handling otherwise).
+    bool hasVectorOps() const { return m_vector; }
     const std::vector<DrawCmd>& cmds() const { return m_cmds; }
     std::vector<DrawCmd>& cmds() { return m_cmds; }
     std::size_t size() const { return m_cmds.size(); }
     /// FNV-64 over the commands (golden / parity hashes).
     u64 hash() const;
-    /// Moves every command by `d` (Line end points included): re-bases a subtree's list to a popup window's origin.
+    /// Moves every command by `d` (Line end points, path points and gradients included): re-bases a subtree's list to
+    /// a popup window's origin.
     void translate(Vec2 d);
+    /// Logical units -> device pixels (render scale / HiDPI): multiplies geometry, radii, border and line widths and
+    /// blur radii by `s` about the origin. Glyph commands flagged `devicePx` are kept (flag cleared); other glyph
+    /// commands only move (atlas texels are not resampled). With a fractional `s` the edges of Rect / Image / Backdrop /
+    /// PushClip commands are rounded to device pixels (a non-empty rect stays at least 1 px) and border widths to whole
+    /// pixels, so fills and hairlines stay sharp; integer scales map pixel edges onto pixel edges and are not rounded.
+    /// `s` == 1 changes nothing. Path points, stroke widths, dashes, gradients and 9-slice destination insets scale
+    /// too (paths are not snapped: they are re-flattened in device pixels).
+    void scale(f32 s);
 
 private:
+    void clearSide();
+    void translateSide(Vec2 d);
+    void scaleSide(f32 s, bool snap);
+    u32 addPath(const Path& path, const Affine& xf, Rect& bounds);
+    i32 addPaint(const Brush& brush, const Affine& xf);
     std::vector<DrawCmd> m_cmds;
+    std::vector<DrawPath> m_paths;
+    std::vector<PathVerb> m_verbs;
+    std::vector<Vec2> m_points;
+    std::vector<DrawPaint> m_paints;
+    std::vector<GradientStop> m_stops;
+    std::vector<DrawPatch> m_patches;
+    bool m_vector = false; ///< any Path / NinePatch / PushClipPath / PushLayer command was recorded
 };
 
 /// A premultiplied RGBA8 image.
@@ -101,5 +241,40 @@ private:
     int m_atlasSize = 0;
     std::vector<const Image*> m_images;
 };
+
+// ---- Vector ops: contract shared by the CPU rasteriser and the GPU packer -------------------------------------------
+// Path, NinePatch, PushClipPath and PushLayer are specified as "layer ops": each produces premultiplied RGBA8 source
+// texels (paint x coverage quantised to 8 bits; for a group, its children rendered on a transparent layer, times the
+// clip path's coverage) which are then composited exactly like an Image texel (times the rounded clip coverage and the
+// group opacity). fuse_ui_render therefore draws them with the kernel's existing Image op from texels produced by
+// rasterizeCommands(), and both paths agree by construction.
+
+/// What the rasteriser reads besides the list: the glyph atlas and the registered images (non-owning).
+struct RasterSources {
+    const u8* atlas = nullptr;
+    int atlasSize = 0;
+    const Image* const* images = nullptr;
+    u32 imageCount = 0;
+};
+/// Rasterises commands [first, first + count) of `list` into `out`, which is resized to the integer device rect
+/// `area` and cleared to transparent: the layer those commands produce on their own. `rootWidth` is the width of the
+/// final target (path coverage is computed in its coordinates, so a layer and a direct render agree bit for bit).
+/// With `groupOpacityOne` a PushLayer at `first` is composited with opacity 1 (its opacity is left to whoever
+/// composites `out`).
+void rasterizeCommands(const DrawList& list, std::size_t first, std::size_t count, const Rect& area, int rootWidth,
+                       const RasterSources& src, Image& out, bool groupOpacityOne = false);
+/// Index of the PopClip matching the push command at `i` (PushClip / PushClipPath / PushLayer); size() when
+/// unbalanced.
+std::size_t matchingPop(const DrawList& list, std::size_t i);
+
+/// Statistics of the path coverage cache (per thread): the coverage masks of small paths are kept by shape, so an
+/// icon drawn again at any whole-pixel position is a lookup instead of a rasterisation.
+struct PathCacheStats {
+    u64 hits = 0, misses = 0, uncached = 0;
+    u32 entries = 0;
+    std::size_t bytes = 0;
+};
+PathCacheStats pathCacheStats();
+void clearPathCache();
 
 } // namespace fuse::ui

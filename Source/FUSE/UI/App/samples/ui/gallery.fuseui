@@ -1,0 +1,194 @@
+// widget_gallery UI (fuse_app sample): every widget of the catalogue that a document can create, on tabbed pages.
+// The widgets that only exist as calls (message box, wizard, popover, toast, file dialog) and the game HUD widgets
+// are added by widget_gallery.cpp. Also the test document of the gate fuse_ui_doc_catalogue.
+{
+  "fuseui": 1,
+  "style": ".page { gap: 10px; padding: 12px; } .cols { flex-direction: row; gap: 12px; align-items: start; } .col { gap: 8px; flex-grow: 1; } .h { font-size: 16px; } .fill { flex-grow: 1; } .box { height: 150px; } .tall { height: 220px; } .w240 { width: 240px; } .w320 { width: 320px; }",
+  "root": {
+    "class": "panel", "id": "gallery", "style": { "flex-grow": "1", "padding": 0, "gap": 0 },
+    "children": [
+      { "class": "menubar", "id": "menubar", "children": [
+        { "class": "menubutton", "id": "menu.file", "text": "File", "items": ["New", "Open", "-", "Recent", "\tscene.fuse", "\tlevel2.fuse", "Quit"], "on": { "submitted": "menu" } },
+        { "class": "menubutton", "id": "menu.view", "text": "View", "items": ["Zoom in", "Zoom out"], "on": { "submitted": "menu" } }
+      ] },
+      { "class": "toolbar", "id": "toolbar", "children": [
+        { "class": "toolbutton", "id": "tool.toast", "text": "Toast", "tooltip": "Shows a toast", "on": { "clicked": "toast" } },
+        { "class": "toolbutton", "id": "tool.message", "text": "Message box", "on": { "clicked": "messagebox" } },
+        { "class": "toolbutton", "id": "tool.dialog", "text": "Dialog", "on": { "clicked": "dialog.open" } },
+        { "class": "toolbutton", "id": "tool.wizard", "text": "Wizard", "on": { "clicked": "wizard" } },
+        { "class": "toolbutton", "id": "tool.popover", "text": "Popover", "on": { "clicked": "popover" } },
+        { "class": "separator" },
+        { "class": "toolbutton", "id": "tool.files", "text": "File dialog", "on": { "clicked": "filedialog" } }
+      ] },
+      { "class": "tabwidget", "id": "pages", "style": { "flex-grow": "1" }, "value": "{page}",
+        "tabs": ["Basic", "Containers", "Views", "Text", "Pro", "Window", "Game"],
+        "children": [
+          { "class": "scrollarea", "id": "page.basic", "classes": ["page", "fill"], "children": [
+            { "class": "label", "classes": ["h"], "text": "Buttons and toggles" },
+            { "classes": ["row"], "children": [
+              { "class": "button", "id": "g.button", "text": "Button", "tooltip": "A push button", "on": { "clicked": "count" } },
+              { "class": "toolbutton", "id": "g.toolbutton", "text": "Tool (right-click)", "contextMenu": ["Rename", "Duplicate", "-", "Delete"], "on": { "submitted": "context" } },
+              { "class": "button", "id": "g.iconbutton", "text": "Save", "icon": "save", "tooltip": "A button with an icon" },
+              { "class": "toolbutton", "id": "g.icontool", "icon": "settings", "a11yName": "Settings", "tooltip": "An icon-only tool button" },
+              { "class": "link", "id": "g.link", "text": "A link" },
+              { "class": "label", "id": "g.count", "text": "clicked {clicks:0} times" }
+            ] },
+            { "classes": ["row"], "children": [
+              { "class": "checkbox", "id": "g.checkbox", "text": "Check box", "checked": "{=flag}" },
+              { "class": "switch", "id": "g.switch", "text": "Switch", "checked": "{=flag}" },
+              { "class": "radio", "id": "g.radio1", "text": "Radio A", "checked": true },
+              { "class": "radio", "id": "g.radio2", "text": "Radio B" }
+            ] },
+            { "class": "separator" },
+            { "class": "label", "classes": ["h"], "text": "Values" },
+            { "classes": ["row"], "children": [
+              { "class": "slider", "id": "g.slider", "min": 0, "max": 100, "value": "{=level}", "classes": ["w240"] },
+              { "class": "progressbar", "id": "g.progress", "max": 100, "value": "{level}", "classes": ["w240"] },
+              { "class": "label", "text": "{level:0} %" }
+            ] },
+            { "classes": ["row"], "children": [
+              { "class": "dial", "id": "g.dial", "min": 0, "max": 100, "value": "{=level}" },
+              { "class": "spinbox", "id": "g.spinbox", "min": 0, "max": 100, "value": "{=level}" },
+              { "class": "doublespinbox", "id": "g.doublespinbox", "min": 0, "max": 1, "step": 0.05, "value": 0.25 },
+              { "class": "combobox", "id": "g.combobox", "items": ["Vulkan", "CPU raster", "Null"], "selected": 1 },
+              { "class": "scrollbar", "id": "g.scrollbar", "horizontal": true, "value": 0.3, "classes": ["w240"] }
+            ] },
+            { "classes": ["row"], "children": [
+              { "class": "lineedit", "id": "g.lineedit", "text": "{=name}", "classes": ["w240"] },
+              { "class": "label", "text": "Hello, {name}" },
+              { "class": "image", "id": "g.image", "image": 0, "style": { "width": 48, "height": 48 } },
+              { "class": "svgimage", "id": "g.svgimage", "icon": "folder", "a11yName": "Folder", "style": { "width": 40, "height": 40 } },
+              { "class": "svgimage", "id": "g.svgimage2", "icon": "search", "a11yName": "Search", "style": { "width": 24, "height": 24, "color": "#3D8BFD" } }
+            ] }
+          ] },
+          { "class": "scrollarea", "id": "page.containers", "classes": ["page", "fill"], "children": [
+            { "classes": ["cols"], "children": [
+              { "class": "groupbox", "id": "g.groupbox", "text": "Group box", "checkable": true, "classes": ["col"], "children": [
+                { "class": "checkbox", "text": "Shadows", "checked": true },
+                { "class": "checkbox", "text": "Bloom" }
+              ] },
+              { "classes": ["col"], "children": [
+                { "class": "tabbar", "id": "g.tabbar", "items": ["One", "Two", "Three"], "value": "{=stackPage}" },
+                { "class": "stack", "id": "g.stack", "value": "{stackPage}", "classes": ["box"], "children": [
+                  { "class": "label", "text": "Stack page one" },
+                  { "class": "label", "text": "Stack page two" },
+                  { "class": "label", "text": "Stack page three" }
+                ] }
+              ] }
+            ] },
+            { "class": "splitter", "id": "g.splitter", "classes": ["box"], "children": [
+              { "class": "label", "text": "Left pane (drag the handle)", "paneSize": 220 },
+              { "class": "label", "text": "Right pane" }
+            ] },
+            { "classes": ["cols"], "children": [
+              { "class": "scrollarea", "id": "g.scrollarea", "classes": ["box", "col"], "children": [
+                { "class": "label", "text": "Scroll area" }, { "class": "label", "text": "line 2" }, { "class": "label", "text": "line 3" },
+                { "class": "label", "text": "line 4" }, { "class": "label", "text": "line 5" }, { "class": "label", "text": "line 6" },
+                { "class": "label", "text": "line 7" }, { "class": "label", "text": "line 8" }, { "class": "label", "text": "line 9" },
+                { "class": "label", "text": "line 10" }, { "class": "label", "text": "line 11" }, { "class": "label", "text": "line 12" }
+              ] },
+              { "class": "kineticscroll", "id": "g.kineticscroll", "profile": "ios", "classes": ["box", "col"], "children": [
+                { "class": "label", "text": "Kinetic scroll area (drag / fling)" }, { "class": "label", "text": "line 2" },
+                { "class": "label", "text": "line 3" }, { "class": "label", "text": "line 4" }, { "class": "label", "text": "line 5" },
+                { "class": "label", "text": "line 6" }, { "class": "label", "text": "line 7" }, { "class": "label", "text": "line 8" },
+                { "class": "label", "text": "line 9" }, { "class": "label", "text": "line 10" }, { "class": "label", "text": "line 11" }
+              ] }
+            ] },
+            { "class": "statusbar", "id": "g.statusbar", "text": "Status bar message", "children": [ { "class": "label", "text": "Ln 1, Col 1" } ] }
+          ] },
+          { "class": "scrollarea", "id": "page.views", "classes": ["page", "fill"], "children": [
+            { "classes": ["cols"], "children": [
+              { "class": "listview", "id": "g.listview", "classes": ["box", "w240"], "selected": 1,
+                "items": ["List item 0", "List item 1", "List item 2", "List item 3", "List item 4", "List item 5", "List item 6", "List item 7", "List item 8", "List item 9"] },
+              { "class": "treeview", "id": "g.treeview", "classes": ["box", "w240"],
+                "items": ["Scene", "\tCamera", "\tLights", "\t\tSun", "\t\tFill", "Assets", "\tTextures"] },
+              { "class": "modellistview", "id": "g.modellistview", "classes": ["box", "col"], "items": ["Model row 0", "Model row 1", "Model row 2", "Model row 3", "Model row 4", "Model row 5"] }
+            ] },
+            { "class": "header", "id": "g.header", "items": ["Name", "Kind", "Size"] },
+            { "classes": ["cols"], "children": [
+              { "class": "tableview", "id": "g.tableview", "classes": ["box", "col"], "columns": ["Name", "Kind", "Size"],
+                "rows": [["scene.fuse", "Scene", 1204], ["hero.png", "Texture", 88], ["theme.fusestyle", "Style", 3], ["music.ogg", "Audio", 5120],
+                         ["level2.fuse", "Scene", 2210], ["font.ttf", "Font", 310], ["notes.md", "Text", 2]] },
+              { "class": "treemodelview", "id": "g.treemodelview", "classes": ["box", "col"], "columns": ["Node", "Kind"], "editable": true,
+                "items": ["Scene\tgroup", "\tCamera\tcamera", "\tLights\tgroup", "\t\tSun\tlight", "\t\tFill\tlight", "Assets\tgroup", "\tTextures\tfolder"],
+                "expanded": true, "contextMenu": ["Rename", "Duplicate", "-", "Delete"], "on": { "submitted": "context" } }
+            ] },
+            { "classes": ["cols"], "children": [
+              { "class": "gridview", "id": "g.gridview", "classes": ["tall", "col"], "tileWidth": 90, "tileHeight": 60,
+                "items": ["Tile 0", "Tile 1", "Tile 2", "Tile 3", "Tile 4", "Tile 5", "Tile 6", "Tile 7", "Tile 8", "Tile 9", "Tile 10", "Tile 11", "Tile 12", "Tile 13"] },
+              { "class": "propertygrid", "id": "g.propertygrid", "classes": ["col"], "rows": [
+                { "name": "Transform", "kind": "group" },
+                { "name": "Visible", "kind": "bool", "value": true },
+                { "name": "Scale", "kind": "number", "value": 1.5, "min": 0, "max": 10, "step": 0.5 },
+                { "name": "Material", "kind": "group" },
+                { "name": "Name", "kind": "text", "value": "brushed steel" },
+                { "name": "Blend", "kind": "enum", "value": "1", "options": ["Opaque", "Alpha", "Additive"] },
+                { "name": "Tint", "kind": "color", "value": "#4C8DFF" }
+              ] }
+            ] }
+          ] },
+          { "class": "scrollarea", "id": "page.text", "classes": ["page", "fill"], "children": [
+            { "classes": ["cols"], "children": [
+              { "class": "textedit", "id": "g.textedit", "classes": ["box", "col"], "text": "A word-wrapped text edit. Lines break at the widget width and the caret moves by visual line.\nA second paragraph." },
+              { "class": "plaintextedit", "id": "g.plaintextedit", "classes": ["box", "col"], "text": "plain text edit\n  no gutter, no colouring\nlines are not wrapped" }
+            ] },
+            { "class": "codeedit", "id": "g.codeedit", "language": "lua", "classes": ["box"], "text": "-- code edit\nlocal function greet(name)\n    return \"hello \" .. name\nend\nprint(greet(\"FUSE\"))" },
+            { "class": "richtext", "id": "g.richtext", "text": "<b>Rich text</b>: <b>bold</b>, <i>italic</i>, <b><i>bold italic</i></b>, <color=#ff8800>colour</color>, <u>underline</u>, <s>strike</s> and a <a href=\"docs/ui\">link</a>.", "on": { "submitted": "link" } },
+            { "classes": ["cols"], "children": [
+              { "class": "markdown", "id": "g.markdown", "classes": ["col"], "text": "# Markdown view\nParagraph text with a list:\n- first\n- second\n\n> a quote\n```\ncode block\n```" },
+              { "class": "fontpicker", "id": "g.fontpicker", "classes": ["col"], "size": 16 }
+            ] }
+          ] },
+          { "class": "scrollarea", "id": "page.pro", "classes": ["page", "fill"], "children": [
+            { "classes": ["cols"], "children": [
+              { "class": "colorpicker", "id": "g.colorpicker", "color": "#FF8800" },
+              { "class": "calendar", "id": "g.calendar", "date": "2026-11-12" },
+              { "classes": ["col"], "children": [
+                { "class": "datetimeedit", "id": "g.datetimeedit", "date": "2026-11-12 09:30" },
+                { "class": "chart", "id": "g.chart", "kind": "line", "classes": ["box"], "series": [
+                  { "name": "fps", "values": [58, 60, 61, 59, 44, 60, 62, 60] },
+                  { "name": "gpu ms", "color": "#FFB454", "values": [9, 8, 8, 9, 16, 8, 8, 9] }
+                ] }
+              ] }
+            ] },
+            { "class": "chart", "id": "g.flame", "kind": "flame", "style": { "height": 110 }, "spans": [
+              { "name": "frame", "start": 0, "duration": 100, "depth": 0 },
+              { "name": "update", "start": 0, "duration": 60, "depth": 1 },
+              { "name": "render", "start": 60, "duration": 40, "depth": 1, "color": "#3D8BFD" },
+              { "name": "physics", "start": 10, "duration": 30, "depth": 2 }
+            ] },
+            { "classes": ["cols"], "children": [
+              { "class": "nodegraph", "id": "g.nodegraph", "classes": ["tall", "col"],
+                "nodes": [ { "title": "Const", "x": 20, "y": 30, "outputs": ["out"] }, { "title": "Add", "x": 200, "y": 60, "inputs": ["a", "b"], "outputs": ["sum"] } ],
+                "links": [[0, 0, 1, 0]] },
+              { "class": "curveeditor", "id": "g.curveeditor", "classes": ["tall", "col"], "range": [0, 1, 0, 1], "keys": [[0, 0], [0.4, 0.9], [1, 0.5]] }
+            ] },
+            { "class": "timeline", "id": "g.timeline", "duration": 12, "style": { "height": 120 }, "tracks": [
+              { "name": "Camera", "clips": [ { "start": 1, "end": 5, "text": "Shot A" }, { "start": 6, "end": 10, "text": "Shot B", "color": "#4CC26A" } ] },
+              { "name": "Audio", "clips": [ { "start": 0, "end": 12, "text": "Theme", "color": "#FFB454" } ] }
+            ] },
+            { "classes": ["cols"], "children": [
+              { "class": "viewport", "id": "g.viewport", "image": 0, "imageWidth": 64, "imageHeight": 36, "classes": ["tall", "col"] },
+              { "class": "video", "id": "g.video", "source": "testpattern", "classes": ["col"] }
+            ] }
+          ] },
+          { "class": "panel", "id": "page.window", "classes": ["fill"], "style": { "padding": 0 }, "children": [
+            { "class": "dockarea", "id": "g.dockarea", "children": [
+              { "class": "dock", "id": "dock.outline", "text": "Outline", "side": "left", "children": [ { "class": "label", "text": "Drag my title bar" } ] },
+              { "class": "dock", "id": "dock.history", "text": "History", "side": "left", "children": [ { "class": "label", "text": "history" } ] },
+              { "class": "dock", "id": "dock.props", "text": "Properties", "side": "right", "children": [ { "class": "label", "text": "properties" } ] },
+              { "class": "dock", "id": "dock.log", "text": "Log", "side": "bottom", "children": [ { "class": "label", "text": "log output" } ] },
+              { "class": "label", "id": "g.central", "text": "Dock area: drag title bars to float, re-dock or tab the docks.", "style": { "padding": 12 } }
+            ] }
+          ] },
+          { "class": "scrollarea", "id": "page.game", "classes": ["page", "fill"], "children": [
+            { "class": "label", "id": "g.game.note", "text": "Game HUD widgets (fuse_ui_game) are added by the app." }
+          ] }
+        ] },
+      { "class": "dialog", "id": "g.dialog", "text": "A dialog", "visible": "{dialogOpen}", "children": [
+        { "class": "label", "text": "Dialogs are modal: Escape or the button closes this one." },
+        { "class": "button", "id": "g.dialog.close", "text": "Close", "on": { "clicked": "dialog.close" } }
+      ] }
+    ]
+  }
+}

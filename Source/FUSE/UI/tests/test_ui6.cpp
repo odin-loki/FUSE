@@ -5,13 +5,13 @@
 //   tier_d                 property grid, colour picker, calendar, chart, markdown view
 // Optional --out=<dir>: PNG of the screen (tier_c.png / tier_d.png / dock_layout.png).
 #include "test_util.hpp"
+#include "fuse/text/from_chars.hpp"
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wunused-function"
 #endif
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
+#include "stb_write_impl.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -196,10 +196,10 @@ struct BigModel {
             char b[32];
             char* e = b;
             switch (c) {
-            case 0: std::memcpy(b, "entity_", 7); e = std::to_chars(b + 7, b + sizeof b, r).ptr; break;
+            case 0: std::memcpy(b, "entity_", 7); e = fuse::text::toChars(b + 7, b + sizeof b, r).ptr; break;
             case 1: { static constexpr std::string_view k[] = {"mesh", "light", "camera", "probe", "decal"}; return k[(r * 2654435761u >> 7) % 5]; }
-            case 2: e = std::to_chars(b, b + sizeof b, (r * 7919u) % 100000u).ptr; break;
-            default: e = std::to_chars(b, b + sizeof b, (r % 997u) * 0.25f).ptr; break;
+            case 2: e = fuse::text::toChars(b, b + sizeof b, (r * 7919u) % 100000u).ptr; break;
+            default: e = fuse::text::toChars(b, b + sizeof b, (r % 997u) * 0.25f).ptr; break;
             }
             scratch.assign(b, e);
             return scratch;
@@ -299,7 +299,7 @@ int modelView1M() {
 struct BarDelegate { // paints the cost column as a bar plus the number
     static void paint(const void*, const PaintContext& pc, DrawList& dl, Rect cell, u32, u32, std::string_view text, bool selected) {
         double v = 0.0;
-        std::from_chars(text.data(), text.data() + text.size(), v);
+        fuse::text::fromChars(text.data(), text.data() + text.size(), v);
         const f32 f = std::clamp(f32(v) / 250.f, 0.f, 1.f);
         dl.rect({cell.x, cell.y + 5.f, cell.w * f, cell.h - 10.f}, pc.tint(selected ? Color::rgb(0xFFFFFF, 0.6f) : Color::rgb(0x3D8BFD, 0.7f)), 2.f);
         pc.ui.paintString(dl, text, cell, pc.tint(pc.style.color), pc.style.fontSize * 0.85f, TextAlignment::End, pc.node.index);
@@ -330,7 +330,7 @@ int tierC() {
     for (u32 r = 0; r < proxy.rows(); ++r) {
         double v;
         const std::string_view d = proxy.model().data(proxy.model().user, r, 2, sc);
-        std::from_chars(d.data(), d.data() + d.size(), v);
+        fuse::text::fromChars(d.data(), d.data() + d.size(), v);
         sorted &= v <= prev;
         prev = v;
     }
@@ -372,9 +372,9 @@ int tierC() {
         click(ui, {c.x + 240.f + 60.f, c.y + 8.f}); // third column (name 120 + kind 120)
         double first = 0, second = 0;
         const std::string_view d0 = proxy.model().data(proxy.model().user, 0, 2, sc);
-        std::from_chars(d0.data(), d0.data() + d0.size(), first);
+        fuse::text::fromChars(d0.data(), d0.data() + d0.size(), first);
         const std::string_view d1 = proxy.model().data(proxy.model().user, 1, 2, sc);
-        std::from_chars(d1.data(), d1.data() + d1.size(), second);
+        fuse::text::fromChars(d1.data(), d1.data() + d1.size(), second);
         UI_CHECK(first <= second);
     }
     // grid: columns from the width, 2D keyboard movement, click selection, scroll to keep selection visible

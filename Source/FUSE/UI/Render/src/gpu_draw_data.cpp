@@ -28,10 +28,25 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     out.atlasSize = atlas ? atlasSize : 0;
     const u32 tilesX = (width + kUiTile - 1) / kUiTile, tilesY = (height + kUiTile - 1) / kUiTile;
     const u32 tileCount = tilesX * tilesY;
-    out.push = {{width, height}, tilesX, out.atlasSize, tileCount, imageCount, {0, 0}};
+    out.bakedOps = out.bakedPixels = out.unsupportedOps = 0;
+    // vector ops are drawn as pre-rasterised images: one extra image table entry per top-level vector op / group
+    u32 bakeSlots = 0;
+    if (list.hasVectorOps()) {
+        const auto& cmds = list.cmds();
+        for (std::size_t i = 0; i < cmds.size(); ++i) {
+            const DrawOp op = cmds[i].op;
+            if (op == DrawOp::Path || op == DrawOp::NinePatch) ++bakeSlots;
+            else if (op == DrawOp::PushClipPath || op == DrawOp::PushLayer) {
+                ++bakeSlots;
+                i = matchingPop(list, i);
+            }
+        }
+    }
+    const u32 tableCount = imageCount + bakeSlots;
+    out.push = {{width, height}, tilesX, out.atlasSize, tileCount, tableCount, {0, 0}};
 
     // images: table then pixels
-    out.images.resize(std::size_t(imageCount) * 4);
+    out.images.assign(std::size_t(tableCount) * 4, 0u);
     for (u32 i = 0; i < imageCount; ++i) {
         const Image* img = images ? images[i] : nullptr;
         out.images[i * 4 + 0] = u32(out.images.size());
@@ -63,7 +78,50 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     };
     thread_local std::vector<Area> areas;
     areas.clear();
-    for (const DrawCmd& c : list.cmds()) {
+    const RasterSources sources{atlas, int(atlas ? atlasSize : 0), images, images ? imageCount : 0u};
+    u32 bakeIndex = 0;
+    const auto& listCmds = list.cmds();
+    for (std::size_t ci = 0; ci < listCmds.size(); ++ci) {
+        const DrawCmd& c = listCmds[ci];
+        if (c.op == DrawOp::Path || c.op == DrawOp::NinePatch || c.op == DrawOp::PushClipPath || c.op == DrawOp::PushLayer) {
+            // a vector op, or a whole group: CPU pre-rasterised, drawn by the kernel as an image
+            const bool group = c.op == DrawOp::PushClipPath || c.op == DrawOp::PushLayer;
+            const std::size_t end = group ? matchingPop(list, ci) : ci;
+            const std::size_t first = ci, count = std::min(end, listCmds.size() - 1) - ci + 1;
+            const u32 slot = imageCount + bakeIndex++;
+            const Clip& clip = stack[depth];
+            const f32 opacity = c.op == DrawOp::PushLayer ? c.fill.a : 1.f;
+            const Rect bounds = (c.op == DrawOp::PushLayer && c.rect.empty()) ? clip.r : c.rect.intersect(clip.r);
+            ci = end;
+            if (bounds.empty() || !(opacity > 0.f)) continue;
+            const Area a{int(std::floor(bounds.x)), int(std::floor(bounds.y)), int(std::ceil(bounds.right())), int(std::ceil(bounds.bottom()))};
+            const u32 pixels = u32(a.x1 - a.x0) * u32(a.y1 - a.y0);
+            if (out.bakedPixels + pixels > kMaxBakedPixels) { // over budget: dropped, and reported
+                ++out.unsupportedOps;
+                continue;
+            }
+            const Rect area{f32(a.x0), f32(a.y0), f32(a.x1 - a.x0), f32(a.y1 - a.y0)};
+            rasterizeCommands(list, first, count, area, int(width), sources, out.bakeScratch, true);
+            ++out.bakedOps;
+            out.bakedPixels += pixels;
+            out.images[slot * 4 + 0] = u32(out.images.size());
+            out.images[slot * 4 + 1] = u32(a.x1 - a.x0);
+            out.images[slot * 4 + 2] = u32(a.y1 - a.y0);
+            out.images[slot * 4 + 3] = 0u;
+            out.images.insert(out.images.end(), out.bakeScratch.pixels.begin(), out.bakeScratch.pixels.end());
+            GpuCmd g{};
+            put4(g.rect, area.x, area.y, area.w, area.h);
+            put4(g.fill, 1.f, 1.f, 1.f, opacity);
+            put4(g.clip, clip.r.x, clip.r.y, clip.r.w, clip.r.h);
+            put4(g.params, 0.f, 0.f, clip.radius, 0.f);
+            g.info[0] = u32(DrawOp::Image);
+            g.info[3] = slot;
+            out.cmds.push_back(g);
+            areas.push_back(a);
+            for (int ty = a.y0 / int(kUiTile); ty <= (a.y1 - 1) / int(kUiTile); ++ty)
+                for (int tx = a.x0 / int(kUiTile); tx <= (a.x1 - 1) / int(kUiTile); ++tx) ++out.tiles[std::size_t(ty) * tilesX + tx];
+            continue;
+        }
         if (c.op == DrawOp::PushClip) {
             if (depth < 31) {
                 ++depth;

@@ -1,9 +1,11 @@
 // fuse_app native windows: X11 (libX11 loaded at runtime, so neither X11 headers nor libX11 are needed to build) and
-// Win32, plus the presenter selection (Vulkan swapchain -> GDI on Win32 -> headless). See native.hpp.
+// Win32, plus the presenter selection (Vulkan swapchain -> GDI on Win32 / XPutImage on X11 -> headless). See native.hpp.
+// The platform services (cursors, clipboard, window management, theme, displays, dialogs) are in native_services.inl.
 #include "native_internal.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -21,85 +23,25 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <commdlg.h>
+#include <shellapi.h>
+#include <shlobj.h>
 #else
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <poll.h>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char** environ;
 #endif
 
 namespace fuse::app {
 using namespace fuse::ui;
 using detail::SurfaceSource;
 
-#if !defined(FUSE_APP_HAS_VULKAN)
-// Built without a Vulkan loader: no swapchain presenter.
-namespace detail {
-struct VkCtx {};
-struct VkWin {};
-VkCtx* vkCtxCreate(SurfaceSource::Kind, std::string& err) { err = "built without Vulkan"; return nullptr; }
-VkCtx* vkCtxAdopt(SurfaceSource::Kind, const VulkanDeviceHandles&, std::string& err) { err = "built without Vulkan"; return nullptr; }
-void vkCtxDestroy(VkCtx*) {}
-bool vkWinSetExternal(VkWin*, unsigned, const ExternalTexture&) { return false; }
-const char* vkCtxDeviceName(const VkCtx*) { return ""; }
-VkWin* vkWinCreate(VkCtx*, const SurfaceSource&, const NativeOptions&, std::string&) { return nullptr; }
-bool vkWinPresent(VkWin*, AppWindow&, Rect) { return false; }
-bool vkWinGpuDraws(const VkWin*) { return false; }
-void vkWinDestroy(VkWin*) {}
-bool vkWinReadback(VkWin*, Image&) { return false; }
-} // namespace detail
-#endif
-
-namespace {
-u8 asciiKey(Key& k, u32 c) {
-    switch (c) {
-    case 'a': case 'A': k = Key::A; return 1;
-    case 'c': case 'C': k = Key::C; return 1;
-    case 'v': case 'V': k = Key::V; return 1;
-    case 'x': case 'X': k = Key::X; return 1;
-    case 'y': case 'Y': k = Key::Y; return 1;
-    case 'z': case 'Z': k = Key::Z; return 1;
-    case 'w': case 'W': k = Key::W; return 1;
-    case 's': case 'S': k = Key::S; return 1;
-    case 'd': case 'D': k = Key::D; return 1;
-    case 'q': case 'Q': k = Key::Q; return 1;
-    case 'e': case 'E': k = Key::E; return 1;
-    case 'n': case 'N': k = Key::N; return 1;
-    case 'o': case 'O': k = Key::O; return 1;
-    case ' ': k = Key::Space; return 1;
-    case '1': k = Key::Num1; return 1;
-    case '2': k = Key::Num2; return 1;
-    case '3': k = Key::Num3; return 1;
-    case '4': k = Key::Num4; return 1;
-    case 'b': case 'B': k = Key::B; return 1;
-    case 'f': case 'F': k = Key::F; return 1;
-    case 'g': case 'G': k = Key::G; return 1;
-    case 'h': case 'H': k = Key::H; return 1;
-    case 'i': case 'I': k = Key::I; return 1;
-    case 'j': case 'J': k = Key::J; return 1;
-    case 'k': case 'K': k = Key::K; return 1;
-    case 'l': case 'L': k = Key::L; return 1;
-    case 'm': case 'M': k = Key::M; return 1;
-    case 'p': case 'P': k = Key::P; return 1;
-    case 'r': case 'R': k = Key::R; return 1;
-    case 't': case 'T': k = Key::T; return 1;
-    case 'u': case 'U': k = Key::U; return 1;
-    case '0': k = Key::Num0; return 1;
-    case '5': k = Key::Num5; return 1;
-    case '6': k = Key::Num6; return 1;
-    case '7': k = Key::Num7; return 1;
-    case '8': k = Key::Num8; return 1;
-    case '9': k = Key::Num9; return 1;
-    case '[': k = Key::BracketLeft; return 1;
-    case ']': k = Key::BracketRight; return 1;
-    default: return 0;
-    }
-}
-void appendUtf8(std::string& s, u32 cp) {
-    if (cp < 0x80) s += char(cp);
-    else if (cp < 0x800) { s += char(0xC0 | (cp >> 6)); s += char(0x80 | (cp & 0x3F)); }
-    else if (cp < 0x10000) { s += char(0xE0 | (cp >> 12)); s += char(0x80 | ((cp >> 6) & 0x3F)); s += char(0x80 | (cp & 0x3F)); }
-    else { s += char(0xF0 | (cp >> 18)); s += char(0x80 | ((cp >> 12) & 0x3F)); s += char(0x80 | ((cp >> 6) & 0x3F)); s += char(0x80 | (cp & 0x3F)); }
-}
-} // namespace
+using detail::appendUtf8;
+using detail::asciiKey;
 
 #if !defined(_WIN32)
 // ---- X11 (runtime-loaded) ----------------------------------------------------------------------------------------
@@ -118,16 +60,33 @@ struct InputEv {
 };
 struct ConfigureEv { int type; unsigned long serial; int send_event; Display* display; Window event, window; int x, y, width, height; };
 struct ClientEv { int type; unsigned long serial; int send_event; Display* display; Window window; Atom message_type; int format; long l[5]; };
-union Event { int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; long pad[24]; };
+struct SelectionRequestEv {
+    int type; unsigned long serial; int send_event; Display* display; Window owner, requestor; Atom selection, target, property;
+    unsigned long time;
+};
+struct SelectionEv {
+    int type; unsigned long serial; int send_event; Display* display; Window requestor; Atom selection, target, property;
+    unsigned long time;
+};
+struct PropertyEv { int type; unsigned long serial; int send_event; Display* display; Window window; Atom atom; unsigned long time; int state; };
+struct FocusEv { int type; unsigned long serial; int send_event; Display* display; Window window; int mode, detail; };
+union Event {
+    int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; SelectionRequestEv selectionRequest;
+    SelectionEv selection; PropertyEv property; FocusEv focus; long pad[24];
+};
+struct Color { unsigned long pixel; unsigned short red, green, blue; char flags, pad; }; // XColor
+struct RRMonitor { Atom name; int primary, automatic, noutput, x, y, width, height, mwidth, mheight; XID* outputs; }; // XRRMonitorInfo
 struct Image;
 struct ImageFuncs { Image* (*create)(); int (*destroy)(Image*); };
 struct Image {
     int width, height, xoffset, format; char* data; int byte_order, bitmap_unit, bitmap_bit_order, bitmap_pad, depth,
         bytes_per_line, bits_per_pixel; unsigned long red_mask, green_mask, blue_mask; char* obdata; ImageFuncs f;
 };
-enum { KeyPress = 2, KeyRelease = 3, ButtonPress = 4, ButtonRelease = 5, MotionNotify = 6, FocusOut = 10, Expose = 12,
-       MapNotify = 19, ConfigureNotify = 22, ClientMessage = 33 };
-constexpr long kMask = 1 | 2 | 4 | 8 | (1 << 6) | (1 << 15) | (1 << 17) | (1 << 21);
+enum { KeyPress = 2, KeyRelease = 3, ButtonPress = 4, ButtonRelease = 5, MotionNotify = 6, FocusIn = 9, FocusOut = 10, Expose = 12,
+       UnmapNotify = 18, MapNotify = 19, ConfigureNotify = 22, PropertyNotify = 28, SelectionClear = 29, SelectionRequest = 30,
+       SelectionNotify = 31, ClientMessage = 33 };
+// keys, buttons, motion, exposure, structure, focus change, property change (_NET_WM_STATE)
+constexpr long kMask = 1 | 2 | 4 | 8 | (1 << 6) | (1 << 15) | (1 << 17) | (1 << 21) | (1 << 22);
 
 struct Lib {
     void* so = nullptr;
@@ -168,6 +127,31 @@ struct Lib {
     int (*SendEvent)(Display*, Window, int, long, Event*) = nullptr;
     int (*GrabPointer)(Display*, Window, int, unsigned, int, int, Window, XID, unsigned long) = nullptr;
     int (*UngrabPointer)(Display*, unsigned long) = nullptr;
+    // Optional (platform services): a missing symbol or library turns the feature off, never the backend.
+    XID (*CreateFontCursor)(Display*, unsigned) = nullptr;
+    int (*DefineCursor)(Display*, Window, XID) = nullptr;
+    XID (*CreateBitmapFromData)(Display*, XID, const char*, unsigned, unsigned) = nullptr;
+    XID (*CreatePixmapCursor)(Display*, XID, XID, Color*, Color*, unsigned, unsigned) = nullptr;
+    int (*FreePixmap)(Display*, XID) = nullptr;
+    int (*SetSelectionOwner)(Display*, Atom, Window, unsigned long) = nullptr;
+    Window (*GetSelectionOwner)(Display*, Atom) = nullptr;
+    int (*ConvertSelection)(Display*, Atom, Atom, Atom, Window, unsigned long) = nullptr;
+    int (*CheckTypedWindowEvent)(Display*, Window, int, Event*) = nullptr;
+    int (*DeleteProperty)(Display*, Window, Atom) = nullptr;
+    char* (*ResourceManagerString)(Display*) = nullptr;
+    int (*UnmapWindow)(Display*, Window) = nullptr;
+    int (*MoveWindow)(Display*, Window, int, int) = nullptr;
+    int (*RaiseWindow)(Display*, Window) = nullptr;
+    int (*SetInputFocus)(Display*, Window, int, unsigned long) = nullptr;
+    char* (*GetAtomName)(Display*, Atom) = nullptr;
+    void* xcursor = nullptr; ///< libXcursor: themed cursors by CSS name
+    XID (*CursorLoad)(Display*, const char*) = nullptr;
+    void* xrandr = nullptr;  ///< libXrandr: monitors and the refresh rate
+    RRMonitor* (*RRGetMonitors)(Display*, Window, int, int*) = nullptr;
+    void (*RRFreeMonitors)(RRMonitor*) = nullptr;
+    void* (*RRGetScreenInfo)(Display*, Window) = nullptr;
+    short (*RRConfigCurrentRate)(void*) = nullptr;
+    void (*RRFreeScreenConfigInfo)(void*) = nullptr;
 
     bool load() {
         so = dlopen("libX11.so.6", RTLD_NOW | RTLD_LOCAL);
@@ -190,7 +174,26 @@ struct Lib {
         get(TranslateCoordinates, "XTranslateCoordinates"); get(ChangeWindowAttributes, "XChangeWindowAttributes");
         get(DisplayWidth, "XDisplayWidth"); get(DisplayHeight, "XDisplayHeight"); get(SendEvent, "XSendEvent");
         get(GrabPointer, "XGrabPointer"); get(UngrabPointer, "XUngrabPointer");
-        return all;
+        const bool required = all;
+        get(CreateFontCursor, "XCreateFontCursor"); get(DefineCursor, "XDefineCursor");
+        get(CreateBitmapFromData, "XCreateBitmapFromData"); get(CreatePixmapCursor, "XCreatePixmapCursor"); get(FreePixmap, "XFreePixmap");
+        get(SetSelectionOwner, "XSetSelectionOwner"); get(GetSelectionOwner, "XGetSelectionOwner");
+        get(ConvertSelection, "XConvertSelection"); get(CheckTypedWindowEvent, "XCheckTypedWindowEvent");
+        get(DeleteProperty, "XDeleteProperty"); get(ResourceManagerString, "XResourceManagerString");
+        get(UnmapWindow, "XUnmapWindow"); get(MoveWindow, "XMoveWindow"); get(RaiseWindow, "XRaiseWindow");
+        get(SetInputFocus, "XSetInputFocus"); get(GetAtomName, "XGetAtomName");
+        auto lib = [&](void*& h, const char* name) {
+            h = dlopen(name, RTLD_NOW | RTLD_LOCAL);
+            return h != nullptr;
+        };
+        auto from = [&](void* h, auto& fn, const char* name) { fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(dlsym(h, name)); };
+        if (lib(xcursor, "libXcursor.so.1")) from(xcursor, CursorLoad, "XcursorLibraryLoadCursor");
+        if (lib(xrandr, "libXrandr.so.2")) {
+            from(xrandr, RRGetMonitors, "XRRGetMonitors"); from(xrandr, RRFreeMonitors, "XRRFreeMonitors");
+            from(xrandr, RRGetScreenInfo, "XRRGetScreenInfo"); from(xrandr, RRConfigCurrentRate, "XRRConfigCurrentRate");
+            from(xrandr, RRFreeScreenConfigInfo, "XRRFreeScreenConfigInfo");
+        }
+        return required;
     }
 };
 // XSetWindowAttributes (LP64 Xlib ABI)
@@ -258,6 +261,11 @@ struct NativePlatform::Impl {
         unsigned long long handle = 0; ///< X11 Window / HWND
         bool mapped = false;
         bool focused = false;
+        f32 scale = 1.f;                 ///< UI units -> window pixels (HiDPI; see NativeOptions::scale)
+        Cursor cursor = Cursor::Arrow;   ///< shape last applied to the OS window
+        bool cursorApplied = false;
+        bool hideAsked = false;          ///< the app hid the window (an unmap is not a minimise)
+        std::vector<u32> staged;         ///< X11 software presenter: the frame in the server's pixel order
         struct Popup {
             unsigned long long handle = 0;
             Rect screen;   ///< physical screen rect
@@ -270,6 +278,9 @@ struct NativePlatform::Impl {
 #if defined(_WIN32)
         std::vector<u32> bgra; ///< GDI fallback staging
         wchar_t highSurrogate = 0;
+        bool fullscreen = false;         ///< borderless on the whole monitor; `restore*` = what to go back to
+        LONG restoreStyle = 0;
+        WINDOWPLACEMENT restorePlacement{};
 #endif
     };
 
@@ -282,11 +293,34 @@ struct NativePlatform::Impl {
     EventSource previous{};
 #if defined(_WIN32)
     HINSTANCE hinst = nullptr;
+    HCURSOR cursors[kCursorCount] = {};
+    f32 windowScale(HWND hwnd) const; ///< NativeOptions::scale, else the window's monitor DPI / 96
+    void initServices();              ///< DPI awareness + the system theme
+    void leaveFullscreen(Rec& r);
+    SystemTheme queryTheme() const;
 #else
     x11::Lib x;
     x11::Display* dpy = nullptr;
     x11::Atom wmProtocols = 0, wmDelete = 0;
+    x11::Window helper = 0; ///< unmapped: owns the CLIPBOARD selection and receives conversions
+    x11::Atom aClipboard = 0, aUtf8 = 0, aTargets = 0, aTextPlain = 0, aIncr = 0, aClipProp = 0, aNetWmState = 0, aFullscreen = 0, aMaxV = 0,
+              aMaxH = 0, aHidden = 0, aActive = 0, aChangeState = 0, aNetWmName = 0, aWmCheck = 0, aWorkArea = 0;
+    std::string clipText;   ///< what we serve while we own the selection
+    bool clipOwner = false;
+    unsigned long cursors[kCursorCount] = {};
+    f32 detectedScale = 1.f; ///< Xft.dpi / env (dpi::x11Scale)
+    bool themeQueried = false;
+    unsigned long cursorFor(Cursor c);
+    void serveSelection(const x11::SelectionRequestEv& rq);
+    bool hasWm() const;
+    WindowMode readMode(const Rec& r) const;
+    bool windowLongs(x11::Window win, x11::Atom prop, x11::Atom type, std::vector<unsigned long>& out) const;
 #endif
+    void applyCursor(Rec& r);
+    static bool windowRequest(void* user, AppWindow& w, WindowRequest what);
+    static bool clipSet(void* user, std::string_view utf8);
+    static bool clipGet(void* user, std::string& out);
+    bool clipboardUsable() const;
 
     Impl(Application& a, const NativeOptions& o) : app(a), opts(o) {}
 
@@ -300,6 +334,8 @@ struct NativePlatform::Impl {
             if (r->win == &w) return r;
         return nullptr;
     }
+    /// Window pixels -> UI units.
+    static Vec2 toUi(const Rec& r, f32 px, f32 py) { return {px / r.scale, py / r.scale}; }
     detail::VkCtx* vkContext() {
         if (!vkTried && opts.vulkan) {
             vkTried = true;
@@ -355,10 +391,8 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
     UiContext& ui = r.win->ui();
     int ox = 0, oy = 0;
     Rect work;
-    if (screenInfo(r, ox, oy, work)) {
-        const f32 s = 1.f; // context px = physical / scale
-        ui.setOsPopups(true, {(work.x - f32(ox)) / s, (work.y - f32(oy)) / s, work.w / s, work.h / s});
-    }
+    const f32 s = r.scale; // UI units = physical px / scale
+    if (screenInfo(r, ox, oy, work)) ui.setOsPopups(true, {(work.x - f32(ox)) / s, (work.y - f32(oy)) / s, work.w / s, work.h / s});
     const auto& surf = ui.popupSurfaces();
     const bool had = !r.popups.empty();
     while (r.popups.size() > surf.size()) {
@@ -366,7 +400,6 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
         r.popups.pop_back();
     }
     if (had && r.popups.empty()) grabPointer(r, false);
-    const f32 s = 1.f;
     for (std::size_t i = 0; i < surf.size(); ++i) {
         if (i == r.popups.size()) r.popups.emplace_back();
         Rec::Popup& p = r.popups[i];
@@ -390,13 +423,7 @@ void NativePlatform::Impl::syncPopups(Rec& r) {
             p.img.resize(int(scr.w), int(scr.h), clear);
             CpuRasterizer rz = r.win->rasterizer(); // the window's images + the current glyph atlas
             rz.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
-            if (s == 1.f) {
-                rz.render(ps.draw, p.img);
-            } else {
-                DrawList scaled = ps.draw;
-                for (DrawCmd& c : scaled.cmds()) { c.rect.x *= s; c.rect.y *= s; c.rect.w *= s; c.rect.h *= s; }
-                rz.render(scaled, p.img);
-            }
+            rz.render(ps.draw, p.img); // already device pixels, popup-local (UiContext::PopupSurface)
             blitPopupOs(p);
         }
     }
@@ -433,6 +460,27 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
         r.impl->syncPopups(r);
         return true;
     }
+#else
+    case PresenterKind::Software: { // no Vulkan: the X server shows the CPU raster (XPutImage, TrueColor 24 / 32)
+        const Image& img = w.rasterize(damage);
+        Impl& m = *r.impl;
+        auto& x = m.x;
+        const int scr = x.DefaultScreen(m.dpy);
+        r.staged.resize(img.pixels.size());
+        for (std::size_t i = 0; i < img.pixels.size(); ++i) { // 0xAABBGGRR -> 0x00RRGGBB
+            const u32 q = img.pixels[i];
+            r.staged[i] = ((q & 0xFFu) << 16) | (q & 0xFF00u) | ((q >> 16) & 0xFFu);
+        }
+        if (x11::Image* xi = x.CreateImage(m.dpy, x.DefaultVisual(m.dpy, scr), unsigned(x.DefaultDepth(m.dpy, scr)), 2 /*ZPixmap*/, 0,
+                                           reinterpret_cast<char*>(r.staged.data()), unsigned(img.width), unsigned(img.height), 32, 0)) {
+            x.PutImage(m.dpy, x11::Window(r.handle), x.DefaultGC(m.dpy, scr), xi, 0, 0, 0, 0, unsigned(img.width), unsigned(img.height));
+            xi->data = nullptr; // ours (XDestroyImage would free it)
+            xi->f.destroy(xi);
+            x.Flush(m.dpy);
+        }
+        r.impl->syncPopups(r);
+        return true;
+    }
 #endif
     default: w.rasterize(damage); r.impl->syncPopups(r); return true;
     }
@@ -446,6 +494,10 @@ void NativePlatform::Impl::destroy(void* user) {
     for (Rec::Popup& p : r->popups) m.destroyPopupOs(p);
     r->popups.clear();
     if (r->win) r->win->ui().setOsPopups(false);
+    if (r->win) {
+        r->win->ui().setClipboard({}); // back to the context-local buffer
+        r->win->setWindowBackend({});
+    }
     m.destroyOsWindow(*r);
     std::erase(m.recs, r);
     delete r;
@@ -498,6 +550,11 @@ u8 winMods() {
               (((GetKeyState(VK_LWIN) | GetKeyState(VK_RWIN)) & 0x8000) ? kModSuper : 0));
 }
 Vec2 lparamPos(LPARAM lp) { return {f32(short(LOWORD(lp))), f32(short(HIWORD(lp)))}; }
+/// Client pixels -> UI units.
+Vec2 uiPos(const NativePlatform::Impl::Rec& r, LPARAM lp) {
+    const Vec2 p = lparamPos(lp);
+    return {p.x / r.scale, p.y / r.scale};
+}
 
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* r = reinterpret_cast<NativePlatform::Impl::Rec*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -505,9 +562,44 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     AppWindow& w = *r->win;
     UiContext& ui = w.ui();
     switch (msg) {
-    case WM_CLOSE: w.requestClose(); return 0;
+    case WM_CLOSE: w.tryClose(); return 0; // the close guard may veto
     case WM_ACTIVATEAPP: // another application took the pointer / focus: popups close (Qt::Popup)
         if (!wp && !r->popups.empty()) NativePlatform::Impl::closeAllPopups(*r);
+        break;
+    case WM_ACTIVATE: w.notifyActive(LOWORD(wp) != WA_INACTIVE); break;
+    case WM_MOVE: w.notifyMoved(uiPos(*r, lp)); break; // client origin on screen
+    case WM_SHOWWINDOW: w.notifyVisible(wp != 0); break;
+    case WM_GETMINMAXINFO: { // AppWindow::setMinimumSize / setMaximumSize (client area, UI units)
+        if (r->fullscreen) break;
+        auto* mm = reinterpret_cast<MINMAXINFO*>(lp);
+        const Size mn = w.minimumSize(), mx = w.maximumSize();
+        RECT fr{0, 0, 0, 0};
+        AdjustWindowRectEx(&fr, DWORD(GetWindowLongW(hwnd, GWL_STYLE)), FALSE, DWORD(GetWindowLongW(hwnd, GWL_EXSTYLE)));
+        const LONG fw = fr.right - fr.left, fh = fr.bottom - fr.top;
+        if (mn.w > 0.f) mm->ptMinTrackSize.x = LONG(std::lround(mn.w * r->scale)) + fw;
+        if (mn.h > 0.f) mm->ptMinTrackSize.y = LONG(std::lround(mn.h * r->scale)) + fh;
+        if (mx.w > 0.f) mm->ptMaxTrackSize.x = LONG(std::lround(mx.w * r->scale)) + fw;
+        if (mx.h > 0.f) mm->ptMaxTrackSize.y = LONG(std::lround(mx.h * r->scale)) + fh;
+        return 0;
+    }
+    case WM_DPICHANGED: { // moved to a monitor with another DPI: take the suggested rect, re-render at the new scale
+        if (r->impl->opts.scale <= 0.f) r->scale = dpi::resolveScale(0.f, dpi::scaleFromDpi(f32(HIWORD(wp))));
+        const RECT* sr = reinterpret_cast<const RECT*>(lp);
+        SetWindowPos(hwnd, nullptr, sr->left, sr->top, sr->right - sr->left, sr->bottom - sr->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        RECT c;
+        if (GetClientRect(hwnd, &c) && c.right > 0 && c.bottom > 0) w.resizePixels(u32(c.right), u32(c.bottom), r->scale);
+        return 0;
+    }
+    case WM_SETCURSOR:
+        if (LOWORD(lp) == HTCLIENT) { // the UI's cursor over the client area; the frame keeps the system's
+            r->impl->applyCursor(*r);
+            return TRUE;
+        }
+        break;
+    case WM_SETTINGCHANGE:
+    case WM_SYSCOLORCHANGE:
+    case WM_DWMCOLORIZATIONCOLORCHANGED: // light / dark preference or accent changed
+        r->impl->app.setSystemTheme(r->impl->queryTheme());
         break;
     case WM_PAINT: {
         PAINTSTRUCT ps;
@@ -519,7 +611,9 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_ERASEBKGND: return 1;
     case WM_SIZE:
-        if (LOWORD(lp) && HIWORD(lp)) w.resize(LOWORD(lp), HIWORD(lp));
+        if (LOWORD(lp) && HIWORD(lp)) w.resizePixels(LOWORD(lp), HIWORD(lp), r->scale);
+        w.notifyMode(wp == SIZE_MINIMIZED ? WindowMode::Minimized : r->fullscreen ? WindowMode::Fullscreen
+                     : wp == SIZE_MAXIMIZED ? WindowMode::Maximized : WindowMode::Normal);
         return 0;
     case WM_MOUSEMOVE: case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN: case WM_LBUTTONUP: case WM_RBUTTONUP: case WM_MBUTTONUP:
         ui.setModifiers(u8(((wp & MK_SHIFT) ? kModShift : 0) | ((wp & MK_CONTROL) ? kModCtrl : 0) | ((GetKeyState(VK_MENU) < 0) ? kModAlt : 0)));
@@ -527,17 +621,17 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     default: break;
     }
     switch (msg) {
-    case WM_MOUSEMOVE: ui.pointerMove(lparamPos(lp)); return 0;
-    case WM_LBUTTONDOWN: SetCapture(hwnd); ui.pointerDown(lparamPos(lp), MouseButton::Left); return 0;
-    case WM_RBUTTONDOWN: ui.pointerDown(lparamPos(lp), MouseButton::Right); return 0;
-    case WM_MBUTTONDOWN: ui.pointerDown(lparamPos(lp), MouseButton::Middle); return 0;
-    case WM_LBUTTONUP: ReleaseCapture(); ui.pointerUp(lparamPos(lp)); return 0;
+    case WM_MOUSEMOVE: ui.pointerMove(uiPos(*r, lp)); r->impl->applyCursor(*r); return 0;
+    case WM_LBUTTONDOWN: SetCapture(hwnd); ui.pointerDown(uiPos(*r, lp), MouseButton::Left); return 0;
+    case WM_RBUTTONDOWN: ui.pointerDown(uiPos(*r, lp), MouseButton::Right); return 0;
+    case WM_MBUTTONDOWN: ui.pointerDown(uiPos(*r, lp), MouseButton::Middle); return 0;
+    case WM_LBUTTONUP: ReleaseCapture(); ui.pointerUp(uiPos(*r, lp)); return 0;
     case WM_RBUTTONUP:
-    case WM_MBUTTONUP: ui.pointerUp(lparamPos(lp)); return 0;
+    case WM_MBUTTONUP: ui.pointerUp(uiPos(*r, lp)); return 0;
     case WM_MOUSEWHEEL: {
         POINT p{short(LOWORD(lp)), short(HIWORD(lp))};
         ScreenToClient(hwnd, &p);
-        ui.wheel({f32(p.x), f32(p.y)}, {0.f, f32(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA});
+        ui.wheel({f32(p.x) / r->scale, f32(p.y) / r->scale}, {0.f, f32(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA});
         return 0;
     }
     case WM_KEYDOWN:
@@ -548,8 +642,11 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         const Key k = mapVk(wp, ascii);
         const u8 md = winMods();
         if (k != Key::Other) { // printable keys too: viewport WASD / 1-4; text arrives separately
-            if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) ui.keyDown(k, md);
-            else ui.keyUp(k, md);
+            if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) {
+                if (!ui.keyDown(k, md)) w.menuShortcut(k, md); // unconsumed: a menu shortcut (AppWindow::setMenu)
+            } else {
+                ui.keyUp(k, md);
+            }
         }
         break;
     }
@@ -578,7 +675,7 @@ LRESULT CALLBACK popupProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (!r->impl->findPopup(reinterpret_cast<unsigned long long>(hwnd), idx)) return DefWindowProcW(hwnd, msg, wp, lp);
     NativePlatform::Impl::Rec::Popup& p = r->popups[idx];
     UiContext& ui = r->win->ui();
-    const f32 s = 1.f;
+    const f32 s = r->scale;
     const Vec2 lp2 = lparamPos(lp);
     const Vec2 pos{p.rect.x + lp2.x / s, p.rect.y + lp2.y / s};
     switch (msg) {
@@ -679,8 +776,16 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
         error = "CreateWindowExW failed";
         return false;
     }
-    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&r));
     r.handle = reinterpret_cast<unsigned long long>(hwnd);
+    // HiDPI: the client area is UI size x the scale of the monitor the window landed on (NativeOptions::scale)
+    r.scale = windowScale(hwnd);
+    const Size px = dpi::toPixels(sz, r.scale);
+    RECT want{0, 0, LONG(px.w), LONG(px.h)};
+    AdjustWindowRect(&want, WS_OVERLAPPEDWINDOW, FALSE);
+    SetWindowPos(hwnd, nullptr, 0, 0, want.right - want.left, want.bottom - want.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    RECT client;
+    if (GetClientRect(hwnd, &client) && client.right > 0 && client.bottom > 0) r.win->resizePixels(u32(client.right), u32(client.bottom), r.scale);
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&r));
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
     return true;
@@ -764,6 +869,7 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
     pc.lpfnWndProc = &popupProc;
     pc.lpszClassName = kPopupClass;
     RegisterClassExW(&pc);
+    m->initServices();
     app.setEventSource({m.get(), &Impl::pump});
 }
 bool NativePlatform::available() const { return true; }
@@ -772,7 +878,8 @@ void* NativePlatform::nativeDisplay() const { return m->hinst; }
 #else
 // ---- X11 platform ------------------------------------------------------------------------------------------------
 bool NativePlatform::Impl::createOsWindow(Rec& r) {
-    const Size sz = r.win->size();
+    r.scale = dpi::resolveScale(opts.scale, detectedScale);
+    const Size sz = dpi::toPixels(r.win->size(), r.scale); // the X window is physical pixels
     const int scr = x.DefaultScreen(dpy);
     const x11::Window w = x.CreateSimpleWindow(dpy, x.RootWindow(dpy, scr), 0, 0, unsigned(sz.w), unsigned(sz.h), 0, 0, 0);
     if (!w) {
@@ -782,9 +889,12 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
     x.StoreName(dpy, w, r.win->title().c_str());
     x.SelectInput(dpy, w, x11::kMask);
     x.SetWMProtocols(dpy, w, &wmDelete, 1);
+    if (x.DefineCursor)
+        if (const unsigned long arrow = cursorFor(Cursor::Arrow)) x.DefineCursor(dpy, w, arrow); // a bare X root shows an X
     x.MapWindow(dpy, w);
     x.Flush(dpy);
     r.handle = w;
+    r.win->resizePixels(u32(sz.w), u32(sz.h), r.scale);
     return true;
 }
 void NativePlatform::Impl::destroyOsWindow(Rec& r) {
@@ -805,11 +915,14 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     while (x.Pending(m.dpy)) {
         x11::Event ev{};
         x.NextEvent(m.dpy, &ev);
+        if (ev.type == x11::SelectionRequest) { m.serveSelection(ev.selectionRequest); continue; }
+        if (ev.type == x11::SelectionClear) { m.clipOwner = false; continue; } // another client copied
+        if (ev.type == x11::SelectionNotify) continue; // a late answer to a conversion clipGet gave up on
         std::size_t pi = 0;
         if (Rec* pr = m.findPopup(ev.any.window, pi)) { // a popup window: input in context coordinates of its owner
             Rec::Popup& p = pr->popups[pi];
             UiContext& ui = pr->win->ui();
-            const f32 s = 1.f;
+            const f32 s = pr->scale;
             const Vec2 pos{p.rect.x + f32(ev.input.x) / s, p.rect.y + f32(ev.input.y) / s};
             if (ev.type == x11::Expose) m.blitPopupOs(p);
             else if (ev.type == x11::MotionNotify) { ui.setModifiers(x11::mods(ev.input.state)); ui.pointerMove(pos); }
@@ -831,18 +944,40 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
         AppWindow& w = *r->win;
         UiContext& ui = w.ui();
         const x11::InputEv& in = ev.input;
-        const Vec2 pos{f32(in.x), f32(in.y)};
+        const Vec2 pos = toUi(*r, f32(in.x), f32(in.y));
         switch (ev.type) {
         case x11::ClientMessage:
-            if (ev.client.message_type == m.wmProtocols && x11::Atom(ev.client.l[0]) == m.wmDelete) w.requestClose();
+            if (ev.client.message_type == m.wmProtocols && x11::Atom(ev.client.l[0]) == m.wmDelete) w.tryClose();
             break;
-        case x11::MapNotify: r->mapped = true; w.requestRedraw(); break;
+        case x11::MapNotify:
+            r->mapped = true;
+            r->hideAsked = false;
+            w.notifyVisible(true);
+            w.notifyMode(m.readMode(*r));
+            w.requestRedraw();
+            break;
+        case x11::UnmapNotify:
+            r->mapped = false;
+            if (r->hideAsked) w.notifyVisible(false); // else: iconified by the window manager (_NET_WM_STATE says so)
+            break;
+        case x11::PropertyNotify:
+            if (ev.property.atom == m.aNetWmState) w.notifyMode(m.readMode(*r));
+            break;
+        case x11::FocusIn:
+        case x11::FocusOut:
+            if (ev.focus.mode == 1 || ev.focus.mode == 2) break; // NotifyGrab / NotifyUngrab: a menu's grab, not a focus change
+            r->focused = ev.type == x11::FocusIn;
+            w.notifyActive(r->focused);
+            break;
         case x11::Expose: r->mapped = true; w.requestRedraw(); break;
         case x11::ConfigureNotify: {
-            const Size s = w.size();
+            const Size s = w.pixelSize();
             if (ev.configure.width > 0 && ev.configure.height > 0 &&
                 (u32(ev.configure.width) != u32(s.w) || u32(ev.configure.height) != u32(s.h)))
-                w.resize(u32(ev.configure.width), u32(ev.configure.height));
+                w.resizePixels(u32(ev.configure.width), u32(ev.configure.height), r->scale);
+            int ox = 0, oy = 0;
+            Rect work;
+            if (m.screenInfo(*r, ox, oy, work)) w.notifyMoved(toUi(*r, f32(ox), f32(oy)));
             break;
         }
         case x11::MotionNotify: ui.setModifiers(x11::mods(in.state)); ui.pointerMove(pos); break;
@@ -866,8 +1001,11 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
             const Key k = x11::mapKey(sym, ascii);
             const u8 md = x11::mods(in.state);
             if (k != Key::Other) { // printable keys too: viewport WASD / 1-4; text arrives separately
-                if (ev.type == x11::KeyPress) ui.keyDown(k, md);
-                else ui.keyUp(k, md);
+                if (ev.type == x11::KeyPress) {
+                    if (!ui.keyDown(k, md)) w.menuShortcut(k, md); // unconsumed: a menu shortcut (AppWindow::setMenu)
+                } else {
+                    ui.keyUp(k, md);
+                }
             }
             if (ev.type == x11::KeyPress && n > 0 && !(md & (kModCtrl | kModAlt))) {
                 std::string s; // XLookupString yields Latin-1
@@ -880,6 +1018,8 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
         default: break;
         }
     }
+    for (Rec* r : m.recs)
+        if (r->handle && r->win) m.applyCursor(*r); // what the UI wants after this batch of input
     return true;
 }
 bool NativePlatform::Impl::screenInfo(const Rec& r, int& ox, int& oy, Rect& work) const {
@@ -902,6 +1042,8 @@ bool NativePlatform::Impl::createPopupOs(Rec& r, Rec::Popup& p) {
     const x11::Atom type = x.InternAtom(dpy, "_NET_WM_WINDOW_TYPE", 0), menu = x.InternAtom(dpy, "_NET_WM_WINDOW_TYPE_POPUP_MENU", 0);
     x.ChangeProperty(dpy, w, type, 4 /*XA_ATOM*/, 32, 0, reinterpret_cast<const unsigned char*>(&menu), 1);
     x.SelectInput(dpy, w, x11::kPopupMask);
+    if (x.DefineCursor)
+        if (const unsigned long arrow = cursorFor(Cursor::Arrow)) x.DefineCursor(dpy, w, arrow);
     x.MapWindow(dpy, w);
     p.handle = w;
     return true;
@@ -957,7 +1099,7 @@ bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
     return true;
 }
 bool NativePlatform::Impl::captureOs(const Rec& r, Image& out) {
-    const Size sz = r.win->size();
+    const Size sz = r.win->pixelSize();
     if (captureX(x11::Window(r.handle), unsigned(sz.w), unsigned(sz.h), out)) return true;
     // window not fully on screen (GetImage: BadMatch) or not mapped: a Vulkan window reports the frame it presented
     return r.vk && detail::vkWinReadback(r.vk, out);
@@ -993,6 +1135,21 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
             m->x.SetErrorHandler(&x11::ignoreErrors);
             m->wmProtocols = m->x.InternAtom(m->dpy, "WM_PROTOCOLS", 0);
             m->wmDelete = m->x.InternAtom(m->dpy, "WM_DELETE_WINDOW", 0);
+            auto atom = [&](const char* name) { return m->x.InternAtom(m->dpy, name, 0); };
+            m->aClipboard = atom("CLIPBOARD"); m->aUtf8 = atom("UTF8_STRING"); m->aTargets = atom("TARGETS");
+            m->aTextPlain = atom("text/plain;charset=utf-8"); m->aIncr = atom("INCR"); m->aClipProp = atom("FUSE_CLIPBOARD");
+            m->aNetWmState = atom("_NET_WM_STATE"); m->aFullscreen = atom("_NET_WM_STATE_FULLSCREEN");
+            m->aMaxV = atom("_NET_WM_STATE_MAXIMIZED_VERT"); m->aMaxH = atom("_NET_WM_STATE_MAXIMIZED_HORZ");
+            m->aHidden = atom("_NET_WM_STATE_HIDDEN"); m->aActive = atom("_NET_ACTIVE_WINDOW"); m->aChangeState = atom("WM_CHANGE_STATE");
+            m->aNetWmName = atom("_NET_WM_NAME"); m->aWmCheck = atom("_NET_SUPPORTING_WM_CHECK"); m->aWorkArea = atom("_NET_WORKAREA");
+            const int scr = m->x.DefaultScreen(m->dpy);
+            m->helper = m->x.CreateSimpleWindow(m->dpy, m->x.RootWindow(m->dpy, scr), -10, -10, 1, 1, 0, 0, 0); // never mapped
+            const char* rm = m->x.ResourceManagerString ? m->x.ResourceManagerString(m->dpy) : nullptr;
+            const char* gdk = std::getenv("GDK_SCALE");
+            const char* own = std::getenv("FUSE_UI_SCALE");
+            m->detectedScale = dpi::x11Scale(rm ? rm : "", gdk ? gdk : "", own ? own : "");
+            if (const char* gtk = std::getenv("GTK_THEME")) // cheap hint; systemTheme() asks gsettings
+                if (const ColorScheme cs = schemeFromGtkTheme(gtk); cs != ColorScheme::Unknown) app.setSystemTheme({.scheme = cs});
         } else {
             m->error = "cannot open X display";
         }
@@ -1013,6 +1170,7 @@ NativePlatform::~NativePlatform() {
     m->app.setEventSource({});
 #else
     if (m->dpy) {
+        if (m->helper) m->x.DestroyWindow(m->dpy, m->helper);
         m->x.CloseDisplay(m->dpy);
         m->app.setEventSource({});
     }
@@ -1047,10 +1205,24 @@ PresenterKind NativePlatform::show(AppWindow& w) {
 #if defined(_WIN32)
     r->kind = r->vk ? PresenterKind::Vulkan : PresenterKind::Software;
 #else
-    r->kind = r->vk ? PresenterKind::Vulkan : PresenterKind::Headless;
+    // without Vulkan the X server shows the CPU raster when the visual is plain TrueColor; else the window stays empty
+    r->kind = r->vk ? PresenterKind::Vulkan
+              : m->x.DefaultDepth(m->dpy, m->x.DefaultScreen(m->dpy)) >= 24 ? PresenterKind::Software : PresenterKind::Headless;
 #endif
     if (m->opts.osPopups) w.ui().setOsPopups(true); // screen bounds arrive with the first present
+    if (m->clipboardUsable()) w.ui().setClipboard({&Impl::clipSet, &Impl::clipGet, m.get()});
     w.setPresenter({r, &Impl::present, &Impl::destroy});
+    w.setWindowBackend({r, &Impl::windowRequest});
+    {
+        int ox = 0, oy = 0;
+        Rect work;
+        if (m->screenInfo(*r, ox, oy, work)) w.notifyMoved(Impl::toUi(*r, f32(ox), f32(oy))); // where the OS put it
+    }
+    // what the app asked for before the window existed
+    if (w.minimumSize().w > 0.f || w.minimumSize().h > 0.f || w.maximumSize().w > 0.f || w.maximumSize().h > 0.f)
+        Impl::windowRequest(r, w, WindowRequest::SizeLimits);
+    if (w.requestedMode() != WindowMode::Normal) Impl::windowRequest(r, w, WindowRequest::Mode);
+    if (!w.requestedVisible()) Impl::windowRequest(r, w, WindowRequest::Visible);
     return r->kind;
 }
 
@@ -1095,6 +1267,20 @@ Vec2 NativePlatform::screenOrigin(const AppWindow& w) const {
     if (!r || !r->handle || !m->screenInfo(*r, ox, oy, work)) return {};
     return {f32(ox), f32(oy)};
 }
+Rect NativePlatform::safeArea(const AppWindow& w) const {
+    const Size s = w.size();
+    return {0.f, 0.f, s.w, s.h};
+}
+float NativePlatform::scale(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r ? r->scale : 1.f;
+}
+Cursor NativePlatform::cursor(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r ? r->cursor : Cursor::Arrow;
+}
+bool NativePlatform::setClipboardText(std::string_view utf8) { return m->clipboardUsable() && Impl::clipSet(m.get(), utf8); }
+bool NativePlatform::clipboardText(std::string& out) { return m->clipboardUsable() && Impl::clipGet(m.get(), out); }
 bool NativePlatform::postClick(unsigned long long nativeWin, Vec2 at) { return nativeWin && m->postClickOs(nativeWin, at); }
 unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
@@ -1156,7 +1342,7 @@ bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
     if (!r || !r->handle) return false;
     HWND hwnd = reinterpret_cast<HWND>(r->handle);
     bool ok = false;
-    for (const auto [which, metric] : {std::pair{ICON_BIG, SM_CXICON}, std::pair{ICON_SMALL, SM_CXSMICON}}) {
+    for (const auto& [which, metric] : {std::pair{ICON_BIG, SM_CXICON}, std::pair{ICON_SMALL, SM_CXSMICON}}) {
         const Image* img = closest(sizes, GetSystemMetrics(metric));
         if (!img) continue;
         if (HICON icon = makeIcon(*img)) {
@@ -1169,7 +1355,8 @@ bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
 bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned height) {
     const Impl::Rec* r = m->find(w);
     if (!r || !r->handle) return false;
-    RECT rc{0, 0, LONG(width), LONG(height)};
+    const Size px = dpi::toPixels({f32(width), f32(height)}, r->scale);
+    RECT rc{0, 0, LONG(px.w), LONG(px.h)};
     AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
     return SetWindowPos(reinterpret_cast<HWND>(r->handle), nullptr, 0, 0, rc.right - rc.left, rc.bottom - rc.top,
                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != 0;
@@ -1205,7 +1392,8 @@ bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
 bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned height) {
     const Impl::Rec* r = m->find(w);
     if (!r || !r->handle || !m->dpy) return false;
-    m->x.ResizeWindow(m->dpy, x11::Window(r->handle), width, height);
+    const Size px = dpi::toPixels({f32(width), f32(height)}, r->scale);
+    m->x.ResizeWindow(m->dpy, x11::Window(r->handle), unsigned(px.w), unsigned(px.h));
     m->x.Flush(m->dpy);
     return true;
 }
@@ -1235,3 +1423,5 @@ std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
 #endif
 
 } // namespace fuse::app
+
+#include "native_services.inl" // opens namespace fuse::app itself

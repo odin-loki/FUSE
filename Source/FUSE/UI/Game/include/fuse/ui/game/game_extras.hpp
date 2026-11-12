@@ -7,15 +7,70 @@
 #include "fuse/ui/game/game_ui.hpp"
 
 #include <expected>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace fuse::ui::game {
 
-/// Registers the extra widget classes (invslot, touchstick, touchbutton, spinner, richtext) and their theme.
+/// Registers the extra widget classes (invslot, touchstick, touchbutton, spinner, dialoguetext, minimap, ammocounter) and
+/// their theme.
 /// Called by install(); safe to call again.
 void installExtras(UiContext& ui);
+
+// ---- minimap frame -----------------------------------------------------------------------------------------------
+/// A framed minimap (circular by default): blips placed around the player, who is the arrow at the centre. A blip's
+/// position is in world units relative to the player (+x east, +y north); `range` world units reach the frame, and a
+/// blip farther away is held on the frame edge (drawn smaller). With a rotating map the heading (degrees, 0 = north,
+/// clockwise, as setCompass) points up and the "N" marker travels round the rim; north-up keeps north at the top and
+/// turns the player arrow. The optional background is a rasteriser image index (the widgets::image convention, -1 =
+/// none) stretched over the frame and clipped to it; it is drawn north-up, the rasteriser does not rotate images.
+/// The minimap takes no input.
+enum class MinimapShape : u8 { Circle, Square };
+enum class MinimapBlipKind : u8 { Dot, Square, Diamond, Triangle };
+struct MinimapBlip {
+    Vec2 pos; ///< world units from the player: +x east, +y north
+    Color color = Color::rgb(0xFFFFFF);
+    MinimapBlipKind kind = MinimapBlipKind::Dot;
+};
+struct MinimapInfo {
+    f32 range = 0.f, headingDeg = 0.f;
+    bool rotateMap = true;
+    MinimapShape shape = MinimapShape::Circle;
+    i32 imageIndex = -1;
+};
+NodeHandle minimap(UiContext& ui, NodeHandle parent, std::string_view id = {});
+void setMinimapRange(UiContext& ui, NodeHandle map, f32 worldRadius); ///< default 50; values <= 0 are ignored
+void setMinimapHeading(UiContext& ui, NodeHandle map, f32 headingDeg, bool rotateMap = true);
+void setMinimapShape(UiContext& ui, NodeHandle map, MinimapShape shape);
+void setMinimapImage(UiContext& ui, NodeHandle map, i32 imageIndex);
+void minimapSetBlips(UiContext& ui, NodeHandle map, std::span<const MinimapBlip> blips); ///< copied
+u32 minimapBlipCount(const UiContext& ui, NodeHandle map);
+/// Where blip `index` is drawn (context coordinates, after update); `clamped` = it is beyond the range, on the edge.
+Vec2 minimapBlipPos(const UiContext& ui, NodeHandle map, u32 index, bool* clamped = nullptr);
+Rect minimapFrame(const UiContext& ui, NodeHandle map); ///< the square the map is drawn in (a circle is inscribed)
+MinimapInfo minimapInfo(const UiContext& ui, NodeHandle map);
+
+// ---- ammo counter ------------------------------------------------------------------------------------------------
+/// Ammo counter: "12 / 90" (rounds in the magazine / reserve; also text() and the a11y name) over one pip per round
+/// of the magazine, filled for the rounds left. A magazine larger than kAmmoMaxPips shows a bar instead. At or below
+/// the low fraction of the magazine (default 25 %) the counter has the class "ammo-low" (danger colour in the HUD
+/// theme). setAmmoReload shows a reload bar while 0 < progress < 1. value() = rounds in the magazine; a change of
+/// any of the three counts emits ValueChanged {value = rounds in the magazine, text}. Takes no input.
+inline constexpr u32 kAmmoMaxPips = 40;
+struct AmmoInfo {
+    u32 inMagazine = 0, magazineSize = 0, reserve = 0;
+    f32 reload = 0.f;
+    bool low = false, reloading = false;
+    u32 pips = 0; ///< pips drawn (0 = bar, or an empty magazine size)
+};
+NodeHandle ammoCounter(UiContext& ui, NodeHandle parent, std::string_view id = {});
+void setAmmo(UiContext& ui, NodeHandle node, u32 inMagazine, u32 magazineSize, u32 reserve);
+void setAmmoReload(UiContext& ui, NodeHandle node, f32 progress01);
+void setAmmoLowFraction(UiContext& ui, NodeHandle node, f32 fraction01);
+AmmoInfo ammoInfo(const UiContext& ui, NodeHandle node);
+Rect ammoPipRect(const UiContext& ui, NodeHandle node, u32 index); ///< context coordinates (after update); pip 0 leftmost
 
 // ---- inventory ---------------------------------------------------------------------------------------------------
 struct ItemDef {

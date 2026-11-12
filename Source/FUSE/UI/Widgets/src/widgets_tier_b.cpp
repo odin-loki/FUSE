@@ -132,16 +132,25 @@ struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a sub
     static constexpr A11yRole kRole = A11yRole::ListItem;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
-    static std::string_view label(std::string_view t) { return t.substr(0, t.find('\n')); }
+    static std::string_view label(std::string_view t) { return t.substr(0, t.find_first_of("\n\t")); }
+    /// "label\tCtrl+S": the shortcut text shown right-aligned (action menus)
+    static std::string_view shortcut(std::string_view t) {
+        t = t.substr(0, t.find('\n'));
+        const std::size_t tab = t.find('\t');
+        return tab == std::string_view::npos ? std::string_view{} : t.substr(tab + 1);
+    }
     static bool hasSub(std::string_view t) { return t.find('\n') != std::string_view::npos; }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
-        const std::string_view t = ui.text(n);
-        return {std::ceil(ui.measureString(label(t), ui.computed(n).fontSize)) + (hasSub(t) ? 18.f : 0.f), rowHeight(ui, n) - 6.f};
+        const std::string_view t = ui.text(n), sc = shortcut(t);
+        const f32 scW = sc.empty() ? 0.f : std::ceil(ui.measureString(sc, ui.computed(n).fontSize)) + 24.f;
+        return {std::ceil(ui.measureString(label(t), ui.computed(n).fontSize)) + scW + (hasSub(t) ? 18.f : 0.f), rowHeight(ui, n) - 6.f};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const std::string_view t = pc.ui.text(pc.node);
         if (pc.ui.checked(pc.node)) dl.rect({pc.rect.x + 2.f, pc.rect.y + 3.f, 3.f, pc.rect.h - 6.f}, accent(pc));
         labelAt(pc, dl, label(t), pc.content);
+        if (const std::string_view sc = shortcut(t); !sc.empty())
+            pc.ui.paintString(dl, sc, pc.content, textCol(pc).withAlpha(0.6f * pc.opacity), pc.style.fontSize, TextAlignment::End, pc.node.index);
         if (hasSub(t)) { // chevron
             const Rect c = pc.content;
             const f32 x = c.right() - 8.f, y = c.y + c.h * 0.5f;
@@ -177,7 +186,8 @@ struct MenuItem { // text = "label" or "label\n<sub items, one tab less>" (a sub
         if (hasSub(ui.text(ec.node))) { openSub(ui, ec.node); return true; }
         const u32 idx = u32(ui.value(ec.node));
         const std::string_view text = ui.text(ec.node);
-        if (ui.alive(owner) && isClass(ui, owner, "combobox")) {
+        // the combo box's own list picks its value (another menu it owns, a context menu, is just a menu)
+        if (ui.alive(owner) && isClass(ui, owner, "combobox") && ui.hasClass(scope, "combo-list")) {
             ui.setValue(owner, f32(idx), true);
             ui.emit(owner, SignalKind::TextChanged, {.text = text});
         }
@@ -244,6 +254,11 @@ struct Tooltip {
 // ---- list view ---------------------------------------------------------------------------------------------------
 struct ListView {
     static constexpr std::string_view kName = "listview";
+    // touch: rows follow the finger (the Wheel handler scrolls 3 rows per notch)
+    static TouchDrag touchDrag(UiContext& ui, NodeHandle n, Vec2) {
+        if (count(ui.text(n)) <= visibleRows(ui, n)) return {};
+        return {TouchDrag::Mode::Wheel, {0.f, rowHeight(ui, n)}, {0.f, 1.f / 3.f}};
+    }
     static constexpr A11yRole kRole = A11yRole::List;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -324,6 +339,11 @@ struct ListView {
                 return true;
             default: return false;
             }
+        case EventType::DoubleClick: { // double click on a row activates it, like Enter
+            const i64 row = i64(ui.userData(n)) + i64((e.pos.y - ui.contentRect(n).y) / rowHeight(ui, n));
+            if (cur >= 0 && row == cur) ui.emit(n, SignalKind::Submitted, {.value = f32(cur), .text = nth(ui.text(n), u32(cur))});
+            return true;
+        }
         default: return false;
         }
     }
@@ -335,10 +355,31 @@ u32 depthOf(std::string_view line) {
     while (d < line.size() && line[d] == '\t') ++d;
     return d;
 }
-bool lineOpen(u64 collapsed, u32 i) { return i >= 64 || !(collapsed >> i & 1u); }
+// Collapsed lines of a tree view: one bit per line (no row limit). The tree's user data is its slot + 1 (0 = nothing
+// was ever collapsed); a slot is reused once its node is gone.
+struct TreeFold { const UiContext* ui = nullptr; NodeHandle node; std::vector<u64> bits; };
+using Fold = const std::vector<u64>*;
+std::vector<TreeFold>& treeFolds() { static std::vector<TreeFold> f; return f; }
+Fold foldOf(const UiContext& ui, NodeHandle tree) {
+    const u64 k = ui.alive(tree) ? ui.userData(tree) : 0;
+    auto& f = treeFolds();
+    return k && k <= f.size() && f[k - 1].node == tree && f[k - 1].ui == &ui ? &f[k - 1].bits : nullptr;
+}
+std::vector<u64>& foldFor(UiContext& ui, NodeHandle tree) {
+    auto& f = treeFolds();
+    if (foldOf(ui, tree)) return f[ui.userData(tree) - 1].bits;
+    std::size_t at = f.size();
+    for (std::size_t i = 0; i < f.size(); ++i)
+        if (f[i].ui == &ui && (!ui.alive(f[i].node) || ui.userData(f[i].node) != i + 1)) { at = i; break; }
+    if (at == f.size()) f.emplace_back();
+    f[at] = {&ui, tree, {}};
+    ui.setUserData(tree, at + 1);
+    return f[at].bits;
+}
+bool lineOpen(Fold collapsed, u32 i) { return !collapsed || i / 64 >= collapsed->size() || !((*collapsed)[i / 64] >> (i % 64) & 1u); }
 /// Calls f(row, line, depth, hasChildren, open, text) for each shown row; stops when f returns false.
 template <class F>
-void eachTreeRow(std::string_view s, u64 collapsed, F&& f) {
+void eachTreeRow(std::string_view s, Fold collapsed, F&& f) {
     // look-ahead of one line to know whether a line has children
     u32 skipBelow = 0xFFFFFFFFu, row = 0;
     std::string_view prev;
@@ -378,7 +419,7 @@ struct TreeView {
         const f32 rh = rowHeight(ui, pc.node);
         const i64 sel = i64(ui.value(pc.node));
         dl.pushClip(c);
-        eachTreeRow(ui.text(pc.node), ui.userData(pc.node), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view t) {
+        eachTreeRow(ui.text(pc.node), foldOf(ui, pc.node), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view t) {
             const Rect r{c.x, c.y + f32(row) * rh, c.w, rh};
             if (r.y > c.bottom()) return false;
             if (i64(line) == sel) dl.rect(r, accent(pc).withAlpha((pc.states & kStateFocus ? 0.55f : 0.3f) * pc.opacity), 3.f);
@@ -396,7 +437,7 @@ struct TreeView {
     struct Hit { i64 line = -1; u32 depth = 0; bool kids = false, open = false; i64 row = -1; };
     static Hit rowInfo(UiContext& ui, NodeHandle n, auto pred) {
         Hit h;
-        eachTreeRow(ui.text(n), ui.userData(n), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view) {
+        eachTreeRow(ui.text(n), foldOf(ui, n), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view) {
             if (!pred(row, line)) return true;
             h = {i64(line), depth, kids, open, i64(row)};
             return false;
@@ -420,7 +461,8 @@ struct TreeView {
             const Hit h = rowInfo(ui, n, [&](u32 r, u32) { return i64(r) == row; });
             if (h.line < 0) return true;
             const f32 ax = c.x + 4.f + f32(h.depth) * kIndent;
-            if (h.kids && e.pos.x >= ax && e.pos.x < ax + 14.f) setTreeExpanded(ui, n, u32(h.line), !h.open);
+            // (a right / middle press selects the row, also on the expander: it never folds)
+            if (h.kids && e.pos.x >= ax && e.pos.x < ax + 14.f && e.button == MouseButton::Left) setTreeExpanded(ui, n, u32(h.line), !h.open);
             else select(ui, n, h.line);
             return true;
         }
@@ -442,7 +484,7 @@ struct TreeView {
             if (cur.kids && cur.open) setTreeExpanded(ui, n, u32(cur.line), false);
             else if (cur.depth > 0) { // to the parent
                 i64 parent = -1;
-                eachTreeRow(ui.text(n), ui.userData(n), [&](u32, u32 l, u32 d, bool, bool, std::string_view) {
+                eachTreeRow(ui.text(n), foldOf(ui, n), [&](u32, u32 l, u32 d, bool, bool, std::string_view) {
                     if (i64(l) >= cur.line) return false;
                     if (d < cur.depth) parent = l;
                     return true;
@@ -495,6 +537,7 @@ struct TabBar {
         const u32 c = count(ui.text(n)), cur = u32(ui.value(n));
         auto pick = [&](u32 i) { if (c && i < c && i != cur) ui.setValue(n, f32(i), true); };
         if (e.type == EventType::PointerDown) {
+            if (e.button != MouseButton::Left) return false; // (a context-menu press does not switch tabs)
             f32 x = ui.contentRect(n).x;
             eachLine(ui.text(n), [&](u32 i, std::string_view t) {
                 const f32 w = tabW(ui, n, t);
@@ -531,6 +574,7 @@ void registerTierB(UiContext& ui) {
     r.registerWidget<ListView>();
     r.registerWidget<TreeView>();
     r.registerWidget<TabBar>();
+    detail::a11yTierB(r);
     detail::registerTierB2(ui);
 }
 
@@ -540,6 +584,7 @@ bool openComboPopup(UiContext& ui, NodeHandle combo) {
     const Rect r = ui.rect(combo);
     const NodeHandle scope = popupMenu(ui, combo, ui.text(combo), {r.x, r.bottom() + 2.f});
     if (!ui.alive(scope)) return false;
+    ui.addClass(scope, "combo-list");
     // check and focus the current item; the list is at least as wide as the box
     const NodeHandle menu = ui.firstChild(scope);
     setPx(ui, menu, Prop::MinWidth, r.w);
@@ -592,6 +637,11 @@ NodeHandle popupMenuAt(UiContext& ui, NodeHandle owner, std::string_view items, 
         item = {};
         if (t == "-") { separator(ui, menu); return true; }
         item = make(ui, "menuitem", menu);
+        // state prefixes (action menus): \x01 = disabled, \x02 = checked
+        bool off = false, on = false;
+        while (!t.empty() && (t[0] == '\x01' || t[0] == '\x02')) { (t[0] == '\x01' ? off : on) = true; t.remove_prefix(1); }
+        if (off) ui.setDisabled(item, true);
+        if (on) ui.setChecked(item, true);
         ui.setText(item, t);
         ui.setRange(item, 0.f, 1e9f, 0.f);
         ui.setValue(item, f32(base + i));
@@ -632,7 +682,9 @@ void closePopup(UiContext& ui, NodeHandle n) {
         ui.setCss(scope, "display", "none"); // dialogs persist
     } else {
         ui.setCss(scope, "display", "none");
-        ui.post(&destroyCmd, scope);
+        // an exit animation (style `exit-animation` on the popup) keeps it on screen a little longer
+        if (const f32 ex = ui.exitDuration(scope); ex > 0.f) ui.startTimer(ex + 0.02f, false, [scope](UiContext& c) { c.destroy(scope); });
+        else ui.post(&destroyCmd, scope);
     }
     // closing a submenu hands input back to the parent menu
     if (const NodeHandle parentScope = scopeOf(ui, owner); ui.alive(parentScope) && popupOpen(ui, parentScope)) ui.setModal(parentScope);
@@ -667,7 +719,7 @@ NodeHandle dialog(UiContext& ui, std::string_view title, std::string_view id) {
     ui.addClass(card, "dialog");
     ui.set(card, Prop::CenterX, PropValue::ofBool(true));
     ui.set(card, Prop::CenterY, PropValue::ofBool(true));
-    ui.setA11y(card, A11yRole::Window, title);
+    ui.setA11y(card, A11yRole::Dialog, title);
     const NodeHandle t = label(ui, card, title);
     ui.addClass(t, "title");
     panel(ui, card); // body
@@ -719,6 +771,18 @@ NodeHandle listView(UiContext& ui, NodeHandle parent, std::string_view items, i3
     return n;
 }
 std::string_view listItem(const UiContext& ui, NodeHandle list, u32 index) { return nth(ui.text(list), index); }
+u32 listCount(const UiContext& ui, NodeHandle list) { return count(ui.text(list)); }
+Rect listRowRect(UiContext& ui, NodeHandle list, u32 row) {
+    const Rect c = ui.contentRect(list);
+    const f32 rh = rowHeight(ui, list);
+    return {c.x, c.y + (f32(row) - f32(u32(ui.userData(list)))) * rh, c.w, rh};
+}
+i32 listRowAt(UiContext& ui, NodeHandle list, Vec2 p) {
+    const Rect c = ui.contentRect(list);
+    if (!c.contains(p)) return -1;
+    const i64 row = i64(ui.userData(list)) + i64((p.y - c.y) / rowHeight(ui, list));
+    return row >= 0 && row < i64(count(ui.text(list))) ? i32(row) : -1;
+}
 u32 listFirstVisible(const UiContext& ui, NodeHandle list) { return u32(ui.userData(list)); }
 
 NodeHandle treeView(UiContext& ui, NodeHandle parent, std::string_view lines, std::string_view id) {
@@ -729,18 +793,19 @@ NodeHandle treeView(UiContext& ui, NodeHandle parent, std::string_view lines, st
     ui.setValue(n, -1.f);
     return n;
 }
-bool treeExpanded(const UiContext& ui, NodeHandle tree, u32 line) { return lineOpen(ui.userData(tree), line); }
+bool treeExpanded(const UiContext& ui, NodeHandle tree, u32 line) { return lineOpen(foldOf(ui, tree), line); }
 void setTreeExpanded(UiContext& ui, NodeHandle tree, u32 line, bool open) {
-    if (line >= 64 || treeExpanded(ui, tree, line) == open) return;
-    u64 m = ui.userData(tree);
-    m = open ? (m & ~(u64(1) << line)) : (m | (u64(1) << line));
-    ui.setUserData(tree, m);
+    if (!isClass(ui, tree, "treeview") || treeExpanded(ui, tree, line) == open) return;
+    std::vector<u64>& bits = foldFor(ui, tree);
+    if (line / 64 >= bits.size()) bits.resize(line / 64 + 1, 0);
+    if (open) bits[line / 64] &= ~(u64(1) << (line % 64));
+    else bits[line / 64] |= u64(1) << (line % 64);
     ui.setText(tree, std::string(ui.text(tree))); // re-measure + repaint
     ui.emit(tree, SignalKind::Toggled, {.value = f32(line), .flag = open});
 }
 u32 treeVisibleRows(const UiContext& ui, NodeHandle tree) {
     u32 rows = 0;
-    eachTreeRow(ui.text(tree), ui.userData(tree), [&](u32, u32, u32, bool, bool, std::string_view) { ++rows; return true; });
+    eachTreeRow(ui.text(tree), foldOf(ui, tree), [&](u32, u32, u32, bool, bool, std::string_view) { ++rows; return true; });
     return rows;
 }
 
@@ -760,7 +825,7 @@ NodeHandle tabWidget(UiContext& ui, NodeHandle parent, std::string_view titles, 
     ui.setCss(stack, "flex-grow", "1");
     for (u32 i = 0, c = count(titles); i < c; ++i) {
         const NodeHandle p = panel(ui, stack);
-        ui.setA11y(p, A11yRole::Group, nth(titles, i));
+        ui.setA11y(p, A11yRole::TabPanel, nth(titles, i));
     }
     showPage(ui, stack, 0);
     ui.connect(bar, SignalKind::ValueChanged, [stack](UiContext& c, NodeHandle, const SignalArgs& a) { showPage(c, stack, u32(a.value)); });
@@ -781,4 +846,146 @@ NodeHandle scrollArea(UiContext& ui, NodeHandle parent, std::string_view id) {
     return n;
 }
 
+} // namespace fuse::ui::widgets
+
+#include "widgets_internal.hpp"
+#include <cstdio>
+// ---- accessibility (plan §4.14): Tier B ----------------------------------------------------------------------------------
+namespace fuse::ui::widgets {
+namespace {
+using detail::a11yItem;
+using detail::kA11yItemActions;
+constexpr u32 kA11yScroll = detail::a11yBits({A11yAction::ScrollUp, A11yAction::ScrollDown});
+
+// List view: the visible rows are list items (id = row + 1).
+void listA11y(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) {
+    UiContext& ui = const_cast<UiContext&>(cui); // row metrics come from the font
+    detail::a11yDropTextName(ui, n, self);
+    const std::string_view text = ui.text(n);
+    const u32 total = count(text), first = u32(ui.userData(n)), vis = ListView::visibleRows(ui, n);
+    const Rect c = ui.contentRect(n);
+    const f32 rh = rowHeight(ui, n);
+    const i64 sel = i64(ui.value(n));
+    self.setSize = total;
+    if (total > vis && !self.disabled) self.actions |= kA11yScroll;
+    for (u32 i = first; i < std::min(total, first + vis); ++i) {
+        A11ySnapshotNode it = a11yItem(i + 1, A11yRole::ListItem, nth(text, i), {c.x, c.y + f32(i - first) * rh, c.w, rh},
+                                       self.disabled ? 0u : kA11yItemActions);
+        it.selectable = true;
+        it.selected = i64(i) == sel;
+        it.posInSet = i + 1;
+        it.setSize = total;
+        items.push_back(std::move(it));
+    }
+}
+bool listA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    if (!child || child > count(ui.text(n))) return false;
+    const i64 row = i64(child) - 1;
+    switch (a) {
+    case A11yAction::Select: case A11yAction::Click: ListView::select(ui, n, row); return true;
+    case A11yAction::ScrollIntoView: {
+        const i64 first = i64(ui.userData(n)), vis = i64(ListView::visibleRows(ui, n));
+        if (row < first) ListView::setFirst(ui, n, row);
+        else if (row >= first + vis) ListView::setFirst(ui, n, row - vis + 1);
+        return true;
+    }
+    default: return false;
+    }
+}
+// Tree view: the shown rows are tree items (id = line + 1) with their level and expansion state.
+void treeA11y(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) {
+    UiContext& ui = const_cast<UiContext&>(cui);
+    detail::a11yDropTextName(ui, n, self);
+    const Rect c = ui.contentRect(n);
+    const f32 rh = rowHeight(ui, n);
+    const i64 sel = i64(ui.value(n));
+    const u32 total = count(ui.text(n));
+    eachTreeRow(ui.text(n), foldOf(ui, n), [&](u32 row, u32 line, u32 depth, bool kids, bool open, std::string_view t) {
+        const Rect r{c.x, c.y + f32(row) * rh, c.w, rh};
+        if (r.y >= c.bottom()) return false;
+        A11ySnapshotNode it = a11yItem(line + 1, A11yRole::TreeItem, t, r, self.disabled ? 0u : kA11yItemActions);
+        it.level = depth + 1;
+        it.selectable = true;
+        it.selected = i64(line) == sel;
+        it.expandable = kids;
+        it.expanded = kids && open;
+        if (kids && !self.disabled) it.actions |= a11yActionBit(open ? A11yAction::Collapse : A11yAction::Expand);
+        it.posInSet = line + 1;
+        it.setSize = total;
+        items.push_back(std::move(it));
+        return true;
+    });
+}
+bool treeA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    if (!child || child > count(ui.text(n))) return false;
+    const u32 line = child - 1;
+    switch (a) {
+    case A11yAction::Select: case A11yAction::Click: TreeView::select(ui, n, line); return true;
+    case A11yAction::Expand: case A11yAction::Collapse: {
+        const TreeView::Hit h = TreeView::rowInfo(ui, n, [&](u32, u32 l) { return l == line; });
+        if (h.line < 0 || !h.kids) return false; // hidden under a collapsed parent, or a leaf
+        setTreeExpanded(ui, n, line, a == A11yAction::Expand);
+        return true;
+    }
+    case A11yAction::ScrollIntoView: return true; // (a tree view does not scroll its rows)
+    default: return false;
+    }
+}
+// Tab bar: a tab list with one tab per title (id = index + 1).
+void tabBarA11y(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) {
+    UiContext& ui = const_cast<UiContext&>(cui);
+    detail::a11yDropTextName(ui, n, self);
+    const Rect c = ui.contentRect(n);
+    const u32 total = count(ui.text(n)), sel = u32(ui.value(n));
+    f32 x = c.x;
+    eachLine(ui.text(n), [&](u32 i, std::string_view t) {
+        const f32 w = TabBar::tabW(ui, n, t);
+        A11ySnapshotNode it = a11yItem(i + 1, A11yRole::Tab, t, {x, c.y, w, c.h},
+                                       self.disabled ? 0u : detail::a11yBits({A11yAction::Select, A11yAction::Click}));
+        it.selectable = true;
+        it.selected = i == sel;
+        it.posInSet = i + 1;
+        it.setSize = total;
+        items.push_back(std::move(it));
+        x += w;
+        return true;
+    });
+}
+bool tabBarA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    if (!child || child > count(ui.text(n)) || (a != A11yAction::Select && a != A11yAction::Click)) return false;
+    ui.setValue(n, f32(child - 1), true);
+    return true;
+}
+// Menu item: text = "label", "label\tShortcut" (action menus) or "label\n<submenu items>": the name is the label
+// alone (no shortcut text, no state prefix bytes), a submenu makes it expandable. Disabled / checked items carry the
+// node states, which the core reports.
+void menuItemA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    const std::string_view t = ui.text(n);
+    if (self.name == t) {
+        std::string_view l = MenuItem::label(t);
+        while (!l.empty() && (l[0] == '\x01' || l[0] == '\x02')) l.remove_prefix(1);
+        self.name.assign(l);
+    }
+    self.expandable = MenuItem::hasSub(t);
+}
+// Menu-bar button: text = "title\n<items>" (the title is its a11y name); it opens a menu.
+void menuButtonA11y(const UiContext&, NodeHandle, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    self.expandable = true;
+    if (!self.disabled) self.actions |= a11yActionBit(A11yAction::Expand);
+}
+bool menuButtonA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    return !child && a == A11yAction::Expand && ui.performA11yAction(n, A11yAction::Click);
+}
+} // namespace
+void detail::a11yTierB(WidgetRegistry& r) {
+    a11yHook(r, "popup", A11yRole::None); // the scrim: its panel (menu, dialog card) is what is exposed
+    a11yHook(r, "menu", A11yRole::Menu);
+    a11yHook(r, "menuitem", A11yRole::MenuItem, &menuItemA11y);
+    a11yHook(r, "menubar", A11yRole::MenuBar);
+    a11yHook(r, "menubutton", A11yRole::Button, &menuButtonA11y, &menuButtonA11yAction);
+    a11yHook(r, "tooltip", A11yRole::Tooltip);
+    a11yHook(r, "listview", A11yRole::List, &listA11y, &listA11yAction);
+    a11yHook(r, "treeview", A11yRole::Tree, &treeA11y, &treeA11yAction);
+    a11yHook(r, "tabbar", A11yRole::TabList, &tabBarA11y, &tabBarA11yAction);
+}
 } // namespace fuse::ui::widgets

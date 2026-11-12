@@ -1,4 +1,5 @@
 #include "fuse/ui/widgets/widgets.hpp"
+#include "fuse/ui/widgets/platform_feel.hpp"
 #include "widgets_internal.hpp"
 
 #include <algorithm>
@@ -58,8 +59,15 @@ struct Button {
     static constexpr A11yRole kRole = A11yRole::Button;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
-    static Size measure(UiContext& ui, NodeHandle n, Size) { return textSize(ui, n, ui.text(n)); }
-    static void paint(const PaintContext& pc, DrawList& dl) { labelAt(pc, dl, pc.ui.text(pc.node), pc.content, TextAlignment::Center); }
+    static Size measure(UiContext& ui, NodeHandle n, Size) { return detail::iconContentSize(ui, n, textSize(ui, n, ui.text(n))); }
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        Rect textBox;
+        const std::string_view text = pc.ui.text(pc.node);
+        if (detail::paintIcon(pc, dl, textBox))
+            labelAt(pc, dl, text, textBox, TextAlignment::Start); // icon (setIcon) + text, centred as a group
+        else
+            labelAt(pc, dl, text, pc.content, TextAlignment::Center);
+    }
 };
 struct ToolButton : Button { static constexpr std::string_view kName = "toolbutton"; };
 struct Link {
@@ -150,6 +158,7 @@ struct Switch : CheckBox {
 // ---- Slider / ScrollBar / Dial / ProgressBar -----------------------------------------------------------------------
 struct Slider {
     static constexpr std::string_view kName = "slider";
+    static constexpr bool kCapturesDrag = true; // touch: the drag moves the knob
     static constexpr A11yRole kRole = A11yRole::Slider;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -166,6 +175,7 @@ struct Slider {
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
+        if (e.type == EventType::PointerDown && e.button != MouseButton::Left) return false; // (a context-menu press changes nothing)
         if (e.type == EventType::PointerDown || (e.type == EventType::PointerMove && ec.ui.pressed() == ec.node)) {
             const Rect c = ec.ui.contentRect(ec.node);
             setFrac(ec.ui, ec.node, (e.pos.x - c.x - 7.f) / std::max(1.f, c.w - 14.f));
@@ -176,6 +186,7 @@ struct Slider {
 };
 struct ScrollBar {
     static constexpr std::string_view kName = "scrollbar";
+    static constexpr bool kCapturesDrag = true; // touch: the drag moves the thumb
     static constexpr A11yRole kRole = A11yRole::ScrollBar;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext&, NodeHandle, Size) { return {12.f, 12.f}; }
@@ -193,6 +204,7 @@ struct ScrollBar {
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
+        if (e.type == EventType::PointerDown && e.button != MouseButton::Left) return false; // (a context-menu press changes nothing)
         if (e.type == EventType::PointerDown || (e.type == EventType::PointerMove && ec.ui.pressed() == ec.node)) {
             const Rect c = ec.ui.contentRect(ec.node);
             const bool v = vertical(c);
@@ -212,6 +224,7 @@ struct ScrollBar {
 };
 struct Dial {
     static constexpr std::string_view kName = "dial";
+    static constexpr bool kCapturesDrag = true; // touch: the drag turns the dial
     static constexpr A11yRole kRole = A11yRole::Dial;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -226,6 +239,7 @@ struct Dial {
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
+        if (e.type == EventType::PointerDown && e.button != MouseButton::Left) return false; // (a context-menu press changes nothing)
         if (e.type == EventType::PointerDown || (e.type == EventType::PointerMove && ec.ui.pressed() == ec.node)) {
             const Rect c = ec.ui.contentRect(ec.node);
             const f32 ang = std::atan2(e.pos.y - (c.y + c.h * 0.5f), e.pos.x - (c.x + c.w * 0.5f)) * 180.f / kPi;
@@ -284,6 +298,7 @@ struct SpinBox {
         UiContext& ui = ec.ui;
         const f32 st = ui.rangeStep(ec.node) > 0.f ? ui.rangeStep(ec.node) : 1.f;
         if (e.type == EventType::PointerDown) {
+            if (e.button != MouseButton::Left) return false; // (a context-menu press does not step)
             const Rect c = ui.contentRect(ec.node);
             if (e.pos.x >= c.right() - 20.f) ui.setValue(ec.node, ui.value(ec.node) + (e.pos.y < c.y + c.h * 0.5f ? st : -st), true);
             return true;
@@ -501,6 +516,7 @@ void registerTierA(UiContext& ui) {
     r.registerWidget<LineEdit>();
     r.registerWidget<ImageW>();
     r.registerWidget<Separator>();
+    detail::a11yTierA(r);
 }
 
 void install(UiContext& ui) {
@@ -508,6 +524,9 @@ void install(UiContext& ui) {
     registerTierB(ui);
     registerTierCD(ui);
     registerTierD2(ui);
+    registerTierB3(ui);
+    registerSvgWidgets(ui);
+    registerPlatformFeel(ui); // kineticscroll
     (void)ui.addStyleSheet(defaultThemeCss());
 }
 
@@ -519,6 +538,9 @@ u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, boo
         registerTierB(scratch);
         registerTierCD(scratch);
         registerTierD2(scratch);
+        registerTierB3(scratch);
+        registerSvgWidgets(scratch);
+        registerPlatformFeel(scratch); // kineticscroll (not part of install(): its factory registers it on first use)
         return scratch.registry();
     }();
     u32 unknown = 0;
@@ -628,4 +650,41 @@ NodeHandle separator(UiContext& ui, NodeHandle p, std::string_view id) { return 
 
 std::string_view comboText(const UiContext& ui, NodeHandle n) { return item(ui.text(n), u32(ui.value(n))); }
 
+} // namespace fuse::ui::widgets
+
+#include "widgets_internal.hpp"
+#include <cstdio>
+// ---- accessibility (plan §4.14): Tier A ----------------------------------------------------------------------------------
+namespace fuse::ui::widgets {
+namespace {
+// Combo box: the name is the label an app gives it (setA11y), the value the selected item; Expand opens the list.
+void comboA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    detail::a11yDropTextName(ui, n, self);
+    self.valueText.assign(comboText(ui, n));
+    self.setSize = itemCount(ui.text(n));
+    self.posInSet = self.setSize ? u32(ui.value(n)) + 1u : 0u;
+    self.expandable = true;
+    if (!self.disabled && self.setSize)
+        self.actions |= detail::a11yBits({A11yAction::Expand, A11yAction::Increment, A11yAction::Decrement, A11yAction::SetValue});
+}
+bool comboA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32 value, std::string_view) {
+    const u32 count = itemCount(ui.text(n));
+    if (child || !count) return false;
+    const u32 cur = u32(ui.value(n));
+    auto pick = [&](u32 v) {
+        if (v == cur) return true;
+        ui.setValue(n, f32(v), true);
+        ui.emit(n, SignalKind::TextChanged, {.text = item(ui.text(n), v)});
+        return true;
+    };
+    switch (a) {
+    case A11yAction::Increment: return pick(std::min(cur + 1, count - 1));
+    case A11yAction::Decrement: return pick(cur ? cur - 1 : 0);
+    case A11yAction::SetValue: return pick(u32(std::clamp(std::lround(value), 0l, long(count) - 1)));
+    case A11yAction::Expand: return detail::openComboPopup(ui, n);
+    default: return false;
+    }
+}
+} // namespace
+void detail::a11yTierA(WidgetRegistry& r) { a11yHook(r, "combobox", A11yRole::ComboBox, &comboA11y, &comboA11yAction); }
 } // namespace fuse::ui::widgets

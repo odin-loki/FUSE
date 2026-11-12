@@ -19,7 +19,10 @@
 
 namespace fuse::ui::doc {
 
-inline constexpr u32 kCookedVersion = 1;
+// 2: style properties added (direction, transition, enter / exit animation)
+// 3: the merged property set (font family / weight / style / decoration / spacing, cursor, ...) and the document-class
+//    properties stored as plain data, never as bindings (tooltip, contextMenu, columns, rows, icon, ...)
+inline constexpr u32 kCookedVersion = 3;
 
 struct CookInfo {
     u32 nodes = 0, bindings = 0, instructions = 0;

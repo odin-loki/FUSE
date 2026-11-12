@@ -129,6 +129,7 @@ public:
     bool setStyleSheet(std::string_view css);
     NodeHandle styleEditor() const { return m_styleEdit; }
     bool dragging() const { return m_drag.active; }
+    bool dragPending() const { return m_drag.pressed; } ///< a press that may become a drag is down
     void deleteSelected();
     void moveSelected(int delta);
     void undo();

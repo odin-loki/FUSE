@@ -1,6 +1,15 @@
 // FUSE UI GPU backend, CPU side (no Vulkan types): packs a DrawList into the buffers the "ui.draw_list" kernel reads
 // (src/shaders/ui_draw_list.comp). Clip stacks are resolved per command; commands are binned into 16x16 tiles in draw
 // order. Every vector keeps its capacity across frames, so packing a frame of the same size does not allocate.
+//
+// Vector ops (DrawOp::Path, NinePatch and the PushClipPath / PushLayer groups; draw_list.hpp) have no kernel op: the
+// packer pre-rasterises each one on the CPU with the reference rasteriser (rasterizeCommands) into a premultiplied
+// RGBA8 image appended to `images`, and emits a kernel Image command over its pixel area (with the group's opacity and
+// the enclosing rect / rounded clip). The reference rasteriser composites these ops as texels with the Image blend
+// equation, so the kernel reproduces the CPU result from the same texels. Cost: CPU time and image-buffer bytes
+// proportional to the covered area, every pack (small paths hit the per-thread coverage cache). A group is baked as
+// one image, so a Backdrop inside a group sees only the group. When the per-pack budget kMaxBakedPixels is exceeded
+// the remaining vector ops are skipped and counted in `unsupportedOps` (never silently).
 #pragma once
 
 #include "fuse/ui/draw_list.hpp"
@@ -33,6 +42,8 @@ struct GpuPush {
 };
 
 inline constexpr u32 kUiTile = 16;
+/// Upper bound of CPU pre-rasterised pixels per pack (vector ops beyond it are dropped and counted).
+inline constexpr u32 kMaxBakedPixels = 16u << 20;
 
 struct GpuDrawData {
     std::vector<GpuCmd> cmds;
@@ -41,6 +52,11 @@ struct GpuDrawData {
     GpuPush push{};
     const u8* atlas = nullptr; ///< glyph coverage atlas (atlasSize^2 bytes), uploaded as-is
     u32 atlasSize = 0;
+    // statistics of the last pack
+    u32 bakedOps = 0;       ///< vector ops / groups drawn through a CPU pre-rasterised image
+    u32 bakedPixels = 0;    ///< pixels of those images
+    u32 unsupportedOps = 0; ///< vector ops / groups dropped (over kMaxBakedPixels)
+    Image bakeScratch;      ///< reused pre-rasterisation target
 
     std::size_t cmdBytes() const { return cmds.size() * sizeof(GpuCmd); }
     std::size_t tileBytes() const { return tiles.size() * 4; }

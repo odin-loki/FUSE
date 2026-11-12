@@ -69,7 +69,7 @@ void dot(DrawList& dl, Vec2 p, f32 r, Color fill, Color ring = {}) {
 
 // =====================================================================================================================
 // Font picker
-struct FontState { NodeHandle list, size, preview; std::string family; };
+struct FontState { NodeHandle list, size, preview, bold, italic; std::string family; };
 Pool<FontState>& fontPool() { static Pool<FontState> p; return p; }
 void fontRefresh(UiContext& ui, NodeHandle picker, bool emit) {
     FontState* s = fontPool().get(ui, picker);
@@ -80,6 +80,9 @@ void fontRefresh(UiContext& ui, NodeHandle picker, bool emit) {
     char b[32];
     std::snprintf(b, sizeof b, "%gpx", double(px));
     ui.setCss(s->preview, "font-size", b);
+    ui.setCss(s->preview, "font-family", s->family.empty() ? std::string_view("sans-serif") : std::string_view(s->family));
+    ui.setCss(s->preview, "font-weight", ui.checked(s->bold) ? "bold" : "normal");
+    ui.setCss(s->preview, "font-style", ui.checked(s->italic) ? "italic" : "normal");
     ui.setText(s->preview, s->family + " - The quick brown fox jumps over the lazy dog 0123");
     if (emit) ui.emit(picker, SignalKind::Submitted, {.value = px, .text = s->family});
 }
@@ -183,6 +186,7 @@ Color pinColor(u32 type) {
 
 struct NodeGraphW {
     static constexpr std::string_view kName = "nodegraph";
+    static constexpr bool kCapturesDrag = true; // touch: the drag pans the graph / moves nodes / draws links
     static constexpr A11yRole kRole = A11yRole::Group;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -351,6 +355,7 @@ f32 curveEval(const CurveState& s, f32 t) {
 }
 struct CurveW {
     static constexpr std::string_view kName = "curveeditor";
+    static constexpr bool kCapturesDrag = true; // touch: the drag moves keys
     static constexpr A11yRole kRole = A11yRole::Group;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -455,6 +460,7 @@ Pool<TimelineState>& tlPool() { static Pool<TimelineState> p; return p; }
 constexpr f32 kTlHead = 96.f, kTlRuler = 22.f, kTlRow = 28.f;
 struct TimelineW {
     static constexpr std::string_view kName = "timeline";
+    static constexpr bool kCapturesDrag = true; // touch: the drag scrubs / moves keys
     static constexpr A11yRole kRole = A11yRole::Slider;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -611,6 +617,7 @@ Rect letterbox(Rect c, u32 w, u32 h) {
 }
 struct ViewportW {
     static constexpr std::string_view kName = "viewport";
+    static constexpr bool kCapturesDrag = true; // touch: drags are forwarded to the embedded scene
     static constexpr A11yRole kRole = A11yRole::Image;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -751,6 +758,13 @@ u32 nextCp(std::string_view s, u32 c) { if (c >= s.size()) return u32(s.size());
 
 struct CodeEditW {
     static constexpr std::string_view kName = "codeedit";
+    // touch: a drag scrolls line by line (the Wheel handler scrolls 3 lines per notch); drag selection stays a
+    // mouse feature
+    static TouchDrag touchDrag(UiContext& ui, NodeHandle n, Vec2) {
+        const CodeState* s = codePool().get(ui, n);
+        if (!s || s->lines.size() <= visible(ui, n)) return {};
+        return {TouchDrag::Mode::Wheel, {0.f, lineH(ui, n)}, {0.f, 1.f / 3.f}};
+    }
     static constexpr A11yRole kRole = A11yRole::TextField;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -758,6 +772,7 @@ struct CodeEditW {
     static f32 lineH(const PaintContext& pc) { return std::ceil(pc.style.fontSize * 1.35f); }
     static f32 lineH(UiContext& ui, NodeHandle n) { return std::ceil(ui.computed(n).fontSize * 1.35f); }
     static f32 gutter(UiContext& ui, NodeHandle n, const CodeState& s) {
+        if (ui.hasClass(n, "plain")) return 6.f; // plainTextEdit: no line numbers
         char b[16];
         std::snprintf(b, sizeof b, "%zu", s.lines.size());
         return ui.measureString(b, ui.computed(n).fontSize * 0.9f) + 18.f;
@@ -772,7 +787,8 @@ struct CodeEditW {
         static const Color kTok[] = {Color::rgb(0xD4D4D4), Color::rgb(0x569CD6), Color::rgb(0xCE9178), Color::rgb(0xB5CEA8), Color::rgb(0x6A9955)};
         dl.pushClip(c);
         dl.rect(c, pc.tint(Color::rgb(0x1A1A20)));
-        dl.rect({c.x, c.y, gw - 6.f, c.h}, pc.tint(Color::rgb(0x212128)));
+        const bool numbers = !ui.hasClass(pc.node, "plain");
+        if (numbers) dl.rect({c.x, c.y, gw - 6.f, c.h}, pc.tint(Color::rgb(0x212128)));
         const Pos a = std::min(s->caret, s->anchor), b = std::max(s->caret, s->anchor);
         const bool focused = ui.focused() == pc.node;
         std::vector<u8> tok;
@@ -784,8 +800,9 @@ struct CodeEditW {
             if (li == s->caret.line && focused) dl.rect({x0 - 4.f, y, c.w - gw + 4.f, lh}, pc.tint(Color::rgb(0xFFFFFF, 0.04f)));
             char num[16];
             std::snprintf(num, sizeof num, "%u", li + 1);
-            ui.paintString(dl, num, {c.x, y, gw - 12.f, lh}, pc.tint(li == s->caret.line ? Color::rgb(0xC8C8D0) : Color::rgb(0x6A6A76)),
-                           fs * 0.9f, TextAlignment::End, pc.node.index);
+            if (numbers)
+                ui.paintString(dl, num, {c.x, y, gw - 12.f, lh}, pc.tint(li == s->caret.line ? Color::rgb(0xC8C8D0) : Color::rgb(0x6A6A76)),
+                               fs * 0.9f, TextAlignment::End, pc.node.index);
             if (!(a == b) && li >= a.line && li <= b.line) { // selection
                 const u32 sc = li == a.line ? a.col : 0, ecl = li == b.line ? b.col : u32(L.size());
                 const f32 sx = x0 + ui.measureString(std::string_view(L).substr(0, sc), fs);
@@ -1179,6 +1196,11 @@ void patternFrame(void*, u32 index, u32* px) {
 }
 struct VideoW {
     static constexpr std::string_view kName = "video";
+    // touch: a drag that started on the seek bar scrubs
+    static TouchDrag touchDrag(UiContext& ui, NodeHandle n, Vec2) {
+        const VideoState* s = videoPool().get(ui, n);
+        return {s && s->scrubbing ? TouchDrag::Mode::Capture : TouchDrag::Mode::Pan, {}, {}};
+    }
     static constexpr A11yRole kRole = A11yRole::Image;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -1264,6 +1286,7 @@ void registerTierD2(UiContext& ui) {
     ui.registry().registerWidget<CodeEditW>();
     ui.registry().registerWidget<DateTimeW>();
     ui.registry().registerWidget<VideoW>();
+    detail::a11yTierD2(ui.registry());
 }
 
 // ---- font picker ------------------------------------------------------------------------------------------------------
@@ -1273,15 +1296,26 @@ NodeHandle fontPicker(UiContext& ui, NodeHandle parent, std::string_view familie
     ui.addClass(p, "fontpicker");
     ui.setA11y(p, A11yRole::Group, "Font");
     FontState& s = fontPool().create(ui, p);
-    s.list = listView(ui, p, families.empty() ? std::string_view("Open Sans\nSans Serif\nSerif\nMonospace\nSystem UI") : families, 0);
+    std::string all;
+    if (families.empty()) { // the bundled / generic families, then what is installed
+        all = "Open Sans\nSans Serif\nSerif\nMonospace\nSystem UI";
+        for (const std::string& f : fuse::text::systemFontFamilies())
+            if (f != "Open Sans") all += "\n" + f;
+        families = all;
+    }
+    s.list = listView(ui, p, families, 0);
     ui.addClass(s.list, "fontlist");
     const NodeHandle row = hbox(ui, p);
     label(ui, row, "Size");
     s.size = spinBox(ui, row, 6.f, 96.f, size, 1.f);
+    s.bold = checkBox(ui, row, "Bold");
+    s.italic = checkBox(ui, row, "Italic");
     s.preview = label(ui, p, "");
     ui.addClass(s.preview, "fontpreview");
     ui.connect(s.list, SignalKind::ValueChanged, [p](UiContext& u, NodeHandle, const SignalArgs&) { fontRefresh(u, p, true); });
     ui.connect(s.size, SignalKind::ValueChanged, [p](UiContext& u, NodeHandle, const SignalArgs&) { fontRefresh(u, p, true); });
+    ui.connect(s.bold, SignalKind::Toggled, [p](UiContext& u, NodeHandle, const SignalArgs&) { fontRefresh(u, p, true); });
+    ui.connect(s.italic, SignalKind::Toggled, [p](UiContext& u, NodeHandle, const SignalArgs&) { fontRefresh(u, p, true); });
     fontRefresh(ui, p, false);
     return p;
 }
@@ -1292,6 +1326,21 @@ std::string fontPickerFamily(const UiContext& ui, NodeHandle picker) {
 f32 fontPickerSize(const UiContext& ui, NodeHandle picker) {
     const FontState* s = fontPool().get(ui, picker);
     return s ? ui.value(s->size) : 0.f;
+}
+bool fontPickerBold(const UiContext& ui, NodeHandle picker) {
+    const FontState* s = fontPool().get(ui, picker);
+    return s && ui.checked(s->bold);
+}
+bool fontPickerItalic(const UiContext& ui, NodeHandle picker) {
+    const FontState* s = fontPool().get(ui, picker);
+    return s && ui.checked(s->italic);
+}
+void fontPickerSetStyle(UiContext& ui, NodeHandle picker, bool bold, bool italic) {
+    FontState* s = fontPool().get(ui, picker);
+    if (!s || (ui.checked(s->bold) == bold && ui.checked(s->italic) == italic)) return;
+    ui.setChecked(s->bold, bold);
+    ui.setChecked(s->italic, italic);
+    fontRefresh(ui, picker, true);
 }
 
 // ---- file dialog ------------------------------------------------------------------------------------------------------
@@ -1725,4 +1774,41 @@ void videoSeek(UiContext& ui, NodeHandle v, u32 frame) {
 u32 videoFrame(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? s->frame : 0u; }
 u32 videoDecodedFrames(const UiContext& ui, NodeHandle v) { const VideoState* s = videoPool().get(ui, v); return s ? s->decoded : 0u; }
 
+} // namespace fuse::ui::widgets
+
+#include "widgets_internal.hpp"
+#include <cstdio>
+// ---- accessibility (plan §4.14): code edit, date-time edit -----------------------------------------------------------------
+namespace fuse::ui::widgets {
+namespace {
+bool codeEditA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view text) {
+    if (child || a != A11yAction::SetValue) return false;
+    if (codeEditText(ui, n) == text) return true;
+    codeEditSetText(ui, n, text);
+    ui.emit(n, SignalKind::TextChanged, {.text = text});
+    return true;
+}
+// Date-time edit: the value text is "YYYY-MM-DD HH:MM"; the numeric value stays days since 1970.
+void dateTimeA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0;
+    dateTimeEditValue(ui, n, y, mo, d, h, mi);
+    char b[40];
+    std::snprintf(b, sizeof b, "%04d-%02d-%02d %02d:%02d", y, mo, d, h, mi);
+    self.valueText = b;
+}
+// Increment / Decrement move by a day, SetValue takes days since 1970 (the time of day is kept).
+bool dateTimeA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32 value, std::string_view) {
+    if (child || (a != A11yAction::Increment && a != A11yAction::Decrement && a != A11yAction::SetValue)) return false;
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0;
+    dateTimeEditValue(ui, n, y, mo, d, h, mi);
+    const i32 days = a == A11yAction::SetValue ? i32(std::lround(value)) : daysFromCivil(y, mo, d) + (a == A11yAction::Increment ? 1 : -1);
+    civilFromDays(days, y, mo, d);
+    setDateTimeEditValue(ui, n, y, mo, d, h, mi);
+    return true;
+}
+} // namespace
+void detail::a11yTierD2(WidgetRegistry& r) {
+    a11yHook(r, "codeedit", A11yRole::TextField, nullptr, &codeEditA11yAction);
+    a11yHook(r, "datetimeedit", A11yRole::SpinBox, &dateTimeA11y, &dateTimeA11yAction);
+}
 } // namespace fuse::ui::widgets

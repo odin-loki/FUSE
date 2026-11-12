@@ -8,7 +8,9 @@
 #include <cstdio>
 #include <string>
 
-int main(int argc, char** argv) {
+#include "fuse/app/main.hpp" // FUSE_APP_MAIN: main on desktop; run by the platform entry point on Android / iOS
+
+int FUSE_APP_MAIN(int argc, char** argv) {
     fuse::app::Application app{{.name = "fuse_ui_designer", .argc = argc, .argv = argv}};
     auto& win = app.createWindow({.title = "FUSE UI Designer", .width = 1280, .height = 760});
     fuse::ui::UiContext& ui = win.ui();

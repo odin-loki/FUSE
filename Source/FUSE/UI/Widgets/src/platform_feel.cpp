@@ -158,6 +158,7 @@ void ensureTimer(UiContext& ui, NodeHandle n, KState& s) {
 
 struct KineticW {
     static constexpr std::string_view kName = "kineticscroll";
+    static constexpr bool kCapturesDrag = true; // touch: runs its own drag / fling physics (rubber band)
     static constexpr A11yRole kRole = A11yRole::ScrollArea;
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase == Phase::Bubble) return false;

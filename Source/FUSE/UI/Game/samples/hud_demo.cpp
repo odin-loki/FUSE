@@ -12,7 +12,9 @@
 using namespace fuse::ui;
 namespace g = fuse::ui::game;
 
-int main(int argc, char** argv) {
+#include "fuse/app/main.hpp" // FUSE_APP_MAIN: main on desktop; run by the platform entry point on Android / iOS
+
+int FUSE_APP_MAIN(int argc, char** argv) {
     std::string out = "hud_demo.png";
     bool pad = false;
     for (int i = 1; i < argc; ++i) {

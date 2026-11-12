@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 
 namespace fuse::ui::game {
 namespace {
@@ -51,12 +52,201 @@ spinner { width: 40px; height: 40px; }
 .loading-spin { right: 64px; bottom: 112px; }
 .richdlg { left: 20%; right: 20%; bottom: 24px; height: 104px; background: #10131AE6; border-color: #3A3F4B; border-width: 1px; border-radius: 8px; padding: 10px 16px; gap: 6px; }
 .richdlg-speaker { color: #F2C14E; font-size: 15px; }
-richtext { color: #E6E8EE; font-size: 17px; grow: 1; }
+dialoguetext { color: #E6E8EE; font-size: 17px; grow: 1; }
+minimap { width: 160px; height: 160px; color: #E6E8EE; font-size: 11px; pointer-events: none; }
+ammocounter { width: 168px; height: 56px; color: #FFFFFF; font-size: 24px; pointer-events: none; }
+.ammo-low { color: #E5484D; }
 )";
+
+/// Per-node state pool keyed by the node's user data (slot + 1); a slot is reused once its node is gone.
+template <class S>
+struct Pool {
+    struct Slot { NodeHandle node; std::unique_ptr<S> s; };
+    std::vector<Slot> slots;
+    S* get(const UiContext& ui, NodeHandle n) {
+        const u64 k = ui.alive(n) ? ui.userData(n) : 0;
+        if (k == 0 || k > slots.size() || slots[k - 1].node != n) return nullptr;
+        return slots[k - 1].s.get();
+    }
+    S& create(UiContext& ui, NodeHandle n) {
+        for (std::size_t i = 0; i < slots.size(); ++i)
+            if (!ui.alive(slots[i].node) || ui.userData(slots[i].node) != i + 1) {
+                slots[i] = {n, std::make_unique<S>()};
+                ui.setUserData(n, i + 1);
+                return *slots[i].s;
+            }
+        slots.push_back({n, std::make_unique<S>()});
+        ui.setUserData(n, slots.size());
+        return *slots.back().s;
+    }
+};
+/// Filled triangle approximated by a fan of lines (the draw list has rects, rounded rects and lines).
+void triangle(DrawList& dl, Vec2 a, Vec2 b, Vec2 c, Color col) {
+    constexpr int kSteps = 8;
+    for (int i = 0; i <= kSteps; ++i) {
+        const f32 t = f32(i) / kSteps;
+        dl.line(a, {b.x + (c.x - b.x) * t, b.y + (c.y - b.y) * t}, col, 2.f);
+    }
+}
+
+// ---- minimap -------------------------------------------------------------------------------------------------------
+struct MinimapState {
+    f32 range = 50.f, heading = 0.f;
+    bool rotate = true;
+    MinimapShape shape = MinimapShape::Circle;
+    i32 image = -1;
+    std::vector<MinimapBlip> blips;
+};
+Pool<MinimapState>& minimapPool() { static Pool<MinimapState> p; return p; }
+MinimapState* minimapState(const UiContext& ui, NodeHandle n) {
+    return ui.alive(n) && ui.classOf(n) == ui.registry().find("minimap") ? minimapPool().get(ui, n) : nullptr;
+}
+struct MinimapW {
+    static constexpr std::string_view kName = "minimap";
+    static constexpr A11yRole kRole = A11yRole::Image;
+    static constexpr f32 kBorder = 2.f, kBlipInset = 6.f;
+    static Size measure(UiContext&, NodeHandle, Size) { return {160.f, 160.f}; }
+    /// The square the map is drawn in (a circular map is inscribed in it), centred in the content rect.
+    static Rect frame(const UiContext& ui, NodeHandle n) {
+        const Rect r = ui.contentRect(n);
+        const f32 side = std::max(0.f, std::min(r.w, r.h));
+        return {r.x + (r.w - side) * 0.5f, r.y + (r.h - side) * 0.5f, side, side};
+    }
+    /// World offset (east, north) -> offset from the map centre in px (+y down), before clamping to the frame.
+    static Vec2 toMap(const MinimapState& s, Vec2 world, f32 radiusPx) {
+        const f32 k = radiusPx / std::max(s.range, 1e-6f);
+        if (!s.rotate) return {world.x * k, -world.y * k};
+        const f32 h = s.heading * (kPi / 180.f), c = std::cos(h), sn = std::sin(h);
+        return {(world.x * c - world.y * sn) * k, -(world.x * sn + world.y * c) * k}; // the heading points up
+    }
+    /// Pulls an offset back onto the frame edge (`limit` px from the centre); true when it was outside.
+    static bool clampToFrame(const MinimapState& s, Vec2& d, f32 limit) {
+        if (s.shape == MinimapShape::Circle) {
+            const f32 len = std::sqrt(d.x * d.x + d.y * d.y);
+            if (len <= limit) return false;
+            d = {d.x / len * limit, d.y / len * limit};
+            return true;
+        }
+        const f32 m = std::max(std::fabs(d.x), std::fabs(d.y));
+        if (m <= limit) return false;
+        d = {d.x / m * limit, d.y / m * limit};
+        return true;
+    }
+    static Vec2 blipPos(const UiContext& ui, NodeHandle n, const MinimapState& s, u32 i, bool* clamped = nullptr) {
+        const Rect f = frame(ui, n);
+        const f32 R = f.w * 0.5f - kBorder;
+        Vec2 d = toMap(s, s.blips[i].pos, R);
+        const bool out = clampToFrame(s, d, std::max(0.f, R - kBlipInset));
+        if (clamped) *clamped = out;
+        return {f.x + f.w * 0.5f + d.x, f.y + f.h * 0.5f + d.y};
+    }
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        const MinimapState* s = minimapState(pc.ui, pc.node);
+        if (!s) return;
+        const Rect f = frame(pc.ui, pc.node);
+        const Vec2 c{f.x + f.w * 0.5f, f.y + f.h * 0.5f};
+        const f32 R = f.w * 0.5f - kBorder, rad = s->shape == MinimapShape::Circle ? f.w * 0.5f : 6.f;
+        const Color rim = pc.tint(Color::rgb(0xC9CEDA, 0.9f));
+        dl.roundedRect(f, pc.tint(Color::rgb(0x0E1014, 0.78f)), {rad, rad, rad, rad});
+        dl.pushClip(f, rad);
+        if (s->image >= 0) { // north-up map image (the rasteriser does not rotate images)
+            DrawCmd im;
+            im.op = DrawOp::Image;
+            im.image = u32(s->image);
+            im.rect = f;
+            im.fill = Color{1.f, 1.f, 1.f, pc.opacity};
+            im.node = pc.node.index;
+            dl.push(im);
+        }
+        for (f32 k : {0.5f, 1.f}) { // range rings at half and full range
+            const f32 rr = R * k;
+            if (s->shape == MinimapShape::Circle) disc(dl, c, rr, {}, pc.tint(Color::rgb(0xFFFFFF, 0.12f)), 1.f);
+            else dl.roundedRect({c.x - rr, c.y - rr, 2.f * rr, 2.f * rr}, {}, {}, pc.tint(Color::rgb(0xFFFFFF, 0.12f)), 1.f);
+        }
+        for (u32 i = 0; i < s->blips.size(); ++i) {
+            bool out = false;
+            const Vec2 p = blipPos(pc.ui, pc.node, *s, i, &out);
+            const MinimapBlip& b = s->blips[i];
+            const Color col = pc.tint(out ? b.color.withAlpha(b.color.a * 0.75f) : b.color);
+            const f32 r = out ? 2.5f : 3.5f; // a blip held on the edge is drawn smaller
+            switch (b.kind) {
+            case MinimapBlipKind::Dot: disc(dl, p, r, col); break;
+            case MinimapBlipKind::Square: dl.rect({p.x - r, p.y - r, 2.f * r, 2.f * r}, col, 1.f); break;
+            case MinimapBlipKind::Diamond:
+                triangle(dl, {p.x, p.y - r - 1.f}, {p.x - r - 1.f, p.y}, {p.x + r + 1.f, p.y}, col);
+                triangle(dl, {p.x, p.y + r + 1.f}, {p.x - r - 1.f, p.y}, {p.x + r + 1.f, p.y}, col);
+                break;
+            case MinimapBlipKind::Triangle: triangle(dl, {p.x, p.y - r - 1.f}, {p.x - r - 1.f, p.y + r}, {p.x + r + 1.f, p.y + r}, col); break;
+            }
+        }
+        // the player: an arrow at the centre, pointing up on a rotating map and along the heading on a north-up one
+        const f32 h = s->rotate ? 0.f : s->heading * (kPi / 180.f);
+        const Vec2 fw{std::sin(h), -std::cos(h)}, rt{-fw.y, fw.x};
+        triangle(dl, {c.x + fw.x * 7.f, c.y + fw.y * 7.f}, {c.x - fw.x * 5.f + rt.x * 5.f, c.y - fw.y * 5.f + rt.y * 5.f},
+                 {c.x - fw.x * 5.f - rt.x * 5.f, c.y - fw.y * 5.f - rt.y * 5.f}, pc.tint(Color::rgb(0xFFFFFF)));
+        dl.popClip();
+        dl.roundedRect(f, {}, {rad, rad, rad, rad}, rim, kBorder);
+        // north marker on the rim
+        Vec2 n = toMap(*s, {0.f, s->range * 4.f}, R);
+        clampToFrame(*s, n, std::max(0.f, R - 9.f));
+        text(pc, dl, "N", {c.x + n.x - 8.f, c.y + n.y - 8.f, 16.f, 16.f}, Color::rgb(0xE5484D), pc.style.fontSize);
+    }
+};
+
+// ---- ammo counter --------------------------------------------------------------------------------------------------
+struct AmmoState {
+    u32 magazine = 0, size = 0, reserve = 0;
+    f32 reload = 0.f, lowFraction = 0.25f;
+    bool low() const { return size > 0 && f32(magazine) <= f32(size) * lowFraction; }
+    bool reloading() const { return reload > 0.f && reload < 1.f; }
+    u32 pips() const { return size <= kAmmoMaxPips ? size : 0u; }
+};
+Pool<AmmoState>& ammoPool() { static Pool<AmmoState> p; return p; }
+AmmoState* ammoStateOf(const UiContext& ui, NodeHandle n) {
+    return ui.alive(n) && ui.classOf(n) == ui.registry().find("ammocounter") ? ammoPool().get(ui, n) : nullptr;
+}
+struct AmmoW {
+    static constexpr std::string_view kName = "ammocounter";
+    static constexpr A11yRole kRole = A11yRole::Text;
+    static constexpr f32 kPipH = 10.f, kReloadH = 3.f, kGap = 2.f;
+    static Size measure(UiContext&, NodeHandle, Size) { return {168.f, 56.f}; }
+    /// The strip under the text that holds the pips (or the bar for a large magazine).
+    static Rect strip(const UiContext& ui, NodeHandle n) {
+        const Rect r = ui.contentRect(n);
+        return {r.x, r.bottom() - kReloadH - kGap - kPipH, r.w, kPipH};
+    }
+    static Rect pip(const UiContext& ui, NodeHandle n, const AmmoState& s, u32 i) {
+        const u32 np = s.pips();
+        if (i >= np) return {};
+        const Rect st = strip(ui, n);
+        const f32 w = std::min(8.f, (st.w - kGap * f32(np - 1)) / f32(np));
+        return {st.right() - f32(np - i) * w - f32(np - 1 - i) * kGap, st.y, w, st.h}; // right aligned, pip 0 leftmost
+    }
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        const AmmoState* s = ammoStateOf(pc.ui, pc.node);
+        if (!s) return;
+        const Rect r = pc.content, st = strip(pc.ui, pc.node);
+        const Color full = pc.tint(pc.style.color), empty = pc.tint(Color::rgb(0xFFFFFF, 0.18f));
+        text(pc, dl, pc.ui.text(pc.node), {r.x, r.y, r.w, st.y - r.y - kGap}, pc.style.color, pc.style.fontSize, TextAlignment::End);
+        if (const u32 np = s->pips()) {
+            for (u32 i = 0; i < np; ++i) dl.rect(pip(pc.ui, pc.node, *s, i), i < s->magazine ? full : empty, 1.f);
+        } else if (s->size > 0) { // too many rounds for pips: one bar
+            dl.rect(st, empty, 2.f);
+            const f32 k = std::clamp(f32(s->magazine) / f32(s->size), 0.f, 1.f);
+            if (k > 0.f) dl.rect({st.x, st.y, std::max(2.f, st.w * k), st.h}, full, 2.f);
+        }
+        if (s->reloading()) {
+            const Rect rb{r.x, r.bottom() - kReloadH, r.w, kReloadH};
+            dl.rect(rb, empty, 1.5f);
+            dl.rect({rb.x, rb.y, std::max(1.f, rb.w * s->reload), rb.h}, pc.tint(Color::rgb(0xF2C14E)), 1.5f);
+        }
+    }
+};
 
 // invslot: userData lo = item id, hi = count (as u32); background-end = item colour; text = short name
 struct InvSlot {
     static constexpr std::string_view kName = "invslot";
+    static constexpr bool kCapturesDrag = true; // touch: drag and drop between slots
     static constexpr A11yRole kRole = A11yRole::Button;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
@@ -83,6 +273,7 @@ struct InvSlot {
 // touchstick: userData = knob offset (px, packed); value = 1 while active
 struct TouchStick {
     static constexpr std::string_view kName = "touchstick";
+    static constexpr bool kCapturesDrag = true; // touch: virtual stick
     static Size measure(UiContext&, NodeHandle, Size) { return {112.f, 112.f}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect r = pc.content;
@@ -97,6 +288,7 @@ struct TouchStick {
 // touchbutton: userData = 1 while held
 struct TouchButton {
     static constexpr std::string_view kName = "touchbutton";
+    static constexpr bool kCapturesDrag = true; // touch: held button
     static Size measure(UiContext&, NodeHandle, Size) { return {64.f, 64.f}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect r = pc.content;
@@ -124,7 +316,8 @@ struct Spinner {
     }
 };
 
-// richtext: text = plain; spans come from the RichDialogue bound to the node; userData = visible bytes
+// dialoguetext (the body of a RichDialogue; not the widget library's "richtext" class, which a context may have
+// too): text = plain; spans come from the RichDialogue bound to the node; userData = visible bytes
 struct RichBinding { const UiContext* ui; u32 node; const RichDialogue* dlg; };
 std::vector<RichBinding>& richBindings() { static std::vector<RichBinding> v; return v; }
 const RichDialogue* richOf(const UiContext& ui, u32 node) {
@@ -132,7 +325,7 @@ const RichDialogue* richOf(const UiContext& ui, u32 node) {
     return nullptr;
 }
 struct RichTextW {
-    static constexpr std::string_view kName = "richtext";
+    static constexpr std::string_view kName = "dialoguetext";
     static constexpr A11yRole kRole = A11yRole::Text;
     static Size measure(UiContext&, NodeHandle, Size a) { return {std::isfinite(a.w) ? a.w : 400.f, 48.f}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
@@ -194,7 +387,99 @@ void installExtras(UiContext& ui) {
     r.registerWidget<TouchButton>();
     r.registerWidget<Spinner>();
     r.registerWidget<RichTextW>();
+    r.registerWidget<MinimapW>();
+    r.registerWidget<AmmoW>();
     (void)ui.addStyleSheet(kExtrasCss);
+}
+
+// ---- minimap API ---------------------------------------------------------------------------------------------------
+NodeHandle minimap(UiContext& ui, NodeHandle parent, std::string_view id) {
+    installExtras(ui);
+    const NodeHandle n = make(ui, "minimap", parent, id);
+    if (!ui.alive(n)) return n;
+    minimapPool().create(ui, n);
+    ui.setA11y(n, A11yRole::Image, "Minimap");
+    return n;
+}
+void setMinimapRange(UiContext& ui, NodeHandle map, f32 worldRadius) {
+    if (MinimapState* s = minimapState(ui, map); s && worldRadius > 0.f) { s->range = worldRadius; ui.invalidate(map); }
+}
+void setMinimapHeading(UiContext& ui, NodeHandle map, f32 headingDeg, bool rotateMap) {
+    if (MinimapState* s = minimapState(ui, map)) { s->heading = headingDeg; s->rotate = rotateMap; ui.invalidate(map); }
+}
+void setMinimapShape(UiContext& ui, NodeHandle map, MinimapShape shape) {
+    if (MinimapState* s = minimapState(ui, map)) { s->shape = shape; ui.invalidate(map); }
+}
+void setMinimapImage(UiContext& ui, NodeHandle map, i32 imageIndex) {
+    if (MinimapState* s = minimapState(ui, map)) { s->image = imageIndex; ui.invalidate(map); }
+}
+void minimapSetBlips(UiContext& ui, NodeHandle map, std::span<const MinimapBlip> blips) {
+    if (MinimapState* s = minimapState(ui, map)) { s->blips.assign(blips.begin(), blips.end()); ui.invalidate(map); }
+}
+u32 minimapBlipCount(const UiContext& ui, NodeHandle map) {
+    const MinimapState* s = minimapState(ui, map);
+    return s ? u32(s->blips.size()) : 0u;
+}
+Vec2 minimapBlipPos(const UiContext& ui, NodeHandle map, u32 index, bool* clamped) {
+    const MinimapState* s = minimapState(ui, map);
+    if (clamped) *clamped = false;
+    return s && index < s->blips.size() ? MinimapW::blipPos(ui, map, *s, index, clamped) : Vec2{};
+}
+Rect minimapFrame(const UiContext& ui, NodeHandle map) { return minimapState(ui, map) ? MinimapW::frame(ui, map) : Rect{}; }
+MinimapInfo minimapInfo(const UiContext& ui, NodeHandle map) {
+    const MinimapState* s = minimapState(ui, map);
+    return s ? MinimapInfo{s->range, s->heading, s->rotate, s->shape, s->image} : MinimapInfo{};
+}
+
+// ---- ammo counter API ----------------------------------------------------------------------------------------------
+NodeHandle ammoCounter(UiContext& ui, NodeHandle parent, std::string_view id) {
+    installExtras(ui);
+    const NodeHandle n = make(ui, "ammocounter", parent, id);
+    if (!ui.alive(n)) return n;
+    ammoPool().create(ui, n);
+    ui.setRange(n, 0.f, 1e9f, 0.f);
+    ui.setText(n, "0 / 0");
+    return n;
+}
+void setAmmo(UiContext& ui, NodeHandle node, u32 inMagazine, u32 magazineSize, u32 reserve) {
+    AmmoState* s = ammoStateOf(ui, node);
+    if (!s || (s->magazine == inMagazine && s->size == magazineSize && s->reserve == reserve)) return;
+    s->magazine = inMagazine;
+    s->size = magazineSize;
+    s->reserve = reserve;
+    char b[32];
+    std::snprintf(b, sizeof b, "%u / %u", inMagazine, reserve);
+    ui.setText(node, b);
+    if (s->low() != ui.hasClass(node, "ammo-low")) {
+        if (s->low()) ui.addClass(node, "ammo-low");
+        else ui.removeClass(node, "ammo-low");
+    }
+    ui.setValue(node, f32(inMagazine));
+    ui.invalidate(node);
+    ui.emit(node, SignalKind::ValueChanged, {.value = f32(inMagazine), .text = ui.text(node)});
+}
+void setAmmoReload(UiContext& ui, NodeHandle node, f32 progress01) {
+    AmmoState* s = ammoStateOf(ui, node);
+    progress01 = std::clamp(progress01, 0.f, 1.f);
+    if (!s || s->reload == progress01) return;
+    s->reload = progress01;
+    ui.invalidate(node);
+}
+void setAmmoLowFraction(UiContext& ui, NodeHandle node, f32 fraction01) {
+    AmmoState* s = ammoStateOf(ui, node);
+    if (!s) return;
+    s->lowFraction = std::clamp(fraction01, 0.f, 1.f);
+    if (s->low()) ui.addClass(node, "ammo-low");
+    else ui.removeClass(node, "ammo-low");
+    ui.invalidate(node);
+}
+AmmoInfo ammoInfo(const UiContext& ui, NodeHandle node) {
+    const AmmoState* s = ammoStateOf(ui, node);
+    return s ? AmmoInfo{s->magazine, s->size, s->reserve, s->reload, s->low(), s->reloading(), s->pips()} : AmmoInfo{};
+}
+Rect ammoPipRect(const UiContext& ui, NodeHandle node, u32 index) {
+    const AmmoState* s = ammoStateOf(ui, node);
+    return s ? AmmoW::pip(ui, node, *s, index) : Rect{};
 }
 
 // ---- Inventory -----------------------------------------------------------------------------------------------------
@@ -681,7 +966,7 @@ RichDialogue::RichDialogue(UiContext& ui, NodeHandle parent) : m_ui(ui) {
     ui.addClass(m_box, "ui-blocker");
     m_speaker = widgets::label(ui, m_box, "", "richdlg.speaker");
     ui.addClass(m_speaker, "richdlg-speaker");
-    m_body = make(ui, "richtext", m_box, "richdlg.body");
+    m_body = make(ui, "dialoguetext", m_box, "richdlg.body");
     richBindings().push_back({&ui, m_body.index, this});
     setShown(ui, m_box, false);
 }

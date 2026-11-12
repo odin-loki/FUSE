@@ -3,12 +3,11 @@
 // Optional --out=<dir>: tier_d2.png (all widgets on one screen) and file_dialog.png.
 #include "test_util.hpp"
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wunused-function"
 #endif
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
+#include "stb_write_impl.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -522,7 +521,8 @@ int run(const std::string& gate) {
     if (want("video")) rc |= video(s);
     if (gate.empty()) shot(s.ui, "tier_d2.png");
     if (want("file_dialog")) rc |= fileDialog(s);
-    return finish(gate.empty() ? "fuse_ui_tier_d2" : ("fuse_ui_widget_" + gate).c_str());
+    const int failed = finish(gate.empty() ? "fuse_ui_tier_d2" : ("fuse_ui_widget_" + gate).c_str());
+    return failed != 0 ? failed : rc;
 }
 } // namespace
 

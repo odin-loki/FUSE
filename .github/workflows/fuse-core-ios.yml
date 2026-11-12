@@ -35,3 +35,39 @@ jobs:
             -DFUSE_BUILD_CORE_TESTS=OFF
       - name: Build fuse_core stub
         run: cmake --build build-ios --config Release --target fuse_core
+
+  # FUSE UI (Source/FUSE/UI standalone): fuse_text, fuse_ui_*, fuse_app + the Cocoa / UIKit window backends
+  # (App/src/native_apple.mm). Compile-only: there is no display or simulator session on the runner.
+  fuse-ui-macos:
+    name: FUSE UI macOS (Cocoa + MoltenVK headers) compile
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja and Vulkan (MoltenVK)
+        run: brew install ninja molten-vk vulkan-headers vulkan-loader
+      - name: Configure
+        run: cmake -S Source/FUSE/UI -B build-ui-macos -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build-ui-macos
+      # -LE perf: the wall-clock budget gates (fuse_ui_bench_10k, 1M-row frame budgets, icon rasterisation budget,
+      # hello_startup) have thresholds for a quiet machine; a shared runner under -j 3 misses them by noise.
+      - name: Headless UI gates
+        run: ctest --test-dir build-ui-macos --output-on-failure -j 3 -LE "vulkan|perf"
+
+  fuse-ui-ios:
+    name: FUSE UI iOS simulator (UIKit) compile
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja
+        run: brew install ninja
+      - name: Configure
+        run: |
+          cmake -S Source/FUSE/UI -B build-ui-ios -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build-ui-ios -- -k 0

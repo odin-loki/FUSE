@@ -1,4 +1,6 @@
 #include "fuse/ui/doc/document.hpp"
+#include "doc_classes.hpp"
+#include "fuse/text/from_chars.hpp"
 
 #include "fuse/ui/widgets/widgets.hpp"
 
@@ -37,7 +39,7 @@ void Model::setString(u32 s, std::string_view v) {
     var.isString = true;
     var.text.assign(v);
     double d = 0.0;
-    const auto r = std::from_chars(v.data(), v.data() + v.size(), d);
+    const auto r = fuse::text::fromChars(v.data(), v.data() + v.size(), d);
     var.number = r.ec == std::errc{} ? d : 0.0;
     var.version = ++m_version;
 }
@@ -91,7 +93,7 @@ struct ExprParser {
             std::size_t j = i;
             while (j < s.size() && ((s[j] >= '0' && s[j] <= '9') || s[j] == '.' || s[j] == 'e' || s[j] == 'E')) ++j;
             double v = 0;
-            const auto r = std::from_chars(s.data() + i, s.data() + j, v);
+            const auto r = fuse::text::fromChars(s.data() + i, s.data() + j, v);
             if (r.ec != std::errc{}) return fail("bad number");
             i = j;
             code.push_back({Expr::Op::Num, 0, v});
@@ -258,7 +260,7 @@ std::expected<Template, std::string> Template::compile(std::string_view src, Mod
         if (!body.empty() && body[0] == '=') { twoWay = true; body.remove_prefix(1); }
         if (const auto colon = body.rfind(':'); colon != std::string_view::npos) {
             int d = 0;
-            const auto r = std::from_chars(body.data() + colon + 1, body.data() + body.size(), d);
+            const auto r = fuse::text::fromChars(body.data() + colon + 1, body.data() + body.size(), d);
             if (r.ec != std::errc{} || r.ptr != body.data() + body.size() || d < 0 || d > 9)
                 return std::unexpected("bad ':decimals' in \"" + std::string(src) + "\"");
             p.decimals = d;
@@ -318,19 +320,22 @@ void appendCss(std::string& css, const JsonValue& v) {
     } else if (v.isBool()) css += v.boolean ? "true" : "false";
 }
 
-NodeHandle makeNode(UiContext& ui, std::string_view cls, NodeHandle parent, std::string_view id) {
-    namespace w = fuse::ui::widgets;
-    if (cls == "slider") return w::slider(ui, parent, 0.f, 1.f, 0.f, 0.f, id);
-    if (cls == "progressbar") return w::progressBar(ui, parent, 0.f, id);
-    if (cls == "dial") return w::dial(ui, parent, 0.f, 1.f, 0.f, id);
-    if (cls == "spinbox") return w::spinBox(ui, parent, 0.f, 100.f, 0.f, 1.f, id);
-    if (cls == "scrollbar") return w::scrollBar(ui, parent, true, id);
-    if (cls == "lineedit") return w::lineEdit(ui, parent, {}, id);
-    auto n = ui.create(cls, parent, id);
-    return n ? *n : NodeHandle{};
+/// Creates a node of a registered class or a document class (doc_classes.cpp).
+NodeHandle makeNode(UiContext& ui, std::string_view cls, NodeHandle parent, std::string_view id, const JsonValue& n) {
+    return detail::make(ui, cls, parent, id, n);
 }
 
 void setNodeText(UiContext& ui, NodeHandle n, std::string_view s) {
+    namespace w = fuse::ui::widgets;
+    const std::string_view cls = ui.registry().get(ui.classOf(n)).name;
+    // widgets whose text lives in their own state
+    if (cls == "textedit") { w::textEditSetText(ui, n, s); return; }
+    if (cls == "richtext") { w::setRichText(ui, n, s); return; }
+    if (cls == "header") { w::setHeaderTitles(ui, n, s); return; }
+    if (cls == "codeedit") { w::codeEditSetText(ui, n, s); return; }
+    if (ui.hasClass(n, "md")) { w::setMarkdown(ui, n, s); return; }
+    if (ui.hasClass(n, "statusbar")) { w::statusMessage(ui, n, s); return; }
+    if (ui.hasClass(n, "groupbox")) { ui.setText(ui.firstChild(n), s); return; } // the title
     ui.setText(n, s);
     if (ui.registry().get(ui.classOf(n)).name == "lineedit") {
         ui.editBuffer(n).setText(s);
@@ -361,6 +366,8 @@ std::expected<std::unique_ptr<Document>, DocError> Document::load(UiContext& ui,
 
 Document::~Document() {
     for (ConnectionHandle c : m_connections) m_ui.disconnect(c);
+    for (NodeHandle h : m_detached)
+        if (m_ui.alive(h)) m_ui.destroy(h);
     if (m_root && m_ui.alive(m_root)) m_ui.destroy(m_root);
 }
 
@@ -399,15 +406,26 @@ std::expected<NodeHandle, DocError> Document::buildNode(const JsonValue& n, Node
     const std::string_view className = cls && cls->isString() ? std::string_view(cls->string) : "panel";
     const JsonValue* idv = n.get("id");
     const std::string_view id = idv && idv->isString() ? std::string_view(idv->string) : std::string_view{};
-    if (m_ui.registry().find(className) == 0xFFFFFFFFu)
+    if (!detail::creatable(m_ui, className))
         return std::unexpected(DocError{path, "unknown class '" + std::string(className) + "'"});
-    auto made = makeOrReuse(className, parent, id);
+    auto made = makeOrReuse(className, parent, id, n);
     if (!made) return std::unexpected(DocError{path, made.error().message});
     const NodeHandle node = *made;
     if (!m_root) m_root = node; // so a failure part-way destroys what was built
+    // a node built outside the tree (a dialog lives in the overlay layer) is destroyed with the document
+    {
+        NodeHandle top = node;
+        bool inTree = false;
+        for (NodeHandle a = m_ui.parent(node); a.valid(); a = m_ui.parent(a)) {
+            if (a == parent) { inTree = true; break; }
+            if (m_ui.parent(m_ui.parent(a)).valid()) top = a; // stop below the overlay layer (a child of the root)
+        }
+        if (!inTree && top != m_root) m_detached.push_back(top);
+    }
 
     for (const auto& [key, v] : n.object) {
         if (key == "class" || key == "id" || key == "children" || key == "on") continue;
+        if (detail::prop(m_ui, node, className, key, v)) continue; // class-specific, tooltip, contextMenu
         if (key == "classes") {
             if (!v.isArray()) return std::unexpected(DocError{path, "classes must be an array"});
             for (const JsonValue& c : v.array)
@@ -463,7 +481,9 @@ std::expected<NodeHandle, DocError> Document::buildNode(const JsonValue& n, Node
         for (std::size_t k = 0; k < ch->array.size(); ++k) {
             const std::size_t len = path.size();
             path += "/children[" + std::to_string(k) + "]";
-            auto c = buildNode(ch->array[k], node, path);
+            const NodeHandle into = detail::childParent(m_ui, node, className, k, ch->array[k]);
+            if (!into) return std::unexpected(DocError{path, "'" + std::string(className) + "' has no place for this child"});
+            auto c = buildNode(ch->array[k], into, path);
             if (!c) return c;
             path.resize(len);
         }
@@ -491,7 +511,7 @@ std::expected<void, DocError> Document::bindProp(NodeHandle node, std::string_vi
             break;
         case Target::Value:
             if (!v.isNumber()) return std::unexpected(DocError{path, std::string(prop) + " must be a number"});
-            m_ui.setValue(node, f32(v.number));
+            if (!detail::setValue(m_ui, node, f32(v.number))) m_ui.setValue(node, f32(v.number));
             break;
         case Target::Min: case Target::Max:
             if (!v.isNumber()) return std::unexpected(DocError{path, std::string(prop) + " must be a number"});
@@ -502,7 +522,7 @@ std::expected<void, DocError> Document::bindProp(NodeHandle node, std::string_vi
             if (!v.isBool()) return std::unexpected(DocError{path, std::string(prop) + " must be a boolean"});
             if (target == Target::Checked) m_ui.setChecked(node, v.boolean);
             else if (target == Target::Disabled) m_ui.setDisabled(node, v.boolean);
-            else m_ui.setCss(node, "display", v.boolean ? "flex" : "none");
+            else if (!detail::setVisible(m_ui, node, v.boolean)) m_ui.setCss(node, "display", v.boolean ? "flex" : "none");
             break;
         }
         return {};
@@ -547,12 +567,16 @@ void Document::apply(u32 bi) {
     } else {
         const double v = b.tmpl.onlyExpr()->eval(*m_model);
         switch (b.target) {
-        case Target::Value: m_ui.setValue(b.node, f32(v)); break;
+        case Target::Value:
+            if (!detail::setValue(m_ui, b.node, f32(v))) m_ui.setValue(b.node, f32(v));
+            break;
         case Target::Min: m_ui.setRange(b.node, f32(v), m_ui.rangeMax(b.node), m_ui.rangeStep(b.node)); break;
         case Target::Max: m_ui.setRange(b.node, m_ui.rangeMin(b.node), f32(v), m_ui.rangeStep(b.node)); break;
         case Target::Checked: m_ui.setChecked(b.node, v != 0.0); break;
         case Target::Disabled: m_ui.setDisabled(b.node, v != 0.0); break;
-        case Target::Visible: m_ui.setCss(b.node, "display", v != 0.0 ? "flex" : "none"); break;
+        case Target::Visible:
+            if (!detail::setVisible(m_ui, b.node, v != 0.0)) m_ui.setCss(b.node, "display", v != 0.0 ? "flex" : "none");
+            break;
         default: break;
         }
     }
@@ -574,8 +598,10 @@ u32 Document::refresh() {
     return applied;
 }
 
-std::expected<NodeHandle, DocError> Document::makeOrReuse(std::string_view cls, NodeHandle parent, std::string_view id) {
-    if (!id.empty()) {
+std::expected<NodeHandle, DocError> Document::makeOrReuse(std::string_view cls, NodeHandle parent, std::string_view id,
+                                                          const JsonValue& n) {
+    // compound widgets (several nodes built by a factory) are always rebuilt on a reload
+    if (!id.empty() && !detail::compound(m_ui, cls)) {
         for (NodeHandle& h : m_reuse) {
             if (!h || !m_ui.alive(h) || m_ui.idOf(h) != id) continue;
             if (m_ui.registry().get(m_ui.classOf(h)).name != cls) break; // class changed: rebuild
@@ -593,7 +619,7 @@ std::expected<NodeHandle, DocError> Document::makeOrReuse(std::string_view cls, 
             return n;
         }
     }
-    const NodeHandle node = makeNode(m_ui, cls, parent, id);
+    const NodeHandle node = makeNode(m_ui, cls, parent, id, n);
     if (!node) return std::unexpected(DocError{{}, "could not create '" + std::string(cls) + "'"});
     return node;
 }
@@ -631,7 +657,7 @@ std::expected<void, DocError> Document::reload(std::string_view json) {
     // Park the id nodes under a hidden holder, drop the rest of the old tree.
     NodeHandle holder;
     if (!m_reuse.empty()) {
-        holder = makeNode(m_ui, "panel", m_parent, {});
+        holder = widgets::panel(m_ui, m_parent);
         m_ui.setCss(holder, "display", "none");
         for (NodeHandle h : m_reuse) m_ui.moveTo(h, holder);
         for (NodeHandle h : m_reuse) // anonymous children of kept nodes are rebuilt
@@ -641,6 +667,9 @@ std::expected<void, DocError> Document::reload(std::string_view json) {
                 c = next;
             }
     }
+    for (NodeHandle h : m_detached) // dialogs of the old document (kept id nodes inside them were parked above)
+        if (m_ui.alive(h)) m_ui.destroy(h);
+    m_detached.clear();
     bool rootKept = false;
     for (NodeHandle h : m_reuse) rootKept |= h == m_root;
     if (!rootKept && m_root && m_ui.alive(m_root)) m_ui.destroy(m_root);

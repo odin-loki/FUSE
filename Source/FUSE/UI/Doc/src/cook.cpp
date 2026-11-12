@@ -1,5 +1,7 @@
 // UI8 cookers (see cook.hpp).
 #include "fuse/ui/doc/cook.hpp"
+#include "doc_classes.hpp"
+#include "fuse/ui/widgets/widgets.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -106,7 +108,12 @@ bool readJson(Reader& r, JsonValue& v, u32 depth) {
 // Same rule as Document::buildNode: every key except these is a property (bindings live there).
 bool structuralKey(std::string_view k) {
     return k == "class" || k == "id" || k == "children" || k == "on" || k == "classes" || k == "style" ||
-           k == "items" || k == "tabIndex" || k == "a11yName" || k == "image" || k == "step";
+           k == "items" || k == "tabIndex" || k == "a11yName" || k == "image" || k == "step" ||
+           // document-class properties that are plain data, never bindings (doc_classes.cpp)
+           k == "tooltip" || k == "contextMenu" || k == "tabs" || k == "columns" || k == "rows" || k == "series" ||
+           k == "spans" || k == "nodes" || k == "links" || k == "keys" || k == "tracks" || k == "families" ||
+           k == "date" || k == "color" || k == "language" || k == "side" || k == "kind" || k == "profile" || k == "source" ||
+           k == "icon" || k == "svg";
 }
 bool isBinding(const JsonValue& v) { return v.isString() && v.string.find('{') != std::string::npos; }
 
@@ -119,6 +126,8 @@ struct Walk {
         ++nodes;
         const JsonValue* c = n.get("class");
         classes.insert(c && c->isString() ? c->string : std::string("panel"));
+        if (n.get("tooltip")) classes.insert("tooltip");
+        if (n.get("contextMenu")) classes.insert("menu");
         for (const auto& [k, v] : n.object)
             if (!structuralKey(k) && isBinding(v) &&
                 std::find(bindings.begin(), bindings.end(), v.string) == bindings.end())
@@ -442,20 +451,78 @@ std::expected<std::vector<std::string>, std::string> cookedClasses(std::span<con
 bool isCookedDocument(std::span<const u8> b) { return b.size() >= 8 && std::memcmp(b.data(), kDocMagic, 4) == 0; }
 bool isCookedStyle(std::span<const u8> b) { return b.size() >= 8 && std::memcmp(b.data(), kStyleMagic, 4) == 0; }
 
+namespace {
+/// The widget classes a document class (or a registered class with a factory) creates: it is built once in a scratch
+/// context that has every library class, and the classes of the nodes it made are collected.
+const std::vector<std::string>& builtClasses(const std::string& name) {
+    static std::vector<std::pair<std::string, std::vector<std::string>>> cache;
+    for (const auto& [n, classes] : cache)
+        if (n == name) return classes;
+    static UiContext scratch({.viewport = {64.f, 64.f}, .font = nullptr, .reserveNodes = 64, .atlasSize = 64});
+    static const bool installed = (widgets::install(scratch), true);
+    (void)installed;
+    std::vector<std::string> out;
+    const NodeHandle host = name == "dock" ? widgets::dockArea(scratch, scratch.root()) : widgets::panel(scratch, scratch.root());
+    JsonValue node;
+    node.type = JsonValue::Type::Object;
+    if (detail::make(scratch, name, host, {}, node).valid()) {
+        std::vector<NodeHandle> stack{scratch.root()};
+        while (!stack.empty()) {
+            const NodeHandle h = stack.back();
+            stack.pop_back();
+            const std::string& cls = scratch.registry().get(scratch.classOf(h)).name;
+            if (cls != "root" && cls != "layer" && std::find(out.begin(), out.end(), cls) == out.end()) out.push_back(cls);
+            for (NodeHandle c = scratch.firstChild(h); c; c = scratch.nextSibling(c)) stack.push_back(c);
+        }
+    }
+    // leave the scratch context empty again (dialogs live in the overlay layer)
+    for (NodeHandle c = scratch.firstChild(scratch.root()); c;) {
+        const NodeHandle next = scratch.nextSibling(c);
+        scratch.destroy(c);
+        c = next;
+    }
+    cache.emplace_back(name, std::move(out));
+    return cache.back().second;
+}
+/// A document class whose name is not one of the classes it builds (group box, tab widget, ...).
+bool documentOnly(const std::string& name) {
+    if (!isDocumentClass(name)) return false;
+    const std::vector<std::string>& built = builtClasses(name);
+    return !built.empty() && std::find(built.begin(), built.end(), name) == built.end();
+}
+} // namespace
+
 std::vector<std::string> registrationList(const std::vector<std::vector<std::string>>& perDoc) {
+    // classes a widget creates later, at run time (popups, drag layers, editors of property rows)
     static const std::pair<std::string_view, std::string_view> kDeps[] = {
         {"combobox", "popup"}, {"combobox", "menu"}, {"combobox", "menuitem"},
         {"menubutton", "popup"}, {"menubutton", "menu"}, {"menubutton", "menuitem"},
         {"menubar", "menubutton"}, {"menubar", "popup"}, {"menubar", "menu"}, {"menubar", "menuitem"},
         {"menu", "menuitem"}, {"menu", "popup"},
+        {"docktitle", "docktabs"}, {"docktitle", "dockdrop"}, // dragging a dock: tab strips and the drop-zone layer
+        {"datetimeedit", "popup"}, {"datetimeedit", "calendar"},
+        {"propertygrid", "toolbutton"}, {"propertygrid", "label"}, {"propertygrid", "checkbox"}, {"propertygrid", "spinbox"},
+        {"propertygrid", "lineedit"}, {"propertygrid", "combobox"}, {"propertygrid", "colorpicker"}, {"propertygrid", "button"},
+        {"markdown", "label"}, {"toolbar", "toolbutton"}, {"toolbar", "separator"}, {"toolbar", "tooltip"},
+        {"statusbar", "label"}, {"stack", "panel"}, {"splitter", "splithandle"}, {"splitter", "panel"},
+        {"dialog", "popup"},
+        // item views: the elided-cell tooltip, the in-place editor of an editable tree
+        {"tableview", "tooltip"}, {"treemodelview", "tooltip"}, {"treemodelview", "lineedit"},
     };
     std::set<std::string> out;
     for (const auto& d : perDoc) out.insert(d.begin(), d.end());
     for (bool grew = true; grew;) {
         grew = false;
-        for (const auto& [from, to] : kDeps)
-            if (out.count(std::string(from)) && out.insert(std::string(to)).second) grew = true;
+        for (const std::string& name : std::vector<std::string>(out.begin(), out.end())) {
+            if (isDocumentClass(name))
+                for (const std::string& c : builtClasses(name)) grew |= out.insert(c).second;
+            for (const auto& [from, to] : kDeps)
+                if (name == from && out.insert(std::string(to)).second) grew = true;
+        }
     }
+    // names that are only document classes (group box, tab widget, ...) are not classes to register
+    for (auto it = out.begin(); it != out.end();)
+        it = documentOnly(*it) ? out.erase(it) : std::next(it);
     return {out.begin(), out.end()};
 }
 
@@ -468,8 +535,13 @@ std::string registrationSource(const std::vector<std::string>& classes, std::str
     s += "};\n} // namespace\n\n";
     s += "extern const std::size_t " + std::string(fn) + "_count = " + std::to_string(classes.empty() ? 1 : classes.size()) + ";\n";
     s += "const std::string_view* " + std::string(fn) + "_classes() { return kCookedClasses; }\n";
+    // classes of other libraries (fuse_ui_game's HUD widgets, an app's own) are not installed here: register them
+    // first (game::install); the function returns how many of the listed classes the context still lacks
     s += "fuse::ui::u32 " + std::string(fn) + "(fuse::ui::UiContext& ui) {\n"
-         "    return fuse::ui::widgets::installClasses(ui, kCookedClasses);\n}\n";
+         "    (void)fuse::ui::widgets::installClasses(ui, kCookedClasses);\n"
+         "    fuse::ui::u32 missing = 0;\n"
+         "    for (std::string_view c : kCookedClasses) missing += ui.registry().find(c) == 0xFFFFFFFFu;\n"
+         "    return missing;\n}\n";
     return s;
 }
 

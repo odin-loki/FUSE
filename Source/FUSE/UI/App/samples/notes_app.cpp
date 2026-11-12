@@ -17,7 +17,9 @@ struct NotesModel {
 };
 } // namespace
 
-int main(int argc, char** argv) {
+#include "fuse/app/main.hpp" // FUSE_APP_MAIN: main on desktop; run by the platform entry point on Android / iOS
+
+int FUSE_APP_MAIN(int argc, char** argv) {
     fuse::app::Application app{{.name = "notes_app", .argc = argc, .argv = argv, .singleInstance = true}};
     if (!app.primary() && !app.args().has("screenshot")) return app.fail("already running");
     auto& win = app.createWindow({.title = "Notes", .width = 640, .height = 400});

@@ -16,12 +16,11 @@
 #include <fuse/audio/audio_registry.hpp>
 #endif
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wunused-function"
 #endif
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
+#include "stb_write_impl.hpp"
 
 #include <cmath>
 #include <cstdio>

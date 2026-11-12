@@ -1,6 +1,8 @@
 #include <algorithm>
 #include "fuse/ui/draw_list.hpp"
 
+#include "draw_internal.hpp"
+
 #include <cmath>
 #include <cstring>
 
@@ -46,6 +48,40 @@ void DrawList::translate(Vec2 d) {
         c.rect.y += d.y;
         if (c.op == DrawOp::Line) { c.rect.w += d.x; c.rect.h += d.y; }
     }
+    if (m_vector) translateSide(d);
+}
+
+void DrawList::scale(f32 s) {
+    if (s == 1.f) return;
+    const bool snap = s != std::floor(s);
+    for (DrawCmd& c : m_cmds) {
+        if (c.op == DrawOp::PopClip) continue;
+        if (c.op == DrawOp::Glyph) {
+            if (c.devicePx) { c.devicePx = 0; continue; }
+            c.rect.x = std::round(c.rect.x * s);
+            c.rect.y = std::round(c.rect.y * s);
+            continue;
+        }
+        const bool box = c.op == DrawOp::Rect || c.op == DrawOp::Image || c.op == DrawOp::Backdrop ||
+                         c.op == DrawOp::PushClip || c.op == DrawOp::NinePatch;
+        if (snap && box) {
+            const f32 x0 = std::round(c.rect.x * s), y0 = std::round(c.rect.y * s);
+            f32 x1 = std::round(c.rect.right() * s), y1 = std::round(c.rect.bottom() * s);
+            if (c.rect.w > 0.f && x1 <= x0) x1 = x0 + 1.f;
+            if (c.rect.h > 0.f && y1 <= y0) y1 = y0 + 1.f;
+            c.rect = {x0, y0, x1 - x0, y1 - y0};
+            if (c.borderWidth > 0.f) c.borderWidth = std::max(1.f, std::round(c.borderWidth * s));
+        } else { // Line: (x0, y0, x1, y1) scales the same way
+            c.rect.x *= s;
+            c.rect.y *= s;
+            c.rect.w *= s;
+            c.rect.h *= s;
+            c.borderWidth *= s;
+        }
+        for (f32& r : c.radius) r *= s;
+        c.blur *= s;
+    }
+    if (m_vector) scaleSide(s, snap);
 }
 
 void DrawList::backdrop(const Rect& r, f32 blur, const std::array<f32, 4>& radii, Color tint) {
@@ -102,6 +138,34 @@ u64 DrawList::hash() const {
         h = fnv(h, c.radius.data(), 16);
         h = fnv(h, &c.blur, 4);
     }
+    if (m_vector) { // side records of the vector ops (lists without them hash as before)
+        for (const auto& c : m_cmds) h = fnv(h, &c.data, 4);
+        h = fnv(h, m_verbs.data(), m_verbs.size());
+        h = fnv(h, m_points.data(), m_points.size() * sizeof(Vec2));
+        h = fnv(h, m_stops.data(), m_stops.size() * sizeof(GradientStop));
+        for (const DrawPath& p : m_paths) {
+            h = fnv(h, &p.firstVerb, 16);
+            h = fnv(h, &p.paint, 4);
+            const u8 flags[4]{u8(p.rule), u8(p.stroked), u8(p.stroke.cap), u8(p.stroke.join)};
+            h = fnv(h, flags, 4);
+            if (p.stroked) {
+                const f32 v[3]{p.stroke.width, p.stroke.miterLimit, p.stroke.dashOffset};
+                h = fnv(h, v, 12);
+                h = fnv(h, p.stroke.dashes.data(), std::size_t(p.stroke.dashCount) * 4);
+            }
+        }
+        for (const DrawPaint& p : m_paints) {
+            const u32 v[4]{u32(p.kind), u32(p.spread), p.firstStop, p.stopCount};
+            h = fnv(h, v, 16);
+            h = fnv(h, &p.opacity, 4);
+            h = fnv(h, &p.toUnit, sizeof(Affine));
+        }
+        for (const DrawPatch& p : m_patches) {
+            h = fnv(h, &p.src, sizeof(Rect) + 2 * sizeof(Edges));
+            const u8 sm = p.smooth;
+            h = fnv(h, &sm, 1);
+        }
+    }
     return h;
 }
 
@@ -118,67 +182,25 @@ u32 CpuRasterizer::addImage(const Image* img) {
     return u32(m_images.size() - 1);
 }
 
-namespace {
-
-struct Px {
-    f32 r, g, b, a; // premultiplied 0..1
-};
-
-inline void blend(u32& dst, Px s) {
-    if (s.a <= 0.f && s.r <= 0.f && s.g <= 0.f && s.b <= 0.f) return;
-    auto q = [](f32 v) { return u32(std::clamp(v, 0.f, 1.f) * 255.f + 0.5f); }; // == lround for v in [0, 1]
-    if (s.a >= 1.f) { // opaque: the destination does not contribute
-        dst = q(s.r) | (q(s.g) << 8) | (q(s.b) << 16) | (q(s.a) << 24);
-        return;
-    }
-    const f32 inv = 1.f - s.a;
-    const f32 dr = f32(dst & 0xFF) / 255.f, dg = f32((dst >> 8) & 0xFF) / 255.f, db = f32((dst >> 16) & 0xFF) / 255.f,
-              da = f32(dst >> 24) / 255.f;
-    dst = q(s.r + dr * inv) | (q(s.g + dg * inv) << 8) | (q(s.b + db * inv) << 16) | (q(s.a + da * inv) << 24);
-}
-
-inline Px premul(Color c, f32 cov) {
-    const f32 a = std::clamp(c.a, 0.f, 1.f) * cov;
-    return {c.r * a, c.g * a, c.b * a, a};
-}
-
-/// Signed distance from p to a rounded rect (negative inside).
-inline f32 sdRoundRect(f32 px, f32 py, const Rect& r, const std::array<f32, 4>& rad) {
-    const f32 cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
-    const f32 hx = r.w * 0.5f, hy = r.h * 0.5f;
-    const f32 dx = px - cx, dy = py - cy;
-    // corner by quadrant: tl, tr, br, bl
-    f32 rr = dx < 0 ? (dy < 0 ? rad[0] : rad[3]) : (dy < 0 ? rad[1] : rad[2]);
-    rr = std::min(rr, std::min(hx, hy));
-    const f32 qx = std::abs(dx) - hx + rr, qy = std::abs(dy) - hy + rr;
-    const f32 ox = std::max(qx, 0.f), oy = std::max(qy, 0.f);
-    return std::sqrt(ox * ox + oy * oy) + std::min(std::max(qx, qy), 0.f) - rr;
-}
-
-struct Clip {
-    Rect r;
-    f32 radius;
-};
-
-} // namespace
+using namespace detail;
 
 namespace {
 // Backdrop blur, the reference: three box passes per axis (~Gaussian, sigma ~ blur / 2) over the pixels under the
 // rounded rect, sampled from a margin of `blur` around it (clamped to the target), then mixed in by coverage.
-void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& target) {
-    const Rect area = c.rect.intersect(clipR).intersect({0.f, 0.f, f32(target.width), f32(target.height)});
+void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, const Surface& target) {
+    const Rect area = c.rect.intersect(clipR).intersect(target.rect());
     if (area.empty()) return;
     const int r = std::max(1, int(std::lround(c.blur / 3.f)));
     const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
     const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
     const int m = 3 * r;
-    const int sx0 = std::max(0, x0 - m), sy0 = std::max(0, y0 - m);
-    const int sx1 = std::min(target.width, x1 + m), sy1 = std::min(target.height, y1 + m);
+    const int sx0 = std::max(target.ox, x0 - m), sy0 = std::max(target.oy, y0 - m);
+    const int sx1 = std::min(target.ox + target.w, x1 + m), sy1 = std::min(target.oy + target.h, y1 + m);
     const int w = sx1 - sx0, h = sy1 - sy0;
     std::vector<f32> buf(std::size_t(w) * std::size_t(h) * 4), tmp(buf.size());
     for (int y = 0; y < h; ++y)
         for (int x = 0; x < w; ++x) {
-            const u32 p = target.pixels[std::size_t(sy0 + y) * std::size_t(target.width) + std::size_t(sx0 + x)];
+            const u32 p = target.row(sy0 + y)[sx0 + x - target.ox];
             for (int k = 0; k < 4; ++k) buf[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4 + std::size_t(k)] = f32((p >> (8 * k)) & 0xFFu);
         }
     auto pass = [&](bool vertical) {
@@ -210,7 +232,7 @@ void backdropBlur(const DrawCmd& c, const Rect& clipR, f32 clipRadius, Image& ta
             f32 cov = std::clamp(0.5f - sdRoundRect(px, py, c.rect, c.radius), 0.f, 1.f);
             if (clipRadius > 0.f) cov *= std::clamp(0.5f - sdRoundRect(px, py, clipR, clipRad), 0.f, 1.f);
             if (cov <= 0.f) continue;
-            u32& d = target.pixels[std::size_t(y) * std::size_t(target.width) + std::size_t(x)];
+            u32& d = target.row(y)[x - target.ox];
             const f32* b = &buf[(std::size_t(y - sy0) * std::size_t(w) + std::size_t(x - sx0)) * 4];
             u32 o = 0;
             for (int k = 0; k < 4; ++k) {
@@ -229,10 +251,44 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
     Rect full{0.f, 0.f, f32(target.width), f32(target.height)};
     if (scissor.empty()) scissor = full;
     scissor = scissor.intersect(full);
+    const RasterEnv env{{m_atlas, m_atlasSize, m_images.data(), u32(m_images.size())}, target.width};
+    renderRange(env, list, 0, list.size(), {target.pixels.data(), 0, 0, target.width, target.height}, scissor, 0, false);
+}
+
+void rasterizeCommands(const DrawList& list, std::size_t first, std::size_t count, const Rect& area, int rootWidth,
+                       const RasterSources& src, Image& out, bool groupOpacityOne) {
+    const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
+    const int w = std::max(0, int(std::ceil(area.right())) - x0), h = std::max(0, int(std::ceil(area.bottom())) - y0);
+    out.resize(w, h, 0);
+    if (w == 0 || h == 0) return;
+    const std::size_t last = std::min(list.size(), first + count);
+    renderRange({src, rootWidth}, list, first, last, {out.pixels.data(), x0, y0, w, h}, {f32(x0), f32(y0), f32(w), f32(h)}, 0,
+                groupOpacityOne);
+}
+
+std::size_t matchingPop(const DrawList& list, std::size_t i) {
+    const auto& cmds = list.cmds();
+    int depth = 0;
+    for (std::size_t j = i; j < cmds.size(); ++j) {
+        const DrawOp op = cmds[j].op;
+        if (op == DrawOp::PushClip || op == DrawOp::PushClipPath || op == DrawOp::PushLayer) ++depth;
+        else if (op == DrawOp::PopClip && --depth <= 0) return j;
+    }
+    return cmds.size();
+}
+
+void detail::renderRange(const RasterEnv& env, const DrawList& list, std::size_t first, std::size_t last, const Surface& target,
+                         Rect scissor, int level, bool groupOpacityOne) {
+    const u8* const atlas = env.src.atlas;
+    const int atlasSize = env.src.atlasSize;
+    const std::span<const Image* const> images{env.src.images, env.src.images ? env.src.imageCount : 0u};
+    const int ox = target.ox;
     Clip stack[32];
     int depth = 0;
     stack[0] = {scissor, 0.f};
-    for (const DrawCmd& c : list.cmds()) {
+    const auto& cmds = list.cmds();
+    for (std::size_t ci = first; ci < last; ++ci) {
+        const DrawCmd& c = cmds[ci];
         const Clip& clip = stack[depth];
         switch (c.op) {
         case DrawOp::PushClip:
@@ -246,6 +302,12 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
             if (depth > 0) --depth;
             continue;
         case DrawOp::Backdrop: backdropBlur(c, clip.r, clip.radius, target); continue;
+        case DrawOp::Path: drawPathCmd(env, list, c, clip, target); continue;
+        case DrawOp::NinePatch: drawPatchCmd(env, list, c, clip, target); continue;
+        case DrawOp::PushClipPath:
+        case DrawOp::PushLayer: // a group: rendered to a layer, composited once; resumes after its PopClip
+            ci = drawGroup(env, list, ci, last, clip, target, level, groupOpacityOne && ci == first);
+            continue;
         default: break;
         }
         Rect bounds = c.rect;
@@ -275,7 +337,7 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
             solid = probe;
         }
         for (int y = y0; y < y1; ++y) {
-            u32* row = target.pixels.data() + std::size_t(y) * std::size_t(target.width);
+            u32* row = target.row(y) - ox; // indexed by device x
             const bool solidRow = y >= iy0 && y < iy1;
             for (int x = x0; x < x1; ++x) {
                 if (solidRow && x >= ix0 && x < ix1) {
@@ -317,16 +379,16 @@ void CpuRasterizer::render(const DrawList& list, Image& target, Rect scissor) co
                     break;
                 }
                 case DrawOp::Glyph: {
-                    if (!m_atlas) break;
+                    if (!atlas) break;
                     const int gx = x - int(c.rect.x), gy = y - int(c.rect.y);
                     if (gx < 0 || gy < 0 || gx >= c.tw || gy >= c.th) break;
-                    const u8 a = m_atlas[std::size_t(c.v + gy) * std::size_t(m_atlasSize) + std::size_t(c.u + gx)];
+                    const u8 a = atlas[std::size_t(c.v + gy) * std::size_t(atlasSize) + std::size_t(c.u + gx)];
                     if (a) blend(row[x], premul(c.fill, f32(a) / 255.f * clipCov));
                     break;
                 }
                 case DrawOp::Image: {
-                    if (c.image >= m_images.size() || !m_images[c.image]) break;
-                    const Image& img = *m_images[c.image];
+                    if (c.image >= images.size() || !images[c.image]) break;
+                    const Image& img = *images[c.image];
                     const int sx = std::clamp(int((px - c.rect.x) / c.rect.w * f32(img.width)), 0, img.width - 1);
                     const int sy = std::clamp(int((py - c.rect.y) / c.rect.h * f32(img.height)), 0, img.height - 1);
                     const u32 s = img.at(sx, sy);

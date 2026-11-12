@@ -1,5 +1,6 @@
-// FUSE UI Tier B (plan §5), second half: splitters, dock area, item models, virtualised table view.
+// FUSE UI Tier B (plan §5), second half: splitters, dock area, StringTableModel (the table / list / tree view is widgets_modelview.cpp).
 #include "fuse/ui/widgets/widgets.hpp"
+#include "fuse/text/from_chars.hpp"
 #include "widgets_internal.hpp"
 
 #include <algorithm>
@@ -35,11 +36,13 @@ void setBasis(UiContext& ui, NodeHandle pane, f32 px) {
 constexpr f32 kMinPane = 24.f;
 struct SplitHandle { // between two panes; value() = 1 when the splitter is stacked
     static constexpr std::string_view kName = "splithandle";
+    static constexpr bool kCapturesDrag = true; // touch: the drag resizes the panes
     static constexpr A11yRole kRole = A11yRole::Separator;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext&, NodeHandle, Size) { return {6.f, 6.f}; }
     static bool stacked(const UiContext& ui, NodeHandle n) { return ui.value(n) > 0.5f; }
+    static Cursor cursor(UiContext& ui, NodeHandle n, Vec2) { return stacked(ui, n) ? Cursor::ResizeV : Cursor::ResizeH; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect r = pc.rect;
         const bool hot = pc.states & (kStateHover | kStatePressed | kStateFocus);
@@ -107,8 +110,59 @@ NodeHandle addPane(UiContext& ui, NodeHandle split, f32 size, std::string_view i
 }
 
 // ---- dock area: column [ row [left | centre | right] | bottom ] ----------------------------------------------------
-struct DockTitle { // the title strip of a dock widget; text = title. Close box at the right end.
+/// Per-node state pool keyed by the node's user data (slot + 1); a slot is reused once its node is gone.
+template <class S>
+struct Pool {
+    struct Slot { NodeHandle node; std::unique_ptr<S> s; };
+    std::vector<Slot> slots;
+    S* get(const UiContext& ui, NodeHandle n) {
+        const u64 k = ui.alive(n) ? ui.userData(n) : 0;
+        if (k == 0 || k > slots.size() || slots[k - 1].node != n) return nullptr;
+        return slots[k - 1].s.get();
+    }
+    S& create(UiContext& ui, NodeHandle n) {
+        for (std::size_t i = 0; i < slots.size(); ++i)
+            if (!ui.alive(slots[i].node) || ui.userData(slots[i].node) != i + 1) {
+                slots[i] = {n, std::make_unique<S>()};
+                ui.setUserData(n, i + 1);
+                return *slots[i].s;
+            }
+        slots.push_back({n, std::make_unique<S>()});
+        ui.setUserData(n, slots.size());
+        return *slots.back().s;
+    }
+};
+// A dock widget: its area (a floating dock has left the area's subtree), its tab strip while tabbed, the floating rect.
+struct DockState {
+    NodeHandle area, tabs;
+    bool floating = false, dragging = false;
+    Rect floatRect;
+    Vec2 grab; ///< pointer offset from the dock's top-left while its title is dragged
+};
+// A tab strip: the docks tabbed together, in tab order, and the one whose body shows.
+struct DockTabsState {
+    std::vector<NodeHandle> members;
+    NodeHandle current;
+};
+Pool<DockState>& dockPool() { static Pool<DockState> p; return p; }
+Pool<DockTabsState>& tabsPool() { static Pool<DockTabsState> p; return p; }
+DockState* dockState(const UiContext& ui, NodeHandle d) { return ui.alive(d) && ui.hasClass(d, "dock") ? dockPool().get(ui, d) : nullptr; }
+DockTabsState* tabsState(const UiContext& ui, NodeHandle t) { return ui.alive(t) && ui.hasClass(t, "docktabs") ? tabsPool().get(ui, t) : nullptr; }
+void moveFloat(UiContext& ui, NodeHandle dock, DockState& s, Vec2 at);
+void raiseFloat(UiContext& ui, NodeHandle dock);
+// Dock drag and drop (defined below the dock helpers): a press on a title bar or a tab arms a drag, moving past
+// kDockDragSlop tears the dock off / shows the drop zones, the release drops, Escape cancels.
+constexpr f32 kDockDragSlop = 8.f;
+void dragArm(UiContext& ui, NodeHandle dock, NodeHandle source, Vec2 at);
+bool dragMove(UiContext& ui, NodeHandle source, Vec2 at);
+bool dragRelease(UiContext& ui, NodeHandle source, bool cancel);
+bool dragCancel(UiContext& ui);
+bool dragSwallowClick(const UiContext& ui, NodeHandle source);
+bool dragActive(const UiContext& ui);
+
+struct DockTitle { // the title strip of a dock widget; text = title. Close box at the right end. Drags a floating dock.
     static constexpr std::string_view kName = "docktitle";
+    static constexpr bool kCapturesDrag = true; // touch: the drag moves a floating dock
     static constexpr A11yRole kRole = A11yRole::Text;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) { return {std::ceil(ui.measureString(ui.text(n), ui.computed(n).fontSize)) + 24.f, rowHeight(ui, n) - 2.f}; }
@@ -126,8 +180,134 @@ struct DockTitle { // the title strip of a dock widget; text = title. Close box 
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
-        if (e.type == EventType::PointerMove) { ec.ui.invalidate(ec.node); return false; }
-        if (e.type == EventType::Click && closeBox(ec.ui.rect(ec.node)).contains(e.pos)) { dockClose(ec.ui, ec.ui.parent(ec.node)); return true; }
+        UiContext& ui = ec.ui;
+        const NodeHandle dock = ui.parent(ec.node);
+        DockState* s = dockState(ui, dock);
+        if (e.type == EventType::PointerDown && s) { // a floating dock comes to the front and follows the pointer
+            const bool grab = e.button == MouseButton::Left && !closeBox(ui.rect(ec.node)).contains(e.pos);
+            s->dragging = s->floating && grab;
+            const Rect r = ui.rect(dock);
+            s->grab = {e.pos.x - r.x, e.pos.y - r.y};
+            if (s->dragging) raiseFloat(ui, dock);
+            if (grab) dragArm(ui, dock, ec.node, e.pos); // past the slop: tears a docked dock off, shows the drop zones
+            return false;
+        }
+        if (e.type == EventType::PointerMove) {
+            if (s && ui.pressed() == ec.node && dragMove(ui, ec.node, e.pos)) return true;
+            if (s && s->dragging && ui.pressed() == ec.node) { moveFloat(ui, dock, *s, {e.pos.x - s->grab.x, e.pos.y - s->grab.y}); return true; }
+            ui.invalidate(ec.node);
+            return false;
+        }
+        if (e.type == EventType::PointerUp && s) { s->dragging = false; dragRelease(ui, ec.node, e.cancel); return false; }
+        if (e.type == EventType::KeyDown && e.key == Key::Escape && dragActive(ui)) return dragCancel(ui); // focused while dragged
+        if (e.type == EventType::Click) {
+            if (dragSwallowClick(ui, ec.node)) return true; // the release that ended a drag is not a click on the close box
+            if (closeBox(ui.rect(ec.node)).contains(e.pos)) { dockClose(ui, dock); return true; }
+        }
+        return false;
+    }
+};
+
+// The tab strip of docks tabbed together (dockTabify): one tab per open member, the current one highlighted; a close
+// box at the right end closes the current dock. value() = index of the current dock among the members.
+struct DockTabs {
+    static constexpr std::string_view kName = "docktabs";
+    static constexpr bool kCapturesDrag = true; // touch: dragging a tab tears its dock off
+    static constexpr A11yRole kRole = A11yRole::Tab;
+    static constexpr bool kFocusable = true;
+    static constexpr bool kInteractive = true;
+    static constexpr f32 kTabPad = 20.f;
+    static std::string_view title(const UiContext& ui, NodeHandle dock) { return ui.text(ui.firstChild(dock)); }
+    static bool open(const UiContext& ui, NodeHandle dock) { return ui.alive(dock) && !ui.hasClass(dock, "dock-closed"); }
+    static Size measure(UiContext& ui, NodeHandle n, Size) {
+        f32 w = rowHeight(ui, n);
+        if (const DockTabsState* s = tabsState(ui, n))
+            for (NodeHandle m : s->members)
+                if (open(ui, m)) w += std::ceil(ui.measureString(title(ui, m), ui.computed(n).fontSize)) + kTabPad;
+        return {w, rowHeight(ui, n) - 2.f};
+    }
+    static Rect closeBox(const Rect& r) { return {r.right() - r.h, r.y, r.h, r.h}; }
+    /// Tab rect of `dock` (empty when it has no tab). Tabs share the strip left of the close box, shrunk to fit.
+    static Rect tabRect(UiContext& ui, NodeHandle n, const DockTabsState& s, NodeHandle dock) {
+        const Rect r = ui.rect(n);
+        const f32 fs = ui.computed(n).fontSize;
+        f32 total = 0.f;
+        for (NodeHandle m : s.members)
+            if (open(ui, m)) total += std::ceil(ui.measureString(title(ui, m), fs)) + kTabPad;
+        const f32 avail = std::max(0.f, r.w - r.h), k = total > avail && total > 0.f ? avail / total : 1.f;
+        f32 x = r.x;
+        for (NodeHandle m : s.members) {
+            if (!open(ui, m)) continue;
+            const f32 w = (std::ceil(ui.measureString(title(ui, m), fs)) + kTabPad) * k;
+            if (m == dock) return {x, r.y, w, r.h};
+            x += w;
+        }
+        return {};
+    }
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        UiContext& ui = pc.ui;
+        const DockTabsState* s = tabsState(ui, pc.node);
+        if (!s) return;
+        const Rect r = pc.rect;
+        const Color acc = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD));
+        dl.rect(r, pc.tint(Color::rgb(0x22222A)), 3.f);
+        for (NodeHandle m : s->members) {
+            const Rect t = tabRect(ui, pc.node, *s, m);
+            if (t.empty()) continue;
+            const bool cur = m == s->current, hot = ui.hovered() == pc.node && t.contains(ui.pointer());
+            if (cur || hot) dl.rect(t, pc.tint(Color::rgb(cur ? 0x34353E : 0x2A2A33)), 3.f);
+            if (cur) dl.rect({t.x + 2.f, t.bottom() - 2.f, t.w - 4.f, 2.f}, acc, 1.f);
+            dl.pushClip(t);
+            ui.paintString(dl, title(ui, m), {t.x + kTabPad * 0.5f, t.y, t.w - kTabPad * 0.5f, t.h},
+                           pc.tint(cur ? pc.style.color : pc.style.color.withAlpha(pc.style.color.a * 0.65f)), pc.style.fontSize,
+                           TextAlignment::Start, pc.node.index);
+            dl.popClip();
+        }
+        const Rect x = closeBox(r);
+        const Color c = pc.tint(ui.hovered() == pc.node && x.contains(ui.pointer()) ? Color::rgb(0xFF6B6B) : Color::rgb(0x9A9AA6));
+        const f32 mg = x.h * 0.32f;
+        dl.line({x.x + mg, x.y + mg}, {x.right() - mg, x.bottom() - mg}, c, 1.5f);
+        dl.line({x.right() - mg, x.y + mg}, {x.x + mg, x.bottom() - mg}, c, 1.5f);
+        if ((pc.states & kStateFocus) && ui.focusVisible()) dl.roundedRect(r, {}, {3.f, 3.f, 3.f, 3.f}, acc.withAlpha(acc.a * 0.6f), 1.f);
+    }
+    static bool onEvent(EventContext& ec, const Event& e) {
+        if (ec.phase != Phase::Target) return false;
+        UiContext& ui = ec.ui;
+        const DockTabsState* s = tabsState(ui, ec.node);
+        if (!s) return false;
+        if (e.type == EventType::PointerDown && e.button == MouseButton::Left && !closeBox(ui.rect(ec.node)).contains(e.pos)) {
+            for (NodeHandle m : s->members) // a drag that starts on a tab tears that dock off
+                if (tabRect(ui, ec.node, *s, m).contains(e.pos)) { dragArm(ui, m, ec.node, e.pos); break; }
+            return false;
+        }
+        if (e.type == EventType::PointerMove) {
+            if (ui.pressed() == ec.node && dragMove(ui, ec.node, e.pos)) return true;
+            ui.invalidate(ec.node);
+            return false;
+        }
+        if (e.type == EventType::PointerUp) {
+            dragRelease(ui, ec.node, e.cancel);
+            if (s->members.empty()) ui.destroy(ec.node); // the group dissolved while its strip held the press
+            return false;
+        }
+        if (e.type == EventType::Click) {
+            if (dragSwallowClick(ui, ec.node)) return true;
+            if (closeBox(ui.rect(ec.node)).contains(e.pos)) { dockClose(ui, s->current); return true; }
+            const std::vector<NodeHandle> members = s->members; // raising edits the state
+            for (NodeHandle m : members)
+                if (tabRect(ui, ec.node, *s, m).contains(e.pos)) { dockRaise(ui, m); break; }
+            return true;
+        }
+        if (e.type == EventType::KeyDown && (e.key == Key::Left || e.key == Key::Right)) { // previous / next open tab
+            const i32 n = i32(s->members.size()), d = e.key == Key::Right ? 1 : -1;
+            i32 at = 0;
+            for (i32 i = 0; i < n; ++i) if (s->members[i] == s->current) at = i;
+            for (i32 i = 1; i < n; ++i) {
+                const NodeHandle m = s->members[std::size_t(((at + d * i) % n + n) % n)];
+                if (open(ui, m)) { dockRaise(ui, m); break; }
+            }
+            return true;
+        }
         return false;
     }
 };
@@ -138,9 +318,11 @@ NodeHandle nthChild(const UiContext& ui, NodeHandle n, u32 i) {
     return c;
 }
 bool anyShown(const UiContext& ui, NodeHandle region) {
-    for (NodeHandle c = ui.firstChild(region); ui.alive(c); c = ui.nextSibling(c))
+    for (NodeHandle c = ui.firstChild(region); ui.alive(c); c = ui.nextSibling(c)) {
+        if (ui.hasClass(c, "docktabs")) continue; // a tab strip follows its docks
         // dock widgets: the closed class is authoritative (computed visibility is stale right after dockTo re-shows one)
         if (ui.hasClass(c, "dock") ? !ui.hasClass(c, "dock-closed") : ui.computed(c).visible) return true;
+    }
     return false;
 }
 void showNode(UiContext& ui, NodeHandle n, bool on) { ui.setCss(n, "display", on ? "flex" : "none"); }
@@ -155,239 +337,402 @@ void refreshDock(UiContext& ui, NodeHandle area) {
     }
 }
 NodeHandle areaOf(const UiContext& ui, NodeHandle dock) {
+    if (const DockState* s = dockState(ui, dock); s && ui.alive(s->area)) return s->area;
     NodeHandle n = dock;
     while (ui.alive(n) && !ui.hasClass(n, "dockarea")) n = ui.parent(n);
     return n;
 }
+void setPx(UiContext& ui, NodeHandle n, Prop p, f32 v) { ui.set(n, p, PropValue::ofLength(Length::px(std::round(v)))); }
 
-// ---- table view ---------------------------------------------------------------------------------------------------
-constexpr u32 kMaxCols = 32;
-struct TableState {
-    NodeHandle node;
-    const ItemModel* model = nullptr;
-    u32 first = 0;
-    f32 colW[kMaxCols]{};
-    i32 sortCol = -1;
-    bool asc = true;
-    bool header = true;
-    i32 resizing = -1;
-    bool dragScroll = false;
-    f32 grab = 0.f;
-    std::string scratch;
-    const CellDelegate* delegate[kMaxCols]{};
-};
-// Process-wide pool (the UI is single-threaded); a slot is reused once its node is gone.
-std::vector<std::unique_ptr<TableState>>& pool() { static std::vector<std::unique_ptr<TableState>> p; return p; }
-TableState* stateOf(const UiContext& ui, NodeHandle n) {
-    const u64 slot = ui.userData(n);
-    auto& p = pool();
-    if (slot == 0 || slot > p.size()) return nullptr;
-    TableState* s = p[slot - 1].get();
-    return s->node == n ? s : nullptr;
-}
-TableState& newState(UiContext& ui, NodeHandle n) {
-    auto& p = pool();
-    for (std::size_t i = 0; i < p.size(); ++i)
-        if (!ui.alive(p[i]->node) || ui.classOf(p[i]->node) != ui.registry().find("tableview")) {
-            *p[i] = TableState{};
-            p[i]->node = n;
-            ui.setUserData(n, i + 1);
-            return *p[i];
+/// Re-derives a tab group's display from its state: only the current open member shows (titles are replaced by the
+/// strip), a closed current hands over to the first open member, a group of one dissolves.
+void applyTabs(UiContext& ui, NodeHandle tabs) {
+    DockTabsState* t = tabsState(ui, tabs);
+    if (!t) return;
+    std::erase_if(t->members, [&](NodeHandle m) { const DockState* d = dockState(ui, m); return !d || d->tabs != tabs; });
+    if (t->members.size() < 2) {
+        for (NodeHandle m : t->members) {
+            dockState(ui, m)->tabs = {};
+            showNode(ui, ui.firstChild(m), true);
+            showNode(ui, m, DockTabs::open(ui, m));
         }
-    p.push_back(std::make_unique<TableState>());
-    p.back()->node = n;
-    ui.setUserData(n, p.size());
-    return *p.back();
+        t->members.clear();
+        if (ui.pressed() == tabs) showNode(ui, tabs, false); // a tab drag holds the press: destroyed on release
+        else ui.destroy(tabs);
+        return;
+    }
+    if (!DockTabs::open(ui, t->current) || std::find(t->members.begin(), t->members.end(), t->current) == t->members.end()) {
+        t->current = {};
+        for (NodeHandle m : t->members)
+            if (DockTabs::open(ui, m)) { t->current = m; break; }
+    }
+    i32 index = -1;
+    for (std::size_t i = 0; i < t->members.size(); ++i) {
+        const NodeHandle m = t->members[i];
+        showNode(ui, ui.firstChild(m), false);
+        showNode(ui, m, m == t->current);
+        if (m == t->current) index = i32(i);
+    }
+    showNode(ui, tabs, index >= 0);
+    ui.setText(tabs, {}); // re-measure (the open tabs changed)
+    ui.invalidate(tabs);
+    ui.setValue(tabs, f32(index), true);
+}
+/// Takes a dock out of its tab group and out of the floating state (it stays where it is in the tree).
+void detachDock(UiContext& ui, NodeHandle dock) {
+    DockState* s = dockState(ui, dock);
+    if (!s) return;
+    if (const NodeHandle tabs = s->tabs; tabs.valid()) {
+        s->tabs = {};
+        showNode(ui, ui.firstChild(dock), true);
+        showNode(ui, dock, DockTabs::open(ui, dock));
+        applyTabs(ui, tabs);
+    }
+    if (s->floating) {
+        s->floating = s->dragging = false;
+        ui.removeClass(dock, "dock-floating");
+        for (const char* p : {"left", "top", "width", "height"}) ui.setCss(dock, p, "auto");
+    }
+}
+void moveFloat(UiContext& ui, NodeHandle dock, DockState& s, Vec2 at) {
+    // the title strip stays reachable: at least 40 px of it inside the viewport, never above the top edge
+    const Size vp = ui.viewport();
+    s.floatRect.x = std::round(std::clamp(at.x, 40.f - s.floatRect.w, std::max(40.f - s.floatRect.w, vp.w - 40.f)));
+    s.floatRect.y = std::round(std::clamp(at.y, 0.f, std::max(0.f, vp.h - 24.f)));
+    setPx(ui, dock, Prop::Left, s.floatRect.x);
+    setPx(ui, dock, Prop::Top, s.floatRect.y);
+}
+/// Puts a floating dock above the other floating docks (popups and toasts created later stay above it).
+void raiseFloat(UiContext& ui, NodeHandle dock) {
+    NodeHandle last;
+    for (NodeHandle c = ui.firstChild(ui.parent(dock)); ui.alive(c); c = ui.nextSibling(c))
+        if (ui.hasClass(c, "dock-floating")) last = c;
+    if (last.valid() && last != dock) ui.moveTo(dock, ui.parent(dock), ui.nextSibling(last));
 }
 
-struct TableView {
-    static constexpr std::string_view kName = "tableview";
-    static constexpr A11yRole kRole = A11yRole::List;
-    static constexpr bool kFocusable = true;
-    static constexpr bool kInteractive = true;
-    static constexpr f32 kBar = 8.f;
-    static u32 rows(const TableState& s) { return s.model && s.model->rows ? s.model->rows(s.model->user) : 0u; }
-    static u32 cols(const TableState& s) { return s.model ? std::min(s.model->columns, kMaxCols) : 0u; }
-    static Size measure(UiContext& ui, NodeHandle n, Size) {
-        const TableState* s = stateOf(ui, n);
-        f32 w = 0.f;
-        if (s) for (u32 c = 0; c < cols(*s); ++c) w += s->colW[c];
-        return {std::max(160.f, w + kBar), rowHeight(ui, n) * 8.f};
+// ---- dock drag and drop ----------------------------------------------------------------------------------------------
+// One drag at a time per process (one pointer): the session names its context and is ignored by any other.
+void joinTabs(UiContext& ui, NodeHandle dock, NodeHandle withDock, bool reopen);
+constexpr f32 kDropBox = 36.f;    ///< drop-zone indicator size
+constexpr f32 kDropMargin = 10.f; ///< indicator distance from the area edge
+struct DockDrag {
+    enum class Stage : u8 { Idle, Armed, Active };
+    const UiContext* ui = nullptr;
+    Stage stage = Stage::Idle;
+    NodeHandle dock, source, overlay, prevFocus;
+    Vec2 press;
+    // where the dock came from (Escape puts it back)
+    bool oFloating = false, oCurrent = false;
+    Rect oRect;
+    DockSide oSide = DockSide::Left;
+    NodeHandle oBefore, oPeer, oGroupCurrent;
+    u32 oTabIndex = 0;
+    // the zone under the pointer
+    DockDropZone zone = DockDropZone::None;
+    NodeHandle zoneDock, over;
+    Rect preview;
+    NodeHandle swallow; ///< node whose next Click is the release of a finished drag
+};
+DockDrag& drag() { static DockDrag d; return d; }
+DockDrag* activeDrag(const UiContext& ui) {
+    DockDrag& d = drag();
+    return d.ui == &ui && d.stage == DockDrag::Stage::Active && ui.alive(d.dock) ? &d : nullptr;
+}
+bool dragActive(const UiContext& ui) { return activeDrag(ui) != nullptr; }
+bool dragSwallowClick(const UiContext& ui, NodeHandle source) {
+    DockDrag& d = drag();
+    if (d.ui != &ui || d.swallow != source) return false;
+    d.swallow = {};
+    return true;
+}
+/// A dock's place in the area: its rect plus its group's tab strip.
+Rect dockSlot(const UiContext& ui, NodeHandle dock) {
+    Rect r = ui.rect(dock);
+    if (const DockState* s = dockState(ui, dock); s && tabsState(ui, s->tabs)) {
+        const Rect t = ui.rect(s->tabs);
+        r = {std::min(r.x, t.x), std::min(r.y, t.y), std::max(r.right(), t.right()) - std::min(r.x, t.x),
+             std::max(r.bottom(), t.bottom()) - std::min(r.y, t.y)};
     }
-    static f32 headerH(const UiContext& ui, NodeHandle n, const TableState& s) { return s.header ? rowHeight(ui, n) : 0.f; }
-    static u32 visible(const UiContext& ui, NodeHandle n, const TableState& s) {
-        return std::max(1u, u32((ui.contentRect(n).h - headerH(ui, n, s)) / rowHeight(ui, n)));
+    return r;
+}
+/// The docked, showing dock of `area` under `p` (never `skip`).
+NodeHandle dockedAt(const UiContext& ui, NodeHandle area, Vec2 p, NodeHandle skip) {
+    for (DockSide sd : {DockSide::Left, DockSide::Right, DockSide::Bottom, DockSide::Center})
+        for (NodeHandle c = ui.firstChild(dockRegion(ui, area, sd)); ui.alive(c); c = ui.nextSibling(c)) {
+            if (c == skip || !ui.hasClass(c, "dock") || ui.hasClass(c, "dock-closed") || !ui.computed(c).visible) continue;
+            if (dockSlot(ui, c).contains(p)) return c;
+        }
+    return {};
+}
+Rect dropIndicator(const UiContext& ui, NodeHandle area, DockDropZone zone, NodeHandle tabWith) {
+    const Rect a = ui.rect(area);
+    const f32 b = kDropBox, m = kDropMargin;
+    auto centred = [&](const Rect& r) { return Rect{std::round(r.x + (r.w - b) * 0.5f), std::round(r.y + (r.h - b) * 0.5f), b, b}; };
+    switch (zone) {
+    case DockDropZone::Left: return {a.x + m, std::round(a.y + (a.h - b) * 0.5f), b, b};
+    case DockDropZone::Right: return {a.right() - m - b, std::round(a.y + (a.h - b) * 0.5f), b, b};
+    case DockDropZone::Bottom: return {std::round(a.x + (a.w - b) * 0.5f), a.bottom() - m - b, b, b};
+    case DockDropZone::Center: return centred(ui.rect(dockRegion(ui, area, DockSide::Center)));
+    case DockDropZone::Tab: return ui.alive(tabWith) ? centred(dockSlot(ui, tabWith)) : Rect{};
+    case DockDropZone::None: break;
     }
-    static void setFirst(UiContext& ui, NodeHandle n, TableState& s, i64 f) {
-        const u32 r = rows(s), vis = visible(ui, n, s);
-        const u32 nf = u32(std::clamp<i64>(f, 0, r > vis ? i64(r - vis) : 0));
-        if (nf != s.first) { s.first = nf; ui.invalidate(n); }
+    return {};
+}
+f32 regionBasis(const UiContext& ui, NodeHandle region) {
+    const Length l = ui.computed(region).basis;
+    return l.unit == Unit::Px && l.value > 0.f ? l.value : 200.f;
+}
+/// Where a dock dropped on `zone` lands: the region when it shows, else the strip the region will take.
+Rect dropPreview(const UiContext& ui, NodeHandle area, DockDropZone zone, NodeHandle tabWith) {
+    const Rect a = ui.rect(area);
+    const Rect row = ui.rect(ui.firstChild(area));
+    auto shown = [&](DockSide sd, Rect& out) {
+        const NodeHandle reg = dockRegion(ui, area, sd);
+        out = ui.rect(reg);
+        return ui.computed(reg).visible && out.w > 0.f && out.h > 0.f;
+    };
+    Rect r;
+    switch (zone) {
+    case DockDropZone::Left:
+        if (shown(DockSide::Left, r)) return r;
+        return {a.x, row.y, std::min(regionBasis(ui, dockRegion(ui, area, DockSide::Left)), a.w * 0.5f), row.h};
+    case DockDropZone::Right: {
+        if (shown(DockSide::Right, r)) return r;
+        const f32 w = std::min(regionBasis(ui, dockRegion(ui, area, DockSide::Right)), a.w * 0.5f);
+        return {a.right() - w, row.y, w, row.h};
     }
-    static void select(UiContext& ui, NodeHandle n, TableState& s, i64 row) {
-        const u32 r = rows(s);
-        if (!r) return;
-        row = std::clamp<i64>(row, 0, i64(r) - 1);
-        const u32 vis = visible(ui, n, s);
-        if (row < i64(s.first)) setFirst(ui, n, s, row);
-        else if (row >= i64(s.first + vis)) setFirst(ui, n, s, row - vis + 1);
-        ui.setValue(n, f32(row), true);
+    case DockDropZone::Bottom: {
+        if (shown(DockSide::Bottom, r)) return r;
+        const f32 h = std::min(regionBasis(ui, dockRegion(ui, area, DockSide::Bottom)), a.h * 0.5f);
+        return {a.x, a.bottom() - h, a.w, h};
     }
-    static bool barGeom(const UiContext& ui, NodeHandle n, const TableState& s, Rect& track, Rect& thumb) {
-        const u32 r = rows(s), vis = visible(ui, n, s);
-        if (r <= vis) return false;
-        const Rect c = ui.contentRect(n);
-        const f32 hh = headerH(ui, n, s);
-        track = {c.right() - kBar, c.y + hh, kBar, c.h - hh};
-        const f32 tl = std::max(16.f, track.h * f32(vis) / f32(r));
-        thumb = {track.x, track.y + (track.h - tl) * f32(s.first) / f32(r - vis), kBar, tl};
-        return true;
+    case DockDropZone::Center: return ui.rect(dockRegion(ui, area, DockSide::Center));
+    case DockDropZone::Tab: return ui.alive(tabWith) ? dockSlot(ui, tabWith) : Rect{};
+    case DockDropZone::None: break;
+    }
+    return {};
+}
+bool overlaps(const Rect& a, const Rect& b) { return a.x < b.right() && b.x < a.right() && a.y < b.bottom() && b.y < a.bottom(); }
+constexpr DockDropZone kAreaZones[] = {DockDropZone::Left, DockDropZone::Right, DockDropZone::Bottom, DockDropZone::Center};
+/// An area indicator is offered unless the "tab with this dock" indicator sits on it.
+bool zoneOffered(const UiContext& ui, NodeHandle area, DockDropZone z, NodeHandle over) {
+    return !ui.alive(over) || !overlaps(dropIndicator(ui, area, z, {}), dropIndicator(ui, area, DockDropZone::Tab, over));
+}
+void updateZone(UiContext& ui, DockDrag& d, Vec2 p) {
+    const DockState* s = dockState(ui, d.dock);
+    const NodeHandle area = s ? s->area : NodeHandle{};
+    d.zone = DockDropZone::None;
+    d.zoneDock = d.over = {};
+    d.preview = {};
+    if (ui.alive(area) && ui.rect(area).contains(p)) {
+        d.over = dockedAt(ui, area, p, d.dock);
+        auto hot = [&](DockDropZone z, NodeHandle with) {
+            const Rect r = dropIndicator(ui, area, z, with);
+            return !r.empty() && Rect{r.x - 4.f, r.y - 4.f, r.w + 8.f, r.h + 8.f}.contains(p);
+        };
+        if (d.over.valid() && hot(DockDropZone::Tab, d.over)) {
+            d.zone = DockDropZone::Tab;
+            d.zoneDock = d.over;
+        } else {
+            for (DockDropZone z : kAreaZones)
+                if (zoneOffered(ui, area, z, d.over) && hot(z, {})) { d.zone = z; break; }
+        }
+        d.preview = dropPreview(ui, area, d.zone, d.zoneDock);
+    }
+    if (ui.alive(d.overlay)) ui.invalidate(d.overlay);
+}
+// The drop-zone layer shown during a drag: one indicator per zone, the hot one lit, and the landing preview.
+struct DockDrop {
+    static constexpr std::string_view kName = "dockdrop";
+    static constexpr A11yRole kRole = A11yRole::None;
+    static void glyph(DrawList& dl, const Rect& r, DockDropZone z, Color c) {
+        const Rect in{r.x + 8.f, r.y + 8.f, r.w - 16.f, r.h - 16.f};
+        dl.roundedRect(in, {}, {2.f, 2.f, 2.f, 2.f}, c, 1.f);
+        const f32 k = 0.45f;
+        switch (z) { // the filled part is where the dock goes
+        case DockDropZone::Left: dl.rect({in.x, in.y, in.w * k, in.h}, c, 1.f); break;
+        case DockDropZone::Right: dl.rect({in.right() - in.w * k, in.y, in.w * k, in.h}, c, 1.f); break;
+        case DockDropZone::Bottom: dl.rect({in.x, in.bottom() - in.h * k, in.w, in.h * k}, c, 1.f); break;
+        case DockDropZone::Center: dl.rect({in.x + 3.f, in.y + 3.f, in.w - 6.f, in.h - 6.f}, c, 1.f); break;
+        case DockDropZone::Tab: // a tab strip over a body
+            dl.rect({in.x, in.y, in.w * 0.4f, 4.f}, c, 0.f);
+            dl.rect({in.x + in.w * 0.5f, in.y, in.w * 0.4f, 4.f}, c.withAlpha(c.a * 0.5f), 0.f);
+            break;
+        case DockDropZone::None: break;
+        }
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
-        UiContext& ui = pc.ui;
-        TableState* s = stateOf(ui, pc.node);
-        if (!s) return;
-        const Rect c = pc.content;
-        const f32 rh = rowHeight(ui, pc.node), hh = headerH(ui, pc.node, *s), fs = pc.style.fontSize;
-        const u32 nc = cols(*s), nr = rows(*s), vis = visible(ui, pc.node, *s);
-        const Color text = pc.tint(pc.style.color), dim = pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.65f));
-        const Color acc = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD));
-        dl.pushClip(c);
-        if (s->header) {
-            dl.rect({c.x, c.y, c.w, hh}, pc.tint(Color::rgb(0x2A2A33)));
-            f32 x = c.x;
-            for (u32 k = 0; k < nc; ++k) {
-                const Rect cell{x + 6.f, c.y, s->colW[k] - 12.f, hh};
-                const std::string_view h = s->model->header ? s->model->header(s->model->user, k) : std::string_view{};
-                dl.pushClip({x, c.y, s->colW[k], hh});
-                ui.paintString(dl, h, cell, text, fs, TextAlignment::Start, pc.node.index);
-                if (i32(k) == s->sortCol) { // sort arrow
-                    const f32 ax = x + s->colW[k] - 12.f, ay = c.y + hh * 0.5f, d = s->asc ? -3.f : 3.f;
-                    dl.line({ax - 4.f, ay - d}, {ax, ay + d}, acc, 1.5f);
-                    dl.line({ax, ay + d}, {ax + 4.f, ay - d}, acc, 1.5f);
-                }
-                dl.popClip();
-                x += s->colW[k];
-                dl.rect({x - 1.f, c.y + 4.f, 1.f, hh - 8.f}, pc.tint(Color::rgb(0x55555F)));
-            }
+        const DockDrag* d = activeDrag(pc.ui);
+        if (!d || d->overlay != pc.node) return;
+        const DockState* s = dockState(pc.ui, d->dock);
+        if (!s || !pc.ui.alive(s->area)) return;
+        const Color acc = pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD);
+        if (!d->preview.empty()) {
+            dl.rect(d->preview, pc.tint(acc.withAlpha(0.28f)), 4.f);
+            dl.roundedRect(d->preview, {}, {4.f, 4.f, 4.f, 4.f}, pc.tint(acc.withAlpha(0.85f)), 1.5f);
         }
-        const i32 sel = i32(ui.value(pc.node));
-        for (u32 i = 0; i < vis + 1 && s->first + i < nr; ++i) {
-            const u32 row = s->first + i;
-            const f32 y = c.y + hh + f32(i) * rh;
-            if (y >= c.bottom()) break;
-            if (i32(row) == sel) dl.rect({c.x, y, c.w, rh}, acc.withAlpha(acc.a * 0.55f));
-            else if (row & 1u) dl.rect({c.x, y, c.w, rh}, pc.tint(Color::rgb(0xFFFFFF, 0.035f)));
-            f32 x = c.x;
-            for (u32 k = 0; k < nc; ++k) {
-                if (s->colW[k] <= 0.f) continue;
-                const std::string_view d = s->model->data(s->model->user, row, k, s->scratch);
-                dl.pushClip({x, y, s->colW[k] - 2.f, rh});
-                if (const CellDelegate* dg = s->delegate[k]; dg && dg->paint)
-                    dg->paint(dg->user, pc, dl, {x + 6.f, y, s->colW[k] - 12.f, rh}, row, k, d, i32(row) == sel);
-                else
-                    ui.paintString(dl, d, {x + 6.f, y, s->colW[k] - 12.f, rh}, k ? dim : text, fs, TextAlignment::Start, pc.node.index);
-                dl.popClip();
-                x += s->colW[k];
-            }
-        }
-        Rect tr, th;
-        if (barGeom(ui, pc.node, *s, tr, th)) {
-            dl.rect(tr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
-            dl.rect(th, pc.tint(Color::rgb(s->dragScroll ? 0xB4B4C0 : 0x8A8A96, 0.85f)), kBar * 0.5f);
-        }
-        if (pc.states & kStateFocus) dl.roundedRect(pc.rect, {}, {}, acc.withAlpha(acc.a * 0.6f), 1.f);
-        dl.popClip();
-    }
-    static bool onEvent(EventContext& ec, const Event& e) {
-        if (ec.phase != Phase::Target) return false;
-        UiContext& ui = ec.ui;
-        TableState* s = stateOf(ui, ec.node);
-        if (!s) return false;
-        const Rect c = ui.contentRect(ec.node);
-        const f32 rh = rowHeight(ui, ec.node), hh = headerH(ui, ec.node, *s);
-        switch (e.type) {
-        case EventType::PointerDown: {
-            s->resizing = -1;
-            s->dragScroll = false;
-            Rect tr, th;
-            if (barGeom(ui, ec.node, *s, tr, th) && tr.contains(e.pos)) {
-                s->dragScroll = true;
-                s->grab = th.contains(e.pos) ? e.pos.y - th.y : th.h * 0.5f;
-                Event mv = e;
-                mv.type = EventType::PointerMove;
-                return onEvent(ec, mv);
-            }
-            if (e.pos.y < c.y + hh) {
-                f32 x = c.x;
-                for (u32 k = 0; k < cols(*s); ++k) {
-                    x += s->colW[k];
-                    if (std::abs(e.pos.x - x) <= 4.f) { s->resizing = i32(k); s->grab = x - s->colW[k]; return true; }
-                    if (e.pos.x < x) { // sort
-                        s->asc = s->sortCol == i32(k) ? !s->asc : true;
-                        s->sortCol = i32(k);
-                        ui.emit(ec.node, SignalKind::Toggled, {.value = f32(k), .flag = s->asc});
-                        ui.invalidate(ec.node);
-                        return true;
-                    }
-                }
-                return true;
-            }
-            const i64 row = i64(s->first) + i64((e.pos.y - c.y - hh) / rh);
-            if (row < i64(rows(*s))) select(ui, ec.node, *s, row);
-            return true;
-        }
-        case EventType::PointerMove:
-            if (ui.pressed() != ec.node && !s->dragScroll) return false;
-            if (s->resizing >= 0) {
-                s->colW[s->resizing] = std::max(24.f, std::round(e.pos.x - s->grab));
-                ui.invalidate(ec.node);
-            } else if (s->dragScroll) {
-                Rect tr, th;
-                if (!barGeom(ui, ec.node, *s, tr, th)) return true;
-                const u32 r = rows(*s), vis = visible(ui, ec.node, *s);
-                const f32 f = std::clamp((e.pos.y - tr.y - s->grab) / std::max(1.f, tr.h - th.h), 0.f, 1.f);
-                setFirst(ui, ec.node, *s, i64(std::lround(f * f32(r - vis))));
-                ui.invalidate(ec.node);
-            }
-            return true;
-        case EventType::PointerUp:
-            if (s->dragScroll) ui.invalidate(ec.node);
-            s->resizing = -1;
-            s->dragScroll = false;
-            return false;
-        case EventType::Wheel:
-            setFirst(ui, ec.node, *s, i64(s->first) - i64(std::lround(e.wheel.y * 3.f)));
-            return true;
-        case EventType::KeyDown: {
-            const i64 cur = i64(ui.value(ec.node)), vis = visible(ui, ec.node, *s);
-            switch (e.key) {
-            case Key::Down: select(ui, ec.node, *s, cur + 1); return true;
-            case Key::Up: select(ui, ec.node, *s, cur < 0 ? 0 : cur - 1); return true;
-            case Key::PageDown: select(ui, ec.node, *s, cur + vis); return true;
-            case Key::PageUp: select(ui, ec.node, *s, cur - vis); return true;
-            case Key::Home: select(ui, ec.node, *s, 0); return true;
-            case Key::End: select(ui, ec.node, *s, i64(rows(*s)) - 1); return true;
-            case Key::Enter:
-                if (cur >= 0) ui.emit(ec.node, SignalKind::Submitted, {.value = f32(cur)});
-                return true;
-            default: return false;
-            }
-        }
-        default: return false;
-        }
+        if (!pc.ui.rect(s->area).contains(pc.ui.pointer())) return; // indicators show while the pointer is over the area
+        auto box = [&](DockDropZone z, NodeHandle with) {
+            const Rect r = dropIndicator(pc.ui, s->area, z, with);
+            if (r.empty()) return;
+            const bool hot = d->zone == z;
+            dl.rect(r, pc.tint(hot ? acc : Color::rgb(0x22232B).withAlpha(0.92f)), 5.f);
+            dl.roundedRect(r, {}, {5.f, 5.f, 5.f, 5.f}, pc.tint(hot ? Color::rgb(0xFFFFFF).withAlpha(0.9f) : acc.withAlpha(0.8f)), 1.f);
+            glyph(dl, r, z, pc.tint(hot ? Color::rgb(0xFFFFFF) : Color::rgb(0xC8CAD4)));
+        };
+        for (DockDropZone z : kAreaZones)
+            if (zoneOffered(pc.ui, s->area, z, d->over)) box(z, {});
+        if (d->over.valid()) box(DockDropZone::Tab, d->over);
     }
 };
+void dragFinish(UiContext& ui, DockDrag& d) {
+    if (ui.alive(d.overlay)) ui.destroy(d.overlay);
+    if (ui.alive(d.dock)) {
+        if (DockState* s = dockState(ui, d.dock)) s->dragging = false;
+        const NodeHandle title = ui.firstChild(d.dock);
+        const bool had = ui.focused() == title;
+        ui.setFocusable(title, false);
+        if (had) ui.setFocus(ui.alive(d.prevFocus) ? d.prevFocus : NodeHandle{});
+    }
+    d.swallow = d.source;
+    d.stage = DockDrag::Stage::Idle;
+    d.dock = d.overlay = d.prevFocus = d.zoneDock = d.over = {};
+    d.zone = DockDropZone::None;
+    d.preview = {};
+}
+void dragArm(UiContext& ui, NodeHandle dock, NodeHandle source, Vec2 at) {
+    DockDrag& d = drag();
+    if (d.ui == &ui && d.stage == DockDrag::Stage::Active) dragFinish(ui, d); // a drag whose release never arrived
+    d = {};
+    d.ui = &ui;
+    d.stage = DockDrag::Stage::Armed;
+    d.dock = dock;
+    d.source = source;
+    d.press = at;
+}
+/// Past the slop: remembers where the dock was, floats it under the pointer and shows the drop zones.
+void dragBegin(UiContext& ui, DockDrag& d, DockState& s, Vec2 at) {
+    const NodeHandle dock = d.dock;
+    d.oFloating = s.floating;
+    d.oRect = s.floatRect;
+    if (!s.floating) {
+        const NodeHandle region = ui.parent(dock);
+        for (DockSide sd : {DockSide::Left, DockSide::Right, DockSide::Bottom, DockSide::Center})
+            if (dockRegion(ui, s.area, sd) == region) d.oSide = sd;
+        d.oBefore = ui.nextSibling(dock);
+        Rect r = ui.rect(dock);
+        if (const DockTabsState* t = tabsState(ui, s.tabs)) {
+            for (std::size_t i = 0; i < t->members.size(); ++i) {
+                if (t->members[i] == dock) d.oTabIndex = u32(i);
+                else if (!d.oPeer.valid()) d.oPeer = t->members[i];
+            }
+            d.oCurrent = t->current == dock;
+            d.oGroupCurrent = t->current;
+            if (ui.alive(t->current)) r = ui.rect(t->current);
+        }
+        const f32 w = std::clamp(r.w, 160.f, 420.f), h = std::clamp(r.h, 120.f, 320.f);
+        // the title keeps its place under the pointer; a tab's dock hangs from the pointer by its title
+        const Vec2 grab = d.source == ui.firstChild(dock) ? Vec2{r.w > 0.f ? s.grab.x * w / r.w : w * 0.5f, s.grab.y}
+                                                         : Vec2{std::min(60.f, w * 0.5f), 12.f};
+        dockFloat(ui, dock, {at.x - grab.x, at.y - grab.y, w, h});
+        s.grab = grab;
+    }
+    s.dragging = true;
+    d.stage = DockDrag::Stage::Active;
+    const NodeHandle layer = overlayLayer(ui);
+    d.overlay = make(ui, "dockdrop", layer);
+    for (Prop p : {Prop::Left, Prop::Top, Prop::Right, Prop::Bottom}) setPx(ui, d.overlay, p, 0.f);
+    ui.setCss(d.overlay, "pointer-events", "none");
+    // Escape reaches the drag through the focused title bar
+    d.prevFocus = ui.focused();
+    const NodeHandle title = ui.firstChild(dock);
+    ui.setFocusable(title, true);
+    ui.setFocus(title, FocusReason::Programmatic);
+}
+bool dragMove(UiContext& ui, NodeHandle source, Vec2 at) {
+    DockDrag& d = drag();
+    if (d.ui != &ui || d.source != source || d.stage == DockDrag::Stage::Idle) return false;
+    DockState* s = dockState(ui, d.dock);
+    if (!s) { d.stage = DockDrag::Stage::Idle; return false; }
+    if (d.stage == DockDrag::Stage::Armed) {
+        if (std::hypot(at.x - d.press.x, at.y - d.press.y) < kDockDragSlop) return false;
+        dragBegin(ui, d, *s, at);
+    }
+    moveFloat(ui, d.dock, *s, {at.x - s->grab.x, at.y - s->grab.y});
+    updateZone(ui, d, at);
+    return true;
+}
+/// Puts a tabbed dock at `index` of its group (tab order).
+void setTabOrder(UiContext& ui, NodeHandle dock, u32 index) {
+    const DockState* s = dockState(ui, dock);
+    DockTabsState* t = s ? tabsState(ui, s->tabs) : nullptr;
+    if (!t) return;
+    std::erase(t->members, dock);
+    t->members.insert(t->members.begin() + std::min<std::size_t>(index, t->members.size()), dock);
+    ui.setText(s->tabs, {});
+    ui.invalidate(s->tabs);
+}
+bool dragCancel(UiContext& ui) {
+    DockDrag* d = activeDrag(ui);
+    if (!d) {
+        if (drag().ui == &ui) drag().stage = DockDrag::Stage::Idle;
+        return false;
+    }
+    const NodeHandle dock = d->dock;
+    DockState* s = dockState(ui, dock);
+    if (s && d->oFloating) {
+        dockFloat(ui, dock, d->oRect);
+    } else if (s) {
+        dockTo(ui, dock, d->oSide);
+        const NodeHandle region = ui.parent(dock);
+        if (const DockState* ps = dockState(ui, d->oPeer); ps && !ps->floating && ui.parent(d->oPeer) == region) {
+            joinTabs(ui, dock, d->oPeer, true);
+            setTabOrder(ui, dock, d->oTabIndex);
+            dockRaise(ui, !d->oCurrent && ui.alive(d->oGroupCurrent) ? d->oGroupCurrent : dock);
+        }
+        if (ui.alive(d->oBefore) && ui.parent(d->oBefore) == region && d->oBefore != dock) ui.moveTo(dock, region, d->oBefore);
+    }
+    dragFinish(ui, *d);
+    return true;
+}
+/// The release: over a zone the dock lands there, elsewhere it stays floating; `cancel` (a cancelled touch) restores.
+bool dragRelease(UiContext& ui, NodeHandle source, bool cancel) {
+    DockDrag& d = drag();
+    if (d.ui != &ui || d.source != source) return false;
+    if (d.stage != DockDrag::Stage::Active || !ui.alive(d.dock)) { d.stage = DockDrag::Stage::Idle; return false; }
+    if (cancel) return dragCancel(ui);
+    const NodeHandle dock = d.dock, with = d.zoneDock;
+    const DockDropZone zone = d.zone;
+    dragFinish(ui, d);
+    switch (zone) {
+    case DockDropZone::Left: dockTo(ui, dock, DockSide::Left); break;
+    case DockDropZone::Right: dockTo(ui, dock, DockSide::Right); break;
+    case DockDropZone::Bottom: dockTo(ui, dock, DockSide::Bottom); break;
+    case DockDropZone::Center: dockTo(ui, dock, DockSide::Center); break;
+    case DockDropZone::Tab:
+        dockTabify(ui, dock, with);
+        dockRaise(ui, dock); // the dropped dock is the one in view
+        break;
+    case DockDropZone::None: break;
+    }
+    return true;
+}
+
+// ---- table view: widgets_modelview.cpp (one item view class behind tableView / modelListView / treeModelView) ----
 
 void registerTierB2(UiContext& ui) {
     WidgetRegistry& r = ui.registry();
     if (r.find("tableview") != 0xFFFFFFFFu) return;
     r.registerWidget<SplitHandle>();
     r.registerWidget<DockTitle>();
-    r.registerWidget<TableView>();
+    r.registerWidget<DockTabs>();
+    r.registerWidget<DockDrop>();
+    detail::registerModelView(ui); // tableview, treemodelview (+ their accessibility hooks)
+    detail::a11yTierB2(r);
 }
 
 bool parseNum(std::string_view s, double& out) {
-    const auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), out);
+    const auto [p, ec] = fuse::text::fromChars(s.data(), s.data() + s.size(), out);
     return ec == std::errc{} && p == s.data() + s.size();
 }
 template <class F>
@@ -452,6 +797,7 @@ NodeHandle dockWidget(UiContext& ui, NodeHandle area, std::string_view title, Do
     registerTierB(ui);
     const NodeHandle d = panel(ui, dockRegion(ui, area, side), id);
     ui.addClass(d, "dock");
+    dockPool().create(ui, d).area = area;
     ui.setA11y(d, A11yRole::Group, title);
     ui.setCss(d, "flex-grow", "1");
     ui.setCss(d, "padding", "0px");
@@ -468,6 +814,7 @@ NodeHandle dockBody(const UiContext& ui, NodeHandle dock) { return nthChild(ui, 
 void dockTo(UiContext& ui, NodeHandle dock, DockSide side) {
     const NodeHandle area = areaOf(ui, dock);
     if (!ui.alive(area)) return;
+    detachDock(ui, dock);
     ui.moveTo(dock, dockRegion(ui, area, side));
     const bool wasClosed = ui.hasClass(dock, "dock-closed");
     ui.removeClass(dock, "dock-closed");
@@ -479,9 +826,130 @@ void dockClose(UiContext& ui, NodeHandle dock) {
     if (!ui.alive(dock) || ui.hasClass(dock, "dock-closed")) return;
     ui.addClass(dock, "dock-closed");
     showNode(ui, dock, false);
+    if (const DockState* s = dockState(ui, dock)) applyTabs(ui, s->tabs); // the next open tab takes over
     refreshDock(ui, areaOf(ui, dock));
     ui.emit(dock, SignalKind::Toggled, {.flag = false});
 }
+
+// ---- tabbed and floating docks ---------------------------------------------------------------------------------------
+namespace {
+/// dockTabify; `reopen` false keeps a closed dock closed (layout restore).
+void joinTabs(UiContext& ui, NodeHandle dock, NodeHandle withDock, bool reopen) {
+    DockState* ds = dockState(ui, dock);
+    DockState* ws = dockState(ui, withDock);
+    if (!ds || !ws || dock == withDock || ws->floating) return;
+    const NodeHandle area = areaOf(ui, withDock);
+    if (!ui.alive(area) || areaOf(ui, dock) != area) return;
+    if (ds->tabs.valid() && ds->tabs == ws->tabs) return;
+    detachDock(ui, dock);
+    const NodeHandle region = ui.parent(withDock);
+    if (!tabsState(ui, ws->tabs)) { // first pair: the strip goes right above `withDock`
+        const NodeHandle strip = make(ui, "docktabs", region);
+        if (!ui.alive(strip)) return;
+        ui.addClass(strip, "docktabs");
+        ui.moveTo(strip, region, withDock);
+        ui.setCss(strip, "flex-shrink", "0");
+        ui.setRange(strip, -1.f, 4096.f, 1.f);
+        ui.setValue(strip, -1.f);
+        DockTabsState& t = tabsPool().create(ui, strip);
+        t.members.push_back(withDock);
+        t.current = withDock;
+        ws->tabs = strip;
+    }
+    DockTabsState& t = *tabsState(ui, ws->tabs);
+    const NodeHandle after = ui.nextSibling(t.members.back());
+    t.members.push_back(dock);
+    ds->tabs = ws->tabs;
+    if (after != dock) ui.moveTo(dock, region, after);
+    const bool wasClosed = reopen && ui.hasClass(dock, "dock-closed");
+    if (reopen) ui.removeClass(dock, "dock-closed");
+    applyTabs(ui, ws->tabs);
+    refreshDock(ui, area);
+    if (wasClosed) ui.emit(dock, SignalKind::Toggled, {.flag = true});
+}
+} // namespace
+void dockTabify(UiContext& ui, NodeHandle dock, NodeHandle withDock) { joinTabs(ui, dock, withDock, true); }
+void dockRaise(UiContext& ui, NodeHandle dock) {
+    DockState* s = dockState(ui, dock);
+    if (!s) return;
+    DockTabsState* t = tabsState(ui, s->tabs);
+    if (!t) {
+        if (s->floating) raiseFloat(ui, dock);
+        return;
+    }
+    const bool wasClosed = ui.hasClass(dock, "dock-closed");
+    ui.removeClass(dock, "dock-closed");
+    t->current = dock;
+    applyTabs(ui, s->tabs);
+    refreshDock(ui, areaOf(ui, dock));
+    if (wasClosed) ui.emit(dock, SignalKind::Toggled, {.flag = true});
+}
+NodeHandle dockCurrent(const UiContext& ui, NodeHandle dock) {
+    const DockState* s = dockState(ui, dock);
+    if (!s) return {};
+    const DockTabsState* t = tabsState(ui, s->tabs);
+    return t ? t->current : dock;
+}
+NodeHandle dockTabBar(const UiContext& ui, NodeHandle dock) {
+    const DockState* s = dockState(ui, dock);
+    return s && tabsState(ui, s->tabs) ? s->tabs : NodeHandle{};
+}
+Rect dockTabRect(UiContext& ui, NodeHandle dock) {
+    const DockState* s = dockState(ui, dock);
+    const DockTabsState* t = s ? tabsState(ui, s->tabs) : nullptr;
+    return t ? DockTabs::tabRect(ui, s->tabs, *t, dock) : Rect{};
+}
+void dockFloat(UiContext& ui, NodeHandle dock, Rect rect) {
+    DockState* s = dockState(ui, dock);
+    const NodeHandle area = areaOf(ui, dock);
+    if (!s || !ui.alive(area)) return;
+    const NodeHandle layer = overlayLayer(ui); // may create the layer: `s` stays valid (pool storage, not node storage)
+    if (s->tabs.valid()) detachDock(ui, dock);
+    s->area = area;
+    s->floating = true;
+    s->floatRect = {0.f, 0.f, std::round(std::max(rect.w, 80.f)), std::round(std::max(rect.h, 60.f))};
+    if (ui.parent(dock) != layer) ui.moveTo(dock, layer);
+    ui.addClass(dock, "dock-floating");
+    setPx(ui, dock, Prop::Width, s->floatRect.w);
+    setPx(ui, dock, Prop::Height, s->floatRect.h);
+    moveFloat(ui, dock, *s, {rect.x, rect.y});
+    raiseFloat(ui, dock);
+    const bool wasClosed = ui.hasClass(dock, "dock-closed");
+    ui.removeClass(dock, "dock-closed");
+    showNode(ui, dock, true);
+    refreshDock(ui, area);
+    if (wasClosed) ui.emit(dock, SignalKind::Toggled, {.flag = true});
+}
+bool dockFloating(const UiContext& ui, NodeHandle dock) {
+    const DockState* s = dockState(ui, dock);
+    return s && s->floating;
+}
+Rect dockFloatRect(const UiContext& ui, NodeHandle dock) {
+    const DockState* s = dockState(ui, dock);
+    return s && s->floating ? s->floatRect : Rect{};
+}
+
+// ---- dock drag and drop API -------------------------------------------------------------------------------------------
+NodeHandle dockDragged(const UiContext& ui) {
+    const DockDrag* d = activeDrag(ui);
+    return d ? d->dock : NodeHandle{};
+}
+DockDropZone dockDropZone(const UiContext& ui) {
+    const DockDrag* d = activeDrag(ui);
+    return d ? d->zone : DockDropZone::None;
+}
+NodeHandle dockDropTarget(const UiContext& ui) {
+    const DockDrag* d = activeDrag(ui);
+    return d ? d->zoneDock : NodeHandle{};
+}
+Rect dockDropPreview(const UiContext& ui) {
+    const DockDrag* d = activeDrag(ui);
+    return d ? d->preview : Rect{};
+}
+Rect dockDropIndicator(const UiContext& ui, NodeHandle area, DockDropZone zone, NodeHandle tabWith) {
+    return ui.alive(area) && ui.hasClass(area, "dockarea") ? dropIndicator(ui, area, zone, tabWith) : Rect{};
+}
+bool dockCancelDrag(UiContext& ui) { return dragCancel(ui); }
 
 // ---- item models -------------------------------------------------------------------------------------------------------
 StringTableModel::StringTableModel(std::string_view headers) {
@@ -516,47 +984,6 @@ void StringTableModel::sortBy(u32 col, bool ascending) {
     m_cells = std::move(sorted);
 }
 
-// ---- table view API ------------------------------------------------------------------------------------------------------
-NodeHandle tableView(UiContext& ui, NodeHandle parent, const ItemModel* model, std::string_view id) {
-    registerTierB(ui);
-    const NodeHandle n = make(ui, "tableview", parent, id);
-    if (!ui.alive(n)) return n;
-    TableState& s = newState(ui, n);
-    s.model = model;
-    const u32 nc = TableView::cols(s);
-    for (u32 c = 0; c < nc; ++c) s.colW[c] = c + 1 == nc ? 160.f : 120.f;
-    ui.setRange(n, -1.f, 1e9f, 1.f);
-    ui.setValue(n, -1.f);
-    return n;
-}
-NodeHandle modelListView(UiContext& ui, NodeHandle parent, const ItemModel* model, std::string_view id) {
-    const NodeHandle n = tableView(ui, parent, model, id);
-    if (TableState* s = stateOf(ui, n)) {
-        s->header = false;
-        s->colW[0] = 4096.f; // clipped to the view
-        for (u32 c = 1; c < kMaxCols; ++c) s->colW[c] = 0.f;
-    }
-    return n;
-}
-void tableModelChanged(UiContext& ui, NodeHandle table) {
-    TableState* s = stateOf(ui, table);
-    if (!s) return;
-    TableView::setFirst(ui, table, *s, s->first);
-    if (ui.value(table) >= f32(TableView::rows(*s))) ui.setValue(table, -1.f, true);
-    ui.invalidate(table);
-}
-u32 tableFirstVisible(const UiContext& ui, NodeHandle table) { const TableState* s = stateOf(ui, table); return s ? s->first : 0u; }
-f32 tableColumnWidth(const UiContext& ui, NodeHandle table, u32 col) {
-    const TableState* s = stateOf(ui, table);
-    return s && col < kMaxCols ? s->colW[col] : 0.f;
-}
-void setTableColumnWidth(UiContext& ui, NodeHandle table, u32 col, f32 px) {
-    if (TableState* s = stateOf(ui, table); s && col < kMaxCols) { s->colW[col] = std::max(24.f, px); ui.invalidate(table); }
-}
-void setTableDelegate(UiContext& ui, NodeHandle table, u32 col, const CellDelegate* delegate) {
-    if (TableState* s = stateOf(ui, table); s && col < kMaxCols) { s->delegate[col] = delegate; ui.invalidate(table); }
-}
-
 // ---- dock layout save / restore ---------------------------------------------------------------------------------------
 namespace {
 constexpr std::string_view kSideName[] = {"left", "right", "bottom", "center"};
@@ -584,13 +1011,48 @@ std::string dockSaveLayout(const UiContext& ui, NodeHandle area) {
                    (ui.hasClass(d, "dock-closed") ? "closed" : "open") + "\n";
         }
     }
+    // tab groups: one line per named member, in tab order (only written when docks are tabbed)
+    auto named = [&](NodeHandle d) {
+        const std::string_view id = ui.idOf(d);
+        return !id.empty() && id.find_first_of(" \n") == std::string_view::npos;
+    };
+    u32 group = 0;
+    for (DockSide s : {DockSide::Left, DockSide::Right, DockSide::Bottom, DockSide::Center})
+        for (NodeHandle t = ui.firstChild(dockRegion(ui, area, s)); ui.alive(t); t = ui.nextSibling(t)) {
+            const DockTabsState* ts = tabsState(ui, t);
+            if (!ts || ts->members.empty()) continue; // (a dissolved strip lives until its press is released)
+            for (std::size_t i = 0; i < ts->members.size(); ++i)
+                if (const NodeHandle d = ts->members[i]; named(d))
+                    out += "tab " + std::string(ui.idOf(d)) + " " + std::to_string(group) + " " + std::to_string(i) +
+                           (d == ts->current ? " current\n" : " back\n");
+            ++group;
+        }
+    // floating docks, back to front (only written when docks float)
+    NodeHandle layer;
+    for (const auto& slot : dockPool().slots)
+        if (const DockState* d = dockState(ui, slot.node); d && d == slot.s.get() && d->floating && d->area == area) layer = ui.parent(slot.node);
+    for (NodeHandle d = ui.firstChild(layer); ui.alive(d); d = ui.nextSibling(d)) {
+        const DockState* st = dockState(ui, d);
+        if (!st || !st->floating || st->area != area || !named(d)) continue;
+        std::snprintf(b, sizeof b, " %.0f %.0f %.0f %.0f ", double(st->floatRect.x), double(st->floatRect.y), double(st->floatRect.w),
+                      double(st->floatRect.h));
+        out += "float " + std::string(ui.idOf(d)) + b + (ui.hasClass(d, "dock-closed") ? "closed" : "open") + "\n";
+    }
     return out;
 }
 
 bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
     if (!ui.alive(area) || !ui.hasClass(area, "dockarea")) return false;
     struct Entry { NodeHandle dock; DockSide side; u32 order; bool open; };
+    struct TabEntry { NodeHandle dock; u32 group, index; bool current; };
+    struct FloatEntry { NodeHandle dock; Rect rect; bool open; };
     std::vector<Entry> docks;
+    std::vector<TabEntry> tabs;
+    std::vector<FloatEntry> floats;
+    auto dockNamed = [&](std::string_view id) {
+        const NodeHandle d = ui.find(id);
+        return ui.alive(d) && ui.hasClass(d, "dock") && areaOf(ui, d) == area ? d : NodeHandle{};
+    };
     f32 sizes[3] = {-1.f, -1.f, -1.f};
     auto side = [](std::string_view w, DockSide& out) {
         for (u32 i = 0; i < 4; ++i) if (w == kSideName[i]) { out = DockSide(i); return true; }
@@ -624,9 +1086,19 @@ bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
         } else if (w[0] == "dock" && w.size() == 5 && side(w[2], sd) && (w[4] == "open" || w[4] == "closed")) {
             double o;
             if (!parseNum(w[3], o) || !(o >= 0.0 && o < 1e6)) return false;
-            const NodeHandle d = ui.find(w[1]);
-            if (!ui.alive(d) || !ui.hasClass(d, "dock") || areaOf(ui, d) != area) continue; // unknown: ignored
+            const NodeHandle d = dockNamed(w[1]);
+            if (!d.valid()) continue; // unknown: ignored
             docks.push_back({d, sd, u32(o), w[4] == "open"});
+        } else if (w[0] == "tab" && w.size() == 5 && (w[4] == "current" || w[4] == "back")) {
+            double g, i;
+            if (!parseNum(w[2], g) || !parseNum(w[3], i) || !(g >= 0.0 && g < 1e6) || !(i >= 0.0 && i < 1e6)) return false;
+            if (const NodeHandle d = dockNamed(w[1]); d.valid()) tabs.push_back({d, u32(g), u32(i), w[4] == "current"});
+        } else if (w[0] == "float" && w.size() == 7 && (w[6] == "open" || w[6] == "closed")) {
+            double v[4];
+            for (u32 k = 0; k < 4; ++k)
+                if (!parseNum(w[2 + k], v[k]) || !(v[k] >= (k < 2 ? -1e6 : 1.0) && v[k] <= (k < 2 ? 1e6 : 16384.0))) return false;
+            if (const NodeHandle d = dockNamed(w[1]); d.valid())
+                floats.push_back({d, {f32(v[0]), f32(v[1]), f32(v[2]), f32(v[3])}, w[6] == "open"});
         } else {
             return false;
         }
@@ -636,9 +1108,29 @@ bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
         return a.side != b.side ? u32(a.side) < u32(b.side) : a.order < b.order;
     });
     for (const Entry& e : docks) { // appended in order: each region ends up in saved order (unnamed docks first)
+        detachDock(ui, e.dock); // a docked entry leaves its tab group / floating state; "tab" lines regroup below
         ui.moveTo(e.dock, dockRegion(ui, area, e.side));
         if (e.open) dockTo(ui, e.dock, e.side);
         else dockClose(ui, e.dock);
+    }
+    for (const FloatEntry& e : floats) { // back to front
+        const bool wasOpen = !ui.hasClass(e.dock, "dock-closed");
+        if (!e.open && !wasOpen) ui.removeClass(e.dock, "dock-closed"); // floats without a spurious re-open signal ...
+        dockFloat(ui, e.dock, e.rect);
+        if (!e.open && !wasOpen) { ui.addClass(e.dock, "dock-closed"); showNode(ui, e.dock, false); } // ... and stays closed
+        else if (!e.open) dockClose(ui, e.dock);
+    }
+    std::stable_sort(tabs.begin(), tabs.end(), [](const TabEntry& a, const TabEntry& b) {
+        return a.group != b.group ? a.group < b.group : a.index < b.index;
+    });
+    for (std::size_t i = 0; i < tabs.size();) {
+        std::size_t j = i + 1;
+        while (j < tabs.size() && tabs[j].group == tabs[i].group) ++j;
+        if (dockFloating(ui, tabs[i].dock)) dockTo(ui, tabs[i].dock, DockSide::Left); // a group needs a docked first member
+        for (std::size_t k = i + 1; k < j; ++k) joinTabs(ui, tabs[k].dock, tabs[i].dock, false);
+        for (std::size_t k = i; k < j; ++k)
+            if (tabs[k].current && !ui.hasClass(tabs[k].dock, "dock-closed")) dockRaise(ui, tabs[k].dock);
+        i = j;
     }
     for (u32 i = 0; i < 3; ++i)
         if (sizes[i] >= 0.f) setBasis(ui, sidePane(ui, area, DockSide(i)), sizes[i]);
@@ -646,4 +1138,41 @@ bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
     return true;
 }
 
+} // namespace fuse::ui::widgets
+
+#include "widgets_internal.hpp"
+#include <cstdio>
+// ---- accessibility (plan §4.14): dock tab strip (the item views: widgets_modelview.cpp) -----------------------------------
+namespace fuse::ui::widgets {
+namespace {
+using detail::a11yItem;
+// Dock tab strip: a tab list with one tab per open dock of the group (id = the dock's node index + 1).
+void dockTabsA11y(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>& items) {
+    UiContext& ui = const_cast<UiContext&>(cui);
+    const DockTabsState* s = tabsState(ui, n);
+    if (!s) return;
+    u32 open = 0, pos = 0;
+    for (NodeHandle m : s->members) open += DockTabs::open(ui, m);
+    for (NodeHandle m : s->members) {
+        if (!DockTabs::open(ui, m)) continue;
+        A11ySnapshotNode it = a11yItem(m.index + 1, A11yRole::Tab, DockTabs::title(ui, m), DockTabs::tabRect(ui, n, *s, m),
+                                       self.disabled ? 0u : detail::a11yBits({A11yAction::Select, A11yAction::Click}));
+        it.selectable = true;
+        it.selected = m == s->current;
+        it.posInSet = ++pos;
+        it.setSize = open;
+        items.push_back(std::move(it));
+    }
+}
+bool dockTabsA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    const DockTabsState* s = tabsState(ui, n);
+    if (!s || !child || (a != A11yAction::Select && a != A11yAction::Click)) return false;
+    for (NodeHandle m : s->members)
+        if (m.index + 1 == child && DockTabs::open(ui, m)) { dockRaise(ui, m); return true; }
+    return false;
+}
+} // namespace
+void detail::a11yTierB2(WidgetRegistry& r) {
+    a11yHook(r, "docktabs", A11yRole::TabList, &dockTabsA11y, &dockTabsA11yAction);
+}
 } // namespace fuse::ui::widgets

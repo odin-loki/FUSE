@@ -5,7 +5,7 @@
 # toolkit can be built and tested without the engine.
 cmake_minimum_required(VERSION 3.21)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    project(FUSE_UI LANGUAGES CXX)
+    project(FUSE_UI LANGUAGES C CXX)
     set(CMAKE_CXX_STANDARD 23)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(CMAKE_CXX_EXTENSIONS OFF)
@@ -28,13 +28,34 @@ if(FUSE_UI_TEXT STREQUAL "COOKED")
 endif()
 
 # ---- fuse_text ----
-add_library(fuse_text STATIC Text/src/text.cpp)
+add_library(fuse_text STATIC Text/src/text.cpp Text/src/font_family.cpp Text/src/i18n.cpp)
 target_include_directories(fuse_text PUBLIC Text/include)
 target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb")
 target_compile_definitions(fuse_text PRIVATE
     FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf"
     FUSE_TEXT_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
 target_compile_features(fuse_text PUBLIC cxx_std_23)
+# Android / iOS apps have no build-tree font directory at run time: embed the default UI face in the binary
+# (fallback faces come from APK assets / the app bundle through fuse::text::setFontDataSource).
+if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(_fuse_embed_font_default ON)
+else()
+    set(_fuse_embed_font_default OFF)
+endif()
+option(FUSE_TEXT_EMBED_FONT "Embed the bundled Open Sans face in fuse_text (default on Android / iOS)" ${_fuse_embed_font_default})
+if(FUSE_TEXT_EMBED_FONT)
+    set(_font_gen "${CMAKE_CURRENT_BINARY_DIR}/text_gen")
+    file(MAKE_DIRECTORY "${_font_gen}")
+    add_custom_command(OUTPUT "${_font_gen}/fuse_embedded_font.h"
+        COMMAND "${CMAKE_COMMAND}" -DIN=${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf
+                -DOUT=${_font_gen}/fuse_embedded_font.h -DNAME=kFuseEmbeddedFont
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/Text/cmake/embed_bin.cmake"
+        DEPENDS "${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf" "${CMAKE_CURRENT_SOURCE_DIR}/Text/cmake/embed_bin.cmake"
+        COMMENT "Embedding OpenSans.ttf" VERBATIM)
+    target_sources(fuse_text PRIVATE "${_font_gen}/fuse_embedded_font.h")
+    target_include_directories(fuse_text PRIVATE "${_font_gen}")
+    target_compile_definitions(fuse_text PRIVATE FUSE_TEXT_EMBEDDED_FONT=1)
+endif()
 
 # FULL profile (decision D2): HarfBuzz + FreeType through FetchContent (static, no optional deps), SheenBidi (UAX #9)
 # and libunibreak (UAX #14) fetched and compiled from their C sources.
@@ -81,7 +102,9 @@ if(FUSE_UI_TEXT STREQUAL "FULL")
 endif()
 
 # ---- fuse_ui_core ----
-add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp)
+add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp
+    Core/src/interaction.cpp Core/src/actions.cpp
+    Core/src/path.cpp Core/src/draw_vector.cpp Core/src/painter.cpp Core/src/svg.cpp Core/src/icons.cpp)
 target_include_directories(fuse_ui_core PUBLIC Core/include)
 target_link_libraries(fuse_ui_core PUBLIC fuse_text)
 if(FUSE_UI_ACCESSIBILITY)
@@ -89,7 +112,7 @@ if(FUSE_UI_ACCESSIBILITY)
 endif()
 
 if(FUSE_BUILD_UI_WIDGETS)
-    add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
+    add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/widgets_tier_b3.cpp Widgets/src/widgets_svg.cpp Widgets/src/widgets_interaction.cpp Widgets/src/widgets_modelview.cpp Widgets/src/widgets_models.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
     target_include_directories(fuse_ui_widgets PUBLIC Widgets/include)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core)
 endif()
@@ -133,7 +156,8 @@ endif()
 
 option(FUSE_BUILD_UI_DOC "Build fuse_ui_doc (.fuseui documents + bindings)" ON)
 if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
-    add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp Doc/src/cook.cpp)
+    add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp Doc/src/cook.cpp Doc/src/hot_reload.cpp
+                Doc/src/doc_classes.cpp)
     target_include_directories(fuse_ui_doc PUBLIC Doc/include)
     target_link_libraries(fuse_ui_doc PUBLIC fuse_ui_widgets)
     # UI8 cooker: .fuseui / .fusestyle -> cooked blobs + generated widget-registration list
@@ -180,8 +204,8 @@ if(FUSE_BUILD_UI_VK)
     if(NOT TARGET Vulkan::Vulkan)
         # Cross / conda toolchains often hide the host loader from FindVulkan; look for it directly.
         find_library(FUSE_UI_VULKAN_LOADER NAMES vulkan vulkan-1 libvulkan.so.1
-                     HINTS ENV VULKAN_SDK PATHS /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/lib PATH_SUFFIXES lib Lib)
-        find_path(FUSE_UI_VULKAN_INCLUDE vulkan/vulkan.h HINTS ENV VULKAN_SDK PATHS /usr/include PATH_SUFFIXES include Include)
+                     HINTS ENV VULKAN_SDK PATHS /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/lib /usr/local/lib PATH_SUFFIXES lib Lib)
+        find_path(FUSE_UI_VULKAN_INCLUDE vulkan/vulkan.h HINTS ENV VULKAN_SDK PATHS /usr/include /usr/local/include PATH_SUFFIXES include Include)
         if(FUSE_UI_VULKAN_LOADER AND FUSE_UI_VULKAN_INCLUDE)
             add_library(fuse_ui_vulkan_loader INTERFACE)
             target_link_libraries(fuse_ui_vulkan_loader INTERFACE "${FUSE_UI_VULKAN_LOADER}")
@@ -213,6 +237,18 @@ if(FUSE_BUILD_UI_VK)
                 DEPENDS "${_src}" COMMENT "glslangValidator ui_draw_list.comp" VERBATIM)
         elseif(EXISTS "${_fixture}")
             set(_spv "${_fixture}")
+        endif()
+        # In-tree with fuse_rhi on the volk loader (cmake/FuseVolk.cmake puts FUSE_RHI_VOLK=1, VK_NO_PROTOTYPES and
+        # the <vulkan/vulkan.h> shim on fuse_rhi's PUBLIC interface) every vk* name in ui_vk.cpp, vk_present.cpp and
+        # tests/vk_headless.hpp is a volk function pointer defined in fuse_rhi (they register their raw instances /
+        # devices under FUSE_HAS_VULKAN_RHI). Linking the loader's import library as well defines each name twice
+        # (MSVC: LNK2005 "vk* already defined in vulkan-1.lib" on fuse_ui_vk_parity), so fuse_rhi is the Vulkan link
+        # item then: it brings the headers and the entry points, and the loader is opened at run time.
+        if(TARGET fuse_rhi AND FUSE_BUILD_VULKAN)
+            get_target_property(_fuse_ui_rhi_defs fuse_rhi INTERFACE_COMPILE_DEFINITIONS)
+            if(_fuse_ui_rhi_defs AND "FUSE_RHI_VOLK=1" IN_LIST _fuse_ui_rhi_defs)
+                set(_fuse_ui_vk_link fuse_rhi)
+            endif()
         endif()
         add_library(fuse_ui_vk STATIC Render/src/ui_vk.cpp)
         target_link_libraries(fuse_ui_vk PUBLIC fuse_ui_render PRIVATE ${_fuse_ui_vk_link})
@@ -271,8 +307,8 @@ if(FUSE_BUILD_UI_APP AND TARGET fuse_ui_doc)
     add_subdirectory(App)
 endif()
 if(TARGET fuse_ui_designer_lib AND TARGET fuse_app_native)
-    add_executable(fuse_ui_designer Designer/app/designer_main.cpp)
-    target_link_libraries(fuse_ui_designer PRIVATE fuse_ui_designer_lib fuse_app_native)
+    fuse_app_add_executable(fuse_ui_designer Designer/app/designer_main.cpp)
+    target_link_libraries(fuse_ui_designer PRIVATE fuse_ui_designer_lib)
 endif()
 
 # ---- fuse_ui_game: game UI (UI7) — HUD widgets, world markers / panels, gamepad nav, input arbitration ----
@@ -291,12 +327,77 @@ if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
     endif()
     if(TARGET fuse_app)
         foreach(s hud_demo world_panel_demo)
-            add_executable(${s} Game/samples/${s}.cpp)
-            target_link_libraries(${s} PRIVATE fuse_ui_game fuse_app)
+            if(TARGET fuse_app_native)
+                fuse_app_add_executable(${s} Game/samples/${s}.cpp)
+                target_link_libraries(${s} PRIVATE fuse_ui_game)
+            else()
+                add_executable(${s} Game/samples/${s}.cpp)
+                target_link_libraries(${s} PRIVATE fuse_ui_game fuse_app)
+            endif()
         endforeach()
     endif()
 endif()
 
 if(FUSE_BUILD_UI_TESTS AND FUSE_BUILD_UI_WIDGETS)
     add_subdirectory(tests)
+endif()
+
+# ---- samples that need several modules: widget_gallery (every widget, with the game HUD page when fuse_ui_game is
+# built) and game_menu (a .fuseui main / pause / settings menu driven by keyboard, gamepad navigation, mouse, touch) ----
+if(TARGET fuse_app_native AND FUSE_BUILD_APP_SAMPLES)
+    foreach(s widget_gallery game_menu)
+        if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/App/samples/${s}.cpp" OR (s STREQUAL "game_menu" AND NOT TARGET fuse_ui_game))
+            continue()
+        endif()
+        fuse_app_add_executable(${s} App/samples/${s}.cpp)
+        fuse_app_sample_resources(${s})
+        if(TARGET fuse_ui_game)
+            target_link_libraries(${s} PRIVATE fuse_ui_game)
+            target_compile_definitions(${s} PRIVATE FUSE_GALLERY_HAVE_GAME=1)
+        endif()
+        if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+            target_compile_definitions(${s} PRIVATE FUSE_APP_SAMPLE_UI_DIR="ui")
+        else()
+            target_compile_definitions(${s} PRIVATE FUSE_APP_SAMPLE_UI_DIR="${CMAKE_CURRENT_SOURCE_DIR}/App/samples/ui")
+        endif()
+        # headless runs: game_menu plays a scripted session over keyboard, gamepad, mouse and touch and checks every
+        # step; widget_gallery shows each page and checks that it is laid out
+        if(FUSE_BUILD_UI_TESTS)
+            if(s STREQUAL "game_menu")
+                add_test(NAME fuse_app_game_menu_sample COMMAND game_menu --screenshot=${CMAKE_CURRENT_BINARY_DIR}/game_menu.png)
+                set_tests_properties(fuse_app_game_menu_sample PROPERTIES LABELS "fuse_ui;gate")
+            else()
+                foreach(p RANGE 0 6)
+                    add_test(NAME fuse_app_widget_gallery_page${p}
+                             COMMAND widget_gallery --page=${p} --screenshot=${CMAKE_CURRENT_BINARY_DIR}/widget_gallery_${p}.png)
+                    set_tests_properties(fuse_app_widget_gallery_page${p} PROPERTIES LABELS "fuse_ui;gate")
+                endforeach()
+            endif()
+        endif()
+    endforeach()
+endif()
+
+# ---- install rules + the FuseUI CMake package (find_package(FuseUI)); see cmake/fuse_ui_install.cmake ----
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    option(FUSE_UI_INSTALL "Install the FUSE UI libraries, headers and the FuseUI CMake package" ON)
+else()
+    option(FUSE_UI_INSTALL "Install the FUSE UI libraries, headers and the FuseUI CMake package" OFF)
+endif()
+if(FUSE_UI_INSTALL)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fuse_ui_install.cmake)
+    # gates: the install tree feeds an out-of-tree consumer; the APK asset staging puts documents and fonts in place
+    if(FUSE_BUILD_UI_TESTS AND TARGET fuse_app AND NOT CMAKE_CROSSCOMPILING)
+        add_test(NAME fuse_ui_install_consumer
+                 COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_BINARY_DIR} -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/consumer
+                         -DWORK=${CMAKE_CURRENT_BINARY_DIR}/install_consumer -DGENERATOR=${CMAKE_GENERATOR}
+                         -DCXX=${CMAKE_CXX_COMPILER} -DCC=${CMAKE_C_COMPILER} -DBUILD_TYPE=${CMAKE_BUILD_TYPE}
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/consumer/run.cmake)
+        set_tests_properties(fuse_ui_install_consumer PROPERTIES LABELS "fuse_ui;gate" TIMEOUT 600)
+    endif()
+endif()
+if(FUSE_BUILD_UI_TESTS AND TARGET fuse_app)
+    add_test(NAME fuse_app_stage_assets
+             COMMAND ${CMAKE_COMMAND} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/assets_gate -DUI_DIR=${CMAKE_CURRENT_SOURCE_DIR}/App/samples/ui
+                     -DFONTS_DIR=${FUSE_UI_REPO_ROOT}/vendor/fonts -DCHECK=1 -P ${CMAKE_CURRENT_SOURCE_DIR}/App/cmake/fuse_app_stage_assets.cmake)
+    set_tests_properties(fuse_app_stage_assets PROPERTIES LABELS "fuse_ui;gate")
 endif()
