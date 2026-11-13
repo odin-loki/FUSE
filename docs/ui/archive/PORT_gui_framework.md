@@ -137,10 +137,13 @@ throttle and the in-process compositor test approach (§2 above). **Not ported f
 stay parked** (`U/App/src/wayland.cpp`, `U/App/include/fuse/app/wayland.hpp`, `U/App/src/wl_protocol.hpp`,
 `U/tests/test_app_weston.cpp`, `U/_port/gui-framework/tests/test_app_wayland.cpp`):
 
-- drag out of the app (`wl_data_device.start_drag` with several formats and a pixmap icon surface, `dnd_finished`):
-  needs the OS drag-out API of 3.1 (`AppWindow::beginExternalDrag`), which main does not have;
+- drag out of the app (`wl_data_device.start_drag` with several formats and a pixmap icon surface, `dnd_finished`).
+  Main's OS drag-out now exists for X11 / Win32 on the core drag API (3.1: `UiContext::beginDrag` leaving the
+  window, `dragFinishExternal`, `NativePlatform::externalDragActive`); the Wayland side would start the
+  `wl_data_device` drag from the same place (`externalDragActive()` is false on Wayland until then);
 - tool windows as `wl_subsurface`s that follow a title drag (the live backend has child `xdg_toplevel`s in its
-  protocol layer instead, without a `NativePlatform` API: 3.5);
+  protocol layer instead; `NativeOptions::osWindows` / `NativePlatform::toolWindow*` are X11 / Win32 only and answer
+  0 / false on Wayland: 3.5 and `PORT_magical_bassi.md` 3.6 say what wiring needs);
 - the in-app-drag cursor feedback and the `fuse_app_weston` gate that drives a nested weston with xdotool;
 - the `--vulkan` / `--vulkan-gpu` variants of the in-process test (the WSI's committed buffers vs the CPU raster).
 
@@ -200,9 +203,11 @@ five files when done. The original description follows.
 - **Overlap on main**: popups as OS windows on X11 / Win32 (`fuse_app_os_popups`), render scale (`a925efbd1`),
   window-state service; floating docks are in-window panels (KNOWN_GAPS).
 - **Blocks**: same files as 3.1; port after it.
-- **Status (2026-11-13)**: tool windows (X11 / Win32; Wayland belongs to 3.2) and frame pacing are live (§2.0).
-  **Not ported**: `NativeOptions::colorSpace` (GPU, with 3.11) and the compositor frame throttle
-  (`setFramePending`, Wayland, with 3.2).
+- **Status (2026-11-13)**: tool windows (X11 / Win32; not on Wayland, see 3.2) and frame pacing are live (§2.0).
+  On Wayland `Presenter::vsynced` is set for the Vulkan FIFO swapchain; `wl_shm` windows are held back by the
+  `wl_surface.frame` throttle of the live backend (`wl::frameReady`, which replaces the branch's
+  `setFramePending`) and `setMaxFrameRate` applies to them as well.
+  **Not ported**: `NativeOptions::colorSpace` (GPU, with 3.11).
 - **Verify**: `fuse_app_hidpi`, `fuse_app_frame_pacing`, the tool-window cases of `fuse_app_os_popups`.
 
 ### 3.6 Accessibility: `PlatformAdapter`, `A11yState`, auto-complete state (M, decision: see §6)

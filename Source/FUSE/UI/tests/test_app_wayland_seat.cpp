@@ -22,6 +22,7 @@
 //   * the compositor going away: the windows are asked to close, the loop does not spin or hang
 // Exit 77 when libwayland-server, libwayland-client or libxkbcommon are not installed.
 #include "../App/src/wayland_internal.hpp"
+#include "fuse/app/chrome.hpp"
 #include "fuse/app/native.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 #include "test_util.hpp"
@@ -130,6 +131,13 @@ struct State {
     std::string accepted;     ///< the MIME type the client accepted for the drag
     std::string received;     ///< the MIME type the client asked the offer for
     int tiEnable = 0, tiDisable = 0, tiCommit = 0, tiCursorH = 0, maxW = 0, minW = 0, maximizeAsked = 0;
+    // client-side chrome: what xdg_toplevel.move / resize carried, and how the decoration manager answers
+    int moves = 0, resizes = 0, decoGets = 0;
+    uint32_t moveSerial = 0, resizeSerial = 0, resizeEdge = 0, decoAnswer = 2 /*server_side*/;
+    // zwp_primary_selection_v1
+    R* primarySource = nullptr;
+    int primarySets = 0;
+    std::vector<std::string> primaryMimes;
 } g;
 const char* g_offerPayload = "";
 
@@ -207,6 +215,8 @@ void topAppId(C*, R*, const char* t) { std::lock_guard lk(mu); g.appId = t; }
 void topMax(C*, R*, int32_t w, int32_t) { std::lock_guard lk(mu); g.maxW = w; }
 void topMin(C*, R*, int32_t w, int32_t) { std::lock_guard lk(mu); g.minW = w; }
 void topMaximize(C*, R*) { std::lock_guard lk(mu); ++g.maximizeAsked; }
+void topMove(C*, R*, R*, uint32_t serial) { std::lock_guard lk(mu); ++g.moves; g.moveSerial = serial; }
+void topResize(C*, R*, R*, uint32_t serial, uint32_t edge) { std::lock_guard lk(mu); ++g.resizes; g.resizeSerial = serial; g.resizeEdge = edge; }
 Fn topImpl[14];
 void xsGetToplevel(C* c, R*, uint32_t id) { g.top = make(c, ext("xdg_toplevel"), 1, id, topImpl); }
 void xsAck(C*, R*, uint32_t) { std::lock_guard lk(mu); g.acked = true; }
@@ -218,11 +228,15 @@ Fn wmImpl[4] = {fn(&destroyReq), fn(&wmCreatePositioner), fn(&wmGetXdgSurface), 
 void bindWm(C* c, void*, uint32_t, uint32_t id) { make(c, ext("xdg_wm_base"), 1, id, wmImpl); }
 // xdg-decoration: the compositor draws the frame
 void decoSetMode(C*, R* r, uint32_t mode) {
-    { std::lock_guard lk(mu); g.decoMode = int(mode); }
-    S.post(r, 0, 2u); // configure(server_side)
+    uint32_t answer;
+    { std::lock_guard lk(mu); g.decoMode = int(mode); answer = g.decoAnswer; }
+    S.post(r, 0, answer); // configure: server_side (2) unless the test plays a compositor without frames (1)
 }
 Fn decoImpl[3] = {fn(&destroyReq), fn(&decoSetMode), noop};
-void decoGet(C* c, R*, uint32_t id, R*) { g.deco = make(c, ext("zxdg_toplevel_decoration_v1"), 1, id, decoImpl); }
+void decoGet(C* c, R*, uint32_t id, R*) {
+    { std::lock_guard lk(mu); ++g.decoGets; }
+    g.deco = make(c, ext("zxdg_toplevel_decoration_v1"), 1, id, decoImpl);
+}
 Fn decoMgrImpl[2] = {fn(&destroyReq), fn(&decoGet)};
 void bindDecoMgr(C* c, void*, uint32_t, uint32_t id) { make(c, ext("zxdg_decoration_manager_v1"), 1, id, decoMgrImpl); }
 
@@ -308,6 +322,19 @@ Fn deviceImpl[3] = {noop, fn(&devSetSelection), fn(&destroyReq)};
 void ddmGetDevice(C* c, R* r, uint32_t id, R*) { g.device = make(c, S.device, S.resVersion(r), id, deviceImpl); }
 Fn ddmImpl[2] = {fn(&ddmCreateSource), fn(&ddmGetDevice)};
 void bindDdm(C* c, void*, uint32_t v, uint32_t id) { make(c, S.ddm, int(v), id, ddmImpl); }
+// zwp_primary_selection_v1
+void psSrcOffer(C*, R*, const char* mime) { std::lock_guard lk(mu); g.primaryMimes.emplace_back(mime); }
+Fn psSourceImpl[2] = {fn(&psSrcOffer), fn(&destroyReq)};
+void psCreateSource(C* c, R*, uint32_t id) { make(c, ext("zwp_primary_selection_source_v1"), 1, id, psSourceImpl); }
+void psSetSelection(C*, R*, R* source, uint32_t) {
+    std::lock_guard lk(mu);
+    g.primarySource = source;
+    ++g.primarySets;
+}
+Fn psDeviceImpl[2] = {fn(&psSetSelection), fn(&destroyReq)};
+void psGetDevice(C* c, R*, uint32_t id, R*) { make(c, ext("zwp_primary_selection_device_v1"), 1, id, psDeviceImpl); }
+Fn psMgrImpl[3] = {fn(&psCreateSource), fn(&psGetDevice), fn(&destroyReq)};
+void bindPsMgr(C* c, void*, uint32_t, uint32_t id) { make(c, ext("zwp_primary_selection_device_manager_v1"), 1, id, psMgrImpl); }
 void offerAccept(C*, R*, uint32_t, const char* mime) { std::lock_guard lk(mu); g.accepted = mime ? mime : ""; }
 void offerReceive(C*, R*, const char* mime, int32_t fd) {
     { std::lock_guard lk(mu); g.received = mime; }
@@ -400,7 +427,7 @@ int main() {
     surfaceImpl[0] = fn(&destroyReq); surfaceImpl[1] = fn(&sAttach); surfaceImpl[3] = fn(&sFrame); surfaceImpl[6] = fn(&sCommit);
     for (auto& f : topImpl) f = noop;
     topImpl[0] = fn(&destroyReq); topImpl[2] = fn(&topTitle); topImpl[3] = fn(&topAppId); topImpl[7] = fn(&topMax);
-    topImpl[8] = fn(&topMin); topImpl[9] = fn(&topMaximize);
+    topImpl[8] = fn(&topMin); topImpl[9] = fn(&topMaximize); topImpl[5] = fn(&topMove); topImpl[6] = fn(&topResize);
 
     // a private runtime directory for the socket
     const char* tmp = std::getenv("TMPDIR");
@@ -429,6 +456,7 @@ int main() {
     S.globalCreate(g_dpy, ext("wp_fractional_scale_manager_v1"), 1, nullptr, &bindFracMgr);
     S.globalCreate(g_dpy, ext("wp_cursor_shape_manager_v1"), 1, nullptr, &bindShapeMgr);
     S.globalCreate(g_dpy, ext("zwp_text_input_manager_v3"), 1, nullptr, &bindTiMgr);
+    S.globalCreate(g_dpy, ext("zwp_primary_selection_device_manager_v1"), 1, nullptr, &bindPsMgr);
     std::thread th(compositorThread);
 
     ::setenv("WAYLAND_DISPLAY", socket.c_str(), 1);
@@ -484,6 +512,13 @@ int main() {
             UI_CHECK(d == 0);
         }
         UI_CHECK(locked(&State::decoMode) == 2 && wl::serverDecorated(win)); // asked for and got a server-side frame
+        // ... so the window keeps its System frame: no client-side title bar is added
+        UI_CHECK(w.chrome().frame == app::WindowFrame::System && !ui.alive(ui.find("titlebar")));
+        // what this backend does not have answers "nothing" (no X11 code behind it)
+        UI_CHECK(native.toolWindowCount(w) == 0 && native.toolWindow(w, 0) == 0 && native.toolWindowScreenRect(w, 0).w == 0.f);
+        Image none;
+        UI_CHECK(!native.captureToolWindow(w, 0, none) && !native.externalDragActive());
+        UI_CHECK(native.screenOrigin(w).x == 0.f && native.cursorThemeSize() == 0); // cursor-shape: the compositor's cursors
         const auto disp = native.displays();
         UI_CHECK(disp.size() == 1 && disp[0].bounds.w == 800.f && disp[0].refreshHz == 60.f && disp[0].name == "FUSE test output");
         UI_CHECK(wl::hasGlobal(b, "wp_cursor_shape_manager_v1") && !wl::hasGlobal(b, "xdg_toplevel_icon_manager_v1"));
@@ -689,6 +724,115 @@ int main() {
         UI_CHECK(native.clipboardText(other));
         UI_CHECK(other == "from another client" && locked(&State::received) == "text/plain;charset=utf-8");
 
+        // ---- clipboard formats (NativePlatform::setClipboard / clipboardFormats / clipboardData) ----
+        {
+            UI_CHECK(!native.clipboardOwned());
+            const std::vector<std::string> theirs = native.clipboardFormats();
+            UI_CHECK(theirs.size() == 2 && theirs[0] == "text/html" && theirs[1] == app::kClipboardText);
+            g_offerPayload = "<b>bold</b>";
+            std::vector<u8> html;
+            UI_CHECK(native.clipboardData("text/html", html) && std::string(html.begin(), html.end()) == "<b>bold</b>");
+            UI_CHECK(locked(&State::received) == "text/html");
+            UI_CHECK(!native.clipboardData("image/png", html)); // not offered
+
+            static int made = 0;
+            std::vector<app::ClipboardItem> items(3);
+            items[0].mime = app::kClipboardText;
+            items[0].text = "three formats";
+            items[1].mime = "application/x-fuse-gate";
+            items[1].provide = [](void*, app::ClipboardItem& it) { // lazy: made when first pasted
+                ++made;
+                it.bytes = {1, 2, 3, 250};
+                return true;
+            };
+            items[2].mime = app::kClipboardImage;
+            items[2].image.resize(3, 2, 0xFF2040C0u);
+            items[2].image.pixels[4] = 0x80FFFFFFu;
+            const Image sent = items[2].image;
+            const u32 setsBefore = locked(&State::selectionSets);
+            UI_CHECK(native.setClipboard(std::move(items)));
+            UI_CHECK(waitFor(a, [&] { return locked(&State::selectionSets) == setsBefore + 1u; }));
+            {
+                std::lock_guard lk(mu);
+                UI_CHECK(std::find(g.sourceMimes.begin(), g.sourceMimes.end(), "image/png") != g.sourceMimes.end());
+                UI_CHECK(std::find(g.sourceMimes.begin(), g.sourceMimes.end(), "application/x-fuse-gate") != g.sourceMimes.end());
+            }
+            UI_CHECK(native.clipboardOwned());
+            const std::vector<std::string> ours = native.clipboardFormats();
+            UI_CHECK(ours.size() == 3 && ours[0] == app::kClipboardText && ours[1] == "application/x-fuse-gate" && ours[2] == app::kClipboardImage);
+            std::string text;
+            UI_CHECK(native.clipboardText(text) && text == "three formats" && made == 0);
+            std::vector<u8> bytes;
+            UI_CHECK(native.clipboardData("application/x-fuse-gate", bytes) && bytes == std::vector<u8>({1, 2, 3, 250}) && made == 1);
+            UI_CHECK(native.clipboardData("application/x-fuse-gate", bytes) && made == 1); // made once
+            Image back;
+            UI_CHECK(native.clipboardImage(back) && back.width == 3 && back.height == 2 && back.pixels == sent.pixels);
+            // another client pastes the image: the compositor asks our source for image/png
+            int fds[2];
+            UI_CHECK(::pipe(fds) == 0);
+            run([&] {
+                S.post(g.selection, 1, "image/png", fds[1]);
+                ::close(fds[1]);
+            });
+            std::vector<u8> png;
+            ::fcntl(fds[0], F_SETFL, ::fcntl(fds[0], F_GETFL) | O_NONBLOCK);
+            UI_CHECK(waitFor(a, [&] {
+                u8 buf[256];
+                for (;;) {
+                    const ssize_t n = ::read(fds[0], buf, sizeof buf);
+                    if (n > 0) png.insert(png.end(), buf, buf + n);
+                    else return n == 0;
+                }
+            }));
+            ::close(fds[0]);
+            Image decoded;
+            UI_CHECK(png.size() > 8 && png[1] == 'P' && png[2] == 'N' && png[3] == 'G');
+            UI_CHECK(app::decodePng(png, decoded) && decoded.pixels == sent.pixels);
+            UI_CHECK(native.setClipboardImage(sent) && native.clipboardFormats() == std::vector<std::string>{std::string(app::kClipboardImage)});
+        }
+        // ---- primary selection (zwp_primary_selection_v1) ----
+        {
+            UI_CHECK(wl::hasDataDevice(b, true));
+            std::string sel;
+            UI_CHECK(!native.primarySelectionText(sel)); // nobody owns it yet
+            UI_CHECK(native.setPrimarySelectionText("selected text"));
+            UI_CHECK(waitFor(a, [&] { return locked(&State::primarySets) == 1; }));
+            {
+                std::lock_guard lk(mu);
+                UI_CHECK(std::find(g.primaryMimes.begin(), g.primaryMimes.end(), "text/plain;charset=utf-8") != g.primaryMimes.end());
+            }
+            UI_CHECK(native.primarySelectionText(sel) && sel == "selected text");
+            UI_CHECK(native.clipboardOwned() && native.clipboardFormats().size() == 1); // the clipboard is another selection
+            int fds[2];
+            UI_CHECK(::pipe(fds) == 0);
+            run([&] { // a middle click in another client
+                S.post(g.primarySource, 0, "UTF8_STRING", fds[1]);
+                ::close(fds[1]);
+            });
+            std::string got;
+            ::fcntl(fds[0], F_SETFL, ::fcntl(fds[0], F_GETFL) | O_NONBLOCK);
+            UI_CHECK(waitFor(a, [&] {
+                char buf[256];
+                for (;;) {
+                    const ssize_t n = ::read(fds[0], buf, sizeof buf);
+                    if (n > 0) got.append(buf, std::size_t(n));
+                    else return n == 0;
+                }
+            }));
+            ::close(fds[0]);
+            UI_CHECK(got == "selected text");
+        }
+        // ---- synthetic input (postPointerMove / postPointerButton): delivered in-process, in device pixels ----
+        {
+            const int before = g_clicks;
+            const unsigned long long h = native.nativeWindow(w);
+            const Vec2 at{pb.x * w.scale(), pb.y * w.scale()};
+            UI_CHECK(native.postPointerMove(h, at) && native.postPointerButton(h, at, true) && native.postPointerButton(h, at, false));
+            UI_CHECK(waitFor(a, [&] { return g_clicks == before + 1; }));
+            UI_CHECK(!native.postPointerMove(12345ull, at) && !native.postClose(12345ull)); // not a window of ours
+            g_clicks = before; // the sections below count from here
+        }
+
         // ---- drop from another client onto the scroll area ----
         g_offerPayload = "file:///tmp/fuse%20wl/a.png\r\nfile:///tmp/b.txt\r\n";
         run([&] {
@@ -749,6 +893,135 @@ int main() {
         UI_CHECK(w.size().w == 360.f && w.size().h == 240.f); // (0, 0) = the client's choice: the size from before
         w.activate();                  // cannot: no xdg-activation token
         UI_CHECK(!w.active());
+
+        // ---- client-side chrome: a compositor that does not draw frames (xdg-decoration answers "client side") ----
+        R* firstSurface = nullptr;
+        run([&] {
+            firstSurface = g.surface;
+            S.post(g.pointer, 1, serial(), g.surface); // leave the first window
+            S.post(g.pointer, 5);
+            g.surface = nullptr; // the compositor follows the next toplevel from here
+            g.top = g.xsurf = g.deco = nullptr;
+            g.configured = false;
+            g.decoAnswer = 1u;
+            g.shapes.clear();
+        });
+        {
+            const int getsBefore = locked(&State::decoGets);
+            auto& w2 = a.createWindow({.title = "bare", .width = 300, .height = 200});
+            UiContext& u2 = w2.ui();
+            u2.setCss(u2.root(), "flex-direction", "column");
+            const NodeHandle body = wg::button(u2, u2.root(), "Body", "body");
+            UI_CHECK(native.show(w2) == app::PresenterKind::Software);
+            wl::Window* win2 = wl::findWindow(b, w2);
+            UI_CHECK(win2 != nullptr && !wl::serverDecorated(win2));
+            UI_CHECK(locked(&State::decoGets) == getsBefore + 1 && locked(&State::decoMode) == 2); // asked; the answer was "client side"
+            // the fallback: Custom frame, a title bar on top of the root, the title in it
+            const NodeHandle bar = u2.find("titlebar");
+            UI_CHECK(w2.chrome().frame == app::WindowFrame::Custom && w2.chrome().resizeBorder == 6.f);
+            UI_CHECK(u2.alive(bar) && u2.firstChild(u2.root()) == bar && w2.chrome().caption == bar);
+            UI_CHECK(u2.text(u2.find("titlebar.title")) == "bare");
+            w2.setTitle("renamed");
+            UI_CHECK(u2.text(u2.find("titlebar.title")) == "renamed");
+            UI_CHECK(waitFor(a, [&] { return locked(&State::title) == "renamed" && w2.framesPresented() >= 1; }));
+            settle(a);
+            UI_CHECK(u2.rect(bar).y == 0.f && u2.rect(bar).h == 32.f && u2.rect(body).y >= 32.f);
+            const Vec2 cap{120.f, 16.f};
+            UI_CHECK(app::chromeHitTest(w2, cap) == app::HitArea::Caption);
+            UI_CHECK(app::chromeHitTest(w2, {2.f, 100.f}) == app::HitArea::Left);
+            // an edge: the resize cursor, and a press is handed to the compositor as xdg_toplevel.resize(left)
+            uint32_t press = 0;
+            run([&] {
+                S.post(g.pointer, 0, serial(), g.surface, fx(2.f), fx(100.f)); // enter on the left edge
+                S.post(g.pointer, 5);
+            });
+            UI_CHECK(waitFor(a, [&] { return native.cursor(w2) == Cursor::ResizeH; }));
+            run([&] {
+                press = serial();
+                S.post(g.pointer, 3, press, 500u, 0x110u, 1u);
+                S.post(g.pointer, 5);
+            });
+            UI_CHECK(waitFor(a, [&] { return locked(&State::resizes) == 1; }));
+            UI_CHECK(locked(&State::resizeEdge) == 4u && locked(&State::resizeSerial) == press && wl::chromeResizes(win2) == 1u);
+            run([&] { // the compositor owns the pointer during the drag: the client sees it leave and come back
+                S.post(g.pointer, 1, serial(), g.surface);
+                S.post(g.pointer, 5);
+                S.post(g.pointer, 0, serial(), g.surface, fx(298.f), fx(198.f)); // bottom-right corner
+                S.post(g.pointer, 5);
+                press = serial();
+                S.post(g.pointer, 3, press, 510u, 0x110u, 1u);
+                S.post(g.pointer, 5);
+            });
+            UI_CHECK(waitFor(a, [&] { return locked(&State::resizes) == 2; }));
+            UI_CHECK(locked(&State::resizeEdge) == 10u && locked(&State::resizeSerial) == press);
+            UI_CHECK(native.cursor(w2) == Cursor::ResizeNWSE);
+            // the caption: xdg_toplevel.move with the serial of the press; the UI does not see the press
+            run([&] {
+                S.post(g.pointer, 1, serial(), g.surface);
+                S.post(g.pointer, 5);
+                S.post(g.pointer, 0, serial(), g.surface, fx(cap.x), fx(cap.y));
+                S.post(g.pointer, 5);
+                press = serial();
+                S.post(g.pointer, 3, press, 520u, 0x110u, 1u);
+                S.post(g.pointer, 5);
+            });
+            UI_CHECK(waitFor(a, [&] { return locked(&State::moves) == 1; }));
+            UI_CHECK(locked(&State::moveSerial) == press && wl::chromeMoves(win2) == 1u && !u2.alive(u2.pressed()));
+            UI_CHECK(native.cursor(w2) == Cursor::Arrow);
+            // a second caption press right after it is a double click: maximise is asked for, no second move
+            const int maxBefore = locked(&State::maximizeAsked);
+            run([&] {
+                S.post(g.pointer, 3, serial(), 530u, 0x110u, 0u);
+                S.post(g.pointer, 5);
+                S.post(g.pointer, 3, serial(), 560u, 0x110u, 1u);
+                S.post(g.pointer, 5);
+                S.post(g.pointer, 3, serial(), 570u, 0x110u, 0u);
+                S.post(g.pointer, 5);
+            });
+            UI_CHECK(waitFor(a, [&] { return locked(&State::maximizeAsked) == maxBefore + 1; }));
+            UI_CHECK(locked(&State::moves) == 1);
+            // the body still gets its clicks; the title bar's close button closes the window
+            int bodyClicks = 0;
+            u2.connect(body, SignalKind::Clicked, [&bodyClicks](UiContext&, NodeHandle, const SignalArgs&) { ++bodyClicks; });
+            const Vec2 pbody = centre(u2, body), pclose = centre(u2, u2.find("titlebar.close"));
+            UI_CHECK(app::chromeHitTest(w2, pclose) == app::HitArea::Close);
+            run([&] {
+                S.post(g.pointer, 2, 600u, fx(pbody.x), fx(pbody.y));
+                S.post(g.pointer, 5);
+                S.post(g.pointer, 3, serial(), 601u, 0x110u, 1u);
+                S.post(g.pointer, 5);
+                S.post(g.pointer, 3, serial(), 602u, 0x110u, 0u);
+                S.post(g.pointer, 5);
+            });
+            UI_CHECK(waitFor(a, [&] { return bodyClicks == 1; }));
+            UI_CHECK(a.windowCount() == 2);
+            run([&] {
+                S.post(g.pointer, 2, 610u, fx(pclose.x), fx(pclose.y));
+                S.post(g.pointer, 5);
+                S.post(g.pointer, 3, serial(), 611u, 0x110u, 1u);
+                S.post(g.pointer, 5);
+                S.post(g.pointer, 3, serial(), 612u, 0x110u, 0u);
+                S.post(g.pointer, 5);
+            });
+            UI_CHECK(waitFor(a, [&] { return a.windowCount() == 1; }));
+        }
+        // a window that asks for its own frame: no decoration object at all, and nothing is added to its UI
+        run([&] {
+            g.surface = nullptr;
+            g.top = g.xsurf = nullptr;
+            g.configured = false;
+        });
+        {
+            const int getsBefore = locked(&State::decoGets);
+            auto& w3 = a.createWindow({.title = "own frame", .width = 200, .height = 120, .frame = app::WindowFrame::Borderless});
+            UI_CHECK(native.show(w3) == app::PresenterKind::Software);
+            UI_CHECK(locked(&State::decoGets) == getsBefore && !wl::serverDecorated(wl::findWindow(b, w3)));
+            UI_CHECK(w3.chrome().frame == app::WindowFrame::Borderless && !w3.ui().alive(w3.ui().find("titlebar")));
+            UI_CHECK(waitFor(a, [&] { return w3.framesPresented() >= 1; }));
+            UI_CHECK(native.postClose(native.nativeWindow(w3))); // what the compositor's close button sends
+            UI_CHECK(waitFor(a, [&] { return a.windowCount() == 1; }));
+        }
+        (void)firstSurface;
 
         // ---- the compositor goes away: the window is asked to close, the loop keeps running ----
         stop = true;

@@ -46,6 +46,13 @@ because the branch vendors `NotoSansThai-Regular.ttf` and `NotoSansCJKsc-Subset.
 Standalone UI build on Linux after the merge: 180 ctest gates (the 178 main had, `fuse_ui_l10n`, `fuse_ui_script_bind`).
 With the Wayland port: +2 (`fuse_app_wayland`, `fuse_app_wayland_seat`).
 
+The platform-layer rows of §2.1 and the Wayland backend were ported side by side and then made consistent
+(2026-11-13): every `NativePlatform` call of §2.1 goes through the Wayland dispatch seam. On Wayland the clipboard
+formats, the primary selection, synthetic input, `cursorThemeSize()`, frame pacing and window chrome work (and a
+window the compositor does not decorate gets the chrome as client-side decoration:
+`NativeOptions::clientDecorations`); OS tool windows, drag out of the app and XSETTINGS do not exist there and answer
+"nothing". Details in 3.6 / 3.7 and `docs/ui/KNOWN_GAPS.md`.
+
 Non-UI code that includes UI headers and compiles against main's UI (syntax-checked, not linked: the full engine does
 not build on the merge machine): `Source/FUSE/Apps/HybridHud/hud_ui.cpp`, `Source/FUSE/Renderer/tests/test_scene_renderer_vk.cpp`
 (its `--mode fuse_ui` part uses only `UiFrameSource` and `DrawList`).
@@ -59,12 +66,12 @@ structure was taken). X11 parts run under Xvfb without a window manager; Win32 p
 | Feature (item) | Where on main | Gate |
 |---|---|---|
 | Window-less dialogs: open (filters, multiple) / save / folder / colour / message box, `revealInFileManager`, `PlatformError`, `isOpenableUrl` (3.5) | types in `fuse/app/services.hpp`, functions in `fuse/app/native.hpp`; X11 / BSD through zenity / kdialog (`native_platform.inl`), Win32 `IFileDialog` / `ChooseColorW` / `MessageBoxW`; `Unavailable` on macOS / iOS / Android (`native_common.cpp`). `fuse/app/platform.hpp` is now a compatibility header (differences: `openUrl` returns `bool`, `DisplayInfo::workArea` instead of `work`) | `fuse_app_dialog_helpers`, `fuse_app_native_services` (fake helpers) |
-| Clipboard images, MIME types, lazy items, primary selection (3.5) | `ClipboardItem`, `kClipboardText / kClipboardImage`, `encodePng / decodePng` in `services.hpp`; `NativePlatform::setClipboard / setClipboardImage / clipboardImage / clipboardData / clipboardFormats / clipboardOwned / setPrimarySelectionText / primarySelectionText`. X11: on the platform's own connection, `TARGETS`, INCR both ways. `fuse/app/clipboard.hpp` is a compatibility header (the branch's free functions became methods of the platform that owns the display) | `fuse_app_clipboard_png`, `fuse_app_native_services` |
+| Clipboard images, MIME types, lazy items, primary selection (3.5) | `ClipboardItem`, `kClipboardText / kClipboardImage`, `encodePng / decodePng` in `services.hpp`; `NativePlatform::setClipboard / setClipboardImage / clipboardImage / clipboardData / clipboardFormats / clipboardOwned / setPrimarySelectionText / primarySelectionText`. X11: on the platform's own connection, `TARGETS`, INCR both ways. Wayland: `wl_data_source` with every item's MIME type, `zwp_primary_selection_v1` (`native_wayland_platform.cpp`). `fuse/app/clipboard.hpp` is a compatibility header (the branch's free functions became methods of the platform that owns the display) | `fuse_app_clipboard_png`, `fuse_app_native_services`, `fuse_app_wayland_seat` |
 | X11 XSETTINGS: `Xft/DPI` live, theme name / prefer-dark live, cursor theme and size (3.5) | `XSetting`, `parseXSettings`, `buildXSettings` in `services.hpp`; `NativePlatform::Impl::readXSettings`, `cursorThemeSize()` | `fuse_app_dialog_helpers` (parser), `fuse_app_native_services` (the gate is the settings manager) |
-| OS tool windows for floating docks (3.5; `PORT_gui_framework.md` 3.5) | `UiContext::setOsWindows / osWindows / windowSurfaces`, class `os-window` (set by `widgets::dockFloat`); `NativeOptions::osWindows` (default **off** on main, the branch had on), `NativePlatform::toolWindowCount / toolWindow / toolWindowScreenRect / captureToolWindow` | `fuse_app_tool_surfaces`, `fuse_app_native_services` |
-| Synthetic input `postPointerMove`, `postPointerButton`, `postClose` (3.5) | `NativePlatform` | used by the XDND / chrome / tool-window sections of `fuse_app_native_services` |
+| OS tool windows for floating docks (3.5; `PORT_gui_framework.md` 3.5) | `UiContext::setOsWindows / osWindows / windowSurfaces`, class `os-window` (set by `widgets::dockFloat`); `NativeOptions::osWindows` (default **off** on main, the branch had on), `NativePlatform::toolWindowCount / toolWindow / toolWindowScreenRect / captureToolWindow`. X11 / Win32 only: ignored on Wayland (0 / false) | `fuse_app_tool_surfaces`, `fuse_app_native_services` |
+| Synthetic input `postPointerMove`, `postPointerButton`, `postClose` (3.5) | `NativePlatform` (Wayland: delivered in-process, `wl::injectPointer` / `injectClose`) | used by the XDND / chrome / tool-window sections of `fuse_app_native_services`; `fuse_app_wayland`, `fuse_app_wayland_seat` |
 | Saved state across process death (3.5) | `Settings::items / toText / fromText`, `AppWindow::saveUiState / restoreUiState / saveWindowState / restoreWindowState`, `Application::saveState / restoreState / saveStateTo / restoreStateFrom / restored / restoredState`, `StateHooks` (function table instead of the branch's `InlineFn` callbacks); Android `APP_CMD_SAVE_STATE` hook in `native_android.cpp` (cross-compiled only) | `fuse_app_saved_state`, `fuse_app_native_services` |
-| Window chrome (3.7) | `WindowFrame`, `WindowChrome`, `WindowCommand`, `WindowDesc::frame / resizeBorder`, `AppWindow::chrome / command`; `fuse/app/chrome.hpp`, `U/App/src/chrome.cpp` (built into `fuse_app`). The branch's backend command hook is gone: the buttons call main's window management (`minimize`, `setMode`, `tryClose`). X11 without a window manager moves / resizes in the backend | `fuse_app_window_chrome`, `fuse_app_native_services` |
+| Window chrome (3.7) | `WindowFrame`, `WindowChrome`, `WindowCommand`, `WindowDesc::frame / resizeBorder`, `AppWindow::chrome / command`; `fuse/app/chrome.hpp`, `U/App/src/chrome.cpp` (built into `fuse_app`). The branch's backend command hook is gone: the buttons call main's window management (`minimize`, `setMode`, `tryClose`). X11 without a window manager moves / resizes in the backend. Wayland: caption / edge presses become `xdg_toplevel.move` / `resize` (`chromePress` in `native_wayland.cpp`), and the chrome is the client-side decoration of windows the compositor does not decorate | `fuse_app_window_chrome`, `fuse_app_native_services`, `fuse_app_wayland`, `fuse_app_wayland_seat` |
 | Notifications (3.8) | in the live Extras desktop integration, not in `fuse_app`: `fuse::ui::desktop::Notifier` (`org.freedesktop.Notifications` on `extras/dbus.hpp`: actions, `onAction`, `onClosed`, replace, close), `NotifyResult`, `notifyNative`, `notificationsSupported`, `notify()` native first; `TrayIcon::showMessage / onMessageClicked` (D-Bus; Win32 `NIF_INFO` balloon, not run) | `fuse_ui_extras_notify` |
 
 Parked files deleted because they are superseded: `U/App/src/platform_posix.cpp`, `chrome_internal.hpp`,
@@ -218,7 +225,8 @@ Items tagged **editor** are needed before `-DFUSE_EDITOR_SHELL=fuse` compiles (�
     `SystemTheme` lacks (high contrast palette, reduced motion, text scale), dark title bar, `MessageHook`:
     `clipboard.cpp` (Win32 half), `platform_win32.cpp`, `platform_internal.hpp`; `test_platform_desktop.cpp`,
     `test_platform_services.cpp`.
-  - Wayland routing of the clipboard: `clipboard.cpp` (Wayland half), with item 3.6.
+  - Wayland routing of the clipboard: done on main's API (`WaylandPlatform::setClipboard` ... in
+    `native_wayland_platform.cpp`); the parked `clipboard.cpp` (Wayland half) is not needed for it any more.
   - Presenter work: async Vulkan start (`asyncVulkan`, `presenterPending`, `waitForPresenter`), software-presenter
     dirty-rect copy (`AppWindow::rasterized`), MAILBOX pacing, `presentTiming`, pipeline-cache directory,
     `hello_app --startup-probe`, `NativePlatform::wake`: branch deltas of `vk_present.cpp` / `native.cpp` / `app.cpp`;
@@ -246,13 +254,19 @@ The backend is live: see §2. `native_wayland.cpp`, `wayland_internal.hpp` and `
   a headless **sway** run with the second client driving `zwlr_virtual_pointer_v1` / `zwp_virtual_keyboard_v1`
   (grabbed popups ended by an outside click, keys driving a grabbed menu), live per-output scale changes
   (`swaymsg output scale`), an input method client (`zwp_input_method_v2`), clipboard formats beyond text
-  (image/png, custom MIME, lazy items) and the primary selection end to end, a drag from the second client. They
-  need mb 3.5's `clipboard.hpp` and `NativePlatform::postPointerMove / postPointerButton / postClose /
-  windowFocused`, none of which main has, and a sway binary (not installed on the port machine).
-- **In the protocol layer but with no `NativePlatform` API on main**: primary selection (`wl::setSelection(...,
-  primary = true)`), child tool toplevels (`wl::createTool`, `moveChild`, `resizeChild`: wire them to the tool-window
-  API when mb 3.5 / gf 3.5 lands), interactive move / resize for a client-side frame (`wl::beginMove`,
-  `beginResize`: for 3.7 window chrome; the branch's `chromeHitTest` hooks were removed from the pointer path).
+  (image/png, custom MIME, lazy items) and the primary selection end to end between two clients (main's seat gate
+  plays the other client from inside the compositor), a drag from the second client. They need
+  `NativePlatform::windowFocused`, which main does not have (`clipboard.hpp`, `postPointerMove / postPointerButton /
+  postClose` now exist and work on Wayland), and a sway binary (not installed on the port machine).
+- **Wired after the platform layer (§2.1) landed**: the primary selection (`setPrimarySelectionText /
+  primarySelectionText`), clipboard formats, interactive move / resize for window chrome (`chromeHitTest` is back
+  in the `wl_pointer` press path: `wl::beginMove` / `beginResize`), client-side decoration fallback.
+- **Still in the protocol layer only**: child tool toplevels (`wl::createTool`, `moveChild`, `resizeChild`).
+  `NativeOptions::osWindows` is ignored on Wayland and `NativePlatform::toolWindow*` answer 0 / false. What wiring
+  needs: a `syncTools` in `native_wayland_platform.cpp` like the X11 one (create / present / resize a child per
+  `UiContext::windowSurfaces()` entry), and, because a client cannot place a toplevel, `widgets::dockFloat`'s title
+  drag handed to `wl::moveChild` instead of moving the node, with drop-zone detection that does not rely on screen
+  coordinates. `fuse_app_wayland` exercises `createTool` directly.
 - **Dropped**: the branch's `asyncVulkan` start (main's presenter creation is synchronous), tablet tool cursor
   shapes (the interface table is there, nothing binds a tablet seat), `$FUSE_APP_BACKEND` (now `$FUSE_UI_BACKEND`),
   the rule "X11 when `$DISPLAY` is set" (now Wayland first when `$WAYLAND_DISPLAY` is set).
@@ -272,6 +286,9 @@ The backend is live: see §2. `native_wayland.cpp`, `wayland_internal.hpp` and `
   gate for: the Win32 real-window checks (`WM_NCHITTEST` answers, non-client button clicks; needs Windows or Wine)
   and the X11 check that a caption / edge press sends `_NET_WM_MOVERESIZE` with the right direction (the test acts
   as a window manager through `x11_internal.hpp`). On main that hand-over is written but was never observed.
+  Wayland (after 3.6): the hand-over is `xdg_toplevel.move` / `resize`; `fuse_app_wayland_seat` observes both
+  requests with the press serial on its in-process compositor, and the fallback title bar for undecorated windows
+  is checked there and under weston. No compositor has moved a window by it (weston headless has no pointer).
 - **Verify**: `fuse_app_window_chrome`, `fuse_x11_wm_chrome`.
 
 ### 3.8 Tray icon and notifications (M)

@@ -2,6 +2,7 @@
 #include "native_wayland_platform.hpp"
 
 #if !defined(_WIN32) && !defined(__ANDROID__) && !defined(__APPLE__)
+#include "fuse/app/chrome.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 #include "wayland_internal.hpp"
 
@@ -29,6 +30,8 @@ struct WaylandPlatform::State {
             Image img;
         };
         std::vector<Popup> popups;
+        bool csd = false;     ///< the compositor does not decorate the window: it was given the client-side chrome
+        NodeHandle csdBar;    ///< ... and this title bar, unless the app had made its own
     };
 
     Application& app;
@@ -38,7 +41,7 @@ struct WaylandPlatform::State {
     VkCtx* vk = nullptr;
     bool vkTried = false, lost = false;
     std::string error;
-    std::string clipText; ///< what we serve while we own the selection
+    std::vector<ClipboardItem> clip[2]; ///< what we serve while we own the selection: [0] clipboard, [1] primary
 
     State(Application& a, const NativeOptions& o) : app(a), opts(o) {}
 
@@ -142,6 +145,15 @@ struct WaylandPlatform::State {
         r->vk = nullptr;
         st.destroyPopups(*r);
         if (r->win) {
+            if (r->csd) { // the fallback chrome goes with the OS window
+                WindowChrome& c = r->win->chrome();
+                if (r->win->ui().alive(r->csdBar)) {
+                    r->win->ui().destroy(r->csdBar);
+                    c = {};
+                }
+                c.frame = WindowFrame::System;
+                c.resizeBorder = 0.f;
+            }
             r->win->ui().setOsPopups(false);
             r->win->ui().setClipboard({}); // back to the context-local buffer
             r->win->setWindowBackend({});
@@ -157,7 +169,11 @@ struct WaylandPlatform::State {
         State& st = *r.st;
         if (!r.wl || st.lost) return false;
         switch (what) {
-        case WindowRequest::Title: wl::setTitle(st.b, r.wl, w.title()); return true;
+        case WindowRequest::Title:
+            wl::setTitle(st.b, r.wl, w.title());
+            if (w.ui().alive(r.csdBar)) // the client-side title bar shows it too
+                if (const NodeHandle label = w.ui().find("titlebar.title"); w.ui().alive(label)) w.ui().setText(label, w.title());
+            return true;
         case WindowRequest::SizeLimits: {
             wl::setSizeLimits(st.b, r.wl, w.minimumSize(), w.maximumSize());
             // the limits bind the compositor's interactive resizes; the client's own size obeys them here
@@ -178,36 +194,84 @@ struct WaylandPlatform::State {
         return false;
     }
 
-    // ---- clipboard (text) ----
+    // ---- clipboard / primary selection (wl_data_device, zwp_primary_selection_v1) ----
     static constexpr const char* kTextMimes[] = {"text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING"};
-    static bool clipProvide(void* user, const std::string&, std::vector<unsigned char>& out) {
-        const std::string& t = static_cast<State*>(user)->clipText;
-        out.assign(t.begin(), t.end());
-        return true;
+    static bool isTextMime(std::string_view mime) {
+        for (const char* m : kTextMimes)
+            if (mime == m) return true;
+        return false;
     }
-    static bool clipSet(void* user, std::string_view utf8) {
-        State& st = *static_cast<State*>(user);
-        st.clipText.assign(utf8);
-        std::vector<std::string> mimes;
-        for (const char* m : kTextMimes) mimes.emplace_back(m);
-        return wl::setSelection(st.b, false, mimes, &clipProvide, &st);
-    }
-    static bool clipGet(void* user, std::string& out) {
-        State& st = *static_cast<State*>(user);
-        if (wl::ownsSelection(st.b, false)) { // our own selection: no round trip through the compositor
-            out = st.clipText;
-            return !out.empty();
-        }
-        const std::vector<std::string> have = wl::selectionMimes(st.b, false);
-        for (const char* m : kTextMimes) {
-            if (std::find(have.begin(), have.end(), m) == have.end()) continue;
-            std::vector<unsigned char> bytes;
-            if (!wl::receiveSelection(st.b, false, m, bytes)) return false;
-            out.assign(bytes.begin(), bytes.end());
-            return !out.empty();
+    /// The bytes of `mime` from the items we own (lazy items are made now, images encoded once).
+    static bool itemBytes(std::vector<ClipboardItem>& items, std::string_view mime, std::vector<unsigned char>& out) {
+        const bool text = isTextMime(mime);
+        for (ClipboardItem& it : items) {
+            if (it.mime.empty() || (text ? !isTextMime(it.mime) : it.mime != mime)) continue;
+            if (it.provide) { // lazy: made when first pasted
+                const auto fn = it.provide;
+                it.provide = nullptr;
+                if (!fn(it.user, it)) {
+                    it.mime.clear(); // refused: an empty answer from now on (the offer itself cannot be changed)
+                    return false;
+                }
+            }
+            if (text) {
+                out.assign(it.text.begin(), it.text.end());
+            } else {
+                if (it.mime == kClipboardImage && it.bytes.empty() && !encodePng(it.image, it.bytes)) return false;
+                out = it.bytes;
+            }
+            return true;
         }
         return false;
     }
+    template <int Which>
+    static bool provide(void* user, const std::string& mime, std::vector<unsigned char>& out) {
+        return itemBytes(static_cast<State*>(user)->clip[Which], mime, out);
+    }
+    bool own(bool primary, std::vector<ClipboardItem> items) {
+        if (lost || !wl::hasDataDevice(b, primary)) return false;
+        std::vector<std::string> mimes;
+        for (const ClipboardItem& it : items) {
+            if (it.mime.empty()) continue;
+            if (isTextMime(it.mime)) {
+                for (const char* m : kTextMimes)
+                    if (std::find(mimes.begin(), mimes.end(), m) == mimes.end()) mimes.emplace_back(m);
+            } else if (std::find(mimes.begin(), mimes.end(), it.mime) == mimes.end()) {
+                mimes.push_back(it.mime);
+            }
+        }
+        std::vector<ClipboardItem>& mine = clip[primary ? 1 : 0];
+        mine = std::move(items);
+        if (!wl::setSelection(b, primary, mimes, primary ? &provide<1> : &provide<0>, this)) {
+            mine.clear();
+            return false;
+        }
+        return true;
+    }
+    bool read(bool primary, std::string_view mime, std::vector<unsigned char>& out) {
+        out.clear();
+        if (lost || !wl::hasDataDevice(b, primary) || mime.empty()) return false;
+        if (wl::ownsSelection(b, primary)) return itemBytes(clip[primary ? 1 : 0], mime, out); // ours: no round trip
+        const std::vector<std::string> have = wl::selectionMimes(b, primary);
+        if (!isTextMime(mime)) return std::find(have.begin(), have.end(), mime) != have.end() && wl::receiveSelection(b, primary, std::string(mime), out);
+        for (const char* m : kTextMimes) // whichever text type the other client offers
+            if (std::find(have.begin(), have.end(), m) != have.end()) return wl::receiveSelection(b, primary, m, out);
+        return false;
+    }
+    bool setText(bool primary, std::string_view utf8) {
+        std::vector<ClipboardItem> items(1);
+        items[0].mime = kClipboardText;
+        items[0].text = utf8;
+        return own(primary, std::move(items));
+    }
+    bool text(bool primary, std::string& out) {
+        std::vector<unsigned char> bytes;
+        if (!read(primary, kClipboardText, bytes)) return false;
+        out.assign(bytes.begin(), bytes.end());
+        return !out.empty();
+    }
+    static bool clipSet(void* user, std::string_view utf8) { return static_cast<State*>(user)->setText(false, utf8); }
+    static bool clipGet(void* user, std::string& out) { return static_cast<State*>(user)->text(false, out); }
     bool clipboardUsable() const { return !lost && wl::hasDataDevice(b, false); }
 
     // ---- drops from other clients -> UiContext's external drag path ----
@@ -303,10 +367,27 @@ PresenterKind WaylandPlatform::show(AppWindow& w) {
         r->vk = vkWinCreate(c, s, m->opts, m->error);
     }
     r->kind = r->vk ? PresenterKind::Vulkan : PresenterKind::Software; // wl_shm (XRGB8888) is always there
+    // No server-side frame (GNOME, weston): the window would have no title bar and could not be moved or resized. It
+    // gets the client-side chrome instead: resize edges and, unless the app made its own, a title bar on top of the
+    // root (inside the window's size).
+    if (m->opts.clientDecorations && w.chrome().frame == WindowFrame::System && !wl::serverDecorated(r->wl)) {
+        WindowChrome& c = w.chrome();
+        UiContext& ui = w.ui();
+        r->csd = true;
+        c.frame = WindowFrame::Custom;
+        c.resizeBorder = 6.f; // WindowDesc::resizeBorder's default
+        if (!ui.alive(c.caption)) {
+            r->csdBar = titleBar(w, ui.root(), w.title());
+            ui.setCss(r->csdBar, "flex-shrink", "0");
+            if (const NodeHandle first = ui.firstChild(ui.root()); first != r->csdBar) ui.moveTo(r->csdBar, ui.root(), first);
+        }
+    }
     // popups may extend past the window; the compositor keeps them on screen (xdg_positioner), so the UI does not clamp
     if (m->opts.osPopups) w.ui().setOsPopups(true, {-16384.f, -16384.f, 32768.f, 32768.f});
     if (m->clipboardUsable()) w.ui().setClipboard({&State::clipSet, &State::clipGet, m.get()});
-    w.setPresenter({r, &State::present, &State::destroy});
+    // a FIFO swapchain waits for the display; wl_shm frames are held back by wl_surface.frame without blocking, so
+    // AppWindow::setMaxFrameRate applies to them
+    w.setPresenter({r, &State::present, &State::destroy, r->vk != nullptr && m->opts.vsync});
     w.setWindowBackend({r, &State::windowRequest});
     // what the app asked for before the window existed
     if (w.minimumSize().w > 0.f || w.minimumSize().h > 0.f || w.maximumSize().w > 0.f || w.maximumSize().h > 0.f)
@@ -381,8 +462,45 @@ Cursor WaylandPlatform::cursor(const AppWindow& w) const {
     const State::Rec* r = m->find(w);
     return r ? wl::cursorShown(r->wl) : Cursor::Arrow;
 }
-bool WaylandPlatform::setClipboardText(std::string_view utf8) { return m->clipboardUsable() && State::clipSet(m.get(), utf8); }
-bool WaylandPlatform::clipboardText(std::string& out) { return m->clipboardUsable() && State::clipGet(m.get(), out); }
+bool WaylandPlatform::setClipboardText(std::string_view utf8) { return m->setText(false, utf8); }
+bool WaylandPlatform::clipboardText(std::string& out) { return m->text(false, out); }
+bool WaylandPlatform::setClipboard(std::vector<ClipboardItem> items) { return m->own(false, std::move(items)); }
+bool WaylandPlatform::clipboardData(std::string_view mime, std::vector<u8>& out) { return m->read(false, mime, out); }
+std::vector<std::string> WaylandPlatform::clipboardFormats() {
+    std::vector<std::string> out;
+    if (!m->clipboardUsable()) return out;
+    for (std::string name : wl::selectionMimes(m->b, false)) {
+        if (State::isTextMime(name) || name.starts_with("text/plain;")) name = kClipboardText;
+        if (name.find('/') == std::string::npos) continue; // TARGETS, SAVE_TARGETS ... of X11 clients behind XWayland
+        if (std::find(out.begin(), out.end(), name) == out.end()) out.push_back(std::move(name));
+    }
+    return out;
+}
+bool WaylandPlatform::clipboardOwned() const { return !m->lost && wl::ownsSelection(m->b, false); }
+bool WaylandPlatform::setPrimarySelectionText(std::string_view utf8) { return m->setText(true, utf8); }
+bool WaylandPlatform::primarySelectionText(std::string& out) { return m->text(true, out); }
+int WaylandPlatform::cursorThemeSize() const { return m->lost ? 0 : wl::cursorThemeSize(m->b); }
+bool WaylandPlatform::clientDecorated(const AppWindow& w) const {
+    const State::Rec* r = m->find(w);
+    return r && r->csd;
+}
+bool WaylandPlatform::postInput(unsigned long long h, Vec2 at, int kind) {
+    if (m->lost) return false;
+    for (State::Rec* r : m->recs) {
+        if (reinterpret_cast<std::uintptr_t>(wl::surface(r->wl)) == h) {
+            if (kind == 3) wl::injectClose(r->wl);
+            else wl::injectPointer(m->b, r->wl, at, kind);
+            r->win->requestRedraw();
+            return true;
+        }
+        for (State::Rec::Popup& p : r->popups)
+            if (reinterpret_cast<std::uintptr_t>(p.child) == h && kind != 3) {
+                wl::injectChildPointer(m->b, p.child, at, kind);
+                return true;
+            }
+    }
+    return false;
+}
 bool WaylandPlatform::postClick(unsigned long long h, Vec2 at) {
     for (State::Rec* r : m->recs) {
         if (reinterpret_cast<std::uintptr_t>(wl::surface(r->wl)) == h) {

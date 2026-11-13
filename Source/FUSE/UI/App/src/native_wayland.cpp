@@ -4,6 +4,7 @@
 
 #if !defined(_WIN32) && !defined(__ANDROID__) && !defined(__APPLE__)
 #include "native_internal.hpp"
+#include "fuse/app/chrome.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -477,6 +478,9 @@ struct Window {
     std::vector<ShmBuf> iconBufs;
     std::vector<int> iconWidths;
     bool dragOver = false;
+    bool captionClicked = false;      ///< client-side chrome: a caption press waits for a second one (double click)
+    uint32_t captionClick = 0;        ///< wl_pointer.button time of that press
+    unsigned chromeMoves = 0, chromeResizes = 0; ///< caption / edge presses handed to the compositor
 };
 struct Child {
     Backend* b = nullptr;
@@ -522,6 +526,7 @@ struct Backend {
     Window *ptrFocus = nullptr, *kbdFocus = nullptr;
     Child* ptrChild = nullptr;
     uint32_t ptrSerial = 0, enterSerial = 0, pressSerial = 0, inputSerial = 0;
+    uint32_t buttonTime = 0; ///< time of the last wl_pointer.button (ms, the compositor's clock)
     Vec2 ptrPos{};
     // one wl_pointer frame of scrolling (delivered at wl_pointer.frame; at once for a seat older than version 5)
     f32 axisValue[2] = {}, axisSteps[2] = {};
@@ -910,7 +915,47 @@ void pointerMotion(void* data, wl_proxy*, uint32_t, int32_t sx, int32_t sy) {
 MouseButton mouseButton(uint32_t button) {
     return button == kBtnRight ? MouseButton::Right : button == kBtnMiddle ? MouseButton::Middle : MouseButton::Left;
 }
+/// xdg_toplevel.resize_edge of a chrome hit (0: not an edge).
+unsigned resizeEdge(HitArea a) {
+    switch (a) {
+    case HitArea::Top: return 1;
+    case HitArea::Bottom: return 2;
+    case HitArea::Left: return 4;
+    case HitArea::Right: return 8;
+    case HitArea::TopLeft: return 5;
+    case HitArea::TopRight: return 9;
+    case HitArea::BottomLeft: return 6;
+    case HitArea::BottomRight: return 10;
+    default: return 0;
+    }
+}
+/// A left press on a Borderless / Custom window (chrome.hpp): the caption hands the press to the compositor as an
+/// interactive move (a second press within 400 ms toggles maximise instead), an edge as an interactive resize. True
+/// when the press was the chrome's and must not reach the UI. The compositor takes the pointer for the drag, so no
+/// release follows.
+bool chromePress(Backend* b, Window* w) {
+    AppWindow& a = *w->win;
+    if (a.chrome().frame == WindowFrame::System) return false;
+    const HitArea area = chromeHitTest(a, b->ptrPos);
+    if (area == HitArea::Client || area == HitArea::Minimize || area == HitArea::Maximize || area == HitArea::Close) return false; // widgets
+    if (area == HitArea::Caption) {
+        const bool twice = w->captionClicked && b->buttonTime - w->captionClick < 400u; // the compositor's clock (ms)
+        w->captionClicked = !twice;
+        w->captionClick = b->buttonTime;
+        if (twice) {
+            a.command(WindowCommand::ToggleMaximize);
+            return true;
+        }
+        ++w->chromeMoves;
+        beginMove(b, w);
+        return true;
+    }
+    ++w->chromeResizes;
+    beginResize(b, w, resizeEdge(area));
+    return true;
+}
 void deliverButton(Backend* b, Window* w, uint32_t button, bool down) {
+    if (down && button == kBtnLeft && chromePress(b, w)) return;
     UiContext& ui = w->win->ui();
     ui.setModifiers(b->mods);
     if (down) ui.pointerDown(b->ptrPos, mouseButton(button));
@@ -932,8 +977,9 @@ void deliverChildButton(Backend* b, Child* c, uint32_t serial, uint32_t button, 
     else ui.pointerUp(pos, mouseButton(button));
     c->owner->win->requestRedraw();
 }
-void pointerButton(void* data, wl_proxy*, uint32_t serial, uint32_t, uint32_t button, uint32_t state) {
+void pointerButton(void* data, wl_proxy*, uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
     auto* b = static_cast<Backend*>(data);
+    b->buttonTime = time;
     b->ptrSerial = serial;
     b->inputSerial = serial;
     if (state == 1) b->pressSerial = serial;
@@ -1498,8 +1544,7 @@ void applyCursorShape(Backend* b, Cursor c, Window* w) {
     const int scale = std::max(1, int(std::ceil(w->win->scale())));
     if (!b->theme || b->themeScale != scale) {
         if (b->theme) C.theme_destroy(b->theme);
-        int size = 24;
-        if (const char* e = std::getenv("XCURSOR_SIZE"); e && std::atoi(e) > 0) size = std::atoi(e);
+        const int size = cursorThemeSize(b);
         b->theme = C.theme_load(std::getenv("XCURSOR_THEME"), size * scale, b->shm);
         b->themeScale = scale;
     }
@@ -1527,6 +1572,14 @@ void applyCursorShape(Backend* b, Cursor c, Window* w) {
 void applyCursor(Backend* b, Window* w) {
     Cursor c = w->win->ui().cursor();
     if (c == Cursor::Auto) c = Cursor::Arrow;
+    if (w->win->chrome().frame == WindowFrame::Custom && b->ptrFocus == w) // the resize edges of a client-side frame
+        switch (chromeHitTest(*w->win, b->ptrPos)) {
+        case HitArea::Left: case HitArea::Right: c = Cursor::ResizeH; break;
+        case HitArea::Top: case HitArea::Bottom: c = Cursor::ResizeV; break;
+        case HitArea::TopLeft: case HitArea::BottomRight: c = Cursor::ResizeNWSE; break;
+        case HitArea::TopRight: case HitArea::BottomLeft: c = Cursor::ResizeNESW; break;
+        default: break;
+        }
     w->cursorWanted = c;
     if (!b->pointer || b->ptrFocus != w) return; // sent when the pointer enters (set_cursor needs the enter serial)
     applyCursorShape(b, c, w);
@@ -1747,7 +1800,9 @@ Window* createWindow(Backend* b, AppWindow& a, std::string& err) {
     w->title = a.title();
     L.proxy_marshal(w->toplevel, kToplevelSetTitle, w->title.c_str());
     L.proxy_marshal(w->toplevel, kToplevelSetAppId, a.app().name().empty() ? "fuse" : a.app().name().c_str());
-    if (b->decoMgr) { // server-side frame where the compositor draws one (KDE, sway, labwc); none otherwise
+    // server-side frame where the compositor draws one (KDE, sway, labwc). Borderless / Custom windows draw their own
+    // (chrome.hpp): no decoration object, which the protocol reads as "client side".
+    if (b->decoMgr && a.chrome().frame == WindowFrame::System) {
         w->deco = L.proxy_marshal_constructor(b->decoMgr, kDecoManagerGet, &decoToplevel, nullptr, w->toplevel);
         static const Fn dL[] = {fn(&decoConfigure)};
         L.proxy_add_listener(w->deco, const_cast<Fn*>(dL), w);
@@ -1937,6 +1992,13 @@ bool beginResize(Backend* b, Window* w, unsigned edge) {
     return true;
 }
 unsigned cursorShapeSent(const Window* w) { return w ? w->shapeSent : 0; }
+unsigned chromeMoves(const Window* w) { return w ? w->chromeMoves : 0; }
+unsigned chromeResizes(const Window* w) { return w ? w->chromeResizes : 0; }
+int cursorThemeSize(const Backend* b) {
+    if (!b || b->shapeDev || !C.load()) return 0; // wp_cursor_shape_v1: the compositor draws its own cursors
+    if (const char* e = std::getenv("XCURSOR_SIZE"); e && std::atoi(e) > 0) return std::atoi(e);
+    return 24;
+}
 
 bool setIcon(Backend* b, Window* w, const std::vector<const Image*>& sizes) {
     if (!w || !b->iconMgr) return false;
@@ -2237,6 +2299,7 @@ void injectPointer(Backend* b, Window* w, Vec2 at, int kind) {
         w->win->ui().setModifiers(b->mods);
         w->win->ui().pointerMove(b->ptrPos);
     } else {
+        b->buttonTime = uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
         deliverButton(b, w, kBtnLeft, kind == 1);
     }
 }

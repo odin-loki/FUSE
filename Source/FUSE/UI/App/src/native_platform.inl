@@ -70,27 +70,40 @@ void NativePlatform::Impl::syncTools(Rec& r) {
         for (Rec::Popup& p : r.tools) raiseToolOs(p); // back to front
 }
 
+// Wayland: no tool windows (a client cannot place a toplevel, so a floating dock could not follow its title drag or
+// the main window); NativeOptions::osWindows is ignored there and floating docks stay in-window panels.
 std::size_t NativePlatform::toolWindowCount(const AppWindow& w) const {
+    FUSE_APP_WL_NONE(0);
     const Impl::Rec* r = m->find(w);
     return r ? r->tools.size() : 0;
 }
 unsigned long long NativePlatform::toolWindow(const AppWindow& w, std::size_t i) const {
+    FUSE_APP_WL_NONE(0);
     const Impl::Rec* r = m->find(w);
     return r && i < r->tools.size() ? r->tools[i].handle : 0;
 }
 Rect NativePlatform::toolWindowScreenRect(const AppWindow& w, std::size_t i) const {
+    FUSE_APP_WL_NONE(Rect{});
     const Impl::Rec* r = m->find(w);
     return r && i < r->tools.size() ? r->tools[i].screen : Rect{};
 }
 bool NativePlatform::captureToolWindow(const AppWindow& w, std::size_t i, Image& out) {
+    FUSE_APP_WL_NONE(false);
     const Impl::Rec* r = m->find(w);
     return r && i < r->tools.size() && m->capturePopupOs(r->tools[i], out);
 }
-bool NativePlatform::postPointerMove(unsigned long long nativeWin, Vec2 at) { return nativeWin && m->postInputOs(nativeWin, at, 0); }
+bool NativePlatform::postPointerMove(unsigned long long nativeWin, Vec2 at) {
+    FUSE_APP_WL(postInput(nativeWin, at, 0));
+    return nativeWin && m->postInputOs(nativeWin, at, 0);
+}
 bool NativePlatform::postPointerButton(unsigned long long nativeWin, Vec2 at, bool down) {
+    FUSE_APP_WL(postInput(nativeWin, at, down ? 1 : 2));
     return nativeWin && m->postInputOs(nativeWin, at, down ? 1 : 2);
 }
-bool NativePlatform::postClose(unsigned long long nativeWin) { return nativeWin && m->postInputOs(nativeWin, {}, 3); }
+bool NativePlatform::postClose(unsigned long long nativeWin) {
+    FUSE_APP_WL(postInput(nativeWin, {}, 3));
+    return nativeWin && m->postInputOs(nativeWin, {}, 3);
+}
 bool NativePlatform::setClipboardImage(const Image& image) {
     std::vector<ClipboardItem> items(1);
     items[0].mime = kClipboardImage;
@@ -200,7 +213,10 @@ void NativePlatform::Impl::readXSettings(bool initial) {
         x.Flush(dpy);
     }
 }
-int NativePlatform::cursorThemeSize() const { return m->dpy && m->x.CursorGetDefaultSize ? m->x.CursorGetDefaultSize(m->dpy) : 0; }
+int NativePlatform::cursorThemeSize() const {
+    FUSE_APP_WL(cursorThemeSize());
+    return m->dpy && m->x.CursorGetDefaultSize ? m->x.CursorGetDefaultSize(m->dpy) : 0;
+}
 
 // ---- X11: selections (CLIPBOARD / PRIMARY formats, INCR) -------------------------------------------------------------
 bool NativePlatform::Impl::ownSelection(x11::Atom sel, Selection& s, std::vector<ClipboardItem> items) {
@@ -369,9 +385,11 @@ bool NativePlatform::Impl::convert(x11::Atom selection, x11::Atom target, std::s
 }
 
 bool NativePlatform::setClipboard(std::vector<ClipboardItem> items) {
+    FUSE_APP_WL(setClipboard(std::move(items)));
     return m->clipboardUsable() && m->ownSelection(m->aClipboard, m->clip, std::move(items));
 }
 bool NativePlatform::clipboardData(std::string_view mime, std::vector<u8>& out) {
+    FUSE_APP_WL(clipboardData(mime, out));
     out.clear();
     if (!m->clipboardUsable() || mime.empty()) return false;
     const x11::Atom target = isTextMime(mime) ? m->aUtf8 : m->x.InternAtom(m->dpy, std::string(mime).c_str(), 0);
@@ -381,6 +399,7 @@ bool NativePlatform::clipboardData(std::string_view mime, std::vector<u8>& out) 
     return true;
 }
 std::vector<std::string> NativePlatform::clipboardFormats() {
+    FUSE_APP_WL(clipboardFormats());
     std::vector<std::string> out;
     if (!m->clipboardUsable()) return out;
     auto add = [&](std::string name) {
@@ -403,8 +422,12 @@ std::vector<std::string> NativePlatform::clipboardFormats() {
         }
     return out;
 }
-bool NativePlatform::clipboardOwned() const { return m->clip.owner; }
+bool NativePlatform::clipboardOwned() const {
+    FUSE_APP_WL(clipboardOwned());
+    return m->clip.owner;
+}
 bool NativePlatform::setPrimarySelectionText(std::string_view utf8) {
+    FUSE_APP_WL(setPrimarySelectionText(utf8));
     if (!m->clipboardUsable()) return false;
     std::vector<ClipboardItem> items(1);
     items[0].mime = kClipboardText;
@@ -412,6 +435,7 @@ bool NativePlatform::setPrimarySelectionText(std::string_view utf8) {
     return m->ownSelection(m->aPrimary, m->primary, std::move(items));
 }
 bool NativePlatform::primarySelectionText(std::string& out) {
+    FUSE_APP_WL(primarySelectionText(out));
     if (!m->clipboardUsable()) return false;
     return m->primary.owner ? m->selectionBytes(m->primary, m->aUtf8, out) : m->convert(m->aPrimary, m->aUtf8, out);
 }
@@ -635,7 +659,10 @@ void NativePlatform::Impl::dndOutEnd(DropAction result) {
         r->win->requestRedraw();
     }
 }
-bool NativePlatform::externalDragActive() const { return m->dnd.rec != nullptr && (m->dnd.target != 0 || m->dnd.dropped); }
+bool NativePlatform::externalDragActive() const {
+    FUSE_APP_WL_NONE(false); // Wayland: drops in only, a drag of the UI never leaves the app (no wl_data_device.start_drag)
+    return m->dnd.rec != nullptr && (m->dnd.target != 0 || m->dnd.dropped);
+}
 
 // ---- X11: client-side window chrome ------------------------------------------------------------------------------------
 /// A left press on a Borderless / Custom window: true when it starts a move / resize (caption, edge) or toggled

@@ -109,6 +109,14 @@ bool serverDecorated(const Window* win); ///< xdg-decoration answered "server si
 /// 2 bottom, 4 left, 8 right and their sums). False without a seat or a press serial. For client-side frames.
 bool beginMove(Backend* b, Window* win);
 bool beginResize(Backend* b, Window* win, unsigned edge);
+/// Client-side chrome (chrome.hpp, WindowFrame::Borderless / Custom): a left press on the caption or a resize edge is
+/// handed to the compositor through beginMove / beginResize instead of reaching the UI; a caption double click
+/// toggles maximise. How many presses went each way (tests).
+unsigned chromeMoves(const Window* win);
+unsigned chromeResizes(const Window* win);
+/// The size (px) theme cursors are loaded at ($XCURSOR_SIZE, else 24); 0 when the compositor draws the cursors
+/// (wp_cursor_shape_v1) or libwayland-cursor is missing.
+int cursorThemeSize(const Backend* b);
 /// xdg_toplevel_icon_v1 (square RGBA rasters): false when the compositor has no icon manager.
 bool setIcon(Backend* b, Window* win, const std::vector<const fuse::ui::Image*>& sizes);
 std::vector<int> iconSizes(const Window* win);

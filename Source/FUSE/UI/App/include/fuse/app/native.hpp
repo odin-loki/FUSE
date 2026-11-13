@@ -109,6 +109,12 @@ struct NativeOptions {
     /// Linux / BSD: which window system to use. A forced backend (here or by $FUSE_UI_BACKEND) that cannot start
     /// leaves the platform unavailable (headless) instead of falling back to the other one.
     NativeBackend backend = NativeBackend::Auto;
+    /// Wayland: a WindowFrame::System window the compositor does not decorate (no xdg-decoration: GNOME, weston) gets
+    /// the client-side chrome of chrome.hpp when it is shown: the frame becomes WindowFrame::Custom (6 px resize
+    /// edges) and, unless AppWindow::chrome() already names a caption, titleBar() is added as the first child of the
+    /// root node (which should lay its children out in a column; the bar takes its 32 px from the window's size).
+    /// false: such windows stay bare surfaces.
+    bool clientDecorations = true;
 };
 
 #if defined(__ANDROID__)
@@ -180,19 +186,19 @@ public:
     bool postClick(unsigned long long nativeWin, fuse::ui::Vec2 at);
     /// Posts a pointer move / a left button press or release / a close request (the title-bar close button) to a
     /// native window at window-local device pixels `at`; delivered by the normal event pump. `at` may lie outside
-    /// the window (a drag that left it).
+    /// the window (a drag that left it). Wayland: delivered inside the process, like postClick.
     bool postPointerMove(unsigned long long nativeWin, fuse::ui::Vec2 at);
     bool postPointerButton(unsigned long long nativeWin, fuse::ui::Vec2 at, bool down);
     bool postClose(unsigned long long nativeWin);
 
     /// OS tool windows (NativeOptions::osWindows): how many `w` shows now (back to front), each one's native handle,
-    /// its screen rect (physical px) and a read-back of its pixels.
+    /// its screen rect (physical px) and a read-back of its pixels. X11 / Win32; 0 / false elsewhere.
     std::size_t toolWindowCount(const AppWindow& w) const;
     unsigned long long toolWindow(const AppWindow& w, std::size_t i) const;
     fuse::ui::Rect toolWindowScreenRect(const AppWindow& w, std::size_t i) const;
     bool captureToolWindow(const AppWindow& w, std::size_t i, fuse::ui::Image& out);
     /// True while a drag that started in this app is over, or being dropped on, another application
-    /// (NativeOptions::dragAndDrop).
+    /// (NativeOptions::dragAndDrop). X11 / Win32; always false elsewhere (Wayland takes drops but starts no drag).
     bool externalDragActive() const;
 
     // ---- platform services (plan §4.13). Window management itself is on AppWindow (setTitle, setMode, setVisible,
@@ -214,6 +220,9 @@ public:
     ///        custom MIME types as atoms of that name, INCR both ways for large data; lazy items are made when first
     ///        pasted. Other clients can paste while this platform pumps events.
     ///   Win32: CF_UNICODETEXT, CF_DIBV5, RegisterClipboardFormat(mime) for custom types (lazy items are made at once).
+    ///   Wayland: a wl_data_source offering every item's MIME type (text also as UTF8_STRING / text/plain ...); lazy
+    ///        items are made when first pasted. Setting it needs the serial of an input event: a compositor may ignore
+    ///        a set from a window that never had input.
     ///   macOS / iOS / Android: text only (the other formats are refused).
     bool setClipboard(std::vector<ClipboardItem> items);
     bool setClipboardImage(const fuse::ui::Image& image);
@@ -224,7 +233,8 @@ public:
     std::vector<std::string> clipboardFormats();
     /// True while this platform owns the clipboard (another application has not replaced it since).
     bool clipboardOwned() const;
-    /// The X11 PRIMARY selection (select to copy, middle click to paste), text only. False elsewhere.
+    /// The PRIMARY selection (select to copy, middle click to paste), text only: X11 PRIMARY, Wayland
+    /// zwp_primary_selection_v1 when the compositor has it. False elsewhere.
     bool setPrimarySelectionText(std::string_view utf8);
     bool primarySelectionText(std::string& out);
     /// Asks the OS for the light / dark preference and accent colour and stores it in Application::systemTheme()
@@ -235,7 +245,9 @@ public:
     /// ran at start keeps running), else $GTK_THEME, else `gsettings` once, else Unknown.
     SystemTheme systemTheme();
     /// X11: the size (px) themed cursors are loaded at: the XSETTINGS Gtk/CursorThemeSize when a settings manager
-    /// runs, else libXcursor's default (Xcursor.size / $XCURSOR_SIZE). 0 without libXcursor and on other platforms.
+    /// runs, else libXcursor's default (Xcursor.size / $XCURSOR_SIZE). Wayland: $XCURSOR_SIZE, else 24, when the
+    /// backend loads theme cursors itself; 0 when the compositor draws them (wp_cursor_shape_v1). 0 without
+    /// libXcursor / libwayland-cursor and on other platforms.
     int cursorThemeSize() const;
     /// Connected displays (bounds / work area in physical pixels, scale, refresh rate where the platform tells).
     std::vector<DisplayInfo> displays() const;

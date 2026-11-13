@@ -377,14 +377,14 @@ fuse::app::openUrl("https://example.org");
   `zenity`, else `kdialog` (`messageBox`: zenity only); `Unavailable` without a helper and on macOS / iOS / Android.
   `fuse/app/platform.hpp` and `fuse/app/clipboard.hpp` are compatibility headers over `services.hpp` / `native.hpp`
   for code written against the `claude/magical-bassi-815825` branch (the FUSE-UI editor shell).
-- **OS drag and drop** (`NativeOptions::dragAndDrop`, on by default; X11 XDND v5, Win32 OLE). In: files or text
+- **OS drag and drop** (`NativeOptions::dragAndDrop`, on by default; X11 XDND v5, Win32 OLE; Wayland: in only). In: files or text
   dragged from another application hover and drop on the window's drop targets through `UiContext::dragExternalMove /
   dropExternal` (`DragData::type` is `kDragFiles` with LF-separated local paths in `text`, or `kDragText`); the other
-  application is always told "copy". Out: a drag started in the UI (`beginDrag`, a drag source) whose data is
+  application is always told "copy". Out (X11 / Win32): a drag started in the UI (`beginDrag`, a drag source) whose data is
   `kDragText` / `kDragFiles` is offered to the application under the pointer once it leaves the app's windows
   (`NativePlatform::externalDragActive()`), and the source gets `DragEnd` with what the other side did
   (`UiContext::dragFinishExternal`). Other data types stay inside the app.
-- **OS tool windows** (`NativeOptions::osWindows`, off by default; X11 and Win32). `UiContext::setOsWindows(true)`
+- **OS tool windows** (`NativeOptions::osWindows`, off by default; X11 and Win32, ignored on Wayland). `UiContext::setOsWindows(true)`
   takes overlay nodes with the class `os-window` out of the window's draw list and into `windowSurfaces()`;
   `widgets::dockFloat` gives floating docks that class, so with the option on a floated dock is its own borderless OS
   window that can leave the main window (title drag, drop zones, `dockTo` work as before; keys stay with the main
@@ -395,7 +395,8 @@ fuse::app::openUrl("https://example.org");
   whose buttons run `AppWindow::command(Minimize | ToggleMaximize | Close)`, and `chromeHitTest(window, pos)` says what
   a point is (caption, an edge or corner, a button, client). X11: `_MOTIF_WM_HINTS`, drags handed to the window
   manager with `_NET_WM_MOVERESIZE`, or done by the backend when there is no window manager; Win32:
-  `WM_NCCALCSIZE` / `WM_NCHITTEST`. Elsewhere the frame kind is ignored.
+  `WM_NCCALCSIZE` / `WM_NCHITTEST`; Wayland: no decoration is asked for and caption / edge presses become
+  `xdg_toplevel.move` / `resize`. On macOS / iOS / Android the frame kind is ignored.
 - **Saved state.** `AppWindow::saveUiState / restoreUiState` (focus, text-field text, values, check states, scroll
   offsets of nodes with an id) and `saveWindowState / restoreWindowState` (position, size, mode) write to a
   `Settings`; `Application::saveState() / restoreState(bytes)` and `saveStateTo(path) / restoreStateFrom(path)` do it
@@ -404,7 +405,7 @@ fuse::app::openUrl("https://example.org");
   by `show()` (cross-compiled only, never run on a device).
 - **Frame pacing.** `AppWindow::setMaxFrameRate(hz)` caps a window whose presenter does not wait for the display
   (`Presenter::vsynced` false): a `Continuous` window sleeps between frames instead of spinning. 0 = unlimited.
-- **Synthetic input** for tests: `postClick`, `postPointerMove`, `postPointerButton`, `postClose` (X11 / Win32).
+- **Synthetic input** for tests: `postClick`, `postPointerMove`, `postPointerButton`, `postClose` (X11 / Win32 through the OS; Wayland inside the process).
 
 #### Wayland (Linux / FreeBSD)
 
@@ -447,20 +448,31 @@ What the Wayland backend does:
   focus.
 - **Cursors.** `wp_cursor_shape_v1` when offered, else theme cursors through libwayland-cursor (`$XCURSOR_THEME`,
   `$XCURSOR_SIZE`); `Cursor::Hidden` hides it.
-- **Clipboard and drops.** Text through `wl_data_device` (`text/plain;charset=utf-8`, `UTF8_STRING`, `text/plain`);
-  a drop of `text/uri-list` or text from another client goes to `UiContext::dragExternalMove / dropExternal`
+- **Clipboard and drops.** `wl_data_device`: text (`text/plain;charset=utf-8`, `UTF8_STRING`, `text/plain`) and the
+  formats API (`setClipboard`: images as `image/png`, any MIME type, lazy items; `clipboardFormats`,
+  `clipboardData`, `clipboardOwned`); the primary selection through `zwp_primary_selection_v1` where the compositor
+  has it (`setPrimarySelectionText` / `primarySelectionText`). A drop of `text/uri-list` or text from another client goes to `UiContext::dragExternalMove / dropExternal`
   (`kDragFiles` with one path per line, or `kDragText`).
-- **Decorations.** Server side through `xdg-decoration` when the compositor has it (KDE, sway, labwc).
-  Without it (GNOME, weston) the window has no frame: see `KNOWN_GAPS.md`.
+- **Decorations.** Server side through `xdg-decoration` when the compositor has it (KDE, sway, labwc). Without it
+  (GNOME, weston) a System-frame window gets the client-side chrome when it is shown: its frame becomes
+  `WindowFrame::Custom` and `titleBar()` is added as the first child of the root (32 px, inside the window's size;
+  the in-window menu bar goes below it). `NativeOptions::clientDecorations = false` turns that off; an app that
+  builds its own chrome (`WindowDesc::frame` not `System`) is left alone. Limits: `KNOWN_GAPS.md`.
+- **Window chrome.** For `WindowFrame::Custom` / `Borderless` windows and the fallback above: a left press on the
+  caption is `xdg_toplevel.move`, on an edge or corner `xdg_toplevel.resize` (the compositor does the drag), a
+  caption double click toggles maximise, the edges show resize cursors.
+- **Not there**: OS tool windows (`osWindows` is ignored, `toolWindow*` answer 0 / false), drags out of the app
+  (`externalDragActive()` is false), XSETTINGS (`cursorThemeSize()` is `$XCURSOR_SIZE` or 24, 0 with
+  `wp_cursor_shape_v1`).
 - **Popups.** In-window overlays by default; with `NativeOptions::osPopups` each popup is an `xdg_popup` placed by
   an `xdg_positioner` relative to the window (submenus on the menu's popup), grabbed with the press that opened it.
 - **Not possible by protocol**, and reported as such: `setPosition` and `activate` return false, `position()` and
-  `screenOrigin` stay 0, minimise sends the request but `mode()` never reads `Minimized`, `postClick` is delivered
-  inside the process, `capture()` reads the app's last committed buffer.
+  `screenOrigin` stay 0, minimise sends the request but `mode()` never reads `Minimized`, `postClick` and the other
+  synthetic input calls are delivered inside the process, `capture()` reads the app's last committed buffer.
 
 The macOS / iOS parts are compiled in CI only; the Win32 parts are cross-compiled with MinGW and have not been run
 (that includes all of `App/src/native_platform_win32.inl`: tool windows, chrome, OLE drag and drop, clipboard formats,
-dialogs). X11 window-manager paths (`_NET_WM_MOVERESIZE`, decorations off) were exercised without a window manager only.
+dialogs). The Wayland backend has met headless weston and the gate's own compositor only. X11 window-manager paths (`_NET_WM_MOVERESIZE`, decorations off) were exercised without a window manager only.
 
 ### Samples
 
@@ -974,8 +986,8 @@ checks it against the overlay under one scripted event stream.
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
-| `fuse_app_wayland` | Wayland backend: protocol tables against libwayland-client's, xkb keymap vs the fallback table, backend selection, wheel / uri-list maths, clean failure without a compositor (always); then under a headless weston it starts itself (output scale 1 and 2): `wl_shm` buffer == CPU raster, injected click / key, frame throttle, resize, title, size limits, maximise / fullscreen / restore, hide / show, close guard, fractional 1.5 through a viewport, `xdg_popup` menus, a child tool toplevel, the Vulkan presenter when the build has one (skips 77 without libwayland-client or weston) |
-| `fuse_app_wayland_seat` | the seat against an in-process compositor on libwayland-server: real `wl_pointer` / `wl_keyboard` (keymap, Shift, repeat) / `wl_touch` (tap, pan, cancel) events, wheel steps and finger scrolling, cursor shapes, clipboard both ways, a `text/uri-list` drop, text-input-v3 pre-edit / commit, fractional scale, server-side decoration, compositor-sent maximise / restore, compositor exit (skips 77 without libwayland-server / -client / libxkbcommon) |
+| `fuse_app_wayland` | Wayland backend: protocol tables against libwayland-client's, xkb keymap vs the fallback table, backend selection, wheel / uri-list maths, clean failure without a compositor (always); then under a headless weston it starts itself (output scale 1 and 2): `wl_shm` buffer == CPU raster, injected click / key, frame throttle, resize, title, size limits, maximise / fullscreen / restore, hide / show, close guard, fractional 1.5 through a viewport, `xdg_popup` menus, a child tool toplevel, the client-side chrome fallback (weston has no xdg-decoration: title bar in the frame shown, caption / edge presses taken from the UI, maximise and close from its buttons), the Vulkan presenter when the build has one (skips 77 without libwayland-client or weston) |
+| `fuse_app_wayland_seat` | the seat against an in-process compositor on libwayland-server: real `wl_pointer` / `wl_keyboard` (keymap, Shift, repeat) / `wl_touch` (tap, pan, cancel) events, wheel steps and finger scrolling, cursor shapes, clipboard both ways (text; `setClipboard` with text + a lazy custom type + an image, pasted by "another client" as PNG; another client's formats read), the primary selection, synthetic pointer input, a `text/uri-list` drop, text-input-v3 pre-edit / commit, fractional scale, server-side decoration, compositor-sent maximise / restore, client-side chrome (a compositor that answers "client side": the fallback title bar, real presses on an edge / corner / the caption arriving as `xdg_toplevel.resize` / `move` with the press serial, double click = maximise, close button; a `Borderless` window asks for no decoration), `postClose`, compositor exit (skips 77 without libwayland-server / -client / libxkbcommon) |
 | `fuse_app_cursor_resolution`, `fuse_app_menu_description`, `fuse_app_dpi_scale`, `fuse_app_theme_restyle`, `fuse_app_window_state`, `fuse_app_file_dialog_fallback` | platform services, headless: cursor from styles / hooks / hover / drag, `MenuDesc` -> in-window menu bar, scale detection maths and pixel mapping, theme change -> restyle, window state API + events + close guard, toolkit file-dialog fallback and helper command lines |
 | `fuse_app_native_services` | the same on real X11 windows under Xvfb: scale-2 window and popup vs the CPU raster, clicks in window pixels, applied cursors, CLIPBOARD between two connections, position / show / hide / focus / size limits, displays, `zenity` / `xdg-open` helpers (skips 77 without a display) |
 | `fuse_app_saved_state`, `fuse_app_window_chrome`, `fuse_app_dialog_helpers`, `fuse_app_clipboard_png`, `fuse_app_frame_pacing`, `fuse_app_tool_surfaces` | the platform layer, headless (`tests/test_app_platform.cpp`): UI state + window geometry through `saveState` / `restoreState` and a state file; `WindowFrame` / `titleBar` / `chromeHitTest` regions and title-bar commands; zenity / kdialog command lines, colour / path / uri-list / XSETTINGS parsers; the `image/png` clipboard codec; `setMaxFrameRate` on a virtual clock; `setOsWindows` surfaces of floating docks and `dragFinishExternal` |

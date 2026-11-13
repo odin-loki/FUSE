@@ -13,6 +13,10 @@
 // Win32: Custom keeps WS_OVERLAPPEDWINDOW (snap, maximise animations) with the whole window as client area
 //      (WM_NCCALCSIZE) and answers WM_NCHITTEST from chromeHitTest(); Borderless is WS_POPUP with the same hit test.
 //      Compiled with MinGW only: not run (see docs/ui/KNOWN_GAPS.md).
+// Wayland: no decoration is asked for; a press on the caption / an edge is handed to the compositor with
+//      xdg_toplevel.move / resize (the compositor then owns the pointer until the drag ends), a caption double click
+//      toggles maximise. A System-frame window the compositor does not decorate gets this chrome by itself
+//      (NativeOptions::clientDecorations).
 // macOS / iOS / Android: the frame kind is ignored (the system frame stays); the title bar is an ordinary widget row.
 #pragma once
 

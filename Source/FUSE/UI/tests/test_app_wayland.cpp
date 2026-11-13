@@ -21,6 +21,7 @@
 //   * the Vulkan presenter on a VK_KHR_wayland_surface when the build has Vulkan and an ICD offers the extension
 // Exit 77 (skip) when the library is missing or no compositor can be run.
 #include "../App/src/wayland_internal.hpp"
+#include "fuse/app/chrome.hpp"
 #include "fuse/app/native.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 #include "test_util.hpp"
@@ -229,7 +230,9 @@ void onEvent(void* user, app::AppWindow&, const app::WindowEvent& e) {
 /// One run on the current compositor: software window, input, window management; `scale` the output's scale.
 void softwareRun(int scale) {
     app::Application a{{.name = "gate_wayland", .loadSettings = false}};
-    app::NativePlatform native(a, {.vulkan = false}); // $WAYLAND_DISPLAY is set: Wayland without being asked
+    // $WAYLAND_DISPLAY is set: Wayland without being asked. weston has no xdg-decoration; the client-side fallback
+    // (a title bar in the UI) has its own run below, the others keep their documents as written
+    app::NativePlatform native(a, {.vulkan = false, .clientDecorations = false});
     UI_CHECK(native.available());
     UI_CHECK(native.backend() == NativeBackend::Wayland);
     if (native.backend() != NativeBackend::Wayland) {
@@ -387,7 +390,7 @@ void fractionalRun() {
     ::setenv("FUSE_UI_SCALE", "1.5", 1);
     {
         app::Application a{{.name = "gate_wayland_frac", .loadSettings = false}};
-        app::NativePlatform native(a, {.vulkan = false});
+        app::NativePlatform native(a, {.vulkan = false, .clientDecorations = false});
         UI_CHECK(native.backend() == NativeBackend::Wayland);
         if (native.backend() == NativeBackend::Wayland) {
             wl::Backend* b = wl::current();
@@ -419,7 +422,7 @@ void fractionalRun() {
     ::unsetenv("FUSE_UI_SCALE");
     { // NativeOptions::scale wins the same way
         app::Application a{{.name = "gate_wayland_opt", .loadSettings = false}};
-        app::NativePlatform native(a, {.vulkan = false, .scale = 2.f});
+        app::NativePlatform native(a, {.vulkan = false, .scale = 2.f, .clientDecorations = false});
         auto& w = a.createWindow({.title = "option scale", .width = 100, .height = 80});
         native.show(w);
         presentAtLeast(a, w, 1);
@@ -432,7 +435,7 @@ void fractionalRun() {
 /// NativeOptions::osPopups: xdg_popup surfaces, and a child tool toplevel at the protocol layer.
 void popupRun() {
     app::Application a{{.name = "gate_wayland_popups", .loadSettings = false}};
-    app::NativePlatform native(a, {.vulkan = false, .osPopups = true});
+    app::NativePlatform native(a, {.vulkan = false, .osPopups = true, .clientDecorations = false});
     UI_CHECK(native.backend() == NativeBackend::Wayland);
     if (native.backend() != NativeBackend::Wayland) return;
     wl::Backend* b = wl::current();
@@ -512,10 +515,72 @@ void popupRun() {
     }
 }
 
+/// weston's desktop shell has no xdg-decoration: with NativeOptions::clientDecorations (the default) a System-frame
+/// window gets the client-side chrome (chrome.hpp) when it is shown.
+void decorationRun() {
+    app::Application a{{.name = "gate_wayland_csd", .loadSettings = false}};
+    app::NativePlatform native(a, {.vulkan = false});
+    UI_CHECK(native.backend() == NativeBackend::Wayland);
+    if (native.backend() != NativeBackend::Wayland) return;
+    wl::Backend* b = wl::current();
+    UI_CHECK(!wl::hasGlobal(b, "zxdg_decoration_manager_v1")); // what this run is about
+    auto& w = a.createWindow({.title = "undecorated", .width = 320, .height = 200});
+    UiContext& ui = w.ui();
+    ui.setCss(ui.root(), "flex-direction", "column");
+    int clicks = 0;
+    const NodeHandle body = fuse::ui::widgets::button(ui, ui.root(), "Body", "body");
+    ui.connect(body, SignalKind::Clicked, [&clicks](UiContext&, NodeHandle, const SignalArgs&) { ++clicks; });
+    UI_CHECK(native.show(w) == app::PresenterKind::Software);
+    wl::Window* win = wl::findWindow(b, w);
+    UI_CHECK(win != nullptr && !wl::serverDecorated(win));
+    if (!win) return;
+    const NodeHandle bar = ui.find("titlebar");
+    UI_CHECK(w.chrome().frame == app::WindowFrame::Custom && ui.alive(bar) && ui.firstChild(ui.root()) == bar);
+    UI_CHECK(ui.text(ui.find("titlebar.title")) == "undecorated");
+    presentAtLeast(a, w, 1);
+    settle(a);
+    UI_CHECK(ui.rect(bar).y == 0.f && ui.rect(bar).h == 32.f && ui.rect(body).y >= 32.f);
+    Image shown;
+    UI_CHECK(native.capture(w, shown));
+    const Image ref = w.rasterize({});
+    UI_CHECK(shown.width == ref.width && shown.height == ref.height);
+    std::size_t off = shown.pixels.size() == ref.pixels.size() ? 0 : 1;
+    for (std::size_t i = 0; !off && i < ref.pixels.size(); ++i) off += (shown.pixels[i] & 0xFFFFFFu) != (ref.pixels[i] & 0xFFFFFFu);
+    UI_CHECK(off == 0); // the bar is in the frame shown
+    UI_CHECK(app::chromeHitTest(w, {100.f, 16.f}) == app::HitArea::Caption && app::chromeHitTest(w, {160.f, 198.f}) == app::HitArea::Bottom);
+    // a press on the caption / an edge goes to the compositor (xdg_toplevel.move / resize), not to the UI. Injected
+    // presses have no serial, so weston does not start a drag here; real ones are in fuse_app_wayland_seat.
+    const unsigned long long h = native.nativeWindow(w);
+    UI_CHECK(native.postPointerMove(h, {100.f, 16.f}) && native.postPointerButton(h, {100.f, 16.f}, true));
+    UI_CHECK(wl::chromeMoves(win) == 1u && !ui.alive(ui.pressed()));
+    native.postPointerButton(h, {100.f, 16.f}, false);
+    UI_CHECK(native.postPointerMove(h, {160.f, 198.f}) && native.postPointerButton(h, {160.f, 198.f}, true));
+    UI_CHECK(wl::chromeResizes(win) == 1u);
+    native.postPointerButton(h, {160.f, 198.f}, false);
+    settle(a, 5);
+    UI_CHECK(native.cursor(w) == Cursor::Arrow || native.cursor(w) == Cursor::ResizeV); // ResizeV once a pointer entered
+    // the body is clicked as before; the title bar's buttons work: maximise through the compositor, then close
+    const Rect rb = ui.rect(body);
+    UI_CHECK(native.postClick(h, {rb.x + rb.w * 0.5f, rb.y + rb.h * 0.5f}));
+    settle(a, 5);
+    UI_CHECK(clicks == 1);
+    const Rect rm = ui.rect(ui.find("titlebar.max"));
+    UI_CHECK(native.postClick(h, {rm.x + rm.w * 0.5f, rm.y + rm.h * 0.5f}));
+    for (int i = 0; i < 300 && w.mode() != app::WindowMode::Maximized; ++i) a.step(0.004f);
+    UI_CHECK(w.mode() == app::WindowMode::Maximized);
+    settle(a);
+    UI_CHECK(app::chromeHitTest(w, {160.f, w.size().h - 2.f}) == app::HitArea::Client); // no resize edges while maximised
+    const Rect rc = ui.rect(ui.find("titlebar.close"));
+    UI_CHECK(app::chromeHitTest(w, {rc.x + 4.f, rc.y + 4.f}) == app::HitArea::Close);
+    UI_CHECK(native.postClick(h, {rc.x + rc.w * 0.5f, rc.y + rc.h * 0.5f}));
+    for (int i = 0; i < 300 && a.windowCount() > 0; ++i) a.step(0.004f);
+    UI_CHECK(a.windowCount() == 0);
+}
+
 /// The Vulkan presenter on the wl_surface. Returns false when this build / machine has none (not a failure).
 bool vulkanRun() {
     app::Application a{{.name = "gate_wayland_vk", .loadSettings = false}};
-    app::NativePlatform native(a);
+    app::NativePlatform native(a, {.clientDecorations = false});
     UI_CHECK(native.backend() == NativeBackend::Wayland);
     auto& w = a.createWindow({.title = "fuse_app wayland vulkan", .width = 256, .height = 160});
     UI_CHECK(w.loadText(kDoc).has_value());
@@ -583,6 +648,7 @@ int main() {
         if (scale == 1) {
             fractionalRun();
             popupRun();
+            decorationRun();
             if (!vulkanRun()) std::printf("fuse_app_wayland: the Vulkan presenter did not run here\n");
         }
     }

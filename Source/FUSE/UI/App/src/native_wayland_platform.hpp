@@ -11,8 +11,11 @@
 //  - nativeWindow() is the wl_surface*, nativeDisplay() the wl_display*
 //  - postClick is delivered inside the process (nothing can post input to a surface)
 //  - capture() reads the last committed wl_shm buffer (software) or the swapchain (Vulkan), not the screen
-//  - decorations: server side through xdg-decoration when the compositor offers it; none otherwise (no client-side
-//    frame is drawn here: wl::beginMove / beginResize are what one would call)
+//  - decorations: server side through xdg-decoration when the compositor offers it. Otherwise (GNOME, weston) a
+//    System-frame window gets the client-side chrome of chrome.hpp (NativeOptions::clientDecorations): a title bar as
+//    the root's first child and resize edges; caption / edge presses go to xdg_toplevel.move / resize
+//  - one clipboard per seat with any MIME types (wl_data_device; zwp_primary_selection_v1 for the primary selection)
+//  - no tool windows, no drag out of the app: toolWindow* report nothing, externalDragActive() is false
 #pragma once
 
 #if !defined(_WIN32) && !defined(__ANDROID__) && !defined(__APPLE__)
@@ -54,6 +57,20 @@ public:
     bool setClipboardText(std::string_view utf8);
     bool clipboardText(std::string& out);
     bool postClick(unsigned long long nativeWin, fuse::ui::Vec2 at);
+    /// Delivered inside the process like postClick. `kind` 0 move, 1 left press, 2 left release, 3 close request.
+    bool postInput(unsigned long long nativeWin, fuse::ui::Vec2 at, int kind);
+    // clipboard formats (services.hpp ClipboardItem): every item is offered under its MIME type (text under the usual
+    // text types), lazy items are made when first pasted
+    bool setClipboard(std::vector<ClipboardItem> items);
+    bool clipboardData(std::string_view mime, std::vector<fuse::ui::u8>& out);
+    std::vector<std::string> clipboardFormats();
+    bool clipboardOwned() const;
+    /// zwp_primary_selection_v1; false when the compositor does not have it.
+    bool setPrimarySelectionText(std::string_view utf8);
+    bool primarySelectionText(std::string& out);
+    int cursorThemeSize() const;
+    /// True when `w` was given the client-side chrome because the compositor does not decorate it.
+    bool clientDecorated(const AppWindow& w) const;
     std::vector<DisplayInfo> displays() const;
 
     struct State;

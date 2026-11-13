@@ -491,9 +491,13 @@ struct NativePlatform::Impl {
 // The Wayland seam: with the Wayland backend open (Linux / BSD) the public call goes to it.
 #if defined(_WIN32)
 #define FUSE_APP_WL(call)
+#define FUSE_APP_WL_NONE(value)
 #else
 #define FUSE_APP_WL(call) \
     if (m->wl) return m->wl->call
+/// For what the Wayland backend does not have: the "unsupported" answer, before any X11 state is looked at.
+#define FUSE_APP_WL_NONE(value) \
+    if (m->wl) return value
 #endif
 
 void NativePlatform::Impl::syncPopups(Rec& r) {
@@ -1494,6 +1498,7 @@ bool NativePlatform::capturePopup(const AppWindow& w, std::size_t i, Image& out)
     return r && i < r->popups.size() && m->capturePopupOs(r->popups[i], out);
 }
 Vec2 NativePlatform::screenOrigin(const AppWindow& w) const {
+    FUSE_APP_WL_NONE(Vec2{}); // Wayland has no global coordinates
     const Impl::Rec* r = m->find(w);
     int ox = 0, oy = 0;
     Rect work;

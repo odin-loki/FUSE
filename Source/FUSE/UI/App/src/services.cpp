@@ -182,7 +182,9 @@ void AppWindow::rebuildMenu() {
         if (m_ui.alive(m_menuBar)) m_ui.destroy(m_menuBar);
         const NodeHandle parent = m_ui.alive(m_menuParent) ? m_menuParent : m_ui.root();
         m_menuBar = widgets::menuBar(m_ui, parent);
-        if (const NodeHandle first = m_ui.firstChild(parent); first != m_menuBar) m_ui.moveTo(m_menuBar, parent, first);
+        NodeHandle first = m_ui.firstChild(parent);
+        if (first == m_chrome.caption) first = m_ui.nextSibling(first); // below a client-side title bar (chrome.hpp)
+        if (first != m_menuBar) m_ui.moveTo(m_menuBar, parent, first);
         m_menuButtons.clear();
     }
     m_menuLines.resize(m_menu.menus.size());

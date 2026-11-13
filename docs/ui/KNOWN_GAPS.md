@@ -11,7 +11,7 @@ says where each one is and what blocks it.
 
 The merged branch `gui-framework` is in the same position: part of its `Extras/` module is live (`fuse_ui_os`,
 `fuse_ui_extras`: undo, declarative bindings, PDF, desktop helpers, tray, web view, charts, 3D data visualisation);
-everything else of it (a second Wayland backend whose drag-out and subsurface tool windows are not ported, OS drag and drop, `@keyframes` and the other CSS engine work, GPU
+everything else of it (a second Wayland backend whose drag-out and subsurface tool windows are not ported, `@keyframes` and the other CSS engine work, GPU
 paths / filters / HDR, more widgets, rich text, SVG documents, media) is in the tree unbuilt and listed in
 [`archive/PORT_gui_framework.md`](archive/PORT_gui_framework.md), which also says which of the two branches'
 implementations to port where both have one. Its FORGE submodule was not taken.
@@ -97,8 +97,8 @@ pushed after those CI runs and re-checked on Linux only.
 ### Platform
 
 - Backends do not feed the newer input APIs: pinch / rotate (only the primary touch is forwarded on Android and
-  iOS), pen pressure / tilt. OS file / text drops and drags out of the app exist on X11 (XDND) and Win32 (OLE,
-  not run) only: not on macOS, iOS, Android or Wayland. Out of the app only `kDragText` / `kDragFiles` travel (no
+  iOS), pen pressure / tilt. OS file / text drops exist on X11 (XDND), Wayland (`wl_data_device`) and Win32 (OLE,
+  not run); drags out of the app on X11 and Win32 only. Neither on macOS, iOS or Android. Out of the app only `kDragText` / `kDragFiles` travel (no
   custom MIME types, no drag image for the other application); drops larger than one X property (INCR) are refused;
   the other application is always answered "copy".
 - Android: no IME string commits (needs a Java `InputConnection`), no pointer icons, no system file picker, no
@@ -114,19 +114,41 @@ pushed after those CI runs and re-checked on Linux only.
     compositor. It has not run on GNOME (mutter), KDE (kwin), sway / wlroots or on real hardware; the seat paths
     (pointer, keyboard, touch, clipboard, drops, IME, fractional scale, cursor shapes) have only met the in-process
     compositor, which checks the wire protocol and not a desktop's behaviour.
-  - Decorations: server side through `xdg-decoration` only. GNOME does not offer it, so windows there have no title
-    bar or borders (no client-side frame is drawn and libdecor is not used). `wl::beginMove` / `beginResize` exist for
-    a client-side frame; nothing calls them yet.
-  - No drag from the app out to other clients (`wl_data_device.start_drag`), no primary selection on
-    `NativePlatform` (the protocol layer has it), clipboard is text only, no tablet tools, no `xdg-activation`
-    (`AppWindow::activate()` reports false), no `xdg_popup.reposition` (a popup that moves is made again), no
-    tool-window API on `NativePlatform` (the protocol layer has child toplevels).
+  - Decorations: server side through `xdg-decoration` where offered. Elsewhere (GNOME, weston) a System-frame
+    window gets the toolkit's client-side chrome when shown (`NativeOptions::clientDecorations`, on by default):
+    `titleBar()` as the root's first child plus 6 px resize edges. That bar is a widget row, not a desktop title
+    bar: no shadow or rounded corners, no window menu (`xdg_toplevel.show_window_menu`), no desktop theme or button
+    layout, it takes its 32 px out of the window's size, it assumes the root lays its children out in a column, and
+    it is not added when the app already set `AppWindow::chrome().caption`. libdecor is not used. The compositor's
+    answer is read once, at `show()`; a compositor that changes the decoration mode later is not followed.
+  - Custom chrome (`WindowFrame::Custom` / `Borderless`, and the fallback above): caption and edge presses are
+    handed to the compositor (`xdg_toplevel.move` / `resize`) from `wl_pointer` presses only: a touch on the caption
+    does not drag the window. The requests with a real press serial were checked against the in-process compositor
+    (it records them); no compositor has actually moved or resized a window by them, since weston's headless
+    backend has no pointer and injected presses carry no serial.
+  - Clipboard formats (`setClipboard`, images, custom MIME types, lazy items) and the primary selection
+    (`zwp_primary_selection_v1`) were exchanged with the in-process compositor only, not with another client
+    through a desktop compositor. Setting a selection needs an input serial: a window that never had input may be
+    ignored by the compositor (the call still returns true). A lazy item that refuses stays in the offer and
+    answers with no data. weston has no primary selection: `setPrimarySelectionText` returns false there.
+  - No drag from the app out to other clients (`wl_data_device.start_drag`; `externalDragActive()` is always
+    false). No OS tool windows: `NativeOptions::osWindows` is ignored, floating docks stay in-window panels and
+    `toolWindowCount / toolWindow / toolWindowScreenRect / captureToolWindow` answer 0 / false (the protocol layer
+    can make child toplevels, `wl::createTool`, but a client cannot place them, so a floating dock could not follow
+    its title drag or the main window; wiring that needs the dock widget to hand its drag to `wl::moveChild`).
+  - No XSETTINGS equivalent (the settings portal is not read): the theme comes from `$GTK_THEME` / `gsettings`
+    once, the scale from the compositor, `cursorThemeSize()` is `$XCURSOR_SIZE` or 24, and 0 when the compositor
+    draws the cursors (`wp_cursor_shape_v1`). Saved window state restores size and mode, not the position.
+  - No tablet tools, no `xdg-activation` (`AppWindow::activate()` reports false), no `xdg_popup.reposition` (a
+    popup that moves is made again).
   - By protocol: no window position (`setPosition` false, `position()` and `screenOrigin` stay 0), minimise has no
-    state (`mode()` never reports `Minimized`), `postClick` is delivered in-process, `capture()` reads the last
-    buffer the app committed, not the screen.
+    state (`mode()` never reports `Minimized`), `postClick / postPointerMove / postPointerButton / postClose` are
+    delivered in-process, `capture()` reads the last buffer the app committed, not the screen.
   - The Vulkan presenter on `VK_KHR_wayland_surface` was run with lavapipe only (a private build against an unpacked
     Mesa; the default build on the gate machine has no Vulkan loader, so the gate's Vulkan part does not run there).
-    No frame-callback throttle on the Vulkan path (the swapchain's FIFO mode paces it).
+    No frame-callback throttle on the Vulkan path (the swapchain's FIFO mode paces it; `Presenter::vsynced` is set
+    for it). `wl_shm` windows are not `vsynced`: `setMaxFrameRate` applies to them, on top of the frame-callback
+    throttle (that combination has only the headless `fuse_app_frame_pacing` gate behind it).
   - Key repeat runs on the event pump's timeout; keys held while the loop is stalled repeat at most 8 times per
     wake-up.
 - Popups as separate OS windows exist on X11 / Win32 / Wayland (`xdg_popup`). One OS window per process on Android /
@@ -138,15 +160,15 @@ pushed after those CI runs and re-checked on Linux only.
   `fuse_ui_extras` (verified on Linux only) and are not tied to `fuse_app` windows. Native notifications
   (`desktop::Notifier`) are D-Bus only; Windows and macOS go through the helper programs, without click callbacks
   (except the Win32 tray balloon, not run).
-- OS tool windows for floating docks: X11 and Win32 only, off by default. They are not hidden when the main window
+- OS tool windows for floating docks: X11 and Win32 only (not Wayland, see above), off by default. They are not hidden when the main window
   is minimised or hidden, have no task-bar / pager presence of their own, and on X11 are override-redirect (no
   window-manager stacking; they stay above other applications' windows).
-- Custom window chrome: X11 and Win32 only (the frame kind is ignored elsewhere). No snap-layout flyout
+- Custom window chrome: X11, Wayland and Win32 (the frame kind is ignored on macOS / iOS / Android). No snap-layout flyout
   integration beyond what `HTMAXBUTTON` gives, no system menu, no shadow for `Borderless` windows on X11.
 - Saved state covers nodes with an id only and the widget kinds listed in `AppWindow::saveUiState`; model / view
   selections, tree expansion, dock layouts (`dockSaveLayout`) and splitter positions are the app's to add through
   `StateHooks`. `restoreWindowState` after `show()` does not resize the OS window (restore before showing).
-- Clipboard: Win32 has no delayed rendering (lazy items are made when the clipboard is set); images on macOS / iOS /
+- Clipboard: formats beyond text on X11, Wayland and Win32. Win32 has no delayed rendering (lazy items are made when the clipboard is set); images on macOS / iOS /
   Android are not supported.
 - `applyTheme` adds a style sheet per call (the style engine has no sheet removal).
 - In-window menus built from `MenuDesc` show `[x]` text for checkable items and do not grey disabled ones.
@@ -184,7 +206,7 @@ pushed after those CI runs and re-checked on Linux only.
 - Transitions do not follow inherited values into descendants; no `@keyframes` in style sheets.
 - RTL does not mirror the inside of self-painting widgets or scroll origins.
 - Docks: no tab groups inside a floating dock; floating docks are panels inside the window unless the host turns on
-  OS tool windows (`NativeOptions::osWindows`, X11 / Win32); a destroyed dock area does not destroy its floating docks.
+  OS tool windows (`NativeOptions::osWindows`, X11 / Win32, not Wayland); a destroyed dock area does not destroy its floating docks.
 - Model / view: rows are single-line and fixed-height; a filtered or sorted proxy rebuilds fully on any source
   change; tree selection is by visible row (collapsing deselects); `SqliteModel` is not async; the combo-box cell
   editor commits on Enter / Tab / click-away, not on picking from the popup.
