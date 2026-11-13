@@ -185,6 +185,9 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         const Rect area = bounds.intersect(clip.r);
         if (area.empty()) continue;
         if (c.op == DrawOp::Glyph && !atlas) continue;
+        // Colour-image and MSDF glyphs live in the atlas' RGBA page, which this backend does not upload: not drawn on
+        // the GPU path (draw_list.hpp, kGlyphColor / kGlyphMsdf). The CPU rasteriser is the reference for them.
+        if (c.op == DrawOp::Glyph && c.gradient != kGlyphCoverage) continue;
         if (c.op == DrawOp::Image && c.image >= imageCount) continue;
         GpuCmd g{};
         put4(g.rect, rect.x, rect.y, rect.w, rect.h);

@@ -30,6 +30,9 @@ inline constexpr u32 kCookedVersion = 4;
 struct CookInfo {
     u32 nodes = 0, bindings = 0, instructions = 0;
     std::vector<std::string> classes; ///< widget classes the document creates (sorted, unique)
+    /// Icon names the document's nodes ask for ("icon" keys and inline `icon` styles; sorted, unique): what an icon
+    /// pack shipped with the document has to hold (fuse/ui/icon_set.hpp; names of built-in icons are listed too).
+    std::vector<std::string> icons;
 };
 
 /// `.fuseui` text -> cooked document. Fails on JSON errors, bad bindings or a bad style sheet.

@@ -10,7 +10,20 @@
 #include <cstdlib>
 #include <string>
 
+#ifndef FUSE_UI_TEST_TEXT_COOKED
+#define FUSE_UI_TEST_TEXT_COOKED 0
+#endif
+
 namespace fuse::ui::test {
+
+/// A test-data font: tests/data/<name>.ttf, or its pack cooked at build time in COOKED builds.
+inline std::string testFontPath(const char* name) {
+#if FUSE_UI_TEST_TEXT_COOKED && defined(FUSE_UI_TEST_COOKED_FONTS)
+    return std::string(FUSE_UI_TEST_COOKED_FONTS) + "/" + name + ".fusefont";
+#else
+    return std::string("data/") + name + ".ttf";
+#endif
+}
 
 inline int& failures() {
     static int f = 0;

@@ -829,6 +829,11 @@ int main(int argc, char** argv) {
     const char* out = nullptr;
     for (int i = 1; i < argc; ++i)
         if (std::strncmp(argv[i], "--out=", 6) == 0) out = argv[i] + 6;
+    if (fuse::text::textProfile() == fuse::text::TextProfile::Cooked) {
+        // .fusefont packs carry no face names, no outlines to shear and one weight; installed .ttf files cannot be loaded
+        std::printf("fuse_text_font_styles: COOKED text profile (packs only), skipped\n");
+        return 77;
+    }
     const TempFonts tmp;
     gateFaces();
     gateSynthesis();

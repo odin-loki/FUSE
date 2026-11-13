@@ -58,6 +58,10 @@ void DrawList::scale(f32 s) {
         if (c.op == DrawOp::PopClip) continue;
         if (c.op == DrawOp::Glyph) {
             if (c.devicePx) { c.devicePx = 0; continue; }
+            if (c.gradient == kGlyphMsdf) { // a distance field is resolution independent: the quad scales
+                c.rect = {c.rect.x * s, c.rect.y * s, c.rect.w * s, c.rect.h * s};
+                continue;
+            }
             c.rect.x = std::round(c.rect.x * s);
             c.rect.y = std::round(c.rect.y * s);
             continue;
@@ -277,6 +281,41 @@ std::size_t matchingPop(const DrawList& list, std::size_t i) {
     return cmds.size();
 }
 
+namespace {
+// ---- colour / MSDF glyphs (atlas colour page: side size / 2, RGBA8, after the coverage page) ----
+inline const u8* colorTexel(const u8* atlas, int size, int x, int y) {
+    const int cs = size / 2;
+    return atlas + std::size_t(size) * std::size_t(size) + (std::size_t(y) * std::size_t(cs) + std::size_t(x)) * 4;
+}
+
+// MSDF coverage at pixel centre (px, py): the glyph's texels (tw x th at u, v) stretched over `rect`, sampled
+// bilinearly (edge-clamped), median of RGB, scaled by the screen-space distance range (`blur` = range in texels).
+inline f32 msdfCoverage(const DrawCmd& c, const u8* atlas, int size, f32 px, f32 py) {
+    if (c.tw == 0 || c.th == 0 || c.rect.w <= 0.f || c.rect.h <= 0.f) return 0.f;
+    const f32 tw = f32(c.tw), th = f32(c.th);
+    const f32 sx = (px - c.rect.x) * tw / c.rect.w - 0.5f;
+    const f32 sy = (py - c.rect.y) * th / c.rect.h - 0.5f;
+    const f32 fx0 = std::floor(sx), fy0 = std::floor(sy);
+    const f32 fx = sx - fx0, fy = sy - fy0;
+    const int x0 = std::clamp(int(fx0), 0, c.tw - 1), x1 = std::clamp(int(fx0) + 1, 0, c.tw - 1);
+    const int y0 = std::clamp(int(fy0), 0, c.th - 1), y1 = std::clamp(int(fy0) + 1, 0, c.th - 1);
+    const u8* t00 = colorTexel(atlas, size, c.u + x0, c.v + y0);
+    const u8* t10 = colorTexel(atlas, size, c.u + x1, c.v + y0);
+    const u8* t01 = colorTexel(atlas, size, c.u + x0, c.v + y1);
+    const u8* t11 = colorTexel(atlas, size, c.u + x1, c.v + y1);
+    f32 ch[3];
+    for (int k = 0; k < 3; ++k) {
+        const f32 a00 = f32(t00[k]) / 255.f, a10 = f32(t10[k]) / 255.f, a01 = f32(t01[k]) / 255.f, a11 = f32(t11[k]) / 255.f;
+        const f32 top = a00 + (a10 - a00) * fx;
+        const f32 bot = a01 + (a11 - a01) * fx;
+        ch[k] = top + (bot - top) * fy;
+    }
+    const f32 med = std::max(std::min(ch[0], ch[1]), std::min(std::max(ch[0], ch[1]), ch[2]));
+    const f32 spr = c.blur * c.rect.w / tw;
+    return std::clamp(spr * (med - 0.5f) + 0.5f, 0.f, 1.f);
+}
+} // namespace
+
 void detail::renderRange(const RasterEnv& env, const DrawList& list, std::size_t first, std::size_t last, const Surface& target,
                          Rect scissor, int level, bool groupOpacityOne) {
     const u8* const atlas = env.src.atlas;
@@ -383,7 +422,19 @@ void detail::renderRange(const RasterEnv& env, const DrawList& list, std::size_t
                 }
                 case DrawOp::Glyph: {
                     if (!atlas) break;
+                    if (c.gradient == kGlyphMsdf) {
+                        const f32 cov = msdfCoverage(c, atlas, atlasSize, px, py) * clipCov;
+                        if (cov > 0.f) blend(row[x], premul(c.fill, cov));
+                        break;
+                    }
                     const int gx = x - int(c.rect.x), gy = y - int(c.rect.y);
+                    if (c.gradient == kGlyphColor) {
+                        if (gx < 0 || gy < 0 || gx >= c.tw || gy >= c.th) break;
+                        const u8* t = colorTexel(atlas, atlasSize, c.u + gx, c.v + gy);
+                        const f32 k = std::clamp(c.fill.a, 0.f, 1.f) * clipCov;
+                        if (t[3]) blend(row[x], {f32(t[0]) / 255.f * k, f32(t[1]) / 255.f * k, f32(t[2]) / 255.f * k, f32(t[3]) / 255.f * k});
+                        break;
+                    }
                     if (gx < 0 || gy < 0 || gx >= c.tw || gy >= c.th) break;
                     const u8 a = atlas[std::size_t(c.v + gy) * std::size_t(atlasSize) + std::size_t(c.u + gx)];
                     if (a) blend(row[x], premul(c.fill, f32(a) / 255.f * clipCov));

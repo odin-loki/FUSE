@@ -45,6 +45,38 @@ constexpr NumData kNum[] = {
     {"zh", ".", ",", 3, 3, 1, "-", "", "%"},
     {"ko", ".", ",", 3, 3, 1, "-", "", "%"},
     {"tr", ",", ".", 3, 3, 1, "-", "%", ""},
+    // Rows that came with fuse/text/i18n.hpp when its table was folded into this one: separators and grouping as that
+    // API had them (gate fuse_text_i18n). Their minus and percent forms are the plain "-" / "%": not checked against
+    // CLDR (several of these locales put a no-break space before the percent sign).
+    {"bn", ".", ",", 3, 2, 1, "-", "", "%"},
+    {"en-za", ",", NBSP, 3, 3, 1, "-", "", "%"},
+    {"th", ".", ",", 3, 3, 1, "-", "", "%"},
+    {"de-li", ".", "\xE2\x80\x99", 3, 3, 1, "-", "", "%"},
+    {"it-ch", ".", "\xE2\x80\x99", 3, 3, 1, "-", "", "%"},
+    {"es-mx", ".", ",", 3, 3, 1, "-", "", "%"},
+    {"es-us", ".", ",", 3, 3, 1, "-", "", "%"},
+    {"ca", ",", ".", 3, 3, 2, "-", "", "%"},
+    {"gl", ",", ".", 3, 3, 1, "-", "", "%"},
+    {"id", ",", ".", 3, 3, 1, "-", "", "%"},
+    {"da", ",", ".", 3, 3, 1, "-", "", "%"},
+    {"el", ",", ".", 3, 3, 1, "-", "", "%"},
+    {"hr", ",", ".", 3, 3, 2, "-", "", "%"},
+    {"sl", ",", ".", 3, 3, 1, "-", "", "%"},
+    {"sr", ",", ".", 3, 3, 1, "-", "", "%"},
+    {"ro", ",", ".", 3, 3, 1, "-", "", "%"},
+    {"vi", ",", ".", 3, 3, 1, "-", "", "%"},
+    {"fr-ca", ",", NBSP, 3, 3, 1, "-", "", "%"},
+    {"nb", ",", NBSP, 3, 3, 1, "-", "", "%"},
+    {"nn", ",", NBSP, 3, 3, 1, "-", "", "%"},
+    {"no", ",", NBSP, 3, 3, 1, "-", "", "%"},
+    {"sk", ",", NBSP, 3, 3, 1, "-", "", "%"},
+    {"be", ",", NBSP, 3, 3, 1, "-", "", "%"},
+    {"bg", ",", NBSP, 3, 3, 2, "-", "", "%"},
+    {"hu", ",", NBSP, 3, 3, 1, "-", "", "%"},
+    {"lt", ",", NBSP, 3, 3, 1, "-", "", "%"},
+    {"lv", ",", NBSP, 3, 3, 1, "-", "", "%"},
+    {"et", ",", NBSP, 3, 3, 2, "-", "", "%"},
+    {"kk", ",", NBSP, 3, 3, 1, "-", "", "%"},
 };
 
 using Months = std::string_view[12];
@@ -197,6 +229,15 @@ std::string formatPercent(std::string_view locale, double fraction, int maxFract
     out += nd.pctSuffix;
     return out;
 }
+
+namespace detail {
+std::size_t numberRowCount() { return std::size(kNum); }
+NumberRow numberRow(std::size_t index) {
+    const NumData& n = kNum[index < std::size(kNum) ? index : 0];
+    return {n.decimal, n.group, n.primary, n.secondary, n.minGrouping};
+}
+std::size_t numberRowIndex(std::string_view locale) { return std::size_t(&lookup(kNum, locale) - kNum); }
+} // namespace detail
 
 std::string_view decimalSeparator(std::string_view locale) { return lookup(kNum, locale).decimal; }
 std::string_view groupingSeparator(std::string_view locale) { return lookup(kNum, locale).group; }

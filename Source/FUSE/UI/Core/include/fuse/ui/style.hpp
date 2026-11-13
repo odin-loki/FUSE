@@ -163,6 +163,8 @@ enum class MotionKind : u8 { None, Fade, SlideUp, SlideDown };
 
 inline constexpr int kMaxGridTracks = 8;
 inline constexpr int kMaxFontFamilies = 4; ///< names kept from a font-family list
+inline constexpr int kMaxFontVariations = 4; ///< font-variation-settings entries kept
+inline constexpr int kMaxFontFeatures = 8;   ///< font-feature-settings entries kept
 enum TextDecorationBits : u8 { kTextUnderline = 1, kTextLineThrough = 2 };
 
 enum class Prop : u8;
@@ -216,6 +218,19 @@ struct ComputedStyle {
     /// Line box height in pixels for the layout (0 = natural).
     f32 lineHeightPx() const { return lineHeight.unit == Unit::Auto ? 0.f : lineHeight.resolve(fontSize, 0.f); }
     Cursor cursor = Cursor::Auto; ///< cursor: auto | default | text | pointer | ew-resize | ... (not inherited; see UiContext::cursor)
+    // variable fonts and OpenType features (inherited). They act on a variable face once the application called
+    // fuse::text::enableVariableFonts(): font-weight drives wght, font-stretch wdth, font-size opsz, then
+    // font-variation-settings sets axes directly. font-feature-settings needs the FULL text profile (HarfBuzz).
+    f32 fontStretch = 100.f;   ///< font-stretch percentage (50..200; normal = 100)
+    u8 fontVariationCount = 0; ///< font-variation-settings ("wght" 650, "opsz" 12): (tag, value)
+    std::array<u32, kMaxFontVariations> fontVariationTags{};
+    std::array<f32, kMaxFontVariations> fontVariationValues{};
+    u8 fontFeatureCount = 0;   ///< font-feature-settings ("tnum", "liga" 0): (tag, value); 0 off, 1 on, n alternate n
+    std::array<u32, kMaxFontFeatures> fontFeatureTags{};
+    std::array<u32, kMaxFontFeatures> fontFeatureValues{};
+    // icon (not inherited): drawn left of the text by buttons / tool buttons (fuse/ui/icon_set.hpp)
+    u32 icon = 0;       ///< `icon: <name>`: hashId of an icon of the context's IconSet or a built-in icon (0 = none)
+    f32 iconSize = 0.f; ///< `icon-size`: cell size in px (0 = auto: 16 px, or the size given to widgets::setIcon)
     // direction (inherited) and logical padding (< 0 = not set; resolved into `padding` by the cascade)
     bool rtl = false;
     f32 paddingStart = -1.f, paddingEnd = -1.f;
@@ -264,6 +279,8 @@ enum class Prop : u8 {
     Position, ZIndex, AspectRatio, Transform, TransformOriginX, TransformOriginY, Filter, ClipPath, MaskImage, MaskMode,
     BackgroundImage, AnimationName, AnimationDuration, AnimationTimingFunction, AnimationDelay, AnimationIterationCount,
     AnimationDirection, AnimationFillMode, AnimationPlayState, ContainerType, ContainerName,
+    // text / icon port (appended)
+    FontStretch, FontVariationSettings, FontFeatureSettings, Icon, IconSize,
     Count
 };
 inline constexpr int kPropCount = int(Prop::Count);
@@ -278,7 +295,10 @@ void lerpStyleProp(ComputedStyle& out, const ComputedStyle& a, const ComputedSty
 /// True when `a` and `b` have the same value for `p`.
 bool sameStyleProp(const ComputedStyle& a, const ComputedStyle& b, Prop p);
 
-enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Raw }; ///< Raw: PropValue::f (property specific)
+/// Raw: PropValue::f (property specific). FontSettings: `trackCount` (tag, value) pairs in PropValue::tags / tracks
+/// (px) - font-variation-settings, font-feature-settings. Ident: a name stored as its hashId in PropValue::tags[0]
+/// (trackCount 1; 0 = none) - icon.
+enum class PropType : u8 { Bool, Enum, Length, Number, Color, Tracks, Raw, FontSettings, Ident };
 struct PropInfo {
     Prop id;
     std::string_view cssName;
@@ -307,6 +327,10 @@ struct PropValue {
     std::array<f32, 16> f{};
     u8 fCount = 0;
     u16 fPct = 0;
+    std::array<u32, kMaxGridTracks> tags{}; ///< FontSettings: the OpenType tag of each entry; Ident: tags[0] = hashId
+    /// An Ident value (0 = none).
+    static PropValue ofIdent(u32 hash) { PropValue p; p.type = PropType::Ident; p.trackCount = 1; p.tags[0] = hash; return p; }
+    u32 ident() const { return trackCount ? tags[0] : 0u; }
     static PropValue ofBool(bool v) { PropValue p; p.type = PropType::Bool; p.b = v; return p; }
     static PropValue ofEnum(u8 v) { PropValue p; p.type = PropType::Enum; p.e = v; return p; }
     static PropValue ofLength(Length v) { PropValue p; p.type = PropType::Length; p.len = v; return p; }

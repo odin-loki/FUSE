@@ -7,7 +7,7 @@
 #include <vector>
 
 namespace fuse::text {
-struct FontFaceInfo;
+struct SystemFontInfo;
 }
 
 namespace fuse::text::detail {
@@ -38,15 +38,15 @@ private:
     void* m_handle = nullptr; // Windows: the mapping object
 };
 
-/// FontCatalog's fvar named-instance listing (font_catalog.cpp): one FontFaceInfo per named instance of `base`, read
-/// from its name / fvar / STAT tables. Reached through namedInstanceLister(), which enableVariableFonts sets, so
+/// The installed-font scan's fvar named-instance listing (font_scripts.cpp): one SystemFontInfo per named instance of
+/// `base`, read from its name / fvar / STAT tables, appended to `out`. Reached through namedInstanceLister(), which enableVariableFonts sets, so
 /// binaries that never enable variations do not link it.
-std::size_t catalogNamedInstances(const FontFaceInfo& base, const std::vector<std::uint8_t>& name,
+std::size_t catalogNamedInstances(const SystemFontInfo& base, const std::vector<std::uint8_t>& name,
                                   const std::vector<std::uint8_t>& fvar, const std::vector<std::uint8_t>& stat,
-                                  std::vector<FontFaceInfo>& out);
-using NamedInstanceLister = std::size_t (*)(const FontFaceInfo& base, const std::vector<std::uint8_t>& name,
+                                  std::vector<SystemFontInfo>& out);
+using NamedInstanceLister = std::size_t (*)(const SystemFontInfo& base, const std::vector<std::uint8_t>& name,
                                             const std::vector<std::uint8_t>& fvar, const std::vector<std::uint8_t>& stat,
-                                            std::vector<FontFaceInfo>& out);
+                                            std::vector<SystemFontInfo>& out);
 NamedInstanceLister& namedInstanceLister();
 
 } // namespace fuse::text::detail

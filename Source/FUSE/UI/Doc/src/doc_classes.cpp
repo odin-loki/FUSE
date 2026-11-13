@@ -112,6 +112,15 @@ void fillTreeModel(w::StringTreeModel& m, const JsonValue& items) {
 }
 /// Built-in icons by name ("save", "chevron-left", ...; fuse/ui/icons.hpp).
 bool iconByName(const JsonValue& v, Icon& out) { return v.isString() && findIcon(v.string, out); }
+/// Pack icons shown by `svgimage` nodes: one store handle per (pack, icon), kept (a reloaded document reuses them).
+w::SvgHandle packIconHandle(const IconSet& set, u32 icon) {
+    static std::map<std::pair<const IconSet*, u32>, w::SvgHandle> cache;
+    const auto key = std::make_pair(&set, icon);
+    if (const auto it = cache.find(key); it != cache.end() && w::svgGet(it->second)) return it->second;
+    const w::SvgHandle h = w::svgAdopt(SvgImage(set.image(icon)));
+    cache[key] = h;
+    return h;
+}
 /// Inline SVG sources of documents: parsed once per distinct source and kept (a reloaded document reuses them).
 w::SvgHandle svgBySource(const std::string& xml) {
     static std::map<std::string, w::SvgHandle> cache;
@@ -256,7 +265,12 @@ bool treeModelProp(UiContext& ui, NodeHandle n, std::string_view key, const Json
     return false;
 }
 bool svgImageProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
-    if (key == "icon") { // a built-in icon by name
+    if (key == "icon") { // an icon of the context's pack (attached before the document loads), else a built-in one
+        if (const IconSet* set = ui.icons(); set && v.isString())
+            if (const i32 i = set->find(v.string); i >= 0) {
+                w::setSvgImage(ui, n, packIconHandle(*set, u32(i)));
+                return true;
+            }
         Icon icon;
         if (!iconByName(v, icon)) return false;
         w::setSvgImage(ui, n, w::iconHandle(icon));
@@ -742,11 +756,20 @@ bool prop(UiContext& ui, NodeHandle node, std::string_view cls, std::string_view
     if (key == "contextMenu" && v.isArray()) { w::setContextMenu(ui, node, joined(v)); return true; }
     if (key == "paneSize") return true; // read by the splitter the node is a child of
     if (cls == "tabbar" && tabOptionProp(ui, node, key, v)) return true; // "closable", "movable", "scrollButtons"
-    if (key == "icon") { // a built-in icon on a button / tool button (16 px, left of the text)
-        Icon icon;
+    if (key == "icon") { // an icon on a button / tool button (16 px, left of the text)
         const std::string_view name = ui.registry().get(ui.classOf(node)).name;
-        if ((name != "button" && name != "toolbutton") || !iconByName(v, icon)) return false;
-        w::setIcon(ui, node, icon);
+        PropValue pv;
+        if ((name != "button" && name != "toolbutton") || !v.isString() || !parsePropValue(fuse::ui::Prop::Icon, v.string, pv)) return false;
+        // with a pack attached (UiContext::setIcons) the name becomes the `icon` style property: the pack's icon, or
+        // one a pack attached later brings; a name only the built-in set has is set as before (widgets::iconOf)
+        const bool inPack = ui.icons() && ui.icons()->findHash(pv.ident()) >= 0;
+        Icon builtin;
+        if (!inPack && iconByName(v, builtin)) {
+            w::setIcon(ui, node, builtin);
+            return true;
+        }
+        if (!ui.icons()) return false; // no pack: only the built-in names exist
+        ui.set(node, fuse::ui::Prop::Icon, pv);
         return true;
     }
     return false;

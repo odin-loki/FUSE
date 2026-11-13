@@ -34,12 +34,14 @@ inline std::to_chars_result toCharsFixed(char* first, char* last, double v) {
 #endif
 }
 
-/// "pt_BR" / "pt-br" -> lang "pt", region "br" (lower case; script subtags such as "zh-Hant" are skipped).
+/// "pt_BR" / "pt-br" -> lang "pt", region "br" (lower case; script subtags such as "zh-Hant" are skipped; a POSIX
+/// codeset / modifier suffix, "de_DE.UTF-8", "sr_RS@latin", is dropped).
 struct Tag {
     std::string lang, region;
 };
 inline Tag splitTag(std::string_view loc) {
     Tag t;
+    loc = loc.substr(0, loc.find_first_of(".@"));
     std::size_t k = 0;
     int part = 0;
     while (k <= loc.size()) {
@@ -56,5 +58,15 @@ inline Tag splitTag(std::string_view loc) {
     }
     return t;
 }
+
+/// The number-symbol table of format.cpp, for fuse/text/i18n.hpp (text_i18n.cpp): one table for both APIs.
+struct NumberRow {
+    std::string_view decimal, group;
+    int primary = 3, secondary = 3, minGrouping = 1;
+};
+std::size_t numberRowCount();
+NumberRow numberRow(std::size_t index);
+/// Row of `locale` (region entry, then the language, then English = 0).
+std::size_t numberRowIndex(std::string_view locale);
 
 } // namespace fuse::ui::l10n::detail

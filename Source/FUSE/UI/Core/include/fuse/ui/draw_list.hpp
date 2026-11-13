@@ -129,9 +129,19 @@ struct DrawPatch {
     bool smooth = false; ///< bilinear instead of nearest
 };
 
+/// DrawCmd::gradient of a Glyph command: where its texels are and how they are drawn.
+/// Coverage: 8-bit coverage in the atlas' coverage page tinted by `fill`, texels 1:1 on device pixels.
+/// Color: premultiplied RGBA in the atlas' colour page (fuse::text::GlyphAtlas: size / 2 square, after the coverage
+///   page) drawn 1:1, scaled by fill.a (CBDT / sbix strikes and exact COLRv1 glyphs; fuse::text::enableColorGlyphs).
+/// Msdf: a multi-channel distance field in the colour page stretched over `rect` (tw x th texels; `blur` = the
+///   field's distance range in texels) and tinted by `fill` (UiContext::setMsdfThreshold).
+/// The CPU rasteriser draws all three. The GPU packer (fuse/ui/render/gpu_draw_data.hpp) uploads only the coverage
+/// page and SKIPS Color and Msdf glyph commands: they are not drawn on the GPU path yet.
+inline constexpr u8 kGlyphCoverage = 0, kGlyphColor = 1, kGlyphMsdf = 2;
+
 struct DrawCmd {
     DrawOp op = DrawOp::Rect;
-    u8 gradient = 0; ///< 0 none, 1 vertical, 2 horizontal
+    u8 gradient = 0; ///< 0 none, 1 vertical, 2 horizontal (Glyph: kGlyphCoverage / kGlyphColor / kGlyphMsdf)
     /// Glyph: `rect` is already in device pixels (UiContext rasterises glyphs at fontSize x renderScale while it
     /// records the rest of the list in logical units). DrawList::scale leaves such a command alone and clears the flag,
     /// so a finished list never carries it.

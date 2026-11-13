@@ -110,6 +110,11 @@ constexpr PropInfo kProps[] = {
     {Prop::AnimationPlayState, "animation-play-state", T::Raw, false, false, false},
     {Prop::ContainerType, "container-type", T::Enum, false, false, false},
     {Prop::ContainerName, "container-name", T::Number, false, false, false},
+    {Prop::FontStretch, "font-stretch", T::Number, true, true, true},
+    {Prop::FontVariationSettings, "font-variation-settings", T::FontSettings, true, false, true},
+    {Prop::FontFeatureSettings, "font-feature-settings", T::FontSettings, true, false, true},
+    {Prop::Icon, "icon", T::Ident, false, false, true},
+    {Prop::IconSize, "icon-size", T::Length, false, true, true},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -228,18 +233,83 @@ bool parseColor(std::string_view s, Color& out) {
     return false;
 }
 
+namespace {
+// font-weight / font-stretch: a number (stretch: a percentage) or a CSS keyword.
+bool parseFontNumber(Prop p, std::string_view text, f32& out) {
+    struct Word {
+        std::string_view w;
+        f32 v;
+    };
+    static constexpr Word kWeight[] = {{"normal", 400.f}, {"bold", 700.f}, {"bolder", 700.f}, {"lighter", 300.f}};
+    static constexpr Word kStretch[] = {{"normal", 100.f}, {"ultra-condensed", 50.f}, {"extra-condensed", 62.5f},
+                                        {"condensed", 75.f}, {"semi-condensed", 87.5f}, {"semi-expanded", 112.5f},
+                                        {"expanded", 125.f}, {"extra-expanded", 150.f}, {"ultra-expanded", 200.f}};
+    const std::span<const Word> words = p == Prop::FontWeight ? std::span<const Word>(kWeight) : std::span<const Word>(kStretch);
+    for (const Word& w : words)
+        if (w.w == text) {
+            out = w.v;
+            return true;
+        }
+    std::string_view unit;
+    if (!parseNumber(text, out, unit)) return false;
+    if (p == Prop::FontWeight) return unit.empty() && out >= 1.f && out <= 1000.f;
+    return (unit == "%" || unit.empty()) && out > 0.f;
+}
+
+// font-variation-settings / font-feature-settings: `normal` or a comma list of "tag" [value]; features take
+// on / off / a number (default 1), variations need a number.
+bool parseFontSettings(std::string_view text, bool features, PropValue& out) {
+    out.trackCount = 0;
+    if (text == "normal") return true;
+    while (!(text = trim(text)).empty()) {
+        if (text.size() < 6 || (text[0] != '"' && text[0] != '\'') || text[5] != text[0]) return false;
+        u32 tag = 0;
+        for (int k = 1; k <= 4; ++k) {
+            const char c = text[std::size_t(k)];
+            if (c < 0x20 || c > 0x7E) return false;
+            tag = (tag << 8) | u32(u8(c));
+        }
+        text.remove_prefix(6);
+        const auto comma = text.find(',');
+        const std::string_view val = trim(text.substr(0, comma));
+        f32 v = 1.f;
+        if (val == "on") v = 1.f;
+        else if (val == "off") v = 0.f;
+        else if (!val.empty()) {
+            std::string_view unit;
+            if (!parseNumber(val, v, unit) || !unit.empty()) return false;
+        } else if (!features) {
+            return false;
+        }
+        if (out.trackCount >= (features ? kMaxFontFeatures : kMaxFontVariations)) return false;
+        out.tags[out.trackCount] = tag;
+        out.tracks[out.trackCount] = Length::px(v);
+        ++out.trackCount;
+        if (comma == std::string_view::npos) break;
+        text.remove_prefix(comma + 1);
+    }
+    return true;
+}
+} // namespace
+
 bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
     text = trim(text);
     const PropInfo& pi = propInfo(p);
     out = {};
     out.type = pi.type;
     switch (p) { // text properties with keyword / list syntax
-    case Prop::FontWeight: {
-        if (text == "normal") { out.num = 400.f; return true; }
-        if (text == "bold" || text == "bolder") { out.num = 700.f; return true; }
-        if (text == "lighter") { out.num = 300.f; return true; }
-        std::string_view unit;
-        return parseNumber(text, out.num, unit) && unit.empty() && out.num >= 1.f && out.num <= 1000.f;
+    case Prop::FontWeight:
+    case Prop::FontStretch: return parseFontNumber(p, text, out.num);
+    case Prop::FontVariationSettings:
+    case Prop::FontFeatureSettings: return parseFontSettings(text, p == Prop::FontFeatureSettings, out);
+    case Prop::Icon: { // none, or an icon name (optionally quoted): [a-z0-9_.-]
+        if (text.size() >= 2 && (text.front() == '"' || text.front() == '\'') && text.back() == text.front())
+            text = text.substr(1, text.size() - 2);
+        if (text.empty()) return false;
+        for (const char c : text)
+            if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '-')) return false;
+        out = PropValue::ofIdent(text == "none" ? 0u : hashId(text));
+        return true;
     }
     case Prop::FontFamily: {
         // comma list; each name is stored as its case-insensitive 24-bit hash (stable across runs and in cooked sheets)
@@ -381,6 +451,9 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         return out.trackCount > 0;
     }
     case T::Raw: break; // handled by property above
+    case T::FontSettings: // parsed per property above (font-variation-settings, font-feature-settings)
+    case T::Ident:        // (icon)
+        break;
     }
     return false;
 }
@@ -505,6 +578,27 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
         break;
     case Prop::ContainerType: s.containerType = std::min<u8>(v.e, 2); break;
     case Prop::ContainerName: s.containerName = u32(toIndex(v.num, 0, 0xFFFFFF)); break;
+    case Prop::FontStretch: s.fontStretch = std::clamp(v.num, 1.f, 1000.f); break;
+    case Prop::Icon: s.icon = v.ident(); break;
+    case Prop::IconSize: s.iconSize = std::max(0.f, v.len.value); break;
+    case Prop::FontVariationSettings:
+        s.fontVariationCount = std::min<u8>(v.trackCount, u8(kMaxFontVariations));
+        s.fontVariationTags = {};
+        s.fontVariationValues = {};
+        for (u8 i = 0; i < s.fontVariationCount; ++i) {
+            s.fontVariationTags[i] = v.tags[i];
+            s.fontVariationValues[i] = v.tracks[i].value;
+        }
+        break;
+    case Prop::FontFeatureSettings:
+        s.fontFeatureCount = std::min<u8>(v.trackCount, u8(kMaxFontFeatures));
+        s.fontFeatureTags = {};
+        s.fontFeatureValues = {};
+        for (u8 i = 0; i < s.fontFeatureCount; ++i) {
+            s.fontFeatureTags[i] = v.tags[i];
+            s.fontFeatureValues[i] = u32(std::max(0.f, v.tracks[i].value));
+        }
+        break;
     case Prop::Count: break;
     }
 }
@@ -588,6 +682,21 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::EnterDuration: return PropValue::ofNumber(s.enterDuration);
     case Prop::ExitAnimation: return PropValue::ofEnum(u8(s.exitAnim));
     case Prop::ExitDuration: return PropValue::ofNumber(s.exitDuration);
+    case Prop::FontStretch: return PropValue::ofNumber(s.fontStretch);
+    case Prop::Icon: return PropValue::ofIdent(s.icon);
+    case Prop::IconSize: return PropValue::ofLength(Length::px(s.iconSize));
+    case Prop::FontVariationSettings:
+    case Prop::FontFeatureSettings: {
+        PropValue v;
+        v.type = PropType::FontSettings;
+        const bool var = p == Prop::FontVariationSettings;
+        v.trackCount = var ? s.fontVariationCount : s.fontFeatureCount;
+        for (u8 i = 0; i < v.trackCount; ++i) {
+            v.tags[i] = var ? s.fontVariationTags[i] : s.fontFeatureTags[i];
+            v.tracks[i] = Length::px(var ? s.fontVariationValues[i] : f32(s.fontFeatureValues[i]));
+        }
+        return v;
+    }
     case Prop::Transition: // the first entry (the whole list is ComputedStyle::transitions)
         if (s.transitionCount) return PropValue::ofTransition(s.transitions[0].prop, s.transitions[0].duration, s.transitions[0].ease, s.transitions[0].delay);
         break;
@@ -688,6 +797,8 @@ PropField propField(Prop p) {
     case Prop::ShadowY: f.num = &ComputedStyle::shadowY; break;
     case Prop::BackdropBlur: f.num = &ComputedStyle::backdropBlur; break;
     case Prop::LetterSpacing: f.num = &ComputedStyle::letterSpacing; break;
+    case Prop::FontStretch: f.num = &ComputedStyle::fontStretch; break;
+    case Prop::IconSize: f.num = &ComputedStyle::iconSize; break;
     case Prop::Background: f.col = &ComputedStyle::background; break;
     case Prop::Background2: f.col = &ComputedStyle::background2; break;
     case Prop::BorderColor: f.col = &ComputedStyle::borderColor; break;
@@ -736,6 +847,13 @@ bool sameStyleProp(const ComputedStyle& a, const ComputedStyle& b, Prop p) {
     case Prop::Cursor: return a.cursor == b.cursor;
     case Prop::Transform: return a.transform == b.transform;
     case Prop::Filter: return a.filter == b.filter;
+    case Prop::Icon: return a.icon == b.icon;
+    case Prop::FontVariationSettings:
+        return a.fontVariationCount == b.fontVariationCount && a.fontVariationTags == b.fontVariationTags &&
+               a.fontVariationValues == b.fontVariationValues;
+    case Prop::FontFeatureSettings:
+        return a.fontFeatureCount == b.fontFeatureCount && a.fontFeatureTags == b.fontFeatureTags &&
+               a.fontFeatureValues == b.fontFeatureValues;
     default: break;
     }
     return true;
@@ -782,6 +900,13 @@ void inheritFrom(ComputedStyle& s, const ComputedStyle& parent) {
     s.letterSpacing = parent.letterSpacing;
     s.lineHeight = parent.lineHeight;
     s.rtl = parent.rtl;
+    s.fontStretch = parent.fontStretch;
+    s.fontVariationCount = parent.fontVariationCount;
+    s.fontVariationTags = parent.fontVariationTags;
+    s.fontVariationValues = parent.fontVariationValues;
+    s.fontFeatureCount = parent.fontFeatureCount;
+    s.fontFeatureTags = parent.fontFeatureTags;
+    s.fontFeatureValues = parent.fontFeatureValues;
 }
 
 bool StyleSheet::token(u32 h, std::string_view& out) const {

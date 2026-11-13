@@ -10,8 +10,32 @@ function(fuse_ui_test name src)
     set_tests_properties(${name} PROPERTIES LABELS fuse_ui)
     if(FUSE_UI_TEXT STREQUAL "FULL")
         target_compile_definitions(${name} PRIVATE FUSE_UI_TEST_TEXT_FULL=1)
+    elseif(FUSE_UI_TEXT STREQUAL "COOKED")
+        target_compile_definitions(${name} PRIVATE FUSE_UI_TEST_TEXT_COOKED=1
+                                   FUSE_UI_TEST_COOKED_FONTS="${CMAKE_CURRENT_BINARY_DIR}/fonts")
+        add_dependencies(${name} fuse_ui_test_fonts)
     endif()
 endfunction()
+
+# COOKED: the test-data fonts cooked at the sizes their gates draw (colour images included)
+if(FUSE_UI_TEXT STREQUAL "COOKED")
+    set(_tf "${CMAKE_CURRENT_BINARY_DIR}/fonts")
+    set(_tf_out "")
+    foreach(spec "colrv1_test|--sizes=30,32,45,48,56|--msdf"
+                 "bitmap_cbdt_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100"
+                 "bitmap_sbix_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100"
+                 "variable_test|--sizes=24,100|--variation=wght:700")
+        string(REPLACE "|" ";" _spec "${spec}")
+        list(POP_FRONT _spec _name)
+        add_custom_command(OUTPUT "${_tf}/${_name}.fusefont"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${_tf}"
+            COMMAND ${FUSE_TEXT_COOK_COMMAND} "--out=${_tf}/${_name}.fusefont" ${_spec}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/data/${_name}.ttf"
+            DEPENDS ${FUSE_TEXT_COOK_DEPENDS} "${CMAKE_CURRENT_SOURCE_DIR}/data/${_name}.ttf" COMMENT "fuse_text_cook ${_name}" VERBATIM)
+        list(APPEND _tf_out "${_tf}/${_name}.fusefont")
+    endforeach()
+    add_custom_target(fuse_ui_test_fonts DEPENDS ${_tf_out})
+endif()
 
 fuse_ui_test(fuse_ui_layout_conformance test_layout_conformance.cpp)
 fuse_ui_test(fuse_ui_style_cascade test_style_cascade.cpp)
@@ -26,6 +50,7 @@ fuse_ui_test(fuse_ui_a11y_tree_dump test_a11y_tree_dump.cpp)
 fuse_ui_test(fuse_ui_text_basics test_text_basics.cpp)
 fuse_ui_test(fuse_text_edit_ops test_text_edit_ops.cpp)
 fuse_ui_test(fuse_text_fallback test_text_fallback.cpp)
+set_tests_properties(fuse_text_fallback PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}) # data/variable_test.ttf
 fuse_ui_test(fuse_ui_widget_interaction test_widget_interaction.cpp)
 fuse_ui_test(fuse_ui_touch_scroll test_touch_scroll.cpp)
 
@@ -700,3 +725,105 @@ if(TARGET fuse_ui_doc) # these also cook and load what they parse
     endforeach()
     set_tests_properties(fuse_ui_style_fuzz PROPERTIES TIMEOUT 300)
 endif()
+# ---- Text stack gates ported from the magical-bassi branch (docs/ui/archive/PORT_magical_bassi.md §3.1) ----
+# UI3 text gates: Unicode conformance files (tests/data/unicode), per-script goldens, system fonts, zero-alloc, DPI.
+foreach(g grapheme linebreak bidi)
+    fuse_ui_test(fuse_text_${g}_conformance test_text_conformance.cpp)
+    target_compile_definitions(fuse_text_${g}_conformance PRIVATE FUSE_TEXT_CONFORMANCE_GATE="${g}"
+                               FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
+    set_tests_properties(fuse_text_${g}_conformance PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77)
+endforeach()
+foreach(g shaping_scripts system_fonts cache_zero_alloc colrv1 dpi_1 dpi_1_25 dpi_1_5 dpi_2)
+    fuse_ui_test(fuse_text_${g} test_text_ui3.cpp)
+    target_compile_definitions(fuse_text_${g} PRIVATE FUSE_TEXT_GATE="${g}")
+    set_tests_properties(fuse_text_${g} PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
+                         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endforeach()
+
+# Shaping / layout throughput over a ~1 MB mixed-script document (timing budgets: run alone).
+fuse_ui_test(fuse_text_bench_layout test_text_bench_layout.cpp)
+set_tests_properties(fuse_text_bench_layout PROPERTIES LABELS "fuse_ui;gate;text;perf" RUN_SERIAL TRUE)
+
+# COOKED profile: cooker determinism (every profile), cooked layout / renders against the MINIMAL reference (COOKED)
+fuse_ui_test(fuse_text_cooked test_text_cooked.cpp)
+string(REPLACE ";" " " _cook_args "${FUSE_TEXT_UI_COOK_ARGS}")
+target_include_directories(fuse_text_cooked PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Text/tools)
+target_compile_definitions(fuse_text_cooked PRIVATE
+    FUSE_TEXT_TEST_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf" FUSE_TEXT_TEST_COOK_ARGS="${_cook_args}"
+    FUSE_TEXT_TEST_OUT_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+if(NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR) # the gate runs the tool; cross builds call cookFont()
+    target_compile_definitions(fuse_text_cooked PRIVATE FUSE_TEXT_COOK_EXE="$<TARGET_FILE:fuse_text_cook>")
+endif()
+add_dependencies(fuse_text_cooked fuse_text_cook)
+if(FUSE_UI_TEXT STREQUAL "COOKED")
+    target_compile_definitions(fuse_text_cooked PRIVATE
+        FUSE_TEXT_COOKED_PACK="${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.fusefont"
+        FUSE_TEXT_COOKED_REFERENCE="${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.reference")
+endif()
+set_tests_properties(fuse_text_cooked PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77)
+
+# Variable fonts: data/variable_test.ttf (make_variable_test_font.py) + Segoe UI Variable / Bahnschrift when installed;
+# COOKED: the pack cooked at wght 700.
+fuse_ui_test(fuse_text_variable test_text_variable.cpp)
+set_tests_properties(fuse_text_variable PROPERTIES LABELS "fuse_ui;gate;text" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+# OpenType features (font-feature-settings; FULL: HarfBuzz, other profiles skip with 77): data/features_test.ttf
+# (make_features_test_font.py).
+fuse_ui_test(fuse_text_features test_text_features.cpp)
+set_tests_properties(fuse_text_features PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
+                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Colour glyphs (CBDT / sbix strikes) and MSDF glyphs (quality, UI threshold). CPU rasteriser only: the GPU packer
+# skips colour-image and MSDF glyph commands (draw_list.hpp).
+foreach(g bitmap_emoji msdf)
+    fuse_ui_test(fuse_text_${g} test_text_color.cpp)
+    target_compile_definitions(fuse_text_${g} PRIVATE FUSE_TEXT_GATE="${g}")
+    set_tests_properties(fuse_text_${g} PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
+                         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endforeach()
+
+# ---- Icon gates (docs/ui/archive/PORT_magical_bassi.md §3.3): fuse_ui_icon_cook (cooker determinism, pack round trip,
+# cooked == parsed, errors, fuzzed packs, the tool) and fuse_ui_icon_render (the `icon` widget / style property /
+# setIcon by name / document key, tinting, goldens tests/golden/icons.png + icons_color.png).
+# The cook gate's executable is fuse_ui_icon_cook_gate (fuse_ui_icon_cook is the tool).
+if(TARGET fuse_ui_icons)
+    # multi-colour icon test pack (tests/data/icons_color), cooked by the tool like the starter pack
+    set(FUSE_UI_ICON_COLOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/data/icons_color")
+    set(FUSE_UI_ICON_COLOR_PACK "${CMAKE_CURRENT_BINARY_DIR}/icons_color.fuseicons")
+    file(GLOB _fuse_ui_color_svgs CONFIGURE_DEPENDS "${FUSE_UI_ICON_COLOR_DIR}/*.svg")
+    add_custom_command(OUTPUT "${FUSE_UI_ICON_COLOR_PACK}"
+        COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:fuse_ui_icon_cook> "--out=${FUSE_UI_ICON_COLOR_PACK}" "${FUSE_UI_ICON_COLOR_DIR}"
+        DEPENDS fuse_ui_icon_cook ${_fuse_ui_color_svgs}
+        COMMENT "fuse_ui_icon_cook: multi-colour test icons" VERBATIM)
+    add_custom_target(fuse_ui_icons_color DEPENDS "${FUSE_UI_ICON_COLOR_PACK}")
+    foreach(pair "cook=fuse_ui_icon_cook=fuse_ui_icon_cook_gate" "render=fuse_ui_icon_render=fuse_ui_icon_render")
+        string(REPLACE "=" ";" kv ${pair})
+        list(GET kv 0 g)
+        list(GET kv 1 name)
+        list(GET kv 2 t)
+        add_executable(${t} test_icons.cpp)
+        target_include_directories(${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+        add_test(NAME ${name} COMMAND ${t})
+        target_link_libraries(${t} PRIVATE fuse_ui_widgets fuse_ui_icon_cook_lib)
+        add_dependencies(${t} fuse_ui_icons fuse_ui_icons_color)
+        target_compile_definitions(${t} PRIVATE FUSE_UI_ICON_GATE="${g}" FUSE_UI_ICON_PACK="${FUSE_UI_ICON_PACK}"
+                                   FUSE_UI_ICON_SVG_DIR="${FUSE_UI_ICON_SVG_DIR}"
+                                   FUSE_UI_ICON_COLOR_PACK="${FUSE_UI_ICON_COLOR_PACK}"
+                                   FUSE_UI_ICON_COLOR_DIR="${FUSE_UI_ICON_COLOR_DIR}")
+        if(TARGET fuse_ui_doc)
+            target_link_libraries(${t} PRIVATE fuse_ui_doc)
+            target_compile_definitions(${t} PRIVATE FUSE_UI_ICON_HAVE_DOC=1)
+        endif()
+        if(g STREQUAL "cook" AND NOT CMAKE_CROSSCOMPILING) # runs the tool
+            target_compile_definitions(${t} PRIVATE FUSE_UI_ICON_COOK_EXE="$<TARGET_FILE:fuse_ui_icon_cook>")
+        endif()
+        if(FUSE_UI_TEXT STREQUAL "FULL")
+            target_compile_definitions(${t} PRIVATE FUSE_UI_TEST_TEXT_FULL=1)
+        elseif(FUSE_UI_TEXT STREQUAL "COOKED")
+            target_compile_definitions(${t} PRIVATE FUSE_UI_TEST_TEXT_COOKED=1)
+        endif()
+        set_tests_properties(${name} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endforeach()
+endif()
+
+# COOKED text profile: gates about real font files (face names, outline shear, installed fonts) skip with 77
+set_property(TEST fuse_text_font_styles PROPERTY SKIP_RETURN_CODE 77)

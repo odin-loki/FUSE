@@ -758,6 +758,15 @@ SvgHandle svgImageOf(const UiContext& ui, NodeHandle node);
 /// centred when the button has no text - in the button's text colour. An invalid handle removes it.
 void setIcon(UiContext& ui, NodeHandle button, SvgHandle svg, f32 size = 16.f);
 void setIcon(UiContext& ui, NodeHandle button, Icon icon, f32 size = 16.f);
+/// An icon node (class "icon"): the named icon of the context's pack (UiContext::setIcons), else the built-in one,
+/// `size` px square (the `icon-size` property; 16 by default), tinted with the node's `color`. Style it like any node
+/// (`.toolbar icon { color: ...; icon-size: 20px }`). `name` and a `size` > 0 are set inline (they win over style
+/// sheets); pass "none" and 0 to leave `icon` / `icon-size` to the sheets.
+NodeHandle icon(UiContext& ui, NodeHandle parent, std::string_view name, f32 size = 16.f, std::string_view id = {});
+/// By name: sets the node's `icon` style property (and `icon-size` when `size` > 0), so the icon comes from the
+/// context's icon pack (UiContext::setIcons, fuse/ui/icon_set.hpp), else from the built-in icons, and follows a pack
+/// attached later. "none" clears it. False for a dead node, a malformed name, or a name that neither has right now.
+bool setIcon(UiContext& ui, NodeHandle button, std::string_view name, f32 size = 0.f);
 void clearIcon(UiContext& ui, NodeHandle button);
 SvgHandle iconOf(const UiContext& ui, NodeHandle button);
 /// Drops the icon records of every node of `ui` (optional tidy-up before destroying a context that used setIcon;

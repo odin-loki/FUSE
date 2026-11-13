@@ -18,7 +18,8 @@ immediate-mode front-end. See the plan's status table for what is still open.
 
 | Path | Target | What |
 |---|---|---|
-| `Source/FUSE/UI/Text` | `fuse_text` | Fonts (stb_truetype; FreeType in FULL), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas, `TextEditBuffer` |
+| `Source/FUSE/UI/Text` | `fuse_text`, `fuse_text_cook` | Fonts (stb_truetype; FreeType in FULL; `.fusefont` packs in COOKED), bundled Open Sans, UTF-8, `ITextShaper` (`MinimalShaper`, `HarfBuzzShaper` in FULL), wrap/ellipsis layout, glyph atlas (coverage, colour and MSDF pages), colour glyphs, variable fonts, font families and the installed-font catalogue, `TextEditBuffer`; the font cooker |
+| `Source/FUSE/UI/Icons` | `fuse_ui_icon_cook_lib`, `fuse_ui_icon_cook` | SVG files -> `.fuseicons` packs of parsed vector icons (`IconSet` in `fuse_ui_core` loads them); cooks the Lucide starter pack at build time |
 | `Source/FUSE/UI/Core` | `fuse_ui_core` | `UiContext` (tree, style, layout, paint, input, focus, signals, timers, animation, a11y), `DrawList` + `CpuRasterizer`, `Path` / `Painter` / `SvgImage` / built-in icons, `StyleEngine`, `immediate::ImmediateUi`, `platform_bridge.hpp` |
 | `Source/FUSE/UI/Widgets` | `fuse_ui_widgets` | Tier A + Tier B widgets + default dark theme (`widgets::install`) |
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc`, `fuse_ui_cook`, `fuse_ui_extract_strings` | `.fuseui` JSON documents, binding model, expression bytecode; the cooker and the string-extraction CLI |
@@ -39,9 +40,9 @@ immediate-mode front-end. See the plan's status table for what is still open.
 `fuse_ui_core` does not depend on `fuse_core`; the platform bridge is header-only.
 
 The tree also holds source files that no target builds yet: the UI work of the merged branch
-`claude/magical-bassi-815825` that still has to be ported onto this code (cooked / MSDF / variable
-fonts, the SVG icon cooker, AccessKit window adapters, GPU effects, `ProjectHost`, their tests
-and goldens). [`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md) lists every one of them, what blocks
+`claude/magical-bassi-815825` that still has to be ported onto this code (AccessKit window adapters, GPU effects,
+their tests and goldens; the text stack, the icon cooker and the i18n fold of that branch are live, see "Fonts, text
+styles and i18n" and "Drawing"). [`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md) lists every one of them, what blocks
 it and how to verify it once ported. Nothing in this document describes those files unless it says so.
 
 The same holds for the merged branch `gui-framework`: its `Extras/` modules that compile against this code are built
@@ -67,7 +68,9 @@ Regenerate the raster golden after an intended visual change:
 
 Options: `FUSE_BUILD_UI_WIDGETS`, `FUSE_BUILD_UI_DOC`, `FUSE_BUILD_UI_SCRIPT`, `FUSE_BUILD_UI_VK`, `FUSE_BUILD_UI_TESTS`,
 `FUSE_UI_TEXT` (`MINIMAL` default; `FULL` fetches HarfBuzz 10.1.0 + FreeType 2.13.3 at configure time, so it needs
-network or a populated `FETCHCONTENT_BASE_DIR`; `COOKED` falls back to MINIMAL), `FUSE_UI_ACCESSIBILITY`,
+network or a populated `FETCHCONTENT_BASE_DIR`; `COOKED` builds `fuse_text` without any font parser or rasteriser:
+it loads only `.fusefont` packs, and the build cooks the bundled fonts with `fuse_text_cook`, see "Cooked fonts"),
+`FUSE_BUILD_UI_ICONS` (the icon cooker and the starter pack), `FUSE_UI_ACCESSIBILITY`,
 `FUSE_UI_PROFILE`, `FUSE_BUILD_UI_APP`, `FUSE_BUILD_UI_GAME` (both ON by default); `FUSE_BUILD_APP` (UI9) and
 `FUSE_BUILD_UI_DESIGNER` are reserved. The HUD golden is regenerated the same way as the raster golden with
 `fuse_ui_game_hud_golden` (`tests/golden/hud.png`, `hud_full.png` in FULL).
@@ -742,12 +745,17 @@ hud.update(realDt); nav.update(padState, realDt); ui.update(realDt);
 
 ## Localisation
 
-Two layers exist. `fuse/text/i18n.hpp` in `fuse_text` (see "Fonts, text styles and i18n" below) has the plural
-categories, `formatPlural` patterns, `formatNumber` and pseudo-localisation that `StringTable::trPlural` uses.
-`fuse_ui_l10n_lib` is the larger library merged from the `claude/magical-bassi-815825` branch: full ICU-style
-messages, dates, times, currencies, calendar names, the string-table file format and the extraction tool. Both are
-built and gated; folding the first into the second is an open item in
-[`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md).
+There is one implementation with two front ends. `fuse_ui_l10n_lib` holds the tables (CLDR plural rules, number
+symbols, dates, times, currencies, calendar names), ICU-style messages, the string-table file format and the
+extraction tool. `fuse/text/i18n.hpp` (see "Fonts, text styles and i18n" below) is the small front end to the same
+plural rules and number table: `pluralCategory`, `formatPlural` patterns, fixed-fraction `formatNumber`, plus
+pseudo-localisation; `StringTable::trPlural` uses it and `StringTable::tr(key, args)` uses the message formatter, so
+both pick the same plural form. Its functions are compiled into `fuse_ui_l10n_lib` (`L10n/src/text_i18n.cpp`), which
+`fuse_text` links; `fuse_ui_l10n_lib` itself depends on nothing. Two documented differences remain between the front
+ends: for a language without rules `fuse::text::pluralCategory` uses the English rule and
+`l10n::pluralCardinal` the CLDR root rule (`other`; `l10n::hasPluralRules(locale)` tells), and
+`fuse::text::formatNumber` rounds half away from zero at a fixed number of decimals with an ASCII minus while
+`l10n::formatNumber` rounds half-even and uses the locale's minus sign.
 
 `fuse_ui_l10n_lib` (`fuse/ui/l10n/l10n.hpp`, namespace `fuse::ui::l10n`) has no ICU dependency. Locale tags are
 matched case-insensitively, region first (`de-CH`, `pt_PT`, `en-IN`), then the language; digits are always Latin.
@@ -1014,9 +1022,47 @@ an error, never a crash.
 Redo, Plus, Minus, Settings, Warning, Info, Error, Menu}`; `iconImage(icon)`, `iconSvg(icon)`, `iconName` /
 `findIcon`, `drawIcon(painter, icon, box, color)`.
 
+**Icon packs** (`fuse/ui/icon_set.hpp`, included by `icons.hpp`; cooker `fuse/ui/icons/icon_cook.hpp`). An application
+ships its icons as one `.fuseicons` file cooked from SVG files. The cooker reads them with `SvgImage` (no second SVG
+stack: the merged branch's nanosvg rasteriser is not used) and writes the parsed shapes in binary form, so `IconSet`
+loads a pack without parsing XML and every icon is a vector image drawn through `Painter`: sharp at any size and
+render scale, tinted like text.
+
+```sh
+fuse_ui_icon_cook --out=app.fuseicons [--list] icons/ extra/logo.svg   # a directory = every *.svg in it; name = file stem
+```
+
+```cpp
+#include <fuse/ui/icons.hpp>
+
+auto icons = fuse::ui::IconSet::fromFile("app.fuseicons");   // std::expected: a bad pack is a message, never a crash
+ui.setIcons(&*icons);                                        // non-owning; before documents that name pack icons load
+widgets::icon(ui, toolbar, "search", 20.f);                  // an icon node (class "icon"), tinted with its `color`
+widgets::setIcon(ui, saveButton, "save");                    // button / tool button: icon left of the text
+ui.addStyleSheet(".danger { icon: triangle-alert; icon-size: 20px; color: #e5484d; }");
+icons->draw(painter, u32(icons->find("star")), {0, 0, 32, 32}, color);   // or icons->image(i) as an SvgImage
+```
+
+- A name is looked up in the attached pack first, then among the built-in icons, so `icon: save` works without a
+  pack and a pack can replace a built-in picture. Names are `[a-z0-9_.-]` (the SVG file stem).
+- `icon` / `icon-size` are ordinary style properties (inline, style sheets, cooked sheets, `:hover` / `:disabled`
+  rules). `button` and `toolbutton` draw the icon left of their text (16 px unless `icon-size` or `setIcon`'s size
+  says otherwise); the `icon` widget is just the picture. Other classes ignore the property.
+- Colour: paints written as `currentColor` take the node's `color`. An icon whose paints are all `currentColor` or
+  black (the SVG default fill) is cooked fully tintable (`IconSet::multiColor(i)` false); any other colour makes it
+  multi-colour: those paints keep their colour, gradients stay gradients.
+- The cooker rejects what it cannot draw (malformed SVG, `<text>`, `<use>`, `<image>`, clip paths, masks, filters, an
+  SVG without shapes or size, a bad or duplicate name) and then writes nothing. Output is deterministic.
+- The build cooks the vendored Lucide subset (`vendor/icons/lucide`, ISC licence there and in `THIRD_PARTY.md`) to
+  `<build>/icons/fuse_ui_icons.fuseicons` (CMake `FUSE_UI_ICON_PACK`; target `fuse_ui_icons`).
+- `.fuseui`: `"icon": "<name>"` on `button` / `toolbutton` sets the style property; on `svgimage` it shows the pack's
+  (or built-in) icon. `CookInfo::icons` lists the names a cooked document uses.
+- Not there: `:name:` icon markup inside menu item text, per-size hinted rasters (icons are vector only), dimming of
+  fixed-colour paints on `:disabled` nodes, an icon picker in the designer, `fuse_ui_cook --icons`.
+
 **Widgets** (`widgets.hpp`): `svgCreate(xml)` -> `SvgHandle`, `svgImage(ui, parent, handle, w, h)` (drawn in the
-node's `color`), `setIcon(ui, button, Icon::Save)` / `setIcon(ui, button, handle, size)` on buttons and tool buttons,
-`iconButton(ui, parent, Icon::Undo)`.
+node's `color`), `setIcon(ui, button, Icon::Save)` / `setIcon(ui, button, handle, size)` / `setIcon(ui, button,
+"name")` on buttons and tool buttons, `iconButton(ui, parent, Icon::Undo)`, `icon(ui, parent, "name", size)`.
 
 **GPU.** The compute kernel has no path op. `packDrawList` pre-rasterises every vector op (and every clip-path /
 layer / transform / filter / mask group as a whole; a translation group is packed in place instead, as moved
@@ -1162,7 +1208,9 @@ scroll and view timelines, `animation-composition`; the rest is listed in [KNOWN
 ### Fonts, text styles and i18n
 
 Text properties: `font-weight` (`normal` / `bold` / 1..1000), `font-style` (`normal` / `italic`), `font-family` (comma
-list), `letter-spacing`, `line-height` (`normal`, a multiplier, px or %) are inherited; `text-decoration` (`underline`,
+list), `letter-spacing`, `line-height` (`normal`, a multiplier, px or %), `font-stretch` (a percentage or
+`ultra-condensed` .. `ultra-expanded`), `font-variation-settings` (`"wght" 650, "opsz" 12`) and
+`font-feature-settings` (`"tnum", "liga" off, "ss01" 2`) are inherited; `text-decoration` (`underline`,
 `line-through`, both) is not. Labels, buttons and every widget that paints through `paintString` /
 `paintTextLayout` / `measureString` follow them.
 
@@ -1204,8 +1252,75 @@ fuse::text::pseudoLocalize("Save {name}");                 // "[Šávé {name} �
 - Plural rules cover the common CLDR families (one/other, French, East and South Slavic, Polish, Czech, Slovenian,
   Baltic, Romanian, Arabic, Hebrew, Welsh, Irish, and the no-plural languages); number formatting has a built-in
   separator table and always writes Western digits. `StringTable::trPlural(key, n)` applies both to an entry.
-- Not there: variable-font axes (a variable font is its default instance), CFF2 and bitmap-only fonts, dates and
-  currencies, a string-extraction tool, cooked `.fusefont` files (`FUSE_UI_TEXT=COOKED` still builds MINIMAL).
+- Not there: CFF2 outlines, a `font` shorthand, animated `font-weight` (it is not an animatable property;
+  `font-stretch` is), restyled fallback faces under a synthesised bold (see below).
+
+**Variable fonts, OpenType features, colour glyphs, MSDF** (`fuse/text/text.hpp`; each is opt-in and only links its
+code into a binary that calls the `enable*` function):
+
+```cpp
+fuse::text::enableVariableFonts();   // fvar / avar / gvar / HVAR / MVAR; before fonts are scanned or loaded
+fuse::text::enableColorGlyphs();     // exact COLRv1 (gradients, transforms, composites) and CBDT / sbix bitmap strikes
+ui.setMsdfThreshold(40.f);           // text of 40 device px and more is drawn from distance fields (enableMsdf())
+
+const fuse::text::FontVariation heavy[] = {{fuse::text::fontTag("wght"), 700.f}};
+const fuse::text::Font& bold = font.instance(heavy);              // owned by `font`, cached: no allocation when seen
+ui.setCss(label, "font-stretch", "75%");                        // wdth axis; font-weight drives wght, font-size opsz
+ui.setCss(label, "font-variation-settings", "\"GRAD\" 88");     // any axis directly
+ui.setCss(label, "font-feature-settings", "\"tnum\", \"liga\" off");   // FULL profile (HarfBuzz); ignored elsewhere
+```
+
+- With variations enabled, `font-weight` on a variable face uses its `wght` axis instead of a synthetic bold
+  (`FontFamily::match`), and `UiContext::styledFont` / `fontFor(style)` return the instance for the style. Without
+  `enableVariableFonts()` a variable font is its default instance, as before.
+- `Font::axes()`, `namedInstances()`, `variationCoords()`, `instance(settings)`, `namedInstance(i)`,
+  `setVariation(settings)`; `Font::withFeatures(features)`. MINIMAL decodes `glyf` + `gvar` itself; FULL hands the
+  coordinates to HarfBuzz / FreeType.
+- Colour: COLRv0 layers were already drawn as tinted coverage. With `enableColorGlyphs()` COLRv1 glyphs and bitmap
+  strikes are one RGBA image per glyph in the atlas' colour page (`GlyphAtlas::getColor`, draw mode `kGlyphColor`);
+  without it COLRv1 falls back to flattened solid layers and bitmap-only glyphs draw nothing.
+- MSDF: one field per glyph at 32 px (`GlyphAtlas::getMsdf`, `Font::renderMsdf`), drawn scaled (`kGlyphMsdf`).
+- **GPU:** the compute kernel and its packer know only coverage glyphs. `packDrawList` skips `kGlyphColor` and
+  `kGlyphMsdf` commands, so image colour glyphs and MSDF text are drawn by the CPU rasteriser only (CPU-upload
+  presents show them; the GPU draw-list path does not). COLRv0 emoji and everything else are unaffected.
+- Fallbacks follow weight where the primary is really bold: for a real bold face, a variable instance or
+  `Font::emboldened()` at weight >= 600, `face(i)` is the fallback's `setBoldFace` face, else its variable instance
+  at that weight, else its `emboldened()` form. The UI's synthesised bold of a static family
+  (`Font::synthesized`) keeps the fallbacks as they are.
+
+**Installed fonts** (`fuse/text/font_family.hpp`). The merged branch's `FontCatalog` was folded into this header (no
+second catalogue class): `SystemFontInfo` gained `fullName`, `stretch`, `unicodeRanges`, `variable`, `namedInstance`
+and `covers(Script)`; `scriptOf(cp)` / `scriptName`; `systemFallbackChain(script, maxFaces)` (installed faces that
+really map a letter of the script, platform UI fonts first); `loadSystemFont(info)` (pins a named instance);
+`findSystemFont("sans-serif" | "serif" | "monospace" | "system-ui")` maps the generic CSS names to an installed
+family; matching prefers normal-width faces; with `enableVariableFonts()` called before the scan each `fvar` named
+instance is listed as a face (`"Segoe UI Variable Display"`, `"Semibold"`). Windows also reads the font files named
+in the `HKLM` / `HKCU` `Windows NT\CurrentVersion\Fonts` registry keys (that code was neither compiled nor run on
+this side: no Windows toolchain).
+
+### Cooked fonts (`FUSE_UI_TEXT=COOKED`)
+
+```sh
+fuse_text_cook --out=ui.fusefont --sizes=12-24,32 [--color-sizes=..] [--msdf] [--chars=20-7E,A0-17F]
+               [--no-kerning] [--face=N] [--variation=wght:700 | --instance=Bold] font.ttf
+cmake -S Source/FUSE/UI -B build-cooked -DFUSE_UI_TEXT=COOKED     # cooks the bundled fonts into <build>/fonts
+```
+
+A `.fusefont` pack holds metrics, the cmap subset, advances, kerning pairs, COLR layer tables and pre-rasterised
+glyphs: coverage strikes at the listed pixel sizes (byte-identical to MINIMAL at those sizes), colour images, and
+optionally one MSDF per glyph from which any other size is drawn. A COOKED `fuse_text` contains no stb_truetype, no
+FreeType and no outline code: `Font::fromFile` maps a pack, `Font::fromBytes` takes one, `Font::bundled()` /
+`bundledFallbacks()` load the packs the build cooked. `fuse_text_cook` and `cookFont()` (`fuse/text/font_cook.hpp`)
+exist in every profile.
+
+- Shaping is MINIMAL's (cmap + kerning pairs): no GSUB / GPOS, no bidi. Sizes that were not cooked come from the
+  MSDF when the pack has one, else from the nearest strike resampled.
+- A pack is one face at one variation instance: no `instance()`, no `font-feature-settings`, no synthetic oblique
+  (packs have no outlines; synthetic bold still works, it is done on the coverage). Face names and weight are not
+  stored (`familyName()` is empty, `weight()` 400). `systemFonts()` still lists installed `.ttf` files but
+  `Font::fromSystem` cannot load them.
+- Cross builds need the cooker for the build machine: an emulator (`CMAKE_CROSSCOMPILING_EMULATOR`) or
+  `-DFUSE_TEXT_COOK_HOST=<host fuse_text_cook>`; otherwise configuring `COOKED` fails with that message.
 
 ## Interaction: drag and drop, gestures, actions, motion, RTL
 
@@ -1306,7 +1421,21 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_vector_golden_effects` | golden image of the effect groups and of CSS transform / filter / clip-path / mask / gradients / z-index on a node tree |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
 | `fuse_text_font_styles` | face description, synthetic bold / oblique at pixel level, atlas keys, `FontFamily` matching (real face preferred), the font scanner over a temp directory (collection, corrupt files, no fonts), CSS font / decoration / spacing properties, render scale 2, `tests/golden/text_styles.png` (`text_styles_full.png` in FULL) |
-| `fuse_text_i18n` | CLDR plural categories per rule family, plural patterns, number formatting per locale, pseudo-localisation, `StringTable::trPlural` |
+| `fuse_text_i18n` | CLDR plural categories per rule family, plural patterns, number formatting per locale, pseudo-localisation, `StringTable::trPlural` (on the `fuse_ui_l10n_lib` tables) |
+| `fuse_text_{grapheme,linebreak,bidi}_conformance` | the Unicode test files in `tests/data/unicode` (UAX #29 in every profile; UAX #14 and UAX #9 need FULL and skip elsewhere) |
+| `fuse_text_shaping_scripts` | per-script shaping golden `shaping_scripts_full.png` (FULL; skips elsewhere) |
+| `fuse_text_system_fonts` | the installed-font list, generic families, per-script fallback chains checked against real cmaps, the font picker |
+| `fuse_text_cache_zero_alloc` | re-layout of seen text allocates nothing (shaped-run, cmap and kerning caches) |
+| `fuse_text_colrv1` | exact COLRv1 rendering against `colrv1_exact.png`, the flattened fallback, colour glyph commands in a UI |
+| `fuse_text_bitmap_emoji` | CBDT and sbix strikes: decode, scaling to the em, alpha, colour glyph commands |
+| `fuse_text_msdf` | MSDF quality against coverage at 64 / 128 / 256 px, `setMsdfThreshold` with render scale, scaled quads |
+| `fuse_text_dpi_{1,1_25,1_5,2}` | ink scales with the square of the scale; a UI renders at the scaled size |
+| `fuse_text_variable` | axes, named instances, avar, gvar outlines, HVAR / MVAR, instance caching without allocation, CSS `font-stretch` / `font-variation-settings`, a `font-stretch` transition, installed variable fonts when present |
+| `fuse_text_features` | `font-feature-settings` through HarfBuzz (FULL; skips elsewhere) |
+| `fuse_text_cooked` | cooker determinism in every profile; in COOKED the pack's layout and renders against the MINIMAL reference dump |
+| `fuse_text_bench_layout` | shaping / layout throughput over a mixed-script document (perf label) |
+| `fuse_ui_icon_cook` | icon cooker determinism and the build-time pack, index round trip, cooked == parsed pixels for every Lucide icon, colour classification, cooker errors, every truncation and 4000 bit flips of a pack, the tool leaves no file on an error |
+| `fuse_ui_icon_render` | `icon` widget, `icon` / `icon-size` properties, `setIcon` by name, pack-then-built-in lookup, tinting (class, `:hover`, `:disabled`), render scale 2, `"icon"` in documents, cooked sheets, goldens `icons.png` / `icons_color.png` |
 | `fuse_ui_l10n` | `fuse_ui_l10n_lib`: CLDR plural samples (cardinal / ordinal), ICU-style messages, numbers, dates, calendar names, times, currencies, the calendar widget under `setUiLocale`, `StringTable` fallback and message formatting, `fuse_ui_extract_strings` (extraction, merge, obsolete keys), load-time document translation and `retranslate()` |
 | `fuse_ui_script_bind` | the whole Lua `ui` table: every function, errors, signals, handler lifetime (released with the node), steady frames |
 | `fuse_ui_drag_drop` | drag threshold, target by type / filter / modal scope, event order, `:drag-over`, Move / Copy / refuse / Escape, ghost, external drops, touch long-press drag vs pan, list reorder and list / table / grid row drags |

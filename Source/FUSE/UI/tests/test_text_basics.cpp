@@ -8,7 +8,7 @@ int main() {
     #if FUSE_UI_TEST_TEXT_FULL
     UI_CHECK(textProfile() == TextProfile::Full);
 #else
-    UI_CHECK(textProfile() == TextProfile::Minimal);
+    UI_CHECK(textProfile() == (FUSE_UI_TEST_TEXT_COOKED ? TextProfile::Cooked : TextProfile::Minimal));
 #endif
     std::size_t i = 0;
     UI_CHECK(decodeUtf8("\xE2\x80\x94", i) == U'\x2014' && i == 3);

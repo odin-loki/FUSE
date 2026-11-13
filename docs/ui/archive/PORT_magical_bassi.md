@@ -47,6 +47,10 @@ because the branch vendors `NotoSansThai-Regular.ttf` and `NotoSansCJKsc-Subset.
 | **Ported 2026-11-13.** ProjectHost (3.11): `fuse::app::ProjectHost`, targets `fuse_app_project`, `fuse_app_host`, and with `fuse_hybrid` also `fuse_app_project_hybrid`, `fuse_hybrid_host` (in tree only) | `U/App/include/fuse/app/project_host*.hpp`, `U/App/src/project_host*.cpp`, `U/App/samples/app_host.cpp`, `U/App/CMakeLists.txt` | `fuse_project_schema2`, `fuse_project_schema2_native` (see 3.11 for what was run) |
 | **Ported 2026-11-13.** Performance gates (3.14): `fuse_ui_bench_hud` registered (label `perf`) after the style-hash fix in `StyleEngine` (0.72 -> 0.105 ms); `fuse_app_binary_size` with main's own baseline | `U/Core/src/style.cpp` (`hashStyle`), `U/tests/CMakeLists.txt`, `U/tests/test_app_binary_size.cpp` | `fuse_ui_bench_hud`, `fuse_app_binary_size` |
 
+| **§3.1 text stack (ported 2026-11-13)**: `FUSE_UI_TEXT=COOKED` (`.fusefont`, `fuse_text_cook`, `cookFont`), MSDF, exact COLRv1, CBDT / sbix, variable fonts, `Font::withFeatures`, generated UAX #29 tables, caches, the catalogue | `U/Text/**` (merged by hand with main's `text.hpp` / `text.cpp` / `text_full.cpp`: main's `Font::synthesized`, `FontFamily`, `int weight()`, `int faceIndex`, decoration metrics, letter spacing and line height kept; the branch's `emboldened()` runs on main's embolden), `U/Core` (`ComputedStyle` + `font-stretch` / `font-variation-settings` / `font-feature-settings`, `UiContext::styledFont`, `setMsdfThreshold`, glyph modes `kGlyphColor` / `kGlyphMsdf` in `paintTextLayout`, `DrawList::scale` and the CPU rasteriser), `U/Render/src/gpu_draw_data.cpp` (skips the two new glyph modes), `U/Doc/src/cook.cpp` (`PropType::FontSettings`) | `fuse_text_{grapheme,linebreak,bidi}_conformance`, `fuse_text_{shaping_scripts,system_fonts,cache_zero_alloc,colrv1,dpi_1,dpi_1_25,dpi_1_5,dpi_2,bitmap_emoji,msdf,cooked,features,variable,bench_layout}`; the whole suite in MINIMAL, FULL and COOKED |
+| **§3.3 icons (ported 2026-11-13, redesigned onto main's vector path)**: `fuse_ui_icon_cook`, `IconSet`, `.fuseicons` (version 3: parsed vector shapes), `UiContext::setIcons`, `icon` / `icon-size`, `widgets::icon`, `widgets::setIcon(ui, node, name)`, `"icon"` in `.fuseui`, `CookInfo::icons`, Lucide starter pack | `U/Core/include/fuse/ui/icon_set.hpp`, `U/Core/src/icon_set.cpp`, `U/Icons/**` (rewritten: no nanosvg), `U/Widgets/src/widgets_svg.cpp`, `U/Doc/src/doc_classes.cpp`, style engine (`Prop::Icon`, `Prop::IconSize`, `PropType::Ident`) | `fuse_ui_icon_cook`, `fuse_ui_icon_render` (`U/tests/test_icons.cpp`, rewritten; goldens `icons.png`, `icons_color.png` regenerated) |
+| **§3.16 i18n fold (2026-11-13)**: one plural-rule table and one number-symbol table; `fuse/text/i18n.hpp` is a front end compiled into `fuse_ui_l10n_lib` | `U/L10n/src/{plural,format,text_i18n}.cpp`, `U/L10n/src/l10n_internal.hpp`, `U/Text/src/i18n.cpp` (pseudo-localisation only), `U/Text/include/fuse/text/i18n.hpp` | `fuse_text_i18n`, `fuse_ui_l10n` |
+
 Standalone UI build on Linux after the merge: 180 ctest gates (the 178 main had, `fuse_ui_l10n`, `fuse_ui_script_bind`).
 With the Wayland port: +2 (`fuse_app_wayland`, `fuse_app_wayland_seat`).
 
@@ -115,34 +119,31 @@ branch's `U/tests/CMakeLists.txt` (`git show 7178393b4fea:Source/FUSE/UI/tests/C
 Order that unblocks the most: 3.1 (text) and 3.2 (core deltas) first; 3.3, 3.4, 3.6 and 3.9 depend on them.
 Items tagged **editor** are needed before `-DFUSE_EDITOR_SHELL=fuse` compiles (§5).
 
-### 3.1 Text: COOKED profile, MSDF, colour glyphs, variable fonts, OpenType features, font catalogue (L)
+### 3.1 Text: COOKED profile, MSDF, colour glyphs, variable fonts, OpenType features, font catalogue — **ported 2026-11-13**
 
-- **What**: `FUSE_UI_TEXT=COOKED` (`.fusefont` packs, `fuse_text_cook`), MSDF glyphs, exact COLRv1, CBDT / sbix
-  bitmaps, `fvar / avar / gvar / HVAR / MVAR`, `font-feature-settings`, `FontCatalog` (system fonts), UAX #29 / #14 / #9
-  tables in MINIMAL, layout caches, shared PNG codec.
-- **In the tree, unbuilt** (24 files): `U/Text/include/fuse/text/{font_cook,png_codec}.hpp`;
-  `U/Text/src/{color_bitmap,colr_paint,font_catalog,font_cook,font_var,msdf,paint_enable,path_raster,png_codec,text_cooked}.cpp`,
-  `{font_var,fusefont,glyph_paint,text_cooked,text_internal}.hpp`, `unicode_tables.inc`;
-  `U/Text/tools/{fuse_text_cook.cpp,cook_reference.hpp,gen_unicode_tables.py}`.
-  Tests: `U/tests/test_text_{bench_layout,color,conformance,cooked,features,ui3,variable}.cpp`; data
-  `U/tests/data/{bitmap_cbdt_test,bitmap_sbix_test,colrv1_test,features_test,variable_test,variable_avar2_test}.ttf`,
-  the `make_*_test_font.py` scripts, `U/tests/data/unicode/*`; goldens `U/tests/golden/{colrv1_exact,shaping_scripts_full}.png`.
-- **Branch deltas not taken**: `U/Text/include/fuse/text/text.hpp` (+273), `U/Text/src/text.cpp` (+1087 / -262),
-  `text_full.cpp` (+284), `text_full.hpp`; tests `test_text_basics.cpp`, `test_text_full.cpp`, `test_text_fallback.cpp`
-  (+107: Thai and CJK fallback), `test_util.hpp` (`testFontPath`, `setEffects`); the text part of `U/CMakeLists.txt`
-  (`fuse_text_cook_lib`, cooked bundled fonts, `-ffunction-sections` / `--gc-sections`).
-- **Overlap on main**: `U/Text/src/font_family.cpp` + `font_family.hpp` (system font scan, families, synthetic
-  bold / italic) against the branch's `FontCatalog`; `U/Text/src/i18n.cpp`; main's own edits to `text.cpp` (9 conflict
-  hunks, 382 lines).
-- **Blocks**: every new file needs types that exist only in the branch's `text.hpp` (`ColorImage`, `ColorBitmap`,
-  `FontVariation`, `FontFeature`, `Script`, `LineBreak`, `TextProfile::Cooked`, `unicodeVersion`). **Decision needed**:
-  keep main's `FontFamily` API as the public one and put `FontCatalog` behind it, or the reverse.
-  `png_codec.cpp` compiles alone, but it defines the stb_image / stb_image_write implementations inside `fuse_text`;
-  check for duplicate definitions against the other UI users of stb before adding it.
-- **Verify**: gates `fuse_text_{grapheme,linebreak,bidi}_conformance`, `fuse_text_{shaping_scripts,system_fonts,cache_zero_alloc,colrv1,dpi_1,dpi_1_25,dpi_1_5,dpi_2}`,
-  `fuse_text_{bitmap_emoji,msdf}`, `fuse_text_cooked`, `fuse_text_features`, `fuse_text_variable`,
-  `fuse_text_bench_layout`; a second configure with `-DFUSE_UI_TEXT=COOKED` running the whole suite; main's
-  `fuse_text_font_styles`, `fuse_text_fallback`, `fuse_text_i18n` and every golden unchanged in MINIMAL and FULL.
+Live (§2). Decisions taken and what is left:
+
+- **Catalogue decision**: main's `font_family.hpp` stays the one public API. The branch's `FontCatalog` class was
+  folded into it and `U/Text/src/font_catalog.cpp` deleted: its script tables, coverage check, fallback chains,
+  generic families and named-instance listing are in `U/Text/src/font_scripts.cpp` over `SystemFontInfo` /
+  `systemFonts()`; file helpers (`readFile`, `MappedFile`, name strings) in `U/Text/src/text_io.cpp`.
+- **Synthetic bold**: main's (`Font::synthesized`, coverage sum-smear, `FontFamily` strengths) is the only
+  implementation. `Font::emboldened()` (em / 24, used for bold fallbacks) is main's embolden on a shared state.
+  `Font::weight()` stays `int`. The UI's synthesised bold does not restyle fallbacks (main's documented behaviour;
+  the branch's did): `tests/test_text_fallback.cpp` asserts main's.
+- **FULL layout**: the branch's `fullLayout` (fallback runs shaped once inside the bidi pass, bidi level cache,
+  4-way run cache) replaced main's `applyFallbackPerLine`; main's letter spacing, line height and oblique shear were
+  re-applied on it. All FULL goldens are unchanged.
+- **Not ported** (branch deltas that remain, all in files other agents own or that need a GPU):
+  - GPU: the shader / packer support for `kGlyphColor` and `kGlyphMsdf` (`U/Render/**`, §3.4). The packer skips
+    those commands; `test_text_color.cpp`'s `FUSE_TEXT_COLOR_HAVE_VK` parity block is compiled out.
+  - `UiContext::animate(..., AnimProp::FontWeight)` (the branch's animation enum); `font-stretch` is animatable
+    through main's transitions instead, `font-weight` is not.
+  - The branch's paint-time glyph quad cache (`m_quads`) and the CPU rasteriser rewrite (§3.2).
+  - `-ffunction-sections` / `--gc-sections` for the UI targets and the `hud` binary-size gate (§3.14).
+  - `tests/golden/rtl_layout*.png`, `test_keyboard_only.cpp`, `cpu_raster_*.hpp` (§3.2).
+- **Not verified here**: Windows (registry font list, `MappedFile`, Segoe UI Variable / Bahnschrift checks), Apple;
+  COOKED was built and run on Linux only (cross builds need `-DFUSE_TEXT_COOK_HOST`).
 
 ### 3.2 Core deltas: device scale, zoom, cursor, reduced motion, touch, keyboard-only, hover fix (L, decisions)
 
@@ -168,28 +169,25 @@ Items tagged **editor** are needed before `-DFUSE_EDITOR_SHELL=fuse` compiles (�
   `fuse_ui_rtl_layout`, `fuse_ui_platform_feel` with the branch's zoom cases (`test_platform_feel.cpp` delta, +63);
   the CPU rasteriser must stay bit-exact: `fuse_ui_cpu_raster_golden`, `fuse_ui_single_thread_parity`, every golden.
 
-### 3.3 Icons: SVG cooker, `IconSet`, `.fuseicons`, `icon` style property (M, decision) **editor**
+### 3.3 Icons: SVG cooker, `IconSet`, `.fuseicons`, `icon` style property — **ported 2026-11-13** **editor**
 
-- **What**: `fuse_ui_icon_cook` (nanosvg at tool time) cooks SVGs into a `.fuseicons` pack (v2: multi-colour);
-  `IconSet::fromFile`, `UiContext::setIcons`, `icon` / `icon-size` style properties, `:name:` in menu item text,
-  `widgets::setIcon(ui, node, "name")`, `"icon"` key in `.fuseui`, the Lucide starter pack cooked at build time.
-- **In the tree, unbuilt**: `U/Icons/include/fuse/ui/icons/icon_cook.hpp`, `U/Icons/src/icon_cook.cpp`,
-  `U/Icons/tools/fuse_ui_icon_cook.cpp`, `U/tests/test_icons.cpp`, `U/tests/data/icons_color/*.svg`, goldens
-  `U/tests/golden/{icons,icons_color}.png`. Vendored and used only by this: `vendor/nanosvg`, `vendor/icons/lucide`
-  (both in THIRD_PARTY.md).
-- **Branch deltas not taken**: the branch's `U/Core/include/fuse/ui/icons.hpp` (93 lines) and `U/Core/src/icons.cpp`
-  (154): **same paths as main's files, different content** (add / add conflict, main's kept); icon parts of
-  `ui.hpp`, `style.cpp`, `widgets.cpp`; `U/Doc/src/cook.cpp` + `cook.hpp` (`CookInfo::icons`, `kCookedVersion`),
-  `U/Doc/tools/fuse_ui_cook.cpp` (`--icons=`), `U/App/samples/notes_app.cpp` (toolbar icons),
-  `U/App/samples/ui/hello.fuseui`, `U/Designer/**` (icon picker), the `icon` shorthand in `document.cpp`.
-- **Overlap on main**: built-in vector icons drawn through `Path` / `SvgImage` (`icons.hpp`, `svg.hpp`,
-  `widgets_svg.cpp`; `"icon": "folder"` on `svgimage`, button icons; gates `fuse_ui_svg`, `fuse_ui_vector_golden_icons`).
-- **Blocks**: decision on one icon system. Suggested: keep main's `icons.hpp` API and `SvgImage` renderer, add the
-  cooker as a second source of icons (pack -> registered named icons), put the branch's `IconSet` in a new header
-  (`fuse/ui/icon_set.hpp`) instead of replacing `icons.hpp`. `icon_cook.cpp` needs `kIconPackMagic`,
-  `kIconPackVersion` and `IconSet` from the branch's `icons.hpp`.
-- **Verify**: `fuse_ui_icon_cook_gate`, `fuse_ui_icon_render`, `fuse_ui_icons` (`test_icons.cpp`), the icon picker
-  cases of `fuse_ui_designer` (`test_designer.cpp` delta, +104), main's `fuse_ui_svg` and vector goldens unchanged.
+Live (§2). The decision asked for here was taken as suggested, and further: main's `icons.hpp` API and `SvgImage`
+renderer stay; `IconSet` lives in `fuse/ui/icon_set.hpp` (included by `icons.hpp`, so the editor shell's
+`#include "fuse/ui/icons.hpp"` finds it); and the cooker does **not** use nanosvg. Main's `SvgImage` parses the whole
+Lucide subset and the colour test set, so a pack is the parsed vector shapes in binary form (version 3) and icons
+draw through `Painter` like every other vector image. `vendor/nanosvg` is no longer referenced by any UI target.
+
+What the FUSE-UI editor shell uses is there: `IconSet::fromFile`, `IconSet::find`, `UiContext::setIcons`,
+`widgets::setIcon(ui, node, std::string_view)`.
+
+Left out, with the branch code that has it:
+
+- `:name:` in menu item text (`widgets.cpp` delta) and the icon column of menus.
+- `kDisabledIconAlpha` greying of fixed-colour layers on disabled nodes.
+- `fuse_ui_cook --icons=` / `--icon-pack=` (`U/Doc/tools/fuse_ui_cook.cpp` delta); `CookInfo::icons` exists.
+- `notes_app` toolbar icons, `hello.fuseui`, the designer's icon picker (§3.15).
+- The branch's coverage-atlas design itself (per-size hinted rasters, icons as Glyph commands on the GPU path):
+  superseded; its `icon_cook.cpp`, `test_icons.cpp` and goldens were replaced, not kept.
 
 ### 3.4 GPU: backdrop blur, damage present, SDF-quad backend, custom effects, pipeline cache (L)
 
@@ -474,12 +472,15 @@ has no such prerequisite and can be ported alone.*
   (+178), `U/Designer/app/designer_main.cpp`, `U/tests/test_designer.cpp` (+104).
 - **Verify**: `fuse_ui_designer`.
 
-### 3.16 Fold `fuse/text/i18n.hpp` into `fuse_ui_l10n_lib` (S, decision)
+### 3.16 Fold `fuse/text/i18n.hpp` into `fuse_ui_l10n_lib` — **done 2026-11-13**
 
-Both are live. `fuse::text::formatPlural / formatNumber / pluralCategory` (main) and `fuse::ui::l10n` (branch)
-implement CLDR plural rules twice. `StringTable::trPlural` uses the first, `tr(key, args)` the second. Decide
-whether `fuse_text` keeps a minimal copy (it must not depend on the UI) or `trPlural` forwards to `l10n`.
-Gates: `fuse_text_i18n`, `fuse_ui_l10n`.
+One implementation: `l10n::pluralCardinal` (extended with the families only `i18n.hpp` had: be, sr / hr / bs, sl,
+lt, lv, ro, cy, ga, hy and the n = 1 / i = 0 or n = 1 lists; `da` corrected to the CLDR rule) and one number-symbol
+table (`format.cpp`, extended with `i18n.hpp`'s rows). `fuse/text/i18n.hpp` keeps its API (source compatible) and is
+compiled into `fuse_ui_l10n_lib` (`text_i18n.cpp`), which `fuse_text` links; pseudo-localisation stays in
+`fuse_text`. `StringTable::trPlural` and `tr(key, args)` therefore use the same rules. Two differences are kept and
+documented in both headers: the English fallback of `fuse::text::pluralCategory` for a language without rules
+(`l10n::hasPluralRules`), and the rounding / minus sign of `fuse::text::formatNumber`.
 
 ## 4. Existing UI files: what the merge kept
 

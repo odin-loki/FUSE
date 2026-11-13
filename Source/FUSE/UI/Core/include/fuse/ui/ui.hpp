@@ -29,6 +29,7 @@
 namespace fuse::ui {
 
 class UiContext;
+class IconSet; // fuse/ui/icon_set.hpp
 
 // ---- Input ---------------------------------------------------------------------------------------------------------
 /// UI key set (maps 1:1 onto fuse::platform key set v2 names; see platform/events_v2.hpp).
@@ -792,6 +793,25 @@ public:
     const fuse::text::Font* fontFor(std::string_view family, int weight, bool italic);
     /// The font of a node's computed style (the context's font for a dead handle).
     const fuse::text::Font* nodeFont(NodeHandle n);
+    /// `base` with the style's variable-font and OpenType settings: on a variable face, once the application called
+    /// fuse::text::enableVariableFonts(), the instance at wght = font-weight, wdth = font-stretch, opsz = font-size
+    /// (font-optical-sizing: auto) and then font-variation-settings; with font-feature-settings its
+    /// Font::withFeatures variant (FULL text profile; other profiles return the font unchanged). fontFor(style)
+    /// applies this to the face it picked. Instances and variants are cached by fuse_text: no steady-state allocation.
+    const fuse::text::Font& styledFont(const fuse::text::Font& base, const ComputedStyle& s);
+    /// Text whose size in device pixels (font-size x renderScale) is at or above `devicePx` is drawn from multi-channel
+    /// signed distance fields (one MSDF per glyph at GlyphAtlas::kMsdfPixelSize, scaled: crisp at any size, e.g. zoomed
+    /// or world-space UI) instead of per-size coverage. 0 (default) turns it off. Calls fuse::text::enableMsdf().
+    /// Drawn by the CPU rasteriser; the GPU packer skips MSDF glyph commands (draw_list.hpp, kGlyphMsdf).
+    void setMsdfThreshold(f32 devicePx);
+    f32 msdfThreshold() const { return m_msdfThreshold; }
+
+    // icons (fuse/ui/icon_set.hpp): the pack the `icon` style property, widgets::setIcon(ui, node, name) and the
+    // "icon" key of .fuseui nodes look names up in (before the built-in icons of fuse/ui/icons.hpp)
+    /// Attaches an icon pack (non-owning: it must outlive the context or be detached with nullptr). Re-lays out and
+    /// repaints every node.
+    void setIcons(const IconSet* icons);
+    const IconSet* icons() const { return m_icons; }
     /// Registers an application family under its name() for `font-family` (non-owning: it must outlive the context).
     /// Registered families win over installed fonts of the same name.
     void addFontFamily(fuse::text::FontFamily& family);
@@ -982,6 +1002,8 @@ private:
     std::vector<FamilySlot> m_families;
     TextScope m_textScope;
     bool m_systemFonts = true;
+    f32 m_msdfThreshold = 0.f;
+    const IconSet* m_icons = nullptr;
 
     struct Connection {
         u32 node = 0xFFFFFFFFu, nodeGen = 0, gen = 0;

@@ -1,6 +1,7 @@
 // fuse_text_cooked (UI3 gate, COOKED text profile):
 //   every profile  fuse_text_cook is deterministic: the bundled font cooked twice gives the same bytes, with a valid
-//                  .fusefont header; garbage is rejected.
+//                  .fusefont header; garbage is rejected. (Cross builds cannot run the tool: there cookFont() is
+//                  called in-process instead, which MINIMAL / FULL builds have.)
 //   COOKED         the build-time pack equals a fresh cook with the same options; the runtime loads packs only (a .ttf
 //                  is rejected); the bundled pack's layout of sample strings (glyph ids, pen positions, widths: advances
 //                  and kerning) matches the MINIMAL reference the cooker wrote, within 1e-3 px, and the strings rendered
@@ -8,6 +9,7 @@
 #include "test_util.hpp"
 
 #include "cook_reference.hpp"
+#include "fuse/text/font_cook.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -26,6 +28,7 @@ std::vector<std::uint8_t> readAll(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
     return std::vector<std::uint8_t>((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 }
+#ifdef FUSE_TEXT_COOK_EXE
 int run(const std::string& cmd) {
 #if defined(_WIN32)
     return std::system(("\"" + cmd + "\"").c_str()); // cmd /c strips one level of quotes
@@ -36,6 +39,7 @@ int run(const std::string& cmd) {
 std::string cookCmd(const std::string& out, const std::string& args) {
     return "\"" FUSE_TEXT_COOK_EXE "\" \"--out=" + out + "\" " + args + " \"" FUSE_TEXT_TEST_FONT "\"";
 }
+#endif
 
 template <class T> T take(const std::vector<std::uint8_t>& b, std::size_t& at) {
     T v{};
@@ -47,12 +51,36 @@ template <class T> T take(const std::vector<std::uint8_t>& b, std::size_t& at) {
 
 int main() {
     // determinism (any profile: the cooker is always built over MINIMAL)
+#ifdef FUSE_TEXT_COOK_EXE
     const std::string dir = FUSE_TEXT_TEST_OUT_DIR;
     const std::string a = dir + "/cooked_a.fusefont", b = dir + "/cooked_b.fusefont";
     const std::string args = FUSE_TEXT_TEST_COOK_ARGS;
     UI_CHECK(run(cookCmd(a, args)) == 0);
     UI_CHECK(run(cookCmd(b, args)) == 0);
     const auto pa = readAll(a), pb = readAll(b);
+#elif !FUSE_UI_TEST_TEXT_COOKED
+    // no runnable tool (cross build): the library entry point, on the bundled UI font
+    std::vector<std::uint8_t> pa, pb;
+    {
+        auto src = Font::bundled();
+        UI_CHECK(src.has_value());
+        CookOptions opt;
+        opt.sizes = {14.f, 16.f, 17.5f};
+        opt.ranges = {{0x20, 0x17F}};
+        if (src) {
+            auto c1 = cookFont(*src, opt), c2 = cookFont(*src, opt);
+            UI_CHECK(c1.has_value() && c2.has_value());
+            if (c1 && c2) {
+                pa = std::move(*c1);
+                pb = std::move(*c2);
+            }
+        }
+    }
+#else
+    std::printf("fuse_text_cooked: no runnable fuse_text_cook in this build, skipped\n");
+    return 77;
+    const std::vector<std::uint8_t> pa, pb;
+#endif
     std::printf("cooked twice: %zu / %zu bytes, %s\n", pa.size(), pb.size(), pa == pb ? "identical" : "DIFFERENT");
     UI_CHECK(!pa.empty() && pa == pb);
     UI_CHECK(pa.size() > 64 && std::memcmp(pa.data(), "FUSEFONT", 8) == 0);

@@ -4,8 +4,8 @@ Status as of 2026-11-12, branch `ccr-111d9b83-2iujo8`. This lists what is missin
 nobody mistakes "compiles in CI" for "works on a device". Phase-by-phase detail is in
 [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md) §9; usage is in [`README.md`](README.md).
 
-Several gaps below (cooked / MSDF / variable fonts, the icon cooker, GPU blur, damage present, custom
-shaders, `ProjectHost`) have an implementation in the tree that no target builds yet: the UI code of the merged
+Several gaps below (GPU blur, damage present, custom shaders) have an implementation in the
+tree that no target builds yet: the UI code of the merged
 branch `claude/magical-bassi-815825`. They stay gaps until ported; [`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md)
 says where each one is and what blocks it.
 
@@ -211,14 +211,27 @@ pushed after those CI runs and re-checked on Linux only.
 
 ### Text
 
-- Cooked fonts (`FUSE_UI_TEXT=COOKED`, `.fusefont`), MSDF glyphs, CBDT / sbix and COLRv1 colour fonts.
-- Variable-font axes (default instance only), CFF2.
-- Fallback-chain faces (other scripts, emoji) are not restyled under bold / italic.
+- Cooked fonts, MSDF glyphs, CBDT / sbix and COLRv1 colour fonts and variable fonts are live (ported from the
+  `claude/magical-bassi-815825` branch). What is missing around them:
+  - GPU: `packDrawList` skips colour-image (`kGlyphColor`) and MSDF (`kGlyphMsdf`) glyph commands; only the CPU
+    rasteriser draws them. The branch's shader work for them was not ported (no Vulkan device to verify on).
+  - `FUSE_UI_TEXT=COOKED`: MINIMAL shaping only (no GSUB / GPOS, no bidi), one face and one instance per pack, no
+    synthetic oblique, no face names / weight in a pack, no font-feature-settings. A cross-compiled COOKED build
+    needs a host `fuse_text_cook` (`FUSE_TEXT_COOK_HOST`); none was built for Android or FreeBSD.
+  - Variable fonts: CFF2 outlines (variable `.otf`) are not supported; `font-weight` is not animatable
+    (`font-stretch` is); italic uses the synthetic oblique, not the `ital` / `slnt` axis.
+  - The Windows registry font list and the `.ttc` named-instance listing were compiled nowhere here (Windows) or
+    not exercised against Segoe UI Variable / Bahnschrift (those checks only run where the fonts exist).
+- Fallback-chain faces are restyled only under a real bold primary (bold face, variable instance,
+  `Font::emboldened()`); the UI's synthesised bold of a static family leaves them regular, and nothing restyles them
+  for italic.
 - `letter-spacing` / `line-height` are ignored by the text edit widgets; no `font` shorthand.
 - i18n: dates, times, currencies and the string-extraction CLI exist since the `claude/magical-bassi-815825` merge
   (`fuse_ui_l10n_lib`, `fuse_ui_extract_strings`, gate `fuse_ui_l10n`). Still missing: native digit sets, date
-  skeletons, accounting formats; plural tables are hand-written, not generated from CLDR, and exist twice
-  (`fuse/text/i18n.hpp` and `fuse_ui_l10n_lib`).
+  skeletons, accounting formats; plural tables are hand-written, not generated from CLDR (one table since
+  `fuse/text/i18n.hpp` was folded into `fuse_ui_l10n_lib`). The number rows that came from `i18n.hpp` (bn, th, ca,
+  gl, id, da, el, hr, sl, sr, ro, vi, nb, nn, no, sk, be, bg, hu, lt, lv, et, kk and some regions) carry a plain
+  `-` / `%`: their percent and minus forms were not checked against CLDR.
 - Bold / italic frames have no zero-allocation gate.
 - The glyph atlas is fixed at 1024x1024; very large text at scale 3 or more can overflow it.
 
@@ -230,7 +243,11 @@ pushed after those CI runs and re-checked on Linux only.
 - SVG: `text`, `use`, `image`, `clipPath`, `mask`, filters and `<style>` sheets are not drawn; group `opacity`
   multiplies fill and stroke alpha; radial focal point ignored; about 65 colour names.
 - `Painter`: images under rotation / skew / mirroring are rejected; text under rotation or skew is drawn upright.
-- No SVG / icon cooker, no backdrop-blur GPU pass, no custom shaders, no damage-driven incremental GPU present.
+- Icon packs (`.fuseicons`, `fuse_ui_icon_cook`, `IconSet`, the `icon` style property) are live. Missing: `:name:`
+  icon markup in menu item text, dimming of fixed-colour paints on `:disabled` nodes, the designer's icon picker,
+  `fuse_ui_cook --icons`; `icon` is honoured by `button`, `toolbutton` and the `icon` widget only; packs of the
+  merged branch (coverage atlases, versions 1 / 2) do not load.
+- No backdrop-blur GPU pass, no custom shaders, no damage-driven incremental GPU present.
 - The game module rasterises its draw list at scale 1 only.
 
 ### Style engine port (selectors, at-rules, positioning, effects, animations)

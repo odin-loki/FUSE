@@ -126,9 +126,11 @@ private:
 ///   treemodelview               "columns": [title...], "items": [line...] - the tabs at the start of a line are its
 ///                               depth, the tabs after them separate the cells; "editable": bool, "expanded": bool
 ///                               (the document owns a StringTreeModel)
-///   svgimage                    "icon": a built-in icon name (fuse/ui/icons.hpp: "save", "folder", ...) or "svg":
-///                               inline SVG source; sized by the style
-///   button / toolbutton         "icon": a built-in icon name (drawn left of the text)
+///   svgimage                    "icon": an icon name - the context's pack (UiContext::setIcons, attached before
+///                               the load; fuse/ui/icon_set.hpp), else a built-in icon (fuse/ui/icons.hpp: "save",
+///                               "folder", ...) - or "svg": inline SVG source; sized by the style
+///   button / toolbutton         "icon": an icon name (drawn left of the text; sets the `icon` style property: the
+///                               pack, then the built-in icons; without a pack an unknown name is an error)
 ///   tabwidget                   "tabs": [title...]; child k is the content of page k; "value" = current tab
 ///   stack                       every child is a page; "value" = current page (bindable)
 ///   splitter                    "stacked": bool; every child gets a pane (a child's "paneSize" px fixes it)

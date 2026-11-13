@@ -261,63 +261,62 @@ int shapingScripts() {
 }
 
 // ---- fuse_text_system_fonts ----------------------------------------------------------------------------------------
-int systemFonts() {
+int systemFontsGate() {
     if (textProfile() == TextProfile::Cooked) {
         std::printf("fuse_text_system_fonts: COOKED loads only .fusefont packs, skipped\n");
         return 77;
     }
     const auto t0 = std::chrono::steady_clock::now();
-    const FontCatalog& cat = FontCatalog::system();
-    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-    const std::vector<std::string> fams = cat.families();
-    std::printf("system fonts: %zu faces, %zu families in %.0f ms\n", cat.faces().size(), fams.size(), ms);
-    for (const std::string& d : FontCatalog::systemFontDirectories()) std::printf("  dir %s\n", d.c_str());
-    if (cat.faces().empty()) {
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    const std::vector<std::string> fams = systemFontFamilies();
+    std::printf("system fonts: %zu faces, %zu families in %.0f ms\n", fuse::text::systemFonts().size(), fams.size(), ms);
+    for (const std::string& d : systemFontDirectories()) std::printf("  dir %s\n", d.c_str());
+    if (fuse::text::systemFonts().empty()) {
         std::printf("fuse_text_system_fonts: no fonts installed, skipped\n");
         return 77;
     }
-    for (const FontFaceInfo& f : cat.faces()) {
+    for (const SystemFontInfo& f : fuse::text::systemFonts()) {
         UI_CHECK(!f.family.empty() && f.weight >= 1 && f.weight <= 1000);
     }
-    UI_CHECK(cat.match("No Such Family 123") == nullptr);
+    UI_CHECK(findSystemFont("No Such Family 123") == nullptr);
 #if defined(_WIN32)
     // Windows' own fonts; Wine ships neither Segoe UI nor Arial (its catalogue holds the host's fonts)
     const bool winFonts = !fuse::ui::test::runningUnderWine();
     if (!winFonts) {
         std::printf("  under Wine: generic families only\n");
-        UI_CHECK(cat.match("sans-serif") != nullptr && cat.match("monospace") != nullptr);
+        UI_CHECK(findSystemFont("sans-serif") != nullptr && findSystemFont("monospace") != nullptr);
     } else {
-        const FontFaceInfo* segoe = cat.match("Segoe UI");
-        const FontFaceInfo* arial = cat.match("arial"); // case-insensitive
+        const SystemFontInfo* segoe = findSystemFont("Segoe UI");
+        const SystemFontInfo* arial = findSystemFont("arial"); // case-insensitive
         UI_CHECK(segoe && arial);
         if (arial) {
             std::printf("  Arial -> %s (%s, %u)\n", arial->path.c_str(), arial->style.c_str(), arial->weight);
             UI_CHECK(arial->weight == 400 && !arial->italic);
-            const FontFaceInfo* bold = cat.match("Arial", 700);
-            const FontFaceInfo* italic = cat.match("Arial", 400, true);
-            const FontFaceInfo* boldItalic = cat.match("Arial", 700, true);
+            const SystemFontInfo* bold = findSystemFont("Arial", 700);
+            const SystemFontInfo* italic = findSystemFont("Arial", 400, true);
+            const SystemFontInfo* boldItalic = findSystemFont("Arial", 700, true);
             UI_CHECK(bold && bold->weight == 700 && !bold->italic);
             UI_CHECK(italic && italic->italic && italic->weight == 400);
             UI_CHECK(boldItalic && boldItalic->italic && boldItalic->weight == 700);
-            auto f = FontCatalog::load(*arial);
+            auto f = loadSystemFont(*arial);
             UI_CHECK(f.has_value() && f->glyphIndex(U'A') != 0 && f->glyphIndex(U'\u0416') != 0);
         }
         if (segoe) {
             std::printf("  Segoe UI -> %s (%s, %u)\n", segoe->path.c_str(), segoe->style.c_str(), segoe->weight);
             UI_CHECK(segoe->weight == 400 && !segoe->italic);
-            const FontFaceInfo* semi = cat.match("Segoe UI", 600);
+            const SystemFontInfo* semi = findSystemFont("Segoe UI", 600);
             UI_CHECK(semi && semi->weight >= 550 && semi->weight <= 700);
         }
-        const FontFaceInfo* sans = cat.match("sans-serif");
-        const FontFaceInfo* mono = cat.match("monospace");
+        const SystemFontInfo* sans = findSystemFont("sans-serif");
+        const SystemFontInfo* mono = findSystemFont("monospace");
         UI_CHECK(sans && segoe && sans->family == segoe->family);
         UI_CHECK(mono != nullptr);
         // a collection face (.ttc) loads by index
-        for (const FontFaceInfo& f : cat.faces())
-            if (f.index > 0) {
-                auto x = FontCatalog::load(f);
+        for (const SystemFontInfo& f : fuse::text::systemFonts())
+            if (f.faceIndex > 0) {
+                auto x = loadSystemFont(f);
                 UI_CHECK(x.has_value());
-                std::printf("  collection face %s #%u: %s\n", f.path.c_str(), f.index, x ? "loaded" : "FAILED");
+                std::printf("  collection face %s #%u: %s\n", f.path.c_str(), f.faceIndex, x ? "loaded" : "FAILED");
                 break;
             }
     }
@@ -331,30 +330,32 @@ int systemFonts() {
     int chains = 0;
     for (const auto& [script, cp] : probes) {
         UI_CHECK(scriptOf(cp) == script);
-        const auto chain = cat.systemFallbackChain(script);
+        const auto chain = systemFallbackChain(script);
         std::printf("  %-10s:", scriptName(script));
-        for (const FontFaceInfo* f : chain) std::printf(" [%s]", f->family.c_str());
+        for (const SystemFontInfo* f : chain) std::printf(" [%s]", f->family.c_str());
         std::printf("\n");
         if (chain.empty()) continue;
         ++chains;
-        auto f = FontCatalog::load(*chain.front());
+        auto f = loadSystemFont(*chain.front());
         UI_CHECK(f.has_value());
         if (f && script != Script::Symbols) UI_CHECK(f->glyphIndex(cp) != 0);
     }
-    UI_CHECK(!cat.systemFallbackChain(Script::Latin).empty());
+    UI_CHECK(!systemFallbackChain(Script::Latin).empty());
 #if defined(_WIN32)
     if (winFonts)
-        for (Script s : {Script::Arabic, Script::Hebrew, Script::Han, Script::Emoji}) UI_CHECK(!cat.systemFallbackChain(s).empty());
+        for (Script s : {Script::Arabic, Script::Hebrew, Script::Han, Script::Emoji}) UI_CHECK(!systemFallbackChain(s).empty());
 #endif
-    // fontPicker lists the installed families
-    const std::string list = w::systemFontFamilies();
-    UI_CHECK(list.starts_with("Open Sans\n"));
-#if defined(_WIN32)
-    if (winFonts) UI_CHECK(list.find("\nSegoe UI\n") != std::string::npos && list.find("\nArial\n") != std::string::npos);
-#endif
+    // generic CSS families resolve to an installed family; fontPicker (empty list) starts with the bundled family
+    {
+        const SystemFontInfo* sans = findSystemFont("sans-serif");
+        const SystemFontInfo* mono = findSystemFont("monospace");
+        std::printf("  sans-serif -> %s, monospace -> %s\n", sans ? sans->family.c_str() : "(none)", mono ? mono->family.c_str() : "(none)");
+        if (sans) UI_CHECK(sans->covers(Script::Latin) && findSystemFont("system-ui") == sans && sans->stretch == 5);
+        if (mono) UI_CHECK(mono->monospace || mono->family.find("Mono") != std::string::npos);
+    }
     UiContext ui{{.viewport = {400, 300}, .font = &fuse::ui::test::font()}};
     w::install(ui);
-    const NodeHandle fp = w::fontPicker(ui, ui.root(), "@system", 14.f, "fonts");
+    const NodeHandle fp = w::fontPicker(ui, ui.root(), {}, 14.f, "fonts");
     ui.update();
     UI_CHECK_EQ(w::fontPickerFamily(ui, fp), std::string("Open Sans"));
     std::printf("  %d script chains\n", chains);
@@ -626,7 +627,7 @@ int main(int argc, char** argv) {
         if (std::strncmp(argv[i], "--out=", 6) == 0) g_out = argv[i] + 6;
     const std::string_view gate = FUSE_TEXT_GATE;
     if (gate == "shaping_scripts") return shapingScripts();
-    if (gate == "system_fonts") return systemFonts();
+    if (gate == "system_fonts") return systemFontsGate();
     if (gate == "cache_zero_alloc") return cacheZeroAlloc();
     if (gate == "colrv1") return colrv1();
     if (gate == "dpi_1") return dpi(1.f, "fuse_text_dpi_1");

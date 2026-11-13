@@ -272,7 +272,7 @@ int msdf() {
     fuse::ui::test::render(ui, ui1);
     writePng("msdf_ui.png", ui1);
     // DPI scale 1.5: the 30 px line (45 device px) crosses the threshold
-    ui.setScale(1.5f);
+    ui.setRenderScale(1.5f);
     ui.update();
     const int msdf2 = count(kGlyphMsdf);
     std::printf("ui scale 1.5: %d MSDF glyph commands\n", msdf2);
@@ -280,7 +280,7 @@ int msdf() {
     // scaled MSDF quads keep the texel range and stretch their rect
     for (const DrawCmd& c : ui.drawList().cmds())
         if (c.op == DrawOp::Glyph && c.gradient == kGlyphMsdf) UI_CHECK(c.blur == GlyphAtlas::kMsdfRange && c.rect.w > float(c.tw));
-    ui.setScale(1.f);
+    ui.setRenderScale(1.f);
     ui.update();
 
 #if FUSE_TEXT_COLOR_HAVE_VK

@@ -65,6 +65,15 @@ bool findIcon(std::string_view name, Icon& out) {
     return false;
 }
 
+bool findIconHash(u32 nameHash, Icon& out) {
+    for (u32 i = 0; i < kIconCount; ++i)
+        if (hashId(kIcons[i].name) == nameHash) {
+            out = Icon(i);
+            return true;
+        }
+    return false;
+}
+
 std::string_view iconSvg(Icon icon) { return data().svg[index(icon)]; }
 const SvgImage& iconImage(Icon icon) { return data().image[index(icon)]; }
 

@@ -120,6 +120,7 @@ bool isBinding(const JsonValue& v) { return v.isString() && v.string.find('{') !
 struct Walk {
     std::vector<std::string> bindings;
     std::set<std::string> classes;
+    std::set<std::string> icons; // names in "icon" keys and inline `icon` styles
     u32 nodes = 0;
     bool walk(const JsonValue& n, u32 depth) {
         if (!n.isObject() || depth > kMaxDepth) return false;
@@ -128,6 +129,9 @@ struct Walk {
         classes.insert(c && c->isString() ? c->string : std::string("panel"));
         if (n.get("tooltip")) classes.insert("tooltip");
         if (n.get("contextMenu")) classes.insert("menu");
+        if (const JsonValue* ic = n.get("icon"); ic && ic->isString()) icons.insert(ic->string);
+        if (const JsonValue* st = n.get("style"); st && st->isObject())
+            if (const JsonValue* ic = st->get("icon"); ic && ic->isString() && ic->string != "none") icons.insert(ic->string);
         for (const auto& [k, v] : n.object)
             if (!structuralKey(k) && isBinding(v) &&
                 std::find(bindings.begin(), bindings.end(), v.string) == bindings.end())
@@ -161,10 +165,12 @@ void writeValue(Writer& w, const PropValue& v) {
     w.u32_(v.fPct);
     if (v.type == PropType::Raw) // the whole payload: what fCount counts differs by property
         for (f32 x : v.f) w.f32_(x);
+    if (v.type == PropType::FontSettings || v.type == PropType::Ident) // the tag of each entry / the name hash
+        for (u8 i = 0; i < v.trackCount && i < kMaxGridTracks; ++i) w.u32_(v.tags[i]);
 }
 bool readValue(Reader& r, PropValue& v) {
     const u8 t = r.u8_();
-    if (t > u8(PropType::Raw)) return r.ok = false;
+    if (t > u8(PropType::Ident)) return r.ok = false;
     v.type = PropType(t);
     v.b = r.u8_() != 0;
     v.e = r.u8_();
@@ -179,6 +185,8 @@ bool readValue(Reader& r, PropValue& v) {
     if (v.fCount > v.f.size()) return r.ok = false;
     if (v.type == PropType::Raw)
         for (f32& x : v.f) x = r.f32_();
+    if (v.type == PropType::FontSettings || v.type == PropType::Ident)
+        for (u8 i = 0; i < v.trackCount && r.ok; ++i) v.tags[i] = r.u32_();
     return r.ok;
 }
 void writeSelector(Writer& w, const SimpleSelector& sel) {
@@ -561,6 +569,7 @@ std::expected<std::vector<u8>, DocError> cookDocument(std::string_view json, Coo
         info->bindings = u32(walk.bindings.size());
         info->instructions = instructions;
         info->classes.assign(walk.classes.begin(), walk.classes.end());
+        info->icons.assign(walk.icons.begin(), walk.icons.end());
     }
     return std::move(w.b);
 }

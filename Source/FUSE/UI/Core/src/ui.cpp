@@ -679,7 +679,11 @@ void UiContext::applyStyleDiff(u32 i, const ComputedStyle& before, const Compute
     const ComputedStyle& lb = after;
     const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign || la.rtl != lb.rtl ||
                              la.fontWeight != lb.fontWeight || la.fontItalic != lb.fontItalic || la.fontFamily != lb.fontFamily ||
-                             la.letterSpacing != lb.letterSpacing || la.lineHeight != lb.lineHeight;
+                             la.letterSpacing != lb.letterSpacing || la.lineHeight != lb.lineHeight ||
+                             la.fontStretch != lb.fontStretch || la.fontVariationCount != lb.fontVariationCount ||
+                             la.fontVariationTags != lb.fontVariationTags || la.fontVariationValues != lb.fontVariationValues ||
+                             la.fontFeatureCount != lb.fontFeatureCount || la.fontFeatureTags != lb.fontFeatureTags ||
+                             la.fontFeatureValues != lb.fontFeatureValues;
     markPaint(i);
     // compare layout-relevant fields only
     la.background = lb.background; la.background2 = lb.background2; la.borderColor = lb.borderColor;
@@ -904,8 +908,41 @@ const fuse::text::Font* UiContext::fontFor(std::span<const u32> families, int we
     return f ? f : m_font;
 }
 const fuse::text::Font* UiContext::fontFor(const ComputedStyle& s) {
-    if (s.fontWeight == 400 && !s.fontItalic && s.fontFamily[0] == 0) return m_font; // the common case
-    return fontFor(std::span<const u32>(s.fontFamily), s.fontWeight, s.fontItalic);
+    const fuse::text::Font* f = (s.fontWeight == 400 && !s.fontItalic && s.fontFamily[0] == 0)
+                                    ? m_font // the common case
+                                    : fontFor(std::span<const u32>(s.fontFamily), s.fontWeight, s.fontItalic);
+    return f ? &styledFont(*f, s) : nullptr;
+}
+const fuse::text::Font& UiContext::styledFont(const fuse::text::Font& base, const ComputedStyle& s) {
+    const fuse::text::Font* f = &base;
+    if (base.isVariable() && fuse::text::variableFontsEnabled()) {
+        using fuse::text::fontTag;
+        std::array<fuse::text::FontVariation, 3 + kMaxFontVariations> v;
+        std::size_t n = 0;
+        v[n++] = {fontTag("wght"), f32(s.fontWeight)};
+        v[n++] = {fontTag("wdth"), s.fontStretch};
+        v[n++] = {fontTag("opsz"), s.fontSize}; // font-optical-sizing: auto
+        for (u8 k = 0; k < s.fontVariationCount; ++k) v[n++] = {s.fontVariationTags[k], s.fontVariationValues[k]};
+        f = &base.instance(std::span<const fuse::text::FontVariation>(v.data(), n));
+    }
+    if (s.fontFeatureCount) { // font-feature-settings (FULL: HarfBuzz; other profiles: unchanged)
+        std::array<fuse::text::FontFeature, kMaxFontFeatures> ft;
+        for (u8 k = 0; k < s.fontFeatureCount; ++k) ft[k] = {s.fontFeatureTags[k], s.fontFeatureValues[k]};
+        f = &f->withFeatures(std::span<const fuse::text::FontFeature>(ft.data(), s.fontFeatureCount));
+    }
+    return *f;
+}
+void UiContext::setIcons(const IconSet* icons) {
+    if (icons == m_icons) return;
+    m_icons = icons;
+    markAllDirty(); // icon sizes are part of the content size
+}
+void UiContext::setMsdfThreshold(f32 devicePx) {
+    devicePx = std::isfinite(devicePx) ? std::max(devicePx, 0.f) : 0.f;
+    if (devicePx > 0.f) fuse::text::enableMsdf();
+    if (devicePx == m_msdfThreshold) return;
+    m_msdfThreshold = devicePx;
+    markAllDirty(); // glyphs may switch between coverage and MSDF
 }
 const fuse::text::Font* UiContext::fontFor(std::string_view family, int weight, bool italic) {
     const u32 h = family.empty() ? 0u : fuse::text::familyHash(family);
@@ -927,16 +964,62 @@ void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, 
     paintTextLayout(dl, tl, o, col, px, nodeIdx, deco);
 }
 
+namespace {
+u32 straightRgba(Color c) {
+    auto q = [](f32 v) { return u32(std::lround(std::clamp(v, 0.f, 1.f) * 255.f)); };
+    return q(c.r) | (q(c.g) << 8) | (q(c.b) << 16) | (q(c.a) << 24);
+}
+} // namespace
+
 void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx, u8 deco) {
     if (!m_font || col.a <= 0.f) return;
     const fuse::text::Font& font = tl.font ? *tl.font : *m_font;
     const f32 rs = m_painting ? m_renderScale : 1.f;
+    const bool msdf = m_msdfThreshold > 0.f && fuse::text::msdfEnabled();
     for (const auto& ln : tl.lines) {
         for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
             const auto& g = tl.glyphs[k];
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
             fuse::text::forEachPaintGlyph(font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
                                                                const fuse::text::ColorLayer* layer) {
+                if (layer && layer->image) { // bitmap strike / exact COLRv1: one RGBA atlas glyph (enableColorGlyphs)
+                    const auto ag = m_atlas.getColor(f, glyph, fpx * rs, straightRgba(Color{col.r, col.g, col.b, 1.f}));
+                    if (!ag.valid || ag.w == 0) return;
+                    DrawCmd c;
+                    c.op = DrawOp::Glyph;
+                    c.gradient = kGlyphColor;
+                    c.rect = {std::round((o.x + g.x) * rs) + f32(ag.x0), std::round((o.y + ln.baseline) * rs) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                    c.devicePx = rs == 1.f ? 0 : 1;
+                    c.u = ag.u;
+                    c.v = ag.v;
+                    c.tw = ag.w;
+                    c.th = ag.h;
+                    c.fill = {1.f, 1.f, 1.f, col.a};
+                    c.node = nodeIdx;
+                    dl.push(c);
+                    return;
+                }
+                if (msdf && fpx * rs >= m_msdfThreshold) { // MSDF texels at kMsdfPixelSize stretched to the device size
+                    const auto ag = m_atlas.getMsdf(f, glyph);
+                    if (!ag.valid || ag.w == 0) return;
+                    const f32 k = fpx * rs / fuse::text::GlyphAtlas::kMsdfPixelSize;
+                    DrawCmd c;
+                    c.op = DrawOp::Glyph;
+                    c.gradient = kGlyphMsdf;
+                    c.rect = {(o.x + g.x) * rs + f32(ag.x0) * k, (o.y + ln.baseline) * rs + f32(ag.y0) * k, f32(ag.w) * k, f32(ag.h) * k};
+                    c.devicePx = rs == 1.f ? 0 : 1;
+                    c.blur = fuse::text::GlyphAtlas::kMsdfRange;
+                    c.u = ag.u;
+                    c.v = ag.v;
+                    c.tw = ag.w;
+                    c.th = ag.h;
+                    c.fill = (!layer || layer->foreground)
+                                 ? col
+                                 : Color{f32(layer->r) / 255.f, f32(layer->g) / 255.f, f32(layer->b) / 255.f, f32(layer->a) / 255.f * col.a};
+                    c.node = nodeIdx;
+                    dl.push(c);
+                    return;
+                }
                 const auto ag = m_atlas.get(f, glyph, fpx * rs);
                 if (!ag.valid || ag.w == 0) return;
                 DrawCmd c;

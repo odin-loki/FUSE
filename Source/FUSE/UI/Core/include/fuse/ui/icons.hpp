@@ -1,7 +1,11 @@
 // FUSE UI built-in icon set: common UI icons authored for this module as SVG (24 x 24 grid, 2 px round strokes in
 // currentColor, so they take the text colour and stay sharp at any size / render scale).
+//
+// Application icon packs cooked from SVG files (IconSet, .fuseicons, UiContext::setIcons, the `icon` style property):
+// fuse/ui/icon_set.hpp, included here. An icon name is looked up in the context's pack first, then among these.
 #pragma once
 
+#include "fuse/ui/icon_set.hpp"
 #include "fuse/ui/svg.hpp"
 
 namespace fuse::ui {
@@ -16,6 +20,8 @@ inline constexpr u32 kIconCount = u32(Icon::Count);
 /// "chevron-left", "close", ... (kebab case).
 std::string_view iconName(Icon icon);
 bool findIcon(std::string_view name, Icon& out);
+/// By hashId(name) (what the `icon` style property stores).
+bool findIconHash(u32 nameHash, Icon& out);
 /// The icon as a complete SVG document.
 std::string_view iconSvg(Icon icon);
 /// The parsed icon (parsed on first use, kept for the life of the process; safe from any thread).

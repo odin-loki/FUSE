@@ -299,8 +299,10 @@ void css(const Font& font) {
     UI_CHECK(ui.computed(child).fontWeight == 700.f && ui.computed(child).fontVariationCount == 2); // inherited
     UI_CHECK(ui.computed(b).fontWeight == 650.f && ui.computed(b).fontStretch == 112.5f);
     // the font a node draws with: wght from font-weight, wdth from font-variation-settings (over font-stretch)
-    UI_CHECK(ui.textFont(a).variationCoords()[0] == 700.f && ui.textFont(a).variationCoords()[1] == 80.f);
-    UI_CHECK(ui.textFont(b).variationCoords()[0] == 650.f && ui.textFont(b).variationCoords()[1] == 112.5f);
+    UI_CHECK(ui.nodeFont(a)->variationCoords()[0] == 700.f && ui.nodeFont(a)->variationCoords()[1] == 80.f);
+    UI_CHECK(ui.nodeFont(b)->variationCoords()[0] == 650.f && ui.nodeFont(b)->variationCoords()[1] == 112.5f);
+    // a variable face takes its weight from the wght axis: no synthetic bold on top
+    UI_CHECK(ui.nodeFont(a)->syntheticEmbolden() == 0.f && ui.nodeFont(a)->weight() == 700);
 
     // label widths follow the instance (4 x 'A' at 100 px: 4 x (300 + stem) x 0.1)
     const NodeHandle l = *ui.create("label", ui.root());
@@ -323,17 +325,23 @@ void css(const Font& font) {
     ui.setCss(l, "font-stretch", "normal");
     ui.update(0.f);
     UI_CHECK(near(width(), 160.f, 0.05f));
-    // animated weight: monotonic over the tween, ends at the target
-    ui.animate(l, UiContext::AnimProp::FontWeight, 900.f, 1.f, UiContext::Ease::Linear);
+    // font-stretch is animatable (a style transition tweens the wdth axis): monotonic, ends at the target
+    ui.setCss(l, "transition", "font-stretch 1s linear");
+    ui.update(0.f);
+    ui.setCss(l, "font-stretch", "50%");
     float last = width();
     for (int k = 0; k < 10; ++k) {
         ui.update(0.1f);
-        UI_CHECK(width() >= last);
+        UI_CHECK(width() <= last);
         last = width();
     }
     ui.update(0.1f);
-    UI_CHECK(near(width(), 240.f, 0.05f));
-    std::printf("  css: AAAA at 100 px: 160 (400) -> 240 (900), tweened\n");
+    UI_CHECK(near(width(), 80.f, 0.05f));
+    ui.setCss(l, "transition", "none");
+    ui.setCss(l, "font-stretch", "normal");
+    ui.update(0.f);
+    UI_CHECK(near(width(), 160.f, 0.05f));
+    std::printf("  css: AAAA at 100 px: 160 (wdth 100) -> 80 (wdth 50), tweened by a transition\n");
 
     // steady state: instance lookups and re-layout of seen text at seen weights allocate nothing
     TextLayout tl;
@@ -478,12 +486,11 @@ void system() {
     }
     if (!seg.empty()) {
         systemFont(seg, "Segoe UI Variable", 700.f);
-        const FontCatalog& cat = FontCatalog::system();
-        const FontFaceInfo* sb = cat.match("Segoe UI Variable Display", 600);
+                const SystemFontInfo* sb = findSystemFont("Segoe UI Variable Display", 600);
         UI_CHECK(sb && sb->namedInstance >= 0 && sb->style == "Semibold" && sb->weight == 600 && sb->variable);
         if (sb) {
             UI_CHECK_EQ(sb->fullName, std::string("Segoe UI Variable Display Semibold"));
-            auto f = FontCatalog::load(*sb);
+            auto f = loadSystemFont(*sb);
             UI_CHECK(f && f->variationCoords().size() == 2);
             if (f && f->variationCoords().size() == 2) {
                 const auto axes = f->axes();
@@ -497,11 +504,11 @@ void system() {
                 UI_CHECK(def && f->advance(H, 20.f) > def->advance(H, 20.f));
             }
         }
-        const FontFaceInfo* text = cat.match("Segoe UI Variable Text", 400);
+        const SystemFontInfo* text = findSystemFont("Segoe UI Variable Text", 400);
         UI_CHECK(text && text->style == "Regular" && text->namedInstance >= 0);
-        UI_CHECK(cat.match("Segoe UI Variable Small", 300) && cat.match("Segoe UI Variable Small", 300)->style == "Light");
+        UI_CHECK(findSystemFont("Segoe UI Variable Small", 300) && findSystemFont("Segoe UI Variable Small", 300)->style == "Light");
         std::size_t named = 0;
-        for (const FontFaceInfo& fi : cat.faces()) named += fi.variable && fi.namedInstance >= 0;
+        for (const SystemFontInfo& fi : fuse::text::systemFonts()) named += fi.variable && fi.namedInstance >= 0;
         std::printf("  catalog: %zu named-instance faces; Segoe UI Variable Display Semibold -> wght 600, opsz 36\n", named);
     }
     if (!bahn.empty()) {
@@ -511,10 +518,10 @@ void system() {
             const std::uint32_t o = f->glyphIndex(U'o');
             UI_CHECK(at(*f, 400.f, 75.f).advance(o, 20.f) < f->advance(o, 20.f));
         }
-        const FontFaceInfo* c = FontCatalog::system().match("Bahnschrift", 600);
+        const SystemFontInfo* c = findSystemFont("Bahnschrift", 600);
         UI_CHECK(c != nullptr);
         bool condensed = false;
-        for (const FontFaceInfo& fi : FontCatalog::system().faces())
+        for (const SystemFontInfo& fi : fuse::text::systemFonts())
             condensed |= fi.family == "Bahnschrift" && fi.style == "Bold Condensed" && fi.stretch == 3 && fi.weight == 700;
         UI_CHECK(condensed);
     }

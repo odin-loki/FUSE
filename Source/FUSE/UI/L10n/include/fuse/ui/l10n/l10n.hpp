@@ -37,7 +37,13 @@ struct PluralOperands {
     static bool parse(std::string_view decimal, PluralOperands& out); ///< "-12.340" keeps v 3; false if malformed
 };
 
+/// Cardinal rules: en de nl sv fi nb nn no et gl ca da, es it pt fr (with the "many" of whole millions), ru uk be,
+/// pl, cs sk, sr hr bs, sl, lt, lv, ro, ar, he, cy, ga, tr el hu bg, hi bn fa gu kn am zu as, hy, the n = 1 family
+/// (eu ka kk mn az uz sq af eo fo ta te ml mr ne or) and the languages without plural forms (ja zh ko vi th id ms ...).
+/// Any other language gets the CLDR root rule (other). fuse/text/i18n.hpp's pluralCategory uses the same rules.
 Plural pluralCardinal(std::string_view locale, const PluralOperands& op);
+/// True when the locale's language has a cardinal rule here (false: pluralCardinal answers with the root rule).
+bool hasPluralRules(std::string_view locale);
 Plural pluralOrdinal(std::string_view locale, const PluralOperands& op);
 inline Plural pluralCardinal(std::string_view locale, double x) { return pluralCardinal(locale, PluralOperands::fromDouble(x)); }
 inline Plural pluralOrdinal(std::string_view locale, double x) { return pluralOrdinal(locale, PluralOperands::fromDouble(x)); }
