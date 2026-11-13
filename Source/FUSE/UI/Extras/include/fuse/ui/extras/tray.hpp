@@ -53,6 +53,11 @@ public:
     std::function<void(int x, int y)> onActivated;          ///< primary click
     std::function<void(int x, int y)> onSecondaryActivated; ///< middle click
     std::function<void(int delta, bool horizontal)> onScroll;
+    /// A notification from this icon (Qt QSystemTrayIcon::showMessage). Linux / BSD: org.freedesktop.Notifications
+    /// with the icon's title as the application name; Windows: a balloon / toast of the tray icon (the icon must be
+    /// shown). False when no notification service takes it. A click on it calls onMessageClicked (from poll()).
+    bool showMessage(std::string title, std::string body, int timeoutMs = -1);
+    std::function<void()> onMessageClicked;
 
     /// Process tray events (call once per frame / from the event loop). Callbacks run inside poll().
     void poll();

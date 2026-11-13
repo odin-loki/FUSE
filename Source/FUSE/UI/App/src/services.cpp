@@ -285,6 +285,7 @@ void AppWindow::setVisible(bool on) {
 }
 void AppWindow::setPosition(Vec2 p) {
     m_wantPosition = p;
+    m_positionAsked = true;
     if (m_backend.apply) {
         ask(WindowRequest::Position);
         return;

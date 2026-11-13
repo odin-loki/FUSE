@@ -1,6 +1,7 @@
 // Platform-independent halves of TrayIcon / GlobalMenuBar (state + change routing to the backend).
 #include <algorithm>
 
+#include "fuse/ui/extras/desktop.hpp"
 #include "tray_internal.hpp"
 
 namespace fuse::ui {
@@ -9,6 +10,7 @@ using namespace tray_detail;
 struct TrayIcon::Impl {
     TrayState st;
     std::unique_ptr<TrayBackend> be;
+    std::unique_ptr<desktop::Notifier> notifier; ///< showMessage where the backend has no notification of its own
 };
 TrayIcon::TrayIcon() : m(std::make_unique<Impl>()) {
     m->st.owner = this;
@@ -33,7 +35,27 @@ void TrayIcon::setStatus(TrayStatus s) { m->st.status = s; if (m->be) m->be->cha
 void TrayIcon::setMenu(std::vector<MenuItem> menu) { m->st.menu = std::move(menu); menuChanged(); }
 std::vector<MenuItem>& TrayIcon::menu() { return m->st.menu; }
 void TrayIcon::menuChanged() { if (m->be) m->be->changed(kMenu); }
-void TrayIcon::poll() { if (m->be) m->be->poll(); }
+void TrayIcon::poll() {
+    if (m->be) m->be->poll();
+    if (m->notifier) m->notifier->poll();
+}
+bool TrayIcon::showMessage(std::string title, std::string body, int timeoutMs) {
+    if (m->be && m->be->showMessage(title, body, timeoutMs)) return true;
+    if (!m->notifier) {
+        m->notifier = std::make_unique<desktop::Notifier>();
+        m->notifier->onAction = [this](std::uint32_t, std::string_view key) {
+            if (key == "default" && onMessageClicked) onMessageClicked();
+        };
+    }
+    desktop::Notification n;
+    n.appName = m->st.title.empty() ? m->st.id : m->st.title;
+    n.title = std::move(title);
+    n.body = std::move(body);
+    n.icon = m->st.iconName;
+    n.timeoutMs = timeoutMs;
+    n.actions = {{"default", "Open"}};
+    return m->notifier->show(n) == desktop::NotifyResult::Shown;
+}
 std::string TrayIcon::serviceName() const { return m->be ? m->be->serviceName() : std::string{}; }
 
 struct GlobalMenuBar::Impl {

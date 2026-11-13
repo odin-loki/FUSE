@@ -391,14 +391,20 @@ void detachDock(UiContext& ui, NodeHandle dock) {
     if (s->floating) {
         s->floating = s->dragging = false;
         ui.removeClass(dock, "dock-floating");
+        ui.removeClass(dock, "os-window");
         for (const char* p : {"left", "top", "width", "height"}) ui.setCss(dock, p, "auto");
     }
 }
 void moveFloat(UiContext& ui, NodeHandle dock, DockState& s, Vec2 at) {
     // the title strip stays reachable: at least 40 px of it inside the viewport, never above the top edge
     const Size vp = ui.viewport();
-    s.floatRect.x = std::round(std::clamp(at.x, 40.f - s.floatRect.w, std::max(40.f - s.floatRect.w, vp.w - 40.f)));
-    s.floatRect.y = std::round(std::clamp(at.y, 0.f, std::max(0.f, vp.h - 24.f)));
+    if (ui.osWindows()) { // its own OS window (UiContext::setOsWindows): free to leave the main window
+        s.floatRect.x = std::round(at.x);
+        s.floatRect.y = std::round(at.y);
+    } else {
+        s.floatRect.x = std::round(std::clamp(at.x, 40.f - s.floatRect.w, std::max(40.f - s.floatRect.w, vp.w - 40.f)));
+        s.floatRect.y = std::round(std::clamp(at.y, 0.f, std::max(0.f, vp.h - 24.f)));
+    }
     setPx(ui, dock, Prop::Left, s.floatRect.x);
     setPx(ui, dock, Prop::Top, s.floatRect.y);
 }
@@ -910,6 +916,7 @@ void dockFloat(UiContext& ui, NodeHandle dock, Rect rect) {
     s->floatRect = {0.f, 0.f, std::round(std::max(rect.w, 80.f)), std::round(std::max(rect.h, 60.f))};
     if (ui.parent(dock) != layer) ui.moveTo(dock, layer);
     ui.addClass(dock, "dock-floating");
+    ui.addClass(dock, "os-window"); // a tool window of its own when the host enabled them (UiContext::setOsWindows)
     setPx(ui, dock, Prop::Width, s->floatRect.w);
     setPx(ui, dock, Prop::Height, s->floatRect.h);
     moveFloat(ui, dock, *s, {rect.x, rect.y});

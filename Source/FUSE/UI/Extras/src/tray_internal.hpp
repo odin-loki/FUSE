@@ -25,6 +25,8 @@ struct TrayBackend {
     virtual void changed(u32 what) = 0;
     virtual void poll() = 0;
     virtual std::string serviceName() const { return {}; }
+    /// A notification the tray icon itself shows (Win32 balloon). False: the front end uses desktop::Notifier.
+    virtual bool showMessage(const std::string&, const std::string&, int) { return false; }
 };
 std::unique_ptr<TrayBackend> makeTrayBackend(TrayState& st);
 bool trayAvailable();

@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -257,6 +258,7 @@ struct NativePlatform::Impl {
     NativeOptions opts;
     std::vector<Rec*> recs;
     Rec* owner = nullptr;          ///< the record that has the activity's window
+    bool stateRestored = false;    ///< the activity's saved-instance state was handed to Application::restoreState
     ANativeWindow* window = nullptr;
     detail::VkCtx* vk = nullptr;
     bool vkTried = false;
@@ -384,6 +386,16 @@ void NativePlatform::Impl::onCmd(android_app* a, int32_t cmd) {
         }
         break;
     case APP_CMD_LOW_MEMORY: break;
+    case APP_CMD_SAVE_STATE: { // the system may end the process: the UI state goes into the activity's saved-instance state
+        const std::string state = m.app.saveState();
+        if (!state.empty())
+            if (void* copy = std::malloc(state.size())) { // owned (and freed) by the app glue from here on
+                std::memcpy(copy, state.data(), state.size());
+                a->savedState = copy;
+                a->savedStateSize = state.size();
+            }
+        break;
+    }
     case APP_CMD_DESTROY:
         for (Rec* r : m.recs) r->win->requestClose();
         break;
@@ -588,6 +600,12 @@ PresenterKind NativePlatform::show(AppWindow& w) {
     w.setWindowBackend({r, &Impl::windowRequest});
     if (!m->owner) {
         m->owner = r;
+        // a previous process of this activity left its state (APP_CMD_SAVE_STATE): the windows that exist now get it
+        // back before the first frame (build the UI before show()); StateHooks::restore sees it too
+        if (!m->stateRestored && g_app->savedState && g_app->savedStateSize > 0) {
+            m->stateRestored = true;
+            m->app.restoreState({static_cast<const char*>(g_app->savedState), g_app->savedStateSize});
+        }
         // the surface usually arrives a little after start-up: wait for it so show() can report the presenter
         for (int i = 0; i < 200 && !g_app->window && !g_app->destroyRequested; ++i) {
             int events = 0;

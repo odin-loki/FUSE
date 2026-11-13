@@ -66,6 +66,20 @@ gates run on Linux). Default **OFF on Windows and Apple platforms**: every sourc
 MinGW-w64 13 (`-fsyntax-only`), but nothing was built with MSVC or clang-cl, nothing was linked or run on Windows, and
 no Apple build was possible. Turning it on there is the first step of 3.16.
 
+### 2.0 Live since the app-platform port (2026-11-13)
+
+| Feature (item) | Where on main | Gates |
+|---|---|---|
+| OS drag and drop, X11 XDND v5 target and source (3.1) | `U/App/src/native_platform.inl` (`dndClient`, `dndSelectionNotify`, `dndOutMotion`, `dndOutRelease`), hooked into main's X11 pump; routed through main's core API instead of the branch's `AppWindow::onExternalDrop / beginExternalDrag`: drops call `UiContext::dragExternalMove / dropExternal` (`kDragFiles` with LF-separated paths, `kDragText`), a UI drag (`beginDrag`) with text / files goes out by itself when the pointer leaves the app's windows and ends with the new `UiContext::dragFinishExternal`. `NativeOptions::dragAndDrop`, `NativePlatform::externalDragActive`, `pathsFromUriList` / `uriListFromPaths` in `services.hpp` | `fuse_app_native_services` (two X connections in one process: text, files, refusal, leave and return, in-app-only type, a window that is no drop target), `fuse_app_tool_surfaces` (`dragFinishExternal`), `fuse_app_dialog_helpers` (uri lists) |
+| OS drag and drop, Win32 OLE (3.1) | `U/App/src/native_platform_win32.inl` (`DropTarget`, `DataObject`, `DropSource`, `dragOutCheck`): CF_HDROP and CF_UNICODETEXT both ways. **Compiled and linked with MinGW-w64, never run** | none run |
+| OS tool windows for floating docks (3.5) | bassi's API as §6 recommends: see `PORT_magical_bassi.md` §2.1 | `fuse_app_tool_surfaces`, `fuse_app_native_services` |
+| Frame pacing (3.5) | `AppWindow::setMaxFrameRate / maxFrameRate` (default 0 = unlimited, the branch had 60), `Presenter::vsynced` (set by the X11 / Win32 backends for a FIFO Vulkan swapchain) in `U/App/src/app.cpp` | `fuse_app_frame_pacing` (virtual clock) |
+| Live retitle, `WindowDesc::dpiScale` (3.5) | already on main (`AppWindow::setTitle` -> `WindowRequest::Title`, `WindowDesc::dpiScale`) | `fuse_app_window_state`, `fuse_app_dpi_scale` |
+| Native notifications (§6) | `fuse::ui::desktop::Notifier` on `extras/dbus.hpp`, `notify()` native first with `notifyCommand` as the fallback, `TrayIcon::showMessage` | `fuse_ui_extras_notify` |
+
+Parked files deleted because they are superseded: `U/tests/test_app_xdnd.cpp`, `U/tests/test_app_x11_widget_dnd.cpp`
+(both drove the branch's callback API with `xdotool`).
+
 ### 2.1 Changes made to branch files so they build on main
 
 | File | Change |
@@ -104,6 +118,13 @@ build on them. 3.1, 3.5, 3.6 and 3.15 are independent of those.
   apply.
 - **Blocks**: re-apply the XDND state machine to main's X11 event loop by hand and route drops into
   `UiContext::dropExternal` (main's API) instead of the branch's `onExternalDrop` callback, or add the callback on top.
+- **Status (2026-11-13)**: X11 and Win32 are live on main's core API (§2.0); the Win32 half has not been run.
+  **Still not ported**: what `U/App/src/win32_dnd.cpp` has beyond files and text, which is why that file stays
+  parked: registered MIME clipboard formats both ways, the shell drag image (`IDragSourceHelper` /
+  `IDropTargetHelper`), copy / link drag cursors; on X11 the same limits (only `text/uri-list` and text types are
+  taken or offered, no INCR drops, no drag cursor over other applications, the proposed action is always copy).
+  `U/tests/test_app_win32_ole.cpp` stays parked (written against the branch's API; needs Windows or Wine). The
+  Cocoa part is untouched (3.3, never compiled).
 - **Verify**: `fuse_app_xdnd`, `fuse_app_x11_widget_dnd` (Xvfb, a second X client as the peer), `fuse_app_win32_ole`
   (Windows / Wine); main's `fuse_app_native_window`, `fuse_ui_drag_drop`, `fuse_ui_inventory_dnd` gates unchanged.
 
@@ -162,6 +183,9 @@ build on them. 3.1, 3.5, 3.6 and 3.15 are independent of those.
 - **Overlap on main**: popups as OS windows on X11 / Win32 (`fuse_app_os_popups`), render scale (`a925efbd1`),
   window-state service; floating docks are in-window panels (KNOWN_GAPS).
 - **Blocks**: same files as 3.1; port after it.
+- **Status (2026-11-13)**: tool windows (X11 / Win32; Wayland belongs to 3.2) and frame pacing are live (§2.0).
+  **Not ported**: `NativeOptions::colorSpace` (GPU, with 3.11) and the compositor frame throttle
+  (`setFramePending`, Wayland, with 3.2).
 - **Verify**: `fuse_app_hidpi`, `fuse_app_frame_pacing`, the tool-window cases of `fuse_app_os_popups`.
 
 ### 3.6 Accessibility: `PlatformAdapter`, `A11yState`, auto-complete state (M, decision: see §6)

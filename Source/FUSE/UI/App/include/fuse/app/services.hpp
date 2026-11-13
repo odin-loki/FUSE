@@ -5,6 +5,7 @@
 
 #include "fuse/ui/ui.hpp"
 
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -60,6 +61,23 @@ enum class WindowRequest : fuse::ui::u8 { Title, SizeLimits, Mode, Visible, Posi
 struct WindowBackend {
     void* user = nullptr;
     bool (*apply)(void* user, AppWindow& w, WindowRequest what) = nullptr;
+};
+
+// ---- window frame / client-side chrome (fuse/app/chrome.hpp) -------------------------------------------------------
+/// OS frame of a window. Borderless and Custom draw their own title bar (chrome.hpp: titleBar); the backend asks
+/// chromeHitTest() which parts drag the window (caption), resize it (edges, Custom only) or are its buttons.
+enum class WindowFrame : fuse::ui::u8 {
+    System,     ///< normal OS title bar and borders
+    Borderless, ///< no OS frame, not resizable (splash screens, launchers)
+    Custom,     ///< no OS frame, resizable from `resizeBorder` px edges
+};
+enum class WindowCommand : fuse::ui::u8 { Minimize, ToggleMaximize, Close };
+/// Client-drawn chrome of a Borderless / Custom window: the frame kind (from WindowDesc) and the title-bar nodes
+/// (titleBar() sets them). `caption` is the drag area, its non-interactive children included.
+struct WindowChrome {
+    WindowFrame frame = WindowFrame::System;
+    fuse::ui::f32 resizeBorder = 0.f;
+    fuse::ui::NodeHandle caption{}, minimize{}, maximize{}, close{};
 };
 
 // ---- displays ------------------------------------------------------------------------------------------------------
@@ -131,6 +149,75 @@ fuse::ui::NodeHandle openToolkitFileDialog(AppWindow& w, const FileDialogOptions
 std::vector<std::string> zenityArgs(const FileDialogOptions& o);
 std::vector<std::string> kdialogArgs(const FileDialogOptions& o);
 
+// ---- window-less native dialogs and shell helpers --------------------------------------------------------------------
+// The types of the free dialog functions in fuse/app/native.hpp (openFileDialog, saveFileDialog, pickFolderDialog,
+// colorDialog, messageBox, revealInFileManager), which fuse_app_native implements.
+enum class PlatformError : fuse::ui::u8 {
+    Cancelled,       ///< the user dismissed the dialog
+    Unavailable,     ///< no backend on this platform / helper program missing
+    InvalidArgument, ///< e.g. a URL scheme other than http, https, mailto, file
+    Failed,          ///< the OS call failed (missing path, ...)
+};
+const char* platformErrorName(PlatformError e);
+struct FileFilter {
+    std::string_view name;     ///< "Images"
+    std::string_view patterns; ///< "*.png;*.jpg"
+};
+struct FileDialogDesc {
+    std::string_view title{};
+    std::string_view folder{};    ///< initial folder (empty = OS default)
+    std::string_view fileName{};  ///< save: suggested file name
+    std::span<const FileFilter> filters{};
+    bool multiple = false;        ///< open: allow several files
+    unsigned long long owner = 0; ///< native window the dialog is modal to (0 = none; NativePlatform::nativeWindow)
+};
+struct ColorDialogDesc {
+    std::string_view title{};
+    fuse::ui::Color initial{1.f, 1.f, 1.f, 1.f};
+    unsigned long long owner = 0;
+};
+enum class MessageIcon : fuse::ui::u8 { Info, Warning, Error, Question };
+enum class MessageButtons : fuse::ui::u8 { Ok, OkCancel, YesNo, YesNoCancel };
+enum class MessageResult : fuse::ui::u8 { Ok, Cancel, Yes, No };
+enum class DialogKind : fuse::ui::u8 { Open, Save, Folder };
+/// Command lines of the desktop dialog helpers for the window-less dialogs (argv[0] = "zenity" / "kdialog") and the
+/// parsers of what they print. Exposed so the mapping is testable without a desktop.
+std::vector<std::string> zenityFileArgs(const FileDialogDesc& d, DialogKind kind);
+std::vector<std::string> kdialogFileArgs(const FileDialogDesc& d, DialogKind kind);
+std::vector<std::string> zenityColorArgs(const ColorDialogDesc& d);
+std::vector<std::string> kdialogColorArgs(const ColorDialogDesc& d);
+std::vector<std::string> zenityMessageArgs(std::string_view title, std::string_view text, MessageIcon icon, MessageButtons buttons);
+/// "rgb(12,34,56)", "rgba(12,34,56,0.5)", "#0c2238", "#0c0c22223838" (zenity / kdialog output) -> colour; alpha is
+/// `fallbackAlpha` when the text has none. False when it is none of these.
+bool parseDialogColor(std::string_view text, fuse::ui::f32 fallbackAlpha, fuse::ui::Color& out);
+/// Splits the output of a multi-file dialog (zenity: '|' separated; kdialog: one per line).
+std::vector<std::string> splitDialogPaths(std::string_view output);
+/// True for the URL schemes the shell helpers open: http://, https://, mailto:, file:.
+bool isOpenableUrl(std::string_view url);
+/// A text/uri-list (file URIs separated by CR LF, '#' comment lines, %XX escapes) -> local paths separated by LF
+/// (what fuse::ui::DragData::text carries for kDragFiles); non-file URIs are skipped. And the reverse.
+std::string pathsFromUriList(std::string_view uriList);
+std::string uriListFromPaths(std::string_view paths);
+
+// ---- clipboard formats ---------------------------------------------------------------------------------------------
+/// MIME names of the two formats every backend maps to the OS text and image formats.
+inline constexpr std::string_view kClipboardText = "text/plain;charset=utf-8";
+inline constexpr std::string_view kClipboardImage = "image/png";
+/// One clipboard format. Text is UTF-8; an image is straight (not premultiplied) RGBA, 0xAABBGGRR.
+struct ClipboardItem {
+    std::string mime{};                ///< kClipboardText, kClipboardImage or any other MIME type
+    std::string text{};                ///< kClipboardText
+    fuse::ui::Image image{};           ///< kClipboardImage
+    std::vector<fuse::ui::u8> bytes{}; ///< other MIME types
+    /// Lazy provision: called once, when a paste first asks for this format; fills text / image / bytes. False = the
+    /// format is refused. (Win32 calls it when the clipboard is set: delayed rendering is not implemented.)
+    bool (*provide)(void* user, ClipboardItem& item) = nullptr;
+    void* user = nullptr;
+};
+/// PNG <-> image (the image/png clipboard format; straight alpha both ways).
+bool encodePng(const fuse::ui::Image& image, std::vector<fuse::ui::u8>& out);
+bool decodePng(std::span<const fuse::ui::u8> png, fuse::ui::Image& out);
+
 // ---- system theme ----------------------------------------------------------------------------------------------------
 /// A `:root { --token: ... }` style sheet that re-colours the default widget theme for `t`: the light palette for
 /// ColorScheme::Light, the stock dark tokens otherwise, plus the accent when the system has one. Added after the
@@ -140,6 +227,21 @@ std::string themeTokensCss(const SystemTheme& t);
 /// scheme; Unknown when the text says nothing.
 ColorScheme schemeFromGtkTheme(std::string_view gtkTheme);
 ColorScheme schemeFromGsettings(std::string_view output);
+
+// ---- XSETTINGS (X11 desktop settings) --------------------------------------------------------------------------------
+/// One entry of the freedesktop XSETTINGS property (_XSETTINGS_SETTINGS on the _XSETTINGS_S<screen> selection owner):
+/// what the X11 backend reads for the DPI ("Xft/DPI", 1024ths of a dpi), the theme ("Net/ThemeName",
+/// "Gtk/ApplicationPreferDarkTheme") and the cursor theme ("Gtk/CursorThemeName", "Gtk/CursorThemeSize").
+struct XSetting {
+    std::string name{};
+    int type = 0; ///< 0 integer, 1 string, 2 colour
+    int integer = 0;
+    std::string string{};
+};
+/// Parses the property bytes (either byte order); stops at the first malformed entry.
+std::vector<XSetting> parseXSettings(std::span<const fuse::ui::u8> bytes);
+/// Serialises settings LSB first: what an XSETTINGS manager writes (tests act as one).
+std::vector<fuse::ui::u8> buildXSettings(const std::vector<XSetting>& settings, fuse::ui::u32 serial);
 
 // ---- HiDPI scale maths -----------------------------------------------------------------------------------------------
 namespace dpi {

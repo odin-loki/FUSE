@@ -1,5 +1,5 @@
 # fuse_app (plan UI5): application shell for UI-only projects + samples.
-add_library(fuse_app STATIC src/app.cpp src/services.cpp)
+add_library(fuse_app STATIC src/app.cpp src/services.cpp src/platform_services.cpp src/chrome.cpp)
 target_include_directories(fuse_app PUBLIC include PRIVATE ${FUSE_UI_REPO_ROOT}/vendor/stb)
 target_link_libraries(fuse_app PUBLIC fuse_ui_doc)
 if(WIN32 OR MINGW)
@@ -37,7 +37,7 @@ else()
     target_sources(fuse_app_native PRIVATE src/vk_stub.cpp) # CPU raster presenters only
 endif()
 if(WIN32 OR MINGW)
-    target_link_libraries(fuse_app_native PRIVATE user32 gdi32 advapi32 shell32 comdlg32 ole32)
+    target_link_libraries(fuse_app_native PRIVATE user32 gdi32 advapi32 shell32 comdlg32 ole32 uuid)
 elseif(ANDROID)
     # android_native_app_glue ships with the NDK as source. NativeActivity looks ANativeActivity_onCreate up by name
     # in the app's shared library: fuse_app_add_executable keeps the symbol (-u).

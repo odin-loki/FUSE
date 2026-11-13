@@ -487,6 +487,15 @@ public:
     /// Where popups may be placed: the screen bounds with OS popups, the viewport otherwise.
     Rect popupArea() const;
     const std::vector<PopupSurface>& popupSurfaces() const { return m_popupSurfaces; }
+    /// OS tool windows (Qt: a floated QDockWidget is its own top-level window). When on, overlay-layer nodes with the
+    /// class "os-window" (widgets::dockFloat adds it) are left out of drawList() and painted into windowSurfaces(),
+    /// the same form as popup surfaces; the host shows each in its own borderless OS window owned by the main one at
+    /// window origin + rect and feeds its pointer input back in context coordinates. Unlike popups they stay open (no
+    /// outside-click close, no grab) and keyboard input keeps arriving through the main window (one focus for the
+    /// whole context). Off (the default) they are painted inside the window like any overlay node.
+    void setOsWindows(bool on);
+    bool osWindows() const { return m_osWindows; }
+    const std::vector<PopupSurface>& windowSurfaces() const { return m_windowSurfaces; }
     /// Union of the rects that changed in the last update(), in logical units.
     Rect damage() const { return m_damage; }
     /// damage() in device pixels of drawList(): scaled by renderScale(), rounded outwards (plus 1 px at scales != 1,
@@ -583,6 +592,9 @@ public:
     DropAction dropExternal(Vec2 pos, const DragData& data);
     bool dragExternalMove(Vec2 pos, const DragData& data);
     void dragExternalLeave();
+    /// Ends a drag started in the UI whose drop happened outside it (the platform layer handed the data to another
+    /// application): the target, if any, gets DragLeave and the source DragEnd with `result`. No-op without such a drag.
+    void dragFinishExternal(DropAction result);
     /// Delivers `e` to `n` through the normal capture / target / bubble route (synthetic events, tests).
     bool sendEvent(NodeHandle n, const Event& e);
     void setShortcutHook(const ShortcutHook& h) { m_shortcutHook = h; }
@@ -741,7 +753,7 @@ private:
     void arrange(u32 i, Rect box);
     void arrangeChildren(u32 i);
     void paintPass();
-    void paintLists(std::vector<PopupSurface>& next);
+    void paintLists(std::vector<PopupSurface>& next, std::vector<PopupSurface>& nextWindows);
     void paintRec(u32 i, f32 opacity, DrawList& dl);
     /// Overlay scrollbar geometry of a scroll container along an axis (0 = x, 1 = y); false when it does not overflow.
     bool scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const;
@@ -810,6 +822,8 @@ private:
     Rect m_popupScreen;
     std::vector<u32> m_popupPending;
     std::vector<PopupSurface> m_popupSurfaces;
+    bool m_osWindows = false;
+    std::vector<PopupSurface> m_windowSurfaces;
     u64 m_popupRevision = 0;
     FrameStats m_stats;
     u64 m_frame = 0;

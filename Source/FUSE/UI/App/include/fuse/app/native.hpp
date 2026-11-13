@@ -29,6 +29,7 @@
 
 #include "fuse/app/app.hpp"
 
+#include <expected>
 #include <memory>
 #include <span>
 #include <vector>
@@ -75,10 +76,23 @@ struct NativeOptions {
     /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
     bool osPopups = false;
     /// Logical-unit scale: UI units = display pixels / scale. 0 = the OS content scale (Android density / 160,
-    /// UIScreen / NSScreen scale, Win32 monitor DPI / 96, X11 $FUSE_UI_SCALE, else Xft.dpi / 96, else $GDK_SCALE,
-    /// else 1); 1 = work in physical pixels. The frame is always rendered at the display's pixel size (the window's
+    /// UIScreen / NSScreen scale, Win32 monitor DPI / 96, X11 $FUSE_UI_SCALE, else XSETTINGS Xft/DPI (followed
+    /// live: every window is re-scaled when it changes), else Xft.dpi / 96, else $GDK_SCALE, else 1); 1 = work in
+    /// physical pixels. The frame is always rendered at the display's pixel size (the window's
     /// AppWindow::scale() is set to this).
     float scale = 0.f;
+    /// OS tool windows (UiContext::setOsWindows): overlay nodes with the class "os-window" - floating dock panels
+    /// (widgets::dockFloat) - each get their own borderless OS window owned by the main one, placed at window origin
+    /// + node rect, so a floated panel can leave the main window. Pointer input comes back in context coordinates,
+    /// keys keep going to the main window. X11: override-redirect utility windows; Win32: WS_EX_TOOLWINDOW owned
+    /// popups. Elsewhere, and when off (the default), floating docks stay in-window panels.
+    bool osWindows = false;
+    /// OS drag and drop (X11: XDND v5; Win32: OLE). In: files / text dragged from another application reach the
+    /// window's drop targets through UiContext::dragExternalMove / dropExternal (DragData type kDragFiles with
+    /// LF-separated paths in `text`, or kDragText). Out: a drag started in the UI (UiContext::beginDrag) whose data
+    /// is kDragText / kDragFiles continues over other applications once the pointer leaves the app's windows; the
+    /// source gets DragEnd with what the other side did (UiContext::dragFinishExternal).
+    bool dragAndDrop = true;
 };
 
 #if defined(__ANDROID__)
@@ -144,6 +158,22 @@ public:
     /// Posts a real left click to a native window (XSendEvent / PostMessage) at window-local `at` (window pixels); it
     /// is then delivered by the normal event pump (tests drive popup windows this way).
     bool postClick(unsigned long long nativeWin, fuse::ui::Vec2 at);
+    /// Posts a pointer move / a left button press or release / a close request (the title-bar close button) to a
+    /// native window at window-local device pixels `at`; delivered by the normal event pump. `at` may lie outside
+    /// the window (a drag that left it).
+    bool postPointerMove(unsigned long long nativeWin, fuse::ui::Vec2 at);
+    bool postPointerButton(unsigned long long nativeWin, fuse::ui::Vec2 at, bool down);
+    bool postClose(unsigned long long nativeWin);
+
+    /// OS tool windows (NativeOptions::osWindows): how many `w` shows now (back to front), each one's native handle,
+    /// its screen rect (physical px) and a read-back of its pixels.
+    std::size_t toolWindowCount(const AppWindow& w) const;
+    unsigned long long toolWindow(const AppWindow& w, std::size_t i) const;
+    fuse::ui::Rect toolWindowScreenRect(const AppWindow& w, std::size_t i) const;
+    bool captureToolWindow(const AppWindow& w, std::size_t i, fuse::ui::Image& out);
+    /// True while a drag that started in this app is over, or being dropped on, another application
+    /// (NativeOptions::dragAndDrop).
+    bool externalDragActive() const;
 
     // ---- platform services (plan §4.13). Window management itself is on AppWindow (setTitle, setMode, setVisible,
     // setPosition, activate, size limits, events, close guard, setMenu): show() connects it to the OS window.
@@ -159,12 +189,34 @@ public:
     /// manager); Win32: CF_UNICODETEXT. False when unavailable / empty.
     bool setClipboardText(std::string_view utf8);
     bool clipboardText(std::string& out);
+    /// Clipboard formats (services.hpp ClipboardItem): replaces the clipboard with `items`, one per format.
+    ///   X11: CLIPBOARD on the platform's connection: TARGETS, UTF8_STRING / text/plain(;charset=utf-8), image/png,
+    ///        custom MIME types as atoms of that name, INCR both ways for large data; lazy items are made when first
+    ///        pasted. Other clients can paste while this platform pumps events.
+    ///   Win32: CF_UNICODETEXT, CF_DIBV5, RegisterClipboardFormat(mime) for custom types (lazy items are made at once).
+    ///   macOS / iOS / Android: text only (the other formats are refused).
+    bool setClipboard(std::vector<ClipboardItem> items);
+    bool setClipboardImage(const fuse::ui::Image& image);
+    bool clipboardImage(fuse::ui::Image& out);
+    /// Raw bytes of any format (text: UTF-8; images: the PNG file).
+    bool clipboardData(std::string_view mime, std::vector<fuse::ui::u8>& out);
+    /// MIME types offered now (kClipboardText / kClipboardImage for the OS text and image formats).
+    std::vector<std::string> clipboardFormats();
+    /// True while this platform owns the clipboard (another application has not replaced it since).
+    bool clipboardOwned() const;
+    /// The X11 PRIMARY selection (select to copy, middle click to paste), text only. False elsewhere.
+    bool setPrimarySelectionText(std::string_view utf8);
+    bool primarySelectionText(std::string& out);
     /// Asks the OS for the light / dark preference and accent colour and stores it in Application::systemTheme()
     /// (windows get WindowEvent::ThemeChanged; AppWindow::setFollowSystemTheme restyles). Win32: registry
     /// (AppsUseLightTheme, DWM AccentColor) + change notification; macOS: effectiveAppearance / controlAccentColor +
     /// notification; iOS: UITraitCollection; Android: Configuration night mode (+ on configuration change);
-    /// X11: $GTK_THEME, else `gsettings` once, else Unknown - and no change notification.
+    /// X11: XSETTINGS (Net/ThemeName, Gtk/ApplicationPreferDarkTheme; followed live while the settings manager that
+    /// ran at start keeps running), else $GTK_THEME, else `gsettings` once, else Unknown.
     SystemTheme systemTheme();
+    /// X11: the size (px) themed cursors are loaded at: the XSETTINGS Gtk/CursorThemeSize when a settings manager
+    /// runs, else libXcursor's default (Xcursor.size / $XCURSOR_SIZE). 0 without libXcursor and on other platforms.
+    int cursorThemeSize() const;
     /// Connected displays (bounds / work area in physical pixels, scale, refresh rate where the platform tells).
     std::vector<DisplayInfo> displays() const;
     /// The platform's own file dialog, modal (blocks until answered). Win32: GetOpen/SaveFileNameW, SHBrowseForFolder;
@@ -186,5 +238,21 @@ private:
 bool openUrl(std::string_view url);
 /// Shows `path` in the file manager (Explorer / Finder select it; Linux / BSD open its folder). False on iOS / Android.
 bool revealFile(std::string_view path);
+
+// ---- window-less native dialogs (types in services.hpp). Modal: they block the calling (UI) thread until answered.
+//   Win32: IFileOpenDialog / IFileSaveDialog (FOS_PICKFOLDERS for folders), ChooseColorW, MessageBoxW.
+//   Linux / BSD: zenity, else kdialog (messageBox: zenity only); Unavailable when no helper is installed or there is
+//   no display.
+//   macOS / iOS / Android: Unavailable (use NativePlatform::fileDialog / the in-toolkit dialogs).
+/// Paths are UTF-8.
+std::expected<std::vector<std::string>, PlatformError> openFileDialog(const FileDialogDesc& d);
+std::expected<std::string, PlatformError> saveFileDialog(const FileDialogDesc& d);
+std::expected<std::string, PlatformError> pickFolderDialog(const FileDialogDesc& d);
+/// Colour picker. Alpha is passed through unchanged.
+std::expected<fuse::ui::Color, PlatformError> colorDialog(const ColorDialogDesc& d);
+std::expected<MessageResult, PlatformError> messageBox(std::string_view title, std::string_view text, MessageIcon icon = MessageIcon::Info,
+                                                       MessageButtons buttons = MessageButtons::Ok, unsigned long long owner = 0);
+/// revealFile with an error: Failed when `path` does not exist, Unavailable when the platform has no file manager hook.
+std::expected<void, PlatformError> revealInFileManager(std::string_view path);
 
 } // namespace fuse::app

@@ -135,6 +135,15 @@ public:
         while (m_hwnd && PeekMessageW(&msg, m_hwnd, 0, 0, PM_REMOVE)) { TranslateMessage(&msg); DispatchMessageW(&msg); }
     }
     std::string serviceName() const override { return "Shell_NotifyIcon"; }
+    bool showMessage(const std::string& title, const std::string& body, int timeoutMs) override {
+        if (!m_visible) return false; // a balloon belongs to a shown icon
+        NOTIFYICONDATAW nd = data(NIF_INFO);
+        wcsncpy_s(nd.szInfoTitle, wide(title).c_str(), _TRUNCATE);
+        wcsncpy_s(nd.szInfo, wide(body).c_str(), _TRUNCATE);
+        nd.dwInfoFlags = NIIF_INFO;
+        nd.uTimeout = timeoutMs > 0 ? UINT(timeoutMs) : 10000; // honoured before Vista only; newer shells use the system setting
+        return Shell_NotifyIconW(NIM_MODIFY, &nd) != 0;
+    }
 
 private:
     NOTIFYICONDATAW data(UINT flags) {
@@ -174,6 +183,9 @@ private:
                 if (self->m_st.owner->onSecondaryActivated) self->m_st.owner->onSecondaryActivated(x, y);
                 return 0;
             case WM_CONTEXTMENU: self->popup(x, y); return 0;
+            case NIN_BALLOONUSERCLICK: // the notification of showMessage was clicked
+                if (self->m_st.owner->onMessageClicked) self->m_st.owner->onMessageClicked();
+                return 0;
             }
         }
         return DefWindowProcW(h, msg, wp, lp);

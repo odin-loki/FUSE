@@ -18,7 +18,7 @@ HitArea chromeHitTest(const AppWindow& w, Vec2 p) {
     const WindowChrome& c = w.chrome();
     if (c.frame == WindowFrame::System) return HitArea::Client;
     const Size sz = w.size();
-    const f32 b = c.maximized ? 0.f : c.resizeBorder;
+    const f32 b = c.frame != WindowFrame::Custom || w.mode() != WindowMode::Normal ? 0.f : c.resizeBorder;
     if (b > 0.f) {
         const bool l = p.x < b, r = p.x >= sz.w - b, t = p.y < b, bo = p.y >= sz.h - b;
         // corners grab a longer stretch along each edge, like the OS frame
@@ -51,19 +51,12 @@ NodeHandle titleBar(AppWindow& w, NodeHandle parent, std::string_view title, f32
     UiContext& ui = w.ui();
     const NodeHandle bar = wd::panel(ui, parent, "titlebar");
     const std::string h = std::to_string(int(height)) + "px";
-    ui.setCss(bar, "flex-direction", "row");
-    ui.setCss(bar, "align-items", "center");
+    ui.addClass(bar, "row");
+    ui.addClass(bar, "fuse-titlebar");
     ui.setCss(bar, "height", h);
     ui.setCss(bar, "min-height", h);
-    ui.setCss(bar, "padding", "0px");
-    ui.setCss(bar, "padding-left", "10px");
-    ui.setCss(bar, "gap", "0px");
-    ui.setCss(bar, "border-width", "0px");
-    ui.setCss(bar, "border-radius", "0px");
-    ui.setCss(bar, "background", "#202028");
     const NodeHandle text = wd::label(ui, bar, title, "titlebar.title");
     ui.setCss(text, "flex-grow", "1");
-    ui.setCss(text, "pointer-events", "false");
     WindowChrome& c = w.chrome();
     c.caption = bar;
     struct Btn { const char* glyph; const char* id; WindowCommand cmd; NodeHandle* slot; const char* cls; };
@@ -77,12 +70,14 @@ NodeHandle titleBar(AppWindow& w, NodeHandle parent, std::string_view title, f32
         ui.setCss(n, "text-align", "center");
         ui.addClass(n, b.cls);
         *b.slot = n;
-        AppWindow* win = &w;
+        AppWindow* win = &w; // the window owns the context, so it outlives the connection
         const WindowCommand cmd = b.cmd;
         ui.connect(n, SignalKind::Clicked, [win, cmd](UiContext&, NodeHandle, const SignalArgs&) { win->command(cmd); });
     }
-    (void)ui.addStyleSheet(".fuse-titlebar-btn, .fuse-titlebar-close { background: #00000000; border-width: 0px; border-radius: 0px; }"
-                           " .fuse-titlebar-btn:hover { background: #3A3A46; }"
+    (void)ui.addStyleSheet(".fuse-titlebar { align-items: center; padding: 0px 0px 0px 10px; gap: 0px; border-width: 0px;"
+                           " border-radius: 0px; background: var(--surface); }"
+                           " .fuse-titlebar-btn, .fuse-titlebar-close { background: #00000000; border-width: 0px; border-radius: 0px; }"
+                           " .fuse-titlebar-btn:hover { background: var(--surface-hi); }"
                            " .fuse-titlebar-close:hover { background: #C42B1C; }");
     return bar;
 }

@@ -48,6 +48,28 @@ Non-UI code that includes UI headers and compiles against main's UI (syntax-chec
 not build on the merge machine): `Source/FUSE/Apps/HybridHud/hud_ui.cpp`, `Source/FUSE/Renderer/tests/test_scene_renderer_vk.cpp`
 (its `--mode fuse_ui` part uses only `UiFrameSource` and `DrawList`).
 
+### 2.1 Live since the app-platform port (2026-11-13)
+
+Ported onto main's `services.hpp` / `NativePlatform` API (one platform layer; nothing of the branch's `native.cpp`
+structure was taken). X11 parts run under Xvfb without a window manager; Win32 parts are in
+`U/App/src/native_platform_win32.inl`, compiled and linked with MinGW-w64, **never run**.
+
+| Feature (item) | Where on main | Gate |
+|---|---|---|
+| Window-less dialogs: open (filters, multiple) / save / folder / colour / message box, `revealInFileManager`, `PlatformError`, `isOpenableUrl` (3.5) | types in `fuse/app/services.hpp`, functions in `fuse/app/native.hpp`; X11 / BSD through zenity / kdialog (`native_platform.inl`), Win32 `IFileDialog` / `ChooseColorW` / `MessageBoxW`; `Unavailable` on macOS / iOS / Android (`native_common.cpp`). `fuse/app/platform.hpp` is now a compatibility header (differences: `openUrl` returns `bool`, `DisplayInfo::workArea` instead of `work`) | `fuse_app_dialog_helpers`, `fuse_app_native_services` (fake helpers) |
+| Clipboard images, MIME types, lazy items, primary selection (3.5) | `ClipboardItem`, `kClipboardText / kClipboardImage`, `encodePng / decodePng` in `services.hpp`; `NativePlatform::setClipboard / setClipboardImage / clipboardImage / clipboardData / clipboardFormats / clipboardOwned / setPrimarySelectionText / primarySelectionText`. X11: on the platform's own connection, `TARGETS`, INCR both ways. `fuse/app/clipboard.hpp` is a compatibility header (the branch's free functions became methods of the platform that owns the display) | `fuse_app_clipboard_png`, `fuse_app_native_services` |
+| X11 XSETTINGS: `Xft/DPI` live, theme name / prefer-dark live, cursor theme and size (3.5) | `XSetting`, `parseXSettings`, `buildXSettings` in `services.hpp`; `NativePlatform::Impl::readXSettings`, `cursorThemeSize()` | `fuse_app_dialog_helpers` (parser), `fuse_app_native_services` (the gate is the settings manager) |
+| OS tool windows for floating docks (3.5; `PORT_gui_framework.md` 3.5) | `UiContext::setOsWindows / osWindows / windowSurfaces`, class `os-window` (set by `widgets::dockFloat`); `NativeOptions::osWindows` (default **off** on main, the branch had on), `NativePlatform::toolWindowCount / toolWindow / toolWindowScreenRect / captureToolWindow` | `fuse_app_tool_surfaces`, `fuse_app_native_services` |
+| Synthetic input `postPointerMove`, `postPointerButton`, `postClose` (3.5) | `NativePlatform` | used by the XDND / chrome / tool-window sections of `fuse_app_native_services` |
+| Saved state across process death (3.5) | `Settings::items / toText / fromText`, `AppWindow::saveUiState / restoreUiState / saveWindowState / restoreWindowState`, `Application::saveState / restoreState / saveStateTo / restoreStateFrom / restored / restoredState`, `StateHooks` (function table instead of the branch's `InlineFn` callbacks); Android `APP_CMD_SAVE_STATE` hook in `native_android.cpp` (cross-compiled only) | `fuse_app_saved_state`, `fuse_app_native_services` |
+| Window chrome (3.7) | `WindowFrame`, `WindowChrome`, `WindowCommand`, `WindowDesc::frame / resizeBorder`, `AppWindow::chrome / command`; `fuse/app/chrome.hpp`, `U/App/src/chrome.cpp` (built into `fuse_app`). The branch's backend command hook is gone: the buttons call main's window management (`minimize`, `setMode`, `tryClose`). X11 without a window manager moves / resizes in the backend | `fuse_app_window_chrome`, `fuse_app_native_services` |
+| Notifications (3.8) | in the live Extras desktop integration, not in `fuse_app`: `fuse::ui::desktop::Notifier` (`org.freedesktop.Notifications` on `extras/dbus.hpp`: actions, `onAction`, `onClosed`, replace, close), `NotifyResult`, `notifyNative`, `notificationsSupported`, `notify()` native first; `TrayIcon::showMessage / onMessageClicked` (D-Bus; Win32 `NIF_INFO` balloon, not run) | `fuse_ui_extras_notify` |
+
+Parked files deleted because they are superseded: `U/App/src/platform_posix.cpp`, `chrome_internal.hpp`,
+`chrome_win32.cpp`, `U/App/include/fuse/app/shell.hpp`, `U/App/src/shell_unix.cpp`, `shell_win32.cpp`,
+`U/tests/test_app_tray.cpp`, `test_app_tray_host.cpp` (the tray itself is `gui-framework`'s `Extras/tray`, see
+`PORT_gui_framework.md` ยง6: no second tray was ported).
+
 ## 3. Not live: port items
 
 Each item: what it is, where the branch code is, what it overlaps on main, what blocks it, size (S: under a day,
@@ -182,6 +204,27 @@ Items tagged **editor** are needed before `-DFUSE_EDITOR_SHELL=fuse` compiles (ย
   `revealInFileManager`, clipboard images / MIME / primary selection, RandR, XSETTINGS) and keep `platform.hpp` only
   as a thin compatibility header if the editor shell is to compile unchanged. The X11 internals
   (`x11_internal.hpp`) assume the branch's `native.cpp` structure.
+- **Status (2026-11-13)**: dialogs, clipboard formats, XSETTINGS, tool windows, synthetic pointer input and saved
+  state are live (ยง2.1). **Still not ported**, with the parked file that holds it:
+  - XIM pre-edit and the IMM32 text-input session (`textInputActive`, `textInputArea`, `inputMethodAvailable`):
+    `x11_internal.hpp`, branch delta of `native.cpp`; tests `test_platform_text.cpp`. Main's X11 text input is still
+    `XLookupString`.
+  - RandR change notification and per-window `setWindowScale`: `x11_internal.hpp`; `test_platform_x11.cpp`
+    (`fuse_x11_randr`). `displays()` on main already lists RandR monitors.
+  - A settings manager that starts after the app (the `MANAGER` client message on the root window) is not watched.
+  - Win32: delayed clipboard rendering (`WM_RENDERFORMAT`), `WM_POINTER` touch / pen, the theme fields main's
+    `SystemTheme` lacks (high contrast palette, reduced motion, text scale), dark title bar, `MessageHook`:
+    `clipboard.cpp` (Win32 half), `platform_win32.cpp`, `platform_internal.hpp`; `test_platform_desktop.cpp`,
+    `test_platform_services.cpp`.
+  - Wayland routing of the clipboard: `clipboard.cpp` (Wayland half), with item 3.6.
+  - Presenter work: async Vulkan start (`asyncVulkan`, `presenterPending`, `waitForPresenter`), software-presenter
+    dirty-rect copy (`AppWindow::rasterized`), MAILBOX pacing, `presentTiming`, pipeline-cache directory,
+    `hello_app --startup-probe`, `NativePlatform::wake`: branch deltas of `vk_present.cpp` / `native.cpp` / `app.cpp`;
+    `test_app_{idle_native,input_latency,native_startup,binary_size}.cpp`. Not attempted: no Vulkan loader on the port
+    machine.
+  - Gates that need a window manager (`test_x11_wm.cpp`: `fuse_x11_wm_{chrome,popups,multiwindow}`) were not
+    brought over; main's gate covers the no-window-manager paths only.
+  - `dbus_internal.hpp` stays because the parked `test_a11y_linux.cpp` (3.9) includes it.
 - **Verify**: `fuse_platform_{dpi_change,displays,cursors,system_theme,high_contrast,dialogs,touch_synthetic,pen_synthetic,multiwindow}`,
   `fuse_platform_{text_input,ime_composition,clipboard_roundtrip}`, `fuse_x11_{randr,xsettings,wake,cursor_size}`,
   `fuse_x11_wm_{chrome,popups,multiwindow}`, `fuse_ui_platform_services` (in tree: needs `fuse/platform/event_pump.hpp`),
@@ -209,6 +252,10 @@ Items tagged **editor** are needed before `-DFUSE_EDITOR_SHELL=fuse` compiles (ย
   `U/tests/test_app_chrome.cpp`.
 - **Blocks**: `chrome.cpp` needs `WindowChrome` in the branch's `app.hpp` / `native.hpp` and `x11_internal.hpp`
   (3.5). Main's `mainWindow` widget and window-state service do not cover it.
+- **Status (2026-11-13)**: live (ยง2.1). Left parked: `U/tests/test_app_chrome.cpp`, for its two parts main has no
+  gate for: the Win32 real-window checks (`WM_NCHITTEST` answers, non-client button clicks; needs Windows or Wine)
+  and the X11 check that a caption / edge press sends `_NET_WM_MOVERESIZE` with the right direction (the test acts
+  as a window manager through `x11_internal.hpp`). On main that hand-over is written but was never observed.
 - **Verify**: `fuse_app_window_chrome`, `fuse_x11_wm_chrome`.
 
 ### 3.8 Tray icon and notifications (M)
@@ -219,6 +266,11 @@ Items tagged **editor** are needed before `-DFUSE_EDITOR_SHELL=fuse` compiles (ย
   `dbus_internal.hpp`; `U/tests/test_app_tray.cpp`, `test_app_tray_host.cpp`.
 - **Blocks**: `shell_unix.cpp` fails only on `fuse::ui::CursorShape` pulled in through `platform.hpp` (3.5);
   otherwise self-contained. `gui-framework` has another tray (`Extras/tray`): pick one when that branch is merged.
+- **Status (2026-11-13)**: closed. The tray was not ported (decision in `PORT_gui_framework.md` ยง6: the live
+  `Extras/tray` stays); the notification API has its equivalent in `fuse::ui::desktop` (ยง2.1) and the parked tray
+  files are deleted. Not carried over: `TrayIcon::screenRect` (Win32 `Shell_NotifyIconGetRect`), `onDoubleClick`,
+  and Win32 notifications without a tray icon (the branch added a transient icon; main's `desktop::notify` uses the
+  PowerShell toast helper on Windows).
 - **Verify**: `fuse_app_tray` (with `fuse_app_tray_host`, under `dbus-run-session`).
 
 ### 3.9 Accessibility on a native window: `WindowAccessibility`, UIA and AT-SPI adapters (M) **editor**

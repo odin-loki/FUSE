@@ -37,13 +37,21 @@ pushed after those CI runs and re-checked on Linux only.
   Android simulator. Every mobile and Apple path is compile-checked plus headless tests.
 - **Win32 platform code has never executed** (only compiled by MSVC / clang-cl / MinGW): per-monitor DPI and
   `WM_DPICHANGED`, clipboard, cursors, fullscreen / min-max handling, theme registry watch, native file dialogs.
+  The same holds for everything in `App/src/native_platform_win32.inl` (MinGW-w64 13 compile and link only): OS tool
+  windows, custom chrome (`WM_NCCALCSIZE` / `WM_NCHITTEST`), OLE drop target and `DoDragDrop`, clipboard images /
+  registered formats, `IFileDialog` / `ChooseColorW` / `MessageBoxW`, and the tray balloon of `TrayIcon::showMessage`.
 - **Apple platform code has never executed**: Cocoa and UIKit windows, `NSTextInputClient` IME, native menu bar,
   cursors (diagonal-resize and busy cursors use private `NSCursor` selectors behind `respondsToSelector`), window
   management, theme observer, file panels, HiDPI layout, touch path on iOS.
 - **Android platform code has never executed**: NativeActivity lifecycle, surface loss / restore, touch, JNI
   clipboard and key-character lookups, soft keyboard, HiDPI buffer geometry.
 - **X11 window-manager features** (maximise, fullscreen, minimise, activate) were only exercised under Xvfb with no
-  window manager, i.e. as "state stays Normal".
+  window manager, i.e. as "state stays Normal". The same for custom chrome: the `_NET_WM_MOVERESIZE` hand-over and
+  `_MOTIF_WM_HINTS` were never seen by a window manager (the gate runs the backend's own move / resize), and OS tool
+  windows were never stacked or focused by one. XDND and the clipboard formats were tested between two connections
+  of the same process, not against GTK / Qt applications.
+- **Android saved state** (`APP_CMD_SAVE_STATE` -> `Application::saveState`, restored by `show()`) is cross-compiled
+  only. **`Presenter::vsynced`** is set for a FIFO Vulkan swapchain, which no gate here can create.
 - **GPU output for the new work is untested** (no Vulkan device where this was developed): vector paths, gradients,
   9-slice, clip-path and layer groups are pre-rasterised on the CPU and packed as images, checked only against a C++
   model of the kernel's image op; render scale other than 1 on the GPU path; synthetic bold / italic glyphs.
@@ -57,8 +65,10 @@ pushed after those CI runs and re-checked on Linux only.
   accesskit-c / a Rust toolchain).
 - **`fuse_ui_os` / `fuse_ui_extras`** (from `gui-framework`): off by default on Windows and Apple platforms, where
   they were never built (MinGW-w64 syntax check only). On Android and FreeBSD they are cross-built, no gate run. The
-  web view gate passed without a web engine installed (it skips inside the test); desktop notifications, URL
-  opening and printing were checked as command lines only; the tray only against a private `dbus-daemon`. The charts
+  web view gate passed without a web engine installed (it skips inside the test); URL opening and printing were
+  checked as command lines only; the tray and the native notifications (`desktop::Notifier`,
+  `TrayIcon::showMessage`) only against a private `dbus-daemon` with an in-process stand-in for the tray host /
+  notification service, never against a desktop's own. The charts
   were not compared image by image with the branch's renderer. Nothing GPU-side of that branch is built.
 - **Sanitizers**: one ASan + UBSan pass over the UI suite was done before the last fixes; not repeated on the final
   tree. Not built at all: `-DFUSE_UI_TEXT=FULL` on any platform other than Linux.
@@ -86,17 +96,36 @@ pushed after those CI runs and re-checked on Linux only.
 
 ### Platform
 
-- Backends do not feed the newer input APIs: OS file drops (`UiContext::dropExternal`), pinch / rotate (only the
-  primary touch is forwarded on Android and iOS), pen pressure / tilt. No drag from the app out to the OS.
+- Backends do not feed the newer input APIs: pinch / rotate (only the primary touch is forwarded on Android and
+  iOS), pen pressure / tilt. OS file / text drops and drags out of the app exist on X11 (XDND) and Win32 (OLE,
+  not run) only: not on macOS, iOS, Android or Wayland. Out of the app only `kDragText` / `kDragFiles` travel (no
+  custom MIME types, no drag image for the other application); drops larger than one X property (INCR) are refused;
+  the other application is always answered "copy".
 - Android: no IME string commits (needs a Java `InputConnection`), no pointer icons, no system file picker, no
   refresh-rate query; theme-change notification needs `android:configChanges="uiMode"`.
 - No gamepad backend in `fuse_app` (the `game_menu` sample takes pad input from a script or the host).
-- X11: one scale per connection, no INCR clipboard transfers, no theme-change notification, no Wayland backend.
+- X11: one scale per connection, no Wayland backend. XSETTINGS (DPI, theme, cursor theme) is read from the settings
+  manager that owns the selection when the platform starts; one that starts later is not noticed. No XIM pre-edit
+  (text input is `XLookupString`: Latin-1, no input methods), no RandR change notification, no clipboard `MULTIPLE`
+  target, no hand-over to a clipboard manager at exit.
 - Popups as separate OS windows exist on X11 / Win32 only. One OS window per process on Android / iOS.
 - macOS: moving a window to a screen with a different backing scale is picked up only on the next layout.
-- Native dialogs block the app's windows while open. No custom image cursors or multi-file selection. `fuse_app`
-  itself has no tray icon, notification or web view API; those exist in `fuse_ui_extras` (verified on Linux only) and
-  are not tied to `fuse_app` windows.
+- Native dialogs block the app's windows while open. No custom image cursors. Multi-file selection, colour and
+  message dialogs exist only as the window-less functions (zenity / kdialog on Linux / BSD, Win32 not run, nothing
+  on macOS / iOS / Android). `fuse_app` itself has no tray icon, notification or web view API; those exist in
+  `fuse_ui_extras` (verified on Linux only) and are not tied to `fuse_app` windows. Native notifications
+  (`desktop::Notifier`) are D-Bus only; Windows and macOS go through the helper programs, without click callbacks
+  (except the Win32 tray balloon, not run).
+- OS tool windows for floating docks: X11 and Win32 only, off by default. They are not hidden when the main window
+  is minimised or hidden, have no task-bar / pager presence of their own, and on X11 are override-redirect (no
+  window-manager stacking; they stay above other applications' windows).
+- Custom window chrome: X11 and Win32 only (the frame kind is ignored elsewhere). No snap-layout flyout
+  integration beyond what `HTMAXBUTTON` gives, no system menu, no shadow for `Borderless` windows on X11.
+- Saved state covers nodes with an id only and the widget kinds listed in `AppWindow::saveUiState`; model / view
+  selections, tree expansion, dock layouts (`dockSaveLayout`) and splitter positions are the app's to add through
+  `StateHooks`. `restoreWindowState` after `show()` does not resize the OS window (restore before showing).
+- Clipboard: Win32 has no delayed rendering (lazy items are made when the clipboard is set); images on macOS / iOS /
+  Android are not supported.
 - `applyTheme` adds a style sheet per call (the style engine has no sheet removal).
 - In-window menus built from `MenuDesc` show `[x]` text for checkable items and do not grey disabled ones.
 - These are native backends, not the SDL3 route decision D1 recommended for macOS / iOS / Android.
@@ -132,8 +161,8 @@ pushed after those CI runs and re-checked on Linux only.
 - Tree views have no drag and drop; a row drag carries only the pressed row, not the multi-selection.
 - Transitions do not follow inherited values into descendants; no `@keyframes` in style sheets.
 - RTL does not mirror the inside of self-painting widgets or scroll origins.
-- Docks: no tab groups inside a floating dock; floating docks are panels inside the window, not OS windows; a
-  destroyed dock area does not destroy its floating docks.
+- Docks: no tab groups inside a floating dock; floating docks are panels inside the window unless the host turns on
+  OS tool windows (`NativeOptions::osWindows`, X11 / Win32); a destroyed dock area does not destroy its floating docks.
 - Model / view: rows are single-line and fixed-height; a filtered or sorted proxy rebuilds fully on any source
   change; tree selection is by visible row (collapsing deselects); `SqliteModel` is not async; the combo-box cell
   editor commits on Enter / Tab / click-away, not on picking from the popup.

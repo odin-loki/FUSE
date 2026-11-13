@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <chrono>
+#include <mutex>
 #include <thread>
 #include <vector>
 #include <unistd.h>
@@ -1829,11 +1830,174 @@ void gateCharts() {
     CHECK(w::chartTooltip(ui, line).empty());
 }
 #endif // FUSE_UI_EXTRAS_ALL
+
+// Native desktop notifications (desktop::Notifier, TrayIcon::showMessage) against a private session bus with an
+// in-process org.freedesktop.Notifications service on a second connection. Skips (passes) without libdbus / dbus-daemon.
+void gateNotify() {
+#ifdef _WIN32
+    std::printf("notify: skipped (session D-Bus gate is POSIX-only)\n");
+#else
+    using namespace fuse::ui::dbus;
+    using namespace fuse::ui::desktop;
+    namespace os = fuse::ui::os;
+    if (!available() || os::findExecutable("dbus-daemon").empty() || os::findExecutable("bash").empty()) {
+        std::printf("notify: skipped (no libdbus / dbus-daemon / bash)\n");
+        return;
+    }
+    const std::string sock = "/tmp/fuse_notify_bus_" + std::to_string(::getpid());
+    const std::string addr = "unix:path=" + sock;
+    std::string closeFds; // see gateTray: the daemon must not inherit the pipe ends of runProcess
+    for (int fd = 3; fd < 32; ++fd) closeFds += " " + std::to_string(fd) + ">&-";
+    auto d = os::runProcess({"bash", "-c", "setsid dbus-daemon --session --address=" + addr + " --nofork --nopidfile </dev/null >/dev/null 2>&1" + closeFds + " & echo $!"}, {}, 5000);
+    CHECK(d && d->exitCode == 0);
+    if (!d || d->exitCode != 0) return;
+    const std::string pid = d->out.substr(0, d->out.find('\n'));
+    ::setenv("DBUS_SESSION_BUS_ADDRESS", addr.c_str(), 1);
+    auto host = Connection::open(addr);
+    for (int i = 0; i < 1000 && !host; ++i) { os::sleepSeconds(0.01); host = Connection::open(addr); }
+    CHECK(host != nullptr);
+    if (!host) return;
+
+    // nobody owns the name yet: honest "unsupported", and the one-shot call says the same
+    {
+        Notifier none;
+        CHECK(!none.supported());
+        CHECK(none.show({.title = "nobody listens"}) == NotifyResult::Unsupported);
+        CHECK(notifyNative({.title = "nobody listens"}) == NotifyResult::Unsupported);
+    }
+
+    // the fake service: records what Notify carries, hands out ids, takes CloseNotification
+    struct Seen {
+        std::string app, icon, title, body;
+        std::vector<std::string> actions;
+        std::string hintKey;
+        int hintType = 0;
+        u32 replaces = 0;
+        i32 timeout = 0;
+        int notifies = 0;
+        u32 closed = 0;
+    } seen;
+    std::mutex mu;
+    u32 nextId = 41;
+    CHECK(host->requestName("org.freedesktop.Notifications"));
+    host->exportObject("/org/freedesktop/Notifications", [&](Connection& c, const Message& m) {
+        std::lock_guard<std::mutex> lock(mu);
+        if (m.isCall("org.freedesktop.Notifications", "Notify")) {
+            Reader r = m.read();
+            seen.app = r.str(); r.next();
+            seen.replaces = r.u32v(); r.next();
+            seen.icon = r.str(); r.next();
+            seen.title = r.str(); r.next();
+            seen.body = r.str(); r.next();
+            seen.actions.clear();
+            for (Reader a = r.recurse(); a.type() == 's'; a.next()) seen.actions.push_back(a.str());
+            r.next();
+            for (Reader h = r.recurse(); h.type() == 'e'; h.next()) {
+                Reader e = h.recurse();
+                seen.hintKey = e.str();
+                e.next();
+                seen.hintType = e.recurse().type();
+            }
+            r.next();
+            seen.timeout = r.i32v();
+            ++seen.notifies;
+            Message reply = m.reply();
+            reply.args().u(seen.replaces ? seen.replaces : ++nextId);
+            c.send(reply);
+            return true;
+        }
+        if (m.isCall("org.freedesktop.Notifications", "CloseNotification")) {
+            seen.closed = m.read().u32v();
+            Message reply = m.reply();
+            c.send(reply);
+            return true;
+        }
+        return false;
+    });
+    std::atomic<bool> stop{false};
+    std::thread service([&] {
+        while (!stop.load()) host->poll(5);
+    });
+
+    Notifier notifier;
+    CHECK(notifier.supported());
+    u32 actionId = 0, closedId = 0, closedReason = 0;
+    std::string actionKey;
+    notifier.onAction = [&](std::uint32_t id, std::string_view key) { actionId = id; actionKey = key; };
+    notifier.onClosed = [&](std::uint32_t id, std::uint32_t reason) { closedId = id; closedReason = reason; };
+    u32 id = 0;
+    const Notification n{.appName = "FUSE gate", .title = "Build finished", .body = "3 warnings <b>", .icon = "dialog-information",
+                         .urgency = Urgency::Critical, .timeoutMs = 2500, .actions = {{"default", "Open"}, {"log", "Show log"}}};
+    CHECK(notifier.show(n, &id) == NotifyResult::Shown);
+    CHECK(id == 42);
+    {
+        std::lock_guard<std::mutex> lock(mu);
+        CHECK(seen.notifies == 1 && seen.app == "FUSE gate" && seen.title == "Build finished" && seen.body == "3 warnings <b>");
+        CHECK(seen.icon == "dialog-information" && seen.replaces == 0 && seen.timeout == 2500);
+        CHECK(seen.actions == std::vector<std::string>({"default", "Open", "log", "Show log"}));
+        CHECK(seen.hintKey == "urgency" && seen.hintType == 'y');
+    }
+    // replacing keeps the id
+    Notification again = n;
+    again.title = "Build finished (2)";
+    again.replacesId = id;
+    u32 id2 = 0;
+    CHECK(notifier.show(again, &id2) == NotifyResult::Shown && id2 == id);
+    { std::lock_guard<std::mutex> lock(mu); CHECK(seen.replaces == 42 && seen.title == "Build finished (2)"); }
+    // the service reports an action and the close: the callbacks run from poll()
+    auto emit = [&](const char* member, u32 a, const char* text, u32 b) {
+        Message sgl = Message::signal("/org/freedesktop/Notifications", "org.freedesktop.Notifications", member);
+        if (text) sgl.args().u(a).s(text);
+        else sgl.args().u(a).u(b);
+        std::lock_guard<std::mutex> lock(mu); // one sender at a time on the host connection
+        host->send(sgl);
+        host->flush();
+    };
+    emit("ActionInvoked", 42, "log", 0);
+    emit("NotificationClosed", 42, nullptr, 2);
+    const double t0 = os::monotonicSeconds();
+    while ((actionId == 0 || closedId == 0) && os::monotonicSeconds() - t0 < 5) { notifier.poll(); os::sleepSeconds(0.005); }
+    CHECK(actionId == 42 && actionKey == "log");
+    CHECK(closedId == 42 && closedReason == 2);
+    CHECK(notifier.close(id));
+    { std::lock_guard<std::mutex> lock(mu); CHECK(seen.closed == 42); }
+    CHECK(!notifier.close(0));
+    // the one-shot forms take the native route (no helper process is needed)
+    CHECK(notifyNative({.appName = "one", .title = "shot"}) == NotifyResult::Shown);
+    CHECK(notificationsSupported());
+    CHECK(notify({.appName = "auto", .title = "native first"}));
+    { std::lock_guard<std::mutex> lock(mu); CHECK(seen.app == "auto" && seen.title == "native first" && seen.actions.empty()); }
+
+    // a tray icon's message: its title is the sender, a click on the notification reaches onMessageClicked
+    {
+        TrayIcon tray;
+        tray.setTitle("FUSE Tray");
+        int clicked = 0;
+        tray.onMessageClicked = [&] { ++clicked; };
+        CHECK(tray.showMessage("Export done", "scene.fbx", 4000));
+        u32 trayNote = 0;
+        {
+            std::lock_guard<std::mutex> lock(mu);
+            CHECK(seen.app == "FUSE Tray" && seen.title == "Export done" && seen.body == "scene.fbx" && seen.timeout == 4000);
+            CHECK(seen.actions == std::vector<std::string>({"default", "Open"}));
+            trayNote = nextId;
+        }
+        emit("ActionInvoked", trayNote, "default", 0);
+        const double t1 = os::monotonicSeconds();
+        while (clicked == 0 && os::monotonicSeconds() - t1 < 5) { tray.poll(); os::sleepSeconds(0.005); }
+        CHECK(clicked == 1);
+    }
+    stop = true;
+    service.join();
+    host.reset();
+    os::runProcess({"kill", pid});
+#endif
+}
 } // namespace
 
 int main(int argc, char** argv) {
     const std::map<std::string, std::function<void()>> gates{
-        {"undo", gateUndo}, {"desktop", gateDesktop}, {"pdf", gatePdf}, {"tray", gateTray}, {"webview", gateWebView},
+        {"undo", gateUndo}, {"desktop", gateDesktop}, {"pdf", gatePdf}, {"tray", gateTray}, {"webview", gateWebView}, {"notify", gateNotify},
         {"declarative", gateDeclarative}, {"dataviz3d", gateDataViz3d}, {"dataviz3d_bsp", gateDataViz3dBsp},
 #if FUSE_UI_EXTRAS_ALL
         {"gesture", gateGesture}, {"i18n", gateI18n}, {"containers", gateContainers}, {"dialogs", gateDialogs}, {"lcd_keyseq", gateLcdKeyseq},

@@ -1,5 +1,6 @@
 #include "fuse/ui/extras/desktop.hpp"
 
+#include "fuse/ui/extras/dbus.hpp"
 #include "fuse/ui/os.hpp"
 
 #include <algorithm>
@@ -64,9 +65,98 @@ std::vector<std::string> notifyCommand(const Notification& n, std::string_view p
     return {};
 }
 bool notify(const Notification& n) {
+    if (notifyNative(n) == NotifyResult::Shown) return true; // no helper process when the session has a service
     auto c = notifyCommand(n);
     if (c.empty() || os::findExecutable(c[0]).empty()) return false;
     return run(std::move(c));
+}
+
+// ---- native notifications: org.freedesktop.Notifications ---------------------------------------------------------------
+namespace {
+constexpr const char* kNotifyName = "org.freedesktop.Notifications";
+constexpr const char* kNotifyPath = "/org/freedesktop/Notifications";
+} // namespace
+struct Notifier::Impl {
+    std::unique_ptr<dbus::Connection> c;
+    bool tried = false;
+};
+Notifier::Notifier() : m(std::make_unique<Impl>()) {}
+Notifier::~Notifier() = default;
+namespace {
+dbus::Connection* connect(Notifier& self, std::unique_ptr<dbus::Connection>& c, bool& tried) {
+    if (!tried) {
+        tried = true;
+        c = dbus::Connection::session();
+        if (c) {
+            c->addMatch(std::string("type='signal',interface='") + kNotifyName + "'");
+            c->onMessage = [&self](dbus::Connection&, const dbus::Message& msg) {
+                dbus::Reader r = msg.read();
+                if (msg.isSignal(kNotifyName, "ActionInvoked")) {
+                    const std::uint32_t id = r.u32v();
+                    r.next();
+                    const std::string key = r.str();
+                    if (self.onAction) self.onAction(id, key);
+                } else if (msg.isSignal(kNotifyName, "NotificationClosed")) {
+                    const std::uint32_t id = r.u32v();
+                    r.next();
+                    if (self.onClosed) self.onClosed(id, r.u32v());
+                }
+            };
+        }
+    }
+    return c.get();
+}
+} // namespace
+bool Notifier::supported() {
+    dbus::Connection* c = connect(*this, m->c, m->tried);
+    return c && c->nameHasOwner(kNotifyName);
+}
+NotifyResult Notifier::show(const Notification& n, std::uint32_t* id) {
+    dbus::Connection* c = connect(*this, m->c, m->tried);
+    if (!c) return NotifyResult::Unsupported;
+    // Notify(s app_name, u replaces_id, s app_icon, s summary, s body, as actions, a{sv} hints, i expire_timeout) -> u
+    dbus::Message call = dbus::Message::call(kNotifyName, kNotifyPath, kNotifyName, "Notify");
+    if (!call) return NotifyResult::Failed;
+    dbus::Writer w = call.args();
+    w.s(n.appName).u(n.replacesId).s(n.icon).s(n.title).s(n.body);
+    w.open('a', "s");
+    for (const auto& [key, label] : n.actions) w.s(key).s(label);
+    w.close();
+    const std::uint8_t urgency = n.urgency == Urgency::Low ? 0 : n.urgency == Urgency::Critical ? 2 : 1;
+    w.open('a', "{sv}").entry("urgency", 'y', &urgency).close();
+    w.i(n.timeoutMs);
+    const dbus::Message reply = c->callBlocking(call);
+    if (!reply) return NotifyResult::Failed;
+    if (reply.isError()) {
+        const std::string e = reply.errorName();
+        // nobody owns the name and the bus cannot start a service for it: nothing could show the notification
+        return e == "org.freedesktop.DBus.Error.ServiceUnknown" || e == "org.freedesktop.DBus.Error.NameHasNoOwner" ? NotifyResult::Unsupported
+                                                                                                                    : NotifyResult::Failed;
+    }
+    if (id) *id = reply.read().u32v();
+    return NotifyResult::Shown;
+}
+bool Notifier::close(std::uint32_t id) {
+    dbus::Connection* c = connect(*this, m->c, m->tried);
+    if (!c || !id) return false;
+    dbus::Message call = dbus::Message::call(kNotifyName, kNotifyPath, kNotifyName, "CloseNotification");
+    if (!call) return false;
+    call.args().u(id);
+    const dbus::Message reply = c->callBlocking(call);
+    return reply && !reply.isError();
+}
+void Notifier::poll() {
+    if (m->c) m->c->poll(0);
+}
+NotifyResult notifyNative(const Notification& n) {
+    Notifier one;
+    return one.show(n);
+}
+bool notificationsSupported() {
+    Notifier one;
+    if (one.supported()) return true;
+    const auto c = notifyCommand({});
+    return !c.empty() && !os::findExecutable(c[0]).empty();
 }
 
 std::vector<std::string> openUrlCommand(std::string_view url, std::string_view p) {

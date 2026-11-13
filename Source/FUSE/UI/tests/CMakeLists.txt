@@ -481,3 +481,24 @@ foreach(t fuse_ui_bench_10k fuse_ui_modelview_1m_rows fuse_ui_mv_selection_1m fu
         set_tests_properties(${t} PROPERTIES LABELS "${_fuse_ui_labels};perf")
     endif()
 endforeach()
+
+# fuse_app platform layer, the parts that need no display (docs/ui/archive/PORT_magical_bassi.md 3.5 / 3.7,
+# PORT_gui_framework.md 3.1 / 3.5): saved state, client-side window chrome, the window-less dialog helpers, the PNG
+# clipboard codec, frame pacing and the tool-window surfaces of floating docks. The OS side (XDND, clipboard formats,
+# tool windows, chrome drags, saved-state restore on real windows) is in fuse_app_native_services above.
+if(TARGET fuse_app)
+    add_executable(fuse_app_platform test_app_platform.cpp)
+    target_link_libraries(fuse_app_platform PRIVATE fuse_app)
+    target_include_directories(fuse_app_platform PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    foreach(g saved_state window_chrome dialog_helpers clipboard_png frame_pacing tool_surfaces)
+        add_test(NAME fuse_app_${g} COMMAND fuse_app_platform --gate=${g} --out=${CMAKE_CURRENT_BINARY_DIR})
+        set_tests_properties(fuse_app_${g} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+endif()
+
+# Native desktop notifications (desktop::Notifier, TrayIcon::showMessage; PORT_magical_bassi.md 3.8): a private
+# dbus-daemon with an in-process org.freedesktop.Notifications service. Passes with a "skipped" line without libdbus.
+if(TARGET fuse_ui_extras_tests)
+    add_test(NAME fuse_ui_extras_notify COMMAND fuse_ui_extras_tests --gate=notify)
+    set_tests_properties(fuse_ui_extras_notify PROPERTIES LABELS "fuse_ui;gate" TIMEOUT 120)
+endif()

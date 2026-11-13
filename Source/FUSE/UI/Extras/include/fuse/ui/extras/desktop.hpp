@@ -5,6 +5,8 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -18,10 +20,51 @@ struct Notification {
     std::string icon;          ///< icon name or path (Linux/BSD)
     Urgency urgency = Urgency::Normal;
     int timeoutMs = -1;        ///< -1: server default
+    /// Buttons, as (key, label) pairs; the key "default" is the click on the notification itself. Native service
+    /// only (Notifier); the helper programs ignore them.
+    std::vector<std::pair<std::string, std::string>> actions{};
+    std::uint32_t replacesId = 0; ///< Notifier: update the notification with this id instead of adding one
 };
 std::vector<std::string> notifyCommand(const Notification& n, std::string_view platform = {});
-/// Shows a desktop notification; false when no notification service exists (mobile backends post their own).
+/// Shows a desktop notification: through the native service where there is one (Linux / BSD: notifyNative), else by
+/// the platform's helper program (notifyCommand). False when neither exists (mobile backends post their own).
 bool notify(const Notification& n);
+
+enum class NotifyResult : std::uint8_t {
+    Shown,       ///< handed to the OS notification service
+    Unsupported, ///< no notification service on this platform / session
+    Failed,      ///< the service exists but refused the request
+};
+/// The desktop's notification service without a helper process: org.freedesktop.Notifications on the session D-Bus
+/// (extras/dbus.hpp, libdbus-1 loaded at run time), with action buttons, click / close callbacks, replacing and
+/// closing. Unsupported where there is no session bus or no service on it (Windows, macOS, mobile, a bare X session):
+/// desktop::notify falls back to the helper programs there.
+class Notifier {
+public:
+    Notifier();
+    ~Notifier();
+    Notifier(const Notifier&) = delete;
+    Notifier& operator=(const Notifier&) = delete;
+    /// A service owns org.freedesktop.Notifications now. (show() may still work without: the bus can start one.)
+    bool supported();
+    /// Posts `n`; `id` receives the service's id for close() / replacesId / the callbacks.
+    NotifyResult show(const Notification& n, std::uint32_t* id = nullptr);
+    bool close(std::uint32_t id);
+    /// The user chose an action (key "default": clicked the notification) / the notification went away (reason:
+    /// 1 expired, 2 dismissed by the user, 3 closed by close(), 4 other). Called from poll().
+    std::function<void(std::uint32_t id, std::string_view action)> onAction;
+    std::function<void(std::uint32_t id, std::uint32_t reason)> onClosed;
+    /// Dispatches pending signals (call from the event loop while callbacks are wanted).
+    void poll();
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m;
+};
+/// One notification through a short-lived Notifier (no callbacks).
+NotifyResult notifyNative(const Notification& n);
+/// True when notify() can reach a notification service or helper here.
+bool notificationsSupported();
 
 std::vector<std::string> openUrlCommand(std::string_view url, std::string_view platform = {});
 /// Opens an http(s)/mailto/file URL or a path with the user's default application.

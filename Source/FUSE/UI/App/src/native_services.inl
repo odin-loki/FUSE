@@ -119,7 +119,15 @@ unsigned long NativePlatform::Impl::cursorFor(Cursor c) {
     return cursors[i] = id;
 }
 void NativePlatform::Impl::applyCursor(Rec& r) {
-    const Cursor want = r.win->ui().cursor();
+    Cursor want = r.win->ui().cursor();
+    if (r.win->chrome().frame == WindowFrame::Custom && r.pointer.x >= 0.f) // the resize edges of a client-side frame
+        switch (chromeHitTest(*r.win, r.pointer)) {
+        case HitArea::Left: case HitArea::Right: want = Cursor::ResizeH; break;
+        case HitArea::Top: case HitArea::Bottom: want = Cursor::ResizeV; break;
+        case HitArea::TopLeft: case HitArea::BottomRight: want = Cursor::ResizeNWSE; break;
+        case HitArea::TopRight: case HitArea::BottomLeft: want = Cursor::ResizeNESW; break;
+        default: break;
+        }
     if (r.cursorApplied && want == r.cursor) return;
     if (!x.DefineCursor) return;
     const unsigned long id = cursorFor(want);
@@ -130,74 +138,22 @@ void NativePlatform::Impl::applyCursor(Rec& r) {
     r.cursorApplied = true;
 }
 
-// ---- X11: clipboard (CLIPBOARD selection, UTF8_STRING; no INCR, no clipboard-manager hand-over at exit) ---------------
+// ---- X11: clipboard (CLIPBOARD selection; no clipboard-manager hand-over at exit) --------------------------------------
 bool NativePlatform::Impl::clipboardUsable() const {
     return dpy && helper && x.SetSelectionOwner && x.GetSelectionOwner && x.ConvertSelection && x.CheckTypedWindowEvent;
 }
-void NativePlatform::Impl::serveSelection(const x11::SelectionRequestEv& rq) {
-    x11::Event out{};
-    out.selection.type = x11::SelectionNotify;
-    out.selection.display = dpy;
-    out.selection.requestor = rq.requestor;
-    out.selection.selection = rq.selection;
-    out.selection.target = rq.target;
-    out.selection.time = rq.time;
-    out.selection.property = 0; // refused unless filled below
-    const x11::Atom prop = rq.property ? rq.property : rq.target; // obsolete clients send None
-    if (clipOwner && rq.selection == aClipboard) {
-        if (rq.target == aTargets) {
-            const unsigned long list[] = {aTargets, aUtf8, aTextPlain};
-            x.ChangeProperty(dpy, rq.requestor, prop, 4 /*XA_ATOM*/, 32, 0, reinterpret_cast<const unsigned char*>(list), 3);
-            out.selection.property = prop;
-        } else if (rq.target == aUtf8 || rq.target == aTextPlain) {
-            x.ChangeProperty(dpy, rq.requestor, prop, rq.target, 8, 0, reinterpret_cast<const unsigned char*>(clipText.data()),
-                             int(clipText.size()));
-            out.selection.property = prop;
-        }
-    }
-    x.SendEvent(dpy, rq.requestor, 0, 0, &out);
-    x.Flush(dpy);
-}
+// serveSelection, the formats and INCR are in native_platform.inl; the text entry points stay here.
 bool NativePlatform::Impl::clipSet(void* user, std::string_view utf8) {
     Impl& m = *static_cast<Impl*>(user);
-    m.clipText = utf8;
-    m.x.SetSelectionOwner(m.dpy, m.aClipboard, m.helper, 0 /*CurrentTime*/);
-    m.clipOwner = m.x.GetSelectionOwner(m.dpy, m.aClipboard) == m.helper;
-    m.x.Flush(m.dpy);
-    return m.clipOwner;
+    std::vector<ClipboardItem> items(1);
+    items[0].mime = kClipboardText;
+    items[0].text = utf8;
+    return m.ownSelection(m.aClipboard, m.clip, std::move(items));
 }
 bool NativePlatform::Impl::clipGet(void* user, std::string& out) {
     Impl& m = *static_cast<Impl*>(user);
-    auto& x = m.x;
-    if (m.clipOwner) { // our own copy: no round trip
-        out = m.clipText;
-        return true;
-    }
-    if (!x.GetSelectionOwner(m.dpy, m.aClipboard)) return false; // nothing copied anywhere
-    if (x.DeleteProperty) x.DeleteProperty(m.dpy, m.helper, m.aClipProp);
-    x.ConvertSelection(m.dpy, m.aClipboard, m.aUtf8, m.aClipProp, m.helper, 0);
-    x.Flush(m.dpy);
-    x11::Event ev{};
-    bool got = false;
-    for (int waited = 0; waited < 1000 && !got; waited += 10) { // the owner answers with SelectionNotify
-        got = x.CheckTypedWindowEvent(m.dpy, m.helper, x11::SelectionNotify, &ev) != 0;
-        if (!got) {
-            pollfd p{x.ConnectionNumber(m.dpy), POLLIN, 0};
-            ::poll(&p, 1, 10);
-        }
-    }
-    if (!got || !ev.selection.property) return false; // no answer / the owner has no text
-    x11::Atom type = 0;
-    int format = 0;
-    unsigned long n = 0, after = 0;
-    unsigned char* data = nullptr;
-    if (x.GetWindowProperty(m.dpy, m.helper, m.aClipProp, 0, 1L << 24, 1 /*delete*/, 0 /*AnyPropertyType*/, &type, &format, &n, &after,
-                            &data) != 0 || !data)
-        return false;
-    const bool text = format == 8 && type != m.aIncr; // INCR (very large transfers) is not implemented
-    if (text) out.assign(reinterpret_cast<const char*>(data), std::size_t(n));
-    x.Free(data);
-    return text;
+    if (m.clip.owner) return m.selectionBytes(m.clip, m.aUtf8, out); // our own copy: no round trip
+    return m.convert(m.aClipboard, m.aUtf8, out);
 }
 
 // ---- X11: window management (ICCCM / EWMH) ---------------------------------------------------------------------------

@@ -1295,9 +1295,12 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
             if (m_nodes[k].dirty & kDirtyPaint) { m_damage = m_damage.unite(m_nodes[k].rect.intersect(n.rect)); m_nodes[k].dirty &= u8(~kDirtyPaint); }
             continue;
         }
-        if (m_osPopups && &dl == &m_draw && hasClass({k, m_nodes[k].gen}, "clamp")) { // own OS window
-            m_popupPending.push_back(k);
-            continue;
+        if ((m_osPopups || m_osWindows) && &dl == &m_draw) { // own OS window (popup / tool window)
+            const NodeHandle kh{k, m_nodes[k].gen};
+            if ((m_osPopups && hasClass(kh, "clamp")) || (m_osWindows && hasClass(kh, "os-window"))) {
+                m_popupPending.push_back(k);
+                continue;
+            }
         }
         paintRec(k, opacity, dl);
     }
@@ -1327,15 +1330,18 @@ bool UiContext::scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const {
     return true;
 }
 
-void UiContext::paintLists(std::vector<PopupSurface>& next) {
+void UiContext::paintLists(std::vector<PopupSurface>& next, std::vector<PopupSurface>& nextWindows) {
     const f32 rs = m_renderScale;
     m_draw.clear();
     m_popupPending.clear();
     next.clear();
+    nextWindows.clear();
     paintRec(m_root.index, 1.f, m_draw);
     if (m_drag.active) paintDragOverlay(m_draw); // drag ghost + drop indicator, over everything
     m_draw.scale(rs);
     for (u32 k : m_popupPending) {
+        const bool tool = m_osWindows && hasClass({k, m_nodes[k].gen}, "os-window");
+        const std::vector<PopupSurface>& prev = tool ? m_windowSurfaces : m_popupSurfaces;
         PopupSurface ps;
         ps.node = {k, m_nodes[k].gen};
         ps.rect = m_nodes[k].rect;
@@ -1351,30 +1357,32 @@ void UiContext::paintLists(std::vector<PopupSurface>& next) {
             ps.draw.translate({-std::round(ps.rect.x * rs), -std::round(ps.rect.y * rs)});
         }
         ps.revision = ++m_popupRevision;
-        for (const PopupSurface& old : m_popupSurfaces)
+        for (const PopupSurface& old : prev)
             if (old.node == ps.node && old.rect.x == ps.rect.x && old.rect.y == ps.rect.y && old.rect.w == ps.rect.w &&
                 old.rect.h == ps.rect.h && old.draw.hash() == ps.draw.hash())
                 ps.revision = old.revision;
-        next.push_back(std::move(ps));
+        (tool ? nextWindows : next).push_back(std::move(ps));
     }
 }
 
 void UiContext::paintPass() {
     m_stats.repainted = false;
     if (!m_anyPaintDirty) return;
-    std::vector<PopupSurface> next;
+    std::vector<PopupSurface> next, nextWindows;
     m_painting = true;
     const std::uint32_t atlasGen = m_atlas.generation();
-    paintLists(next);
+    paintLists(next, nextWindows);
     if (m_atlas.generation() != atlasGen) {
         // the glyph atlas filled up and was reset while painting (likelier at high render scales): commands emitted
         // before the reset point at stale texels, so paint once more into the fresh atlas
         m_stats.painted = 0;
-        paintLists(next);
+        paintLists(next, nextWindows);
     }
     m_painting = false;
-    if (next.size() != m_popupSurfaces.size()) m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
+    if (next.size() != m_popupSurfaces.size() || nextWindows.size() != m_windowSurfaces.size())
+        m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
     m_popupSurfaces = std::move(next);
+    m_windowSurfaces = std::move(nextWindows);
     if (m_overlayDirty) { // the drag overlay is not a node: repaint everything it may have touched
         m_damage = {0.f, 0.f, m_viewport.w, m_viewport.h};
         m_overlayDirty = false;
@@ -1405,6 +1413,12 @@ void UiContext::setOsPopups(bool on, Rect screen) {
     m_osPopups = on;
     m_popupScreen = screen;
     if (!on) m_popupSurfaces.clear();
+    markAllDirty();
+}
+void UiContext::setOsWindows(bool on) {
+    if (on == m_osWindows) return;
+    m_osWindows = on;
+    if (!on) m_windowSurfaces.clear();
     markAllDirty();
 }
 Rect UiContext::popupArea() const {

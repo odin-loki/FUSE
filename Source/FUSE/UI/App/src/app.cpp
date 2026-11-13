@@ -164,6 +164,24 @@ std::string Settings::defaultDir(std::string_view app) {
 #endif
 #endif
 }
+std::string Settings::toText() const {
+    std::string o;
+    for (const auto& [k, v] : m_items) o += escape(k) + '=' + escape(v) + '\n';
+    return o;
+}
+void Settings::fromText(std::string_view text) {
+    m_items.clear();
+    m_dirty = false;
+    for (std::size_t pos = 0; pos < text.size();) {
+        const std::size_t nl = std::min(text.find('\n', pos), text.size());
+        std::string_view line = text.substr(pos, nl - pos);
+        pos = nl + 1;
+        if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+        const std::size_t eq = line.find('=');
+        if (line.empty() || line[0] == '#' || eq == std::string_view::npos) continue;
+        m_items.emplace_back(unescape(line.substr(0, eq)), unescape(line.substr(eq + 1)));
+    }
+}
 bool Settings::load() {
     m_items.clear();
     m_dirty = false;
@@ -244,6 +262,8 @@ AppWindow::AppWindow(Application& app, const WindowDesc& d, u32 id)
     m_presenter = {this, &AppWindow::presentHeadless, nullptr};
     m_pixelW = d.width;
     m_pixelH = d.height;
+    m_chrome.frame = d.frame;
+    m_chrome.resizeBorder = d.frame == WindowFrame::Custom ? d.resizeBorder : 0.f;
     if (d.dpiScale != 1.f) setScale(d.dpiScale);
 }
 AppWindow::~AppWindow() {
@@ -326,8 +346,22 @@ bool AppWindow::writePng(const std::string& path) const {
 bool AppWindow::frame(f32 dt) {
     if (!m_forceRedraw && m_policy == RedrawPolicy::OnDemand && !m_ui.needsUpdate()) return false;
     m_ui.update(dt); // advances timers; presents only when something repainted
+    if (!m_pendingScroll.empty()) { // restored offsets (restoreUiState): the scroll extents are known after the layout above
+        for (const auto& [id, o] : m_pendingScroll) m_ui.scrollTo(m_ui.find(id), o);
+        m_pendingScroll.clear();
+        m_ui.update(0.f);
+    }
     if (m_doc && m_doc->refresh()) m_ui.update(0.f);
     if (!m_ui.stats().repainted && !m_forceRedraw && m_policy == RedrawPolicy::OnDemand) return false;
+    if (paced()) { // setMaxFrameRate: the frame waits for its slot; what repainted meanwhile is presented whole then
+        const double now = m_app.now();
+        if (now < m_nextFrame) {
+            m_forceRedraw = true;
+            return false;
+        }
+        const double period = 1.0 / double(m_maxRate);
+        m_nextFrame = m_nextFrame < 0.0 || now - m_nextFrame > period ? now + period : m_nextFrame + period;
+    }
     const Rect dmg = m_forceRedraw ? Rect{0.f, 0.f, f32(m_pixelW), f32(m_pixelH)} : m_ui.deviceDamage();
     m_forceRedraw = false;
     if (!m_presenter.present || !m_presenter.present(m_presenter.user, *this, dmg)) return false;
@@ -378,7 +412,14 @@ double Application::now() const { return m_clock.now(m_clock.user); }
 f32 Application::nextWake() const {
     f32 t = std::numeric_limits<f32>::infinity();
     for (const auto& w : m_windows) {
-        if (w->m_forceRedraw || w->m_closing || w->m_policy == RedrawPolicy::Continuous) return 0.f;
+        if (w->m_closing) return 0.f;
+        if (w->m_forceRedraw || w->m_policy == RedrawPolicy::Continuous) {
+            // due now, or - paced (setMaxFrameRate) - at the window's next frame slot
+            const f32 slot = w->paced() && w->m_nextFrame >= 0.0 ? f32(std::max(0.0, w->m_nextFrame - now())) : 0.f;
+            if (slot <= 0.f) return 0.f;
+            t = std::min(t, slot);
+            continue;
+        }
         t = std::min(t, w->m_ui.nextWakeSeconds());
     }
     return t;

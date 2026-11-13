@@ -40,12 +40,12 @@ immediate-mode front-end. See the plan's status table for what is still open.
 
 The tree also holds source files that no target builds yet: the UI work of the merged branch
 `claude/magical-bassi-815825` that still has to be ported onto this code (Wayland backend, cooked / MSDF / variable
-fonts, the SVG icon cooker, window chrome, tray, AccessKit window adapters, GPU effects, `ProjectHost`, their tests
+fonts, the SVG icon cooker, AccessKit window adapters, GPU effects, `ProjectHost`, their tests
 and goldens). [`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md) lists every one of them, what blocks
 it and how to verify it once ported. Nothing in this document describes those files unless it says so.
 
 The same holds for the merged branch `gui-framework`: its `Extras/` modules that compile against this code are built
-(the row above); the rest of its UI work is in the tree unbuilt (a second Wayland backend, OS drag and drop, Cocoa /
+(the row above); the rest of its UI work is in the tree unbuilt (a second Wayland backend, Cocoa /
 UIKit / Android backends with a Java activity, the CSS engine additions, GPU paths / filters / HDR, FORGE script
 bindings, rich text, SVG documents, media, more widgets). [`archive/PORT_gui_framework.md`](archive/PORT_gui_framework.md)
 is the list. Files of that branch whose path was already taken on main are kept under
@@ -332,10 +332,18 @@ fuse::app::openUrl("https://example.org");
   cursors through an optional `libXcursor`, else the core cursor font), Win32 (`WM_SETCURSOR`), macOS (`NSCursor`);
   iOS / Android have none.
 - **Clipboard.** `show()` installs the system clipboard as the window's `ClipboardHooks`; also
-  `NativePlatform::setClipboardText / clipboardText`. X11: the `CLIPBOARD` selection as `UTF8_STRING` (no INCR, and no
-  clipboard-manager hand-over when the app exits); Win32: `CF_UNICODETEXT`.
+  `NativePlatform::setClipboardText / clipboardText`. Formats (`ClipboardItem` in `services.hpp`):
+  `setClipboard({items})` with one item per format (`kClipboardText`, `kClipboardImage` = `image/png` carrying a
+  `fuse::ui::Image` of straight RGBA, or any MIME type with raw bytes; an item with `provide` is made lazily, when it is
+  first pasted), `setClipboardImage / clipboardImage`, `clipboardData(mime, bytes)`, `clipboardFormats()`,
+  `clipboardOwned()`, and `setPrimarySelectionText / primarySelectionText` (X11 PRIMARY). X11: the `CLIPBOARD`
+  selection with `TARGETS`, `UTF8_STRING` / `text/plain`, `image/png`, custom atoms and INCR in both directions (no
+  clipboard-manager hand-over when the app exits); Win32: `CF_UNICODETEXT`, `CF_DIBV5` + a `PNG` format, registered
+  formats named by the MIME type, lazy items made at once; macOS / iOS / Android: text only.
 - **HiDPI.** `NativeOptions::scale`: 0 = the display's scale, 1 = physical pixels, anything else forces it. X11:
-  `$FUSE_UI_SCALE`, else `Xft.dpi / 96`, else `$GDK_SCALE`, else 1 (one scale for the connection). Win32: per-monitor
+  `$FUSE_UI_SCALE`, else XSETTINGS `Xft/DPI` (followed live: when the desktop's DPI changes every window keeps its
+  logical size and is re-rendered at the new scale, `WindowEvent::ScaleChanged`), else `Xft.dpi / 96`, else
+  `$GDK_SCALE`, else 1 (one scale for the connection). Win32: per-monitor
   DPI awareness, `GetDpiForWindow`, `WM_DPICHANGED`. The OS window is logical size x scale pixels, the frame is
   rendered at that size (`AppWindow::resizePixels`), pointer positions are divided by the scale and OS popup windows
   use it. `NativePlatform::postClick` and `screenOrigin` stay in window / screen pixels.
@@ -348,8 +356,9 @@ fuse::app::openUrl("https://example.org");
 - **System theme and displays.** `Application::systemTheme()` holds the light / dark preference and accent the backend
   reports (`NativePlatform::systemTheme()` queries now). Win32: registry + change messages; macOS: effective
   appearance + accent, with notification; iOS: trait collection; Android: night mode (the activity needs
-  `android:configChanges="uiMode"`); X11: `$GTK_THEME`, else `gsettings` once, else Unknown, and no change
-  notification. `AppWindow::applyTheme` / `setFollowSystemTheme` re-colour the default theme by adding a token sheet
+  `android:configChanges="uiMode"`); X11: XSETTINGS (`Net/ThemeName`, `Gtk/ApplicationPreferDarkTheme`, with change
+  notification while the settings manager that ran at start keeps running; it also sets the cursor theme and size,
+  `NativePlatform::cursorThemeSize()`), else `$GTK_THEME`, else `gsettings` once, else Unknown. `AppWindow::applyTheme` / `setFollowSystemTheme` re-colour the default theme by adding a token sheet
   (`themeTokensCss`). `NativePlatform::displays()` lists bounds, work area, scale and refresh rate where known.
 - **File dialogs.** `NativePlatform::fileDialog` is the modal native one: Win32 `GetOpenFileNameW` /
   `GetSaveFileNameW` / `SHBrowseForFolderW`, macOS `NSOpenPanel` / `NSSavePanel`, Linux / BSD `zenity` or `kdialog`
@@ -361,8 +370,44 @@ fuse::app::openUrl("https://example.org");
 - **Shell.** `openUrl` (xdg-open / `ShellExecuteW` / `NSWorkspace` / `UIApplication` / an `ACTION_VIEW` Intent) and
   `revealFile` (Explorer / Finder select the file; Linux / BSD open its folder; false on mobile).
 - Without Vulkan an X11 window now shows the CPU raster (`XPutImage`, `PresenterKind::Software`).
+- **Window-less dialogs** (free functions in `native.hpp`, `std::expected<..., PlatformError>`): `openFileDialog`
+  (several filters, `multiple`), `saveFileDialog`, `pickFolderDialog`, `colorDialog`, `messageBox`,
+  `revealInFileManager`. Win32: `IFileOpenDialog` / `IFileSaveDialog`, `ChooseColorW`, `MessageBoxW`; Linux / BSD:
+  `zenity`, else `kdialog` (`messageBox`: zenity only); `Unavailable` without a helper and on macOS / iOS / Android.
+  `fuse/app/platform.hpp` and `fuse/app/clipboard.hpp` are compatibility headers over `services.hpp` / `native.hpp`
+  for code written against the `claude/magical-bassi-815825` branch (the FUSE-UI editor shell).
+- **OS drag and drop** (`NativeOptions::dragAndDrop`, on by default; X11 XDND v5, Win32 OLE). In: files or text
+  dragged from another application hover and drop on the window's drop targets through `UiContext::dragExternalMove /
+  dropExternal` (`DragData::type` is `kDragFiles` with LF-separated local paths in `text`, or `kDragText`); the other
+  application is always told "copy". Out: a drag started in the UI (`beginDrag`, a drag source) whose data is
+  `kDragText` / `kDragFiles` is offered to the application under the pointer once it leaves the app's windows
+  (`NativePlatform::externalDragActive()`), and the source gets `DragEnd` with what the other side did
+  (`UiContext::dragFinishExternal`). Other data types stay inside the app.
+- **OS tool windows** (`NativeOptions::osWindows`, off by default; X11 and Win32). `UiContext::setOsWindows(true)`
+  takes overlay nodes with the class `os-window` out of the window's draw list and into `windowSurfaces()`;
+  `widgets::dockFloat` gives floating docks that class, so with the option on a floated dock is its own borderless OS
+  window that can leave the main window (title drag, drop zones, `dockTo` work as before; keys stay with the main
+  window). Off, and on the other platforms, floating docks stay in-window panels. Read-back:
+  `toolWindowCount / toolWindow / toolWindowScreenRect / captureToolWindow`.
+- **Client-side window chrome** (`fuse/app/chrome.hpp`). `WindowDesc::frame = WindowFrame::Custom` (resizable from
+  `resizeBorder` px edges) or `Borderless` removes the OS frame; `titleBar(window, parent, title)` adds a title-bar row
+  whose buttons run `AppWindow::command(Minimize | ToggleMaximize | Close)`, and `chromeHitTest(window, pos)` says what
+  a point is (caption, an edge or corner, a button, client). X11: `_MOTIF_WM_HINTS`, drags handed to the window
+  manager with `_NET_WM_MOVERESIZE`, or done by the backend when there is no window manager; Win32:
+  `WM_NCCALCSIZE` / `WM_NCHITTEST`. Elsewhere the frame kind is ignored.
+- **Saved state.** `AppWindow::saveUiState / restoreUiState` (focus, text-field text, values, check states, scroll
+  offsets of nodes with an id) and `saveWindowState / restoreWindowState` (position, size, mode) write to a
+  `Settings`; `Application::saveState() / restoreState(bytes)` and `saveStateTo(path) / restoreStateFrom(path)` do it
+  for every window plus `StateHooks`. Restore before `NativePlatform::show` so the OS window is created with the saved
+  geometry. Android: the state is kept in the activity's saved-instance state (`APP_CMD_SAVE_STATE`) and handed back
+  by `show()` (cross-compiled only, never run on a device).
+- **Frame pacing.** `AppWindow::setMaxFrameRate(hz)` caps a window whose presenter does not wait for the display
+  (`Presenter::vsynced` false): a `Continuous` window sleeps between frames instead of spinning. 0 = unlimited.
+- **Synthetic input** for tests: `postClick`, `postPointerMove`, `postPointerButton`, `postClose` (X11 / Win32).
 
-The macOS / iOS parts are compiled in CI only; the Win32 parts are cross-compiled with MinGW and have not been run.
+The macOS / iOS parts are compiled in CI only; the Win32 parts are cross-compiled with MinGW and have not been run
+(that includes all of `App/src/native_platform_win32.inl`: tool windows, chrome, OLE drag and drop, clipboard formats,
+dialogs). X11 window-manager paths (`_NET_WM_MOVERESIZE`, decorations off) were exercised without a window manager only.
 
 ### Samples
 
@@ -409,8 +454,8 @@ not built at all).
 | `undo.hpp` | `fuse::ui` | `UndoCommand`, `UndoStack` (merge, macros, clean state, limit), `UndoGroup` |
 | `declarative.hpp` | `fuse::ui::decl` | `Property<T>` with tracked bindings, `bindText / bindValue / bindCss / bindVisible`, `Effect`, hierarchical `StateMachine` |
 | `pdf.hpp` | `fuse::ui::pdf` | `PdfDocument` (PDF 1.4: vector shapes, standard fonts, images), `renderDrawList` (a draw list as a vector page) |
-| `desktop.hpp` | `fuse::ui::desktop` | notifications, `openUrl`, printers and print jobs through helper programs (`notify-send`, `xdg-open`, `lp`); each call has a `*Command()` twin returning the argv |
-| `tray.hpp`, `dbus.hpp` | `fuse::ui`, `fuse::ui::dbus` | `TrayIcon`, `GlobalMenuBar`: StatusNotifierItem + dbusmenu over a runtime-loaded libdbus on Linux / BSD, `Shell_NotifyIcon` on Windows (compiled, not run) |
+| `desktop.hpp` | `fuse::ui::desktop` | notifications, `openUrl`, printers and print jobs through helper programs (`notify-send`, `xdg-open`, `lp`); each call has a `*Command()` twin returning the argv. `Notifier`: the native `org.freedesktop.Notifications` service over D-Bus (action buttons, `onAction` / `onClosed`, replace, close); `notify()` uses it first and the helper program otherwise |
+| `tray.hpp`, `dbus.hpp` | `fuse::ui`, `fuse::ui::dbus` | `TrayIcon` (with `showMessage` / `onMessageClicked`), `GlobalMenuBar`: StatusNotifierItem + dbusmenu over a runtime-loaded libdbus on Linux / BSD, `Shell_NotifyIcon` on Windows (compiled, not run) |
 | `webview.hpp` | `fuse::ui::web` | `WebView` on the system engine loaded at run time (WebKitGTK; WebView2 with `FUSE_UI_WEBVIEW2_DIR`, untested); `available()` is false without one |
 | `charts.hpp` | `fuse::ui::charts` | `Chart` data model, `render` to a `DrawList`, `chartView` widget: line, area, bar, scatter, pie / donut, candlestick, box, waterfall, contour, radar, treemap, sankey, gauge, funnel; axes, legend, tooltips, zoom / pan, model binding, decimation (min-max, LTTB), transitions, PNG export; `Chart3D` / `chart3dView` |
 | `datavis3d.hpp`, `fuse/ui/mesh3d.hpp` | `fuse::ui::dv3d`, `fuse::ui` | 3D surface / scatter / bars / volume slices projected on the CPU into draw-list paths (BSP ordering, picking); `Mesh3D` + `rasterMesh` CPU mesh rasteriser |
@@ -878,6 +923,9 @@ checks it against the overlay under one scripted event stream.
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
 | `fuse_app_cursor_resolution`, `fuse_app_menu_description`, `fuse_app_dpi_scale`, `fuse_app_theme_restyle`, `fuse_app_window_state`, `fuse_app_file_dialog_fallback` | platform services, headless: cursor from styles / hooks / hover / drag, `MenuDesc` -> in-window menu bar, scale detection maths and pixel mapping, theme change -> restyle, window state API + events + close guard, toolkit file-dialog fallback and helper command lines |
 | `fuse_app_native_services` | the same on real X11 windows under Xvfb: scale-2 window and popup vs the CPU raster, clicks in window pixels, applied cursors, CLIPBOARD between two connections, position / show / hide / focus / size limits, displays, `zenity` / `xdg-open` helpers (skips 77 without a display) |
+| `fuse_app_saved_state`, `fuse_app_window_chrome`, `fuse_app_dialog_helpers`, `fuse_app_clipboard_png`, `fuse_app_frame_pacing`, `fuse_app_tool_surfaces` | the platform layer, headless (`tests/test_app_platform.cpp`): UI state + window geometry through `saveState` / `restoreState` and a state file; `WindowFrame` / `titleBar` / `chromeHitTest` regions and title-bar commands; zenity / kdialog command lines, colour / path / uri-list / XSETTINGS parsers; the `image/png` clipboard codec; `setMaxFrameRate` on a virtual clock; `setOsWindows` surfaces of floating docks and `dragFinishExternal` |
+| `fuse_app_native_services` (sections added with the platform-layer port) | on X11 under Xvfb: window-less dialogs through fake helpers; clipboard image (lazy, PNG), a 600 kB custom MIME type (INCR) and PRIMARY between two connections; XDND text and file drags from a UI drag source in one connection to a drop target in another (accept, refuse, leave, in-app-only types); a floating dock in its own OS window (read-back equals the CPU raster, click, title drag, follows the main window); caption drag, edge / corner resize within the size limits and close on a `WindowFrame::Custom` window; a window restored from a state file at its saved position and size; XSETTINGS DPI / theme / cursor size read and followed live, with the gate as settings manager |
+| `fuse_ui_extras_notify` | `desktop::Notifier` and `TrayIcon::showMessage` against a private `dbus-daemon` with an in-process `org.freedesktop.Notifications` service: arguments, actions, urgency hint, replace, `ActionInvoked` / `NotificationClosed` callbacks, close, "unsupported" without a service |
 | `fuse_ui_game_hud_golden` | HUD demo scene against `tests/golden/hud.png` plus trail / marker / pool state |
 | `fuse_ui_gamepad_nav` | navigation with delay + repeat, A / B, radial menu by stick, prompt glyph swap, focus sounds |
 | `fuse_ui_world_panel_raycast` | ray → panel pixel mapping, misses and back faces, ray clicks, idle surface does not re-render |
