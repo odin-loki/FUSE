@@ -191,6 +191,9 @@ pushed after those CI runs and re-checked on Linux only.
   filters; to be folded into main's `SvgImage`), system video and audio output (`extras/media.hpp`), the Designer
   additions of both branches. `l10n::parsePo` does not rewrite `%1`-style positional arguments of singular strings. `PdfDocument::renderDrawList` writes a gradient as the
   mean of its stops and skips nine-patches and layer effects.
+- `fuse_ui_vector_steady` (label `perf`) has a wall-clock budget (a 2000-point stroked series at 1080p < 8 ms) that the
+  port machine misses under load: it measures 3.3 to 7.8 ms alone, the same on the base commit, and fails in a parallel
+  `ctest` run with a load average above 30. It passes alone and in a serial run.
 - `fuse_app_binary_size` has a budget only for Linux x86-64 GCC Release MINIMAL in the standalone tree; the HUD binary
   size gate of the branch needs the COOKED text profile and is not registered.
 - In-window menus built from `MenuDesc` show `[x]` text for checkable items and do not grey disabled ones.
