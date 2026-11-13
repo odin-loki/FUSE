@@ -27,10 +27,10 @@ implementations to port where both have one. Its FORGE submodule was not taken.
 | macOS | `fuse-core-ios.yml` (macOS job, MoltenVK headers) | Builds; headless gates pass |
 | iOS simulator | `fuse-core-ios.yml` (iOS job) | Builds and links |
 | FreeBSD 14 x86-64 | `fuse-ui-freebsd.yml` in a FreeBSD VM | Builds; headless gates pass |
-| Windows (MSVC, clang-cl) | `fuse-windows-native.yml` | No UI build or link errors; jobs still fail on non-UI code (see below) |
+| Windows (MSVC release / profile / shipping / debug, clang-cl) | `fuse-windows-native.yml`, run 43370404838 | All five build with warnings as errors and run ctest (747 tests; shipping 670). Failing: `fuse_core_ui1_text_input` (all five) and `fuse_ui_bench_10k` (all but debug); see "Known failures" |
+| Windows + Qt 6 editor | same run | Builds for the first time (it does not on `main`); `ctest -R editor`: 76 of 81, see "Known failures" |
+| Windows + Vulkan (build only) | same run | The two Slang shaders pass `spirv-val`; `demo_hybrid_hud` did not compile (`UiFrameSource::recordOver` missing), fixed after that run |
 
-The last commit before this file (a11y bridge gate ordering fix for MSVC, FreeBSD workflow trigger restored) was
-pushed after those CI runs and re-checked on Linux only.
 
 ## Never run
 
@@ -80,6 +80,10 @@ pushed after those CI runs and re-checked on Linux only.
 - `fuse_core_ui1_text_input` fails on Windows (every MSVC job): `IMM32 composition string -> TextComposition`
   (`ImmSetCompositionStringW` succeeds on the hosted runner, the composition read back is empty). It is an engine-core
   test (`Source/FUSE/Core/tests`), not the UI module, and fails the same way on `main` (run 43323981954).
+- Qt editor gates on Windows (never run there before; the Qt editor is outside the UI module):
+  `fuse_editor_qt_context_menu_dpr1_5` (QMenu placed elsewhere than computed), `fuse_editor_qt_idle_frames` and
+  `fuse_editor_qt_shell_assets` (both also fail on Linux on `main`), `fuse_editor_qt_e20_inspector`,
+  `fuse_editor_qt_e20_reparent`. Not investigated.
 - `fuse_ui_bench_10k` misses its wall-clock budget on the hosted Windows runners (0.5 ms for one dirty panel in a
   10k-node tree; measured 0.50 to 0.94 ms there, 0.38 to 0.43 ms on the Linux development machine). It fails on `main`
   too. The budget is enforced there on purpose; nothing was relaxed.
