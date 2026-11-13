@@ -193,7 +193,7 @@ int main() {
     std::printf("allocations in 50 steady frames of the ported widgets: %ld\n", g_allocs.load());
     if (g_allocs.load())
         for (int k = 0; k < g_stepCount; ++k) std::printf("  %-32s %ld\n", g_steps[k].name, g_steps[k].count);
-    UI_CHECK_EQ(g_allocs.load(), 0L);
+    UI_CHECK_NO_ALLOC(g_allocs.load());
     w::setGraphicsScene(ui, view, nullptr); // (the static scene outlives the context)
     return finish("fuse_ui_port_zero_alloc");
 }

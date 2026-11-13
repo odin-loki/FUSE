@@ -19,7 +19,7 @@
 #include "flip_metric.hpp"
 #endif
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__) // (clang-cl defines only __clang__)
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #endif
 #define STB_IMAGE_WRITE_IMPLEMENTATION

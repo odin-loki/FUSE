@@ -740,7 +740,7 @@ int gateSculpt(MainWindow& window) {
         t->position = ecs::vec3{p.x + f.x * 6.f, p.y + f.y * 6.f, p.z + f.z * 6.f, 1.f};
         t->dirty = true;
         float px = 0.f, py = 0.f;
-        vp->panel().worldToScreen(t->position, px, py);
+        expect(vp->panel().worldToScreen(t->position, px, py), "sculpt: the target is in front of the camera");
         centre = QPointF(px / vp->devicePixelRatioF(), py / vp->devicePixelRatioF());
     }
     tick(window);

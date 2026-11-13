@@ -18,7 +18,7 @@
 #include "test_env.hpp"
 #include "test_util.hpp"
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__) // (clang-cl defines only __clang__)
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wunused-function"
 #endif

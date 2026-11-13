@@ -233,7 +233,7 @@ struct Screen {
     UiContext ui{{.viewport = {1200, 800}, .font = &fuse::ui::test::font()}};
     Screen() { w::install(ui); step(ui); }
 };
-NodeHandle findText(UiContext& ui, NodeHandle root, std::string_view t) {
+[[maybe_unused]] NodeHandle findText(UiContext& ui, NodeHandle root, std::string_view t) {
     if (ui.text(root) == t) return root;
     for (NodeHandle c = ui.firstChild(root); ui.alive(c); c = ui.nextSibling(c))
         if (NodeHandle f = findText(ui, c, t); f.valid()) return f;

@@ -308,7 +308,6 @@ ComboState& comboState(const UiContext& ui, NodeHandle combo) {
     }
     return c;
 }
-InsertPolicy comboPolicy(const UiContext& ui, NodeHandle combo) { return comboState(ui, combo).o.policy; }
 NodeHandle comboEdit(const UiContext& ui, NodeHandle combo) {
     if (!ui.alive(combo)) return {};
     const ComboState& c = comboState(ui, combo);

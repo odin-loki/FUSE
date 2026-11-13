@@ -16,6 +16,10 @@
 //                  every `tok::` name of widgets_internal.hpp is a token of the theme table.
 //   focus_ring     every focusable class of the library shows keyboard focus: rendering a node of the class with
 //                  and without :focus-visible differs inside its box, in each of the three variants
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers" // partial designated initialisers of the option structs
+#endif
+
 #include "test_util.hpp"
 
 #include "fuse/ui/color_space.hpp"

@@ -46,6 +46,17 @@ inline int& failures() {
             ++::fuse::ui::test::failures();                                                                            \
         }                                                                                                              \
     } while (0)
+/// "No heap allocation in these steady frames". MSVC's debug STL (_ITERATOR_DEBUG_LEVEL > 0) heap-allocates a
+/// _Container_proxy for every container object, a local std::string or std::vector included, so the count cannot be
+/// zero there: it is printed, not enforced (the engine's rule, Core/tests/fuse_test_msvc_debug_stl.hpp). MSVC Release /
+/// Profile / Shipping and every other compiler enforce it.
+#if defined(_MSC_VER) && !defined(NDEBUG) && defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL > 0
+#define UI_CHECK_NO_ALLOC(count)                                                                                       \
+    std::printf("%s:%d: MSVC debug STL: %lld allocation(s) reported, not enforced\n", __FILE__, __LINE__,              \
+                static_cast<long long>(count))
+#else
+#define UI_CHECK_NO_ALLOC(count) UI_CHECK_EQ(static_cast<long long>(count), 0LL)
+#endif
 #define UI_CHECK_RECT(r, X, Y, W, H)                                                                                   \
     do {                                                                                                               \
         const ::fuse::ui::Rect rr_ = (r);                                                                              \

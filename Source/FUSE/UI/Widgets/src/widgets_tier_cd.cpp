@@ -353,7 +353,14 @@ struct CalendarW {
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) { return {7.f * 34.f, lineH(ui, n) + 8.f + 7.f * 26.f}; }
-    static i32 shownMonth(const UiContext& ui, NodeHandle n) { return i32(ui.userData(n)) - 1000000; } // y * 12 + (m - 1)
+    /// y * 12 + (m - 1). A node made by class name (`ui.create("calendar")`, a document) has no shown month yet: it
+    /// shows the month of its value.
+    static i32 shownMonth(const UiContext& ui, NodeHandle n) {
+        if (const u64 ud = ui.userData(n); ud != 0) return i32(ud) - 1000000;
+        int y, m, d;
+        civilFromDays(i32(ui.value(n)), y, m, d);
+        return y * 12 + m - 1;
+    }
     static void setShown(UiContext& ui, NodeHandle n, i32 ym) { ui.setUserData(n, u64(ym + 1000000)); ui.invalidate(n); }
     struct Geo { Rect head, prev, next; f32 cellW, cellH, gridY; };
     static Geo geo(const UiContext& ui, NodeHandle n) {

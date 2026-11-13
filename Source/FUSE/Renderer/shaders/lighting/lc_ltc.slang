@@ -504,12 +504,15 @@ float3 fuseLcShadowedPx(uint64_t shadows, uint64_t rt, uint2 pixel, uint slot, L
 static const uint kFuseLcVsmSearch = 0xFFFFFFFFu; // the generic lookup (fuseLcShadowed)
 static const uint kFuseLcVsmNone = 0xFFFFFFFEu;   // no VSM shadow for this light: visibility 1
 
+// Buffer addresses are kept as uint64_t and cast where they are read: a pointer member becomes a function-local
+// pointer variable once the optimiser splits the struct, and spirv-val (Vulkan SDK 1.4) rejects those without an
+// AliasedPointer / RestrictPointer decoration, which slangc does not emit for them.
 struct LcShadeState {
-    GpuLight* lights;
+    uint64_t lights; // GpuLight*
     uint64_t shadows;
     bool compensated;
     bool skipArea;
-    float* lut;
+    uint64_t lut; // float*
     FuseLcTerms terms;
     // WP-6.2: the pixel's RtfxShadowView, read once (fuseLcRtVisibility per light read it per light)
     bool rtValid;
@@ -560,15 +563,15 @@ float3 fuseLcShadowedCode(LcShadeState st, uint slot, LcSurface s, float3 c, uin
 }
 
 float3 fuseLcShadeBegin(LcFrame F, LcSurface s, float3 v, uint2 pixel, out LcShadeState st) {
-    st.lights = fuseGpuSceneLights(fuseGpuScene(F.scene));
+    st.lights = fuseGpuScene(F.scene).addresses[kFuseGpuSceneLights];
     st.shadows = uint64_t(F.shadowsLo) | (uint64_t(F.shadowsHi) << 32u);
     const uint64_t rt = pixel.x == 0xFFFFFFFFu ? 0ull : (uint64_t(F.rtShadowsLo) | (uint64_t(F.rtShadowsHi) << 32u));
     st.compensated = F.brdfLut != 0ull;
     st.skipArea = pixel.x != 0xFFFFFFFFu && (F.flags & kFuseLcFlagSkipAreaLights) != 0u;
-    st.lut = (float*)F.brdfLut;
+    st.lut = F.brdfLut;
     st.terms = {};
     if (st.compensated) {
-        st.terms = fuseLcSurfaceTerms(s, v, st.lut);
+        st.terms = fuseLcSurfaceTerms(s, v, (float*)st.lut);
     }
     st.rtValid = false;
     st.rtCount = 0u;
@@ -596,8 +599,8 @@ float3 fuseLcShadeBegin(LcFrame F, LcSurface s, float3 v, uint2 pixel, out LcSha
         const uint slot = directional[i];
         if (slot < F.lightCount) {
             radiance = radiance + fuseLcShadowedCode(st, slot, s,
-                                                     st.compensated ? fuseLcLightMs(st.lights[slot], s, v, st.terms, st.lut)
-                                                                    : fuseLcLight(st.lights[slot], s, v),
+                                                     st.compensated ? fuseLcLightMs(((GpuLight*)st.lights)[slot], s, v, st.terms, (float*)st.lut)
+                                                                    : fuseLcLight(((GpuLight*)st.lights)[slot], s, v),
                                                      kFuseLcVsmSearch);
         }
     }
@@ -610,22 +613,22 @@ float3 fuseLcShadeClusterLight(LcFrame F, LcShadeState st, LcSurface s, float3 v
     if (slot >= F.lightCount) {
         return radiance;
     }
-    const uint type = st.lights[slot].type;
+    const uint type = ((GpuLight*)st.lights)[slot].type;
     if (st.skipArea && (type == kFuseLightRect || type == kFuseLightDisk)) {
         return radiance;
     }
     if (type == kFuseLightPoint || type == kFuseLightSpot) {
         // Range pre-test (twin of fuse_lc_shade_cluster_light): the falloff's own test on the same bits, from the
         // light's position and range only; out of range the light adds an exact zero.
-        const float3 toLight = float3(st.lights[slot].position[0], st.lights[slot].position[1], st.lights[slot].position[2]) - s.position;
-        const float range = st.lights[slot].range;
+        const float3 toLight = float3(((GpuLight*)st.lights)[slot].position[0], ((GpuLight*)st.lights)[slot].position[1], ((GpuLight*)st.lights)[slot].position[2]) - s.position;
+        const float range = ((GpuLight*)st.lights)[slot].range;
         if (!(range > 0.0) || !(fuseLcLength(toLight) < range)) {
             return radiance + float3(0.0, 0.0, 0.0);
         }
     }
     return radiance + fuseLcShadowedCode(st, slot, s,
-                                         st.compensated ? fuseLcLightMs(st.lights[slot], s, v, st.terms, st.lut)
-                                                        : fuseLcLight(st.lights[slot], s, v),
+                                         st.compensated ? fuseLcLightMs(((GpuLight*)st.lights)[slot], s, v, st.terms, (float*)st.lut)
+                                                        : fuseLcLight(((GpuLight*)st.lights)[slot], s, v),
                                          vsmCode);
 }
 

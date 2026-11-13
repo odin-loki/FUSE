@@ -51,6 +51,12 @@ std::string fmt(const char* f, double a = 0, double b = 0, double c = 0, double 
 }
 } // namespace
 
+// (complete before the constructor: it instantiates ~unique_ptr<TimelineKeyDrag> for m_tlDrag)
+struct TimelineKeyDrag {
+    EditorTimeline::Tracks before;
+    i32 track = -1, key = -1; ///< the dragged key in `before`
+};
+
 EditorPanels::EditorPanels(EditorController& controller)
     : m_c(controller), m_assets(std::make_unique<AssetBrowser>()), m_matPanel(std::make_unique<MaterialEditorPanel>()),
       m_sculpt(std::make_unique<SdfSculptPanel>()), m_profiler(std::make_unique<ProfilerPanel>()),
@@ -58,11 +64,6 @@ EditorPanels::EditorPanels(EditorController& controller)
     std::error_code ec;
     m_projectsRoot = fs::current_path(ec).string();
 }
-
-struct TimelineKeyDrag {
-    EditorTimeline::Tracks before;
-    i32 track = -1, key = -1; ///< the dragged key in `before`
-};
 
 EditorPanels::~EditorPanels() = default;
 

@@ -160,7 +160,7 @@ void transitionGate() {
     g_counting = true;
     for (int i = 0; i < 5; ++i) cycle();
     g_counting = false;
-    UI_CHECK_EQ(g_allocs.load(), 0L);
+    UI_CHECK_NO_ALLOC(g_allocs.load());
     UI_CHECK_EQ(ui.styles().tableSize(), table);
     UI_CHECK(ui.computed(fx).background == white);
 

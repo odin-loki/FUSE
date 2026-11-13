@@ -247,8 +247,11 @@ int cookGate() {
         std::ofstream(tmp / "bad" / "ok.svg") << "<svg width='8' height='8'><rect width='8' height='8'/></svg>";
         std::ofstream(tmp / "bad" / "broken.svg") << "<svg width='8' height='8'><rect width='8'";
         auto cook = [&](const fs::path& out, const char* dirName) {
-            const std::string cmd = std::string("\"") + FUSE_UI_ICON_COOK_EXE + "\" \"--out=" + out.string() + "\" \"" +
-                                    (tmp / dirName).string() + "\" > \"" + (tmp / "log.txt").string() + "\" 2>&1";
+            std::string cmd = std::string("\"") + FUSE_UI_ICON_COOK_EXE + "\" \"--out=" + out.string() + "\" \"" +
+                              (tmp / dirName).string() + "\" > \"" + (tmp / "log.txt").string() + "\" 2>&1";
+#ifdef _WIN32
+            cmd = "\"" + cmd + "\""; // cmd.exe /c strips one outer pair of quotes
+#endif
             return std::system(cmd.c_str());
         };
         const fs::path fresh = tmp / "fresh.fuseicons", kept = tmp / "kept.fuseicons";

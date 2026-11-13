@@ -384,9 +384,14 @@ void systemFont(const std::string& path, const char* family, float bold) {
     if (flat) {
         const Font& varied = at(*flat, bold);
         UI_CHECK(&varied != &*flat);
-        // The outlines are compared through MSDFs (same generator for both: equal outlines give equal texels); the
-        // coverage goes through two different rasterisers (stb_truetype's, path_raster's), so only its ink is compared.
-        int worstMsdf = 0, glyphs = 0;
+        // The outlines are compared through MSDFs (same generator for both); the coverage goes through two different
+        // rasterisers (stb_truetype's, path_raster's), so only its ink is compared.
+        // The distance (the median of the three channels) is what is compared: stb_truetype truncates the implied
+        // on-curve point between two off-curve points to whole font units, the decoder keeps the half unit, and
+        // that half unit can change how the generator colours an edge (a channel then differs by up to 255 with
+        // the same distance; seen with Bahnschrift and Open Sans, not with the test font).
+        int worstMsdf = 0, worstChannel = 0, glyphs = 0;
+        const auto median = [](const std::uint8_t* p) { return int(std::max(std::min(p[0], p[1]), std::min(std::max(p[0], p[1]), p[2]))); };
         double inkRef = 0, inkGot = 0;
         ColorImage ma, mb;
         for (std::size_t i = 0; i < sample.size();) {
@@ -402,14 +407,18 @@ void systemFont(const std::string& path, const char* family, float bold) {
             if (hasA && hasB) {
                 UI_CHECK(ma.w == mb.w && ma.h == mb.h && ma.x0 == mb.x0 && ma.y0 == mb.y0);
                 if (ma.rgba.size() == mb.rgba.size())
-                    for (std::size_t k = 0; k < ma.rgba.size(); ++k) worstMsdf = std::max(worstMsdf, std::abs(int(ma.rgba[k]) - int(mb.rgba[k])));
+                    for (std::size_t k = 0; k + 3 < ma.rgba.size(); k += 4) {
+                        worstMsdf = std::max(worstMsdf, std::abs(median(&ma.rgba[k]) - median(&mb.rgba[k])));
+                        for (std::size_t c = 0; c < 3; ++c)
+                            worstChannel = std::max(worstChannel, std::abs(int(ma.rgba[k + c]) - int(mb.rgba[k + c])));
+                    }
             }
             ++glyphs;
         }
         UI_CHECK(worstMsdf <= 1);
         UI_CHECK(std::abs(inkGot - inkRef) <= 0.005 * inkRef);
-        std::printf("  %s: decoder vs stb_truetype outlines over %d glyphs: MSDF max difference %d, ink %+.3f %%\n", family,
-                    glyphs, worstMsdf, 100.0 * (inkGot - inkRef) / inkRef);
+        std::printf("  %s: decoder vs stb_truetype outlines over %d glyphs: MSDF distance max difference %d (single channel %d), "
+                    "ink %+.3f %%\n", family, glyphs, worstMsdf, worstChannel, 100.0 * (inkGot - inkRef) / inkRef);
     }
     // HVAR vs the gvar phantom points
     auto noHvar = Font::fromBytes(hideTables(bytes, {"HVAR"}));
@@ -479,6 +488,10 @@ void avar2(const Font& v1) {
 }
 
 void system() {
+    // FUSE_TEXT_VARIABLE_FONT=<file.ttf>: run the system-font checks on any variable TrueType font (a way to
+    // reproduce a Windows-only finding elsewhere). The 0.5 % ink tolerance is not met by every font: Inter measures
+    // +1.25 % between the two rasterisers with equal outlines.
+    if (const char* extra = std::getenv("FUSE_TEXT_VARIABLE_FONT"); extra && *extra) systemFont(extra, extra, 700.f);
     const std::string seg = windowsFont("SegUIVar.ttf"), bahn = windowsFont("bahnschrift.ttf");
     if (seg.empty() && bahn.empty()) {
         std::printf("  system: no Segoe UI Variable / Bahnschrift (skipped)\n");

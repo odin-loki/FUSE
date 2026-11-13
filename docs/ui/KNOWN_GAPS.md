@@ -77,16 +77,25 @@ pushed after those CI runs and re-checked on Linux only.
 
 ## Known failures
 
-- `fuse_core_ui1_text_input` fails on Windows (MSVC shipping job): `IMM32 composition string -> TextComposition`.
-  It is an engine-core test (`Source/FUSE/Core/tests`), not the UI module; not checked against `main`.
+- `fuse_core_ui1_text_input` fails on Windows (every MSVC job): `IMM32 composition string -> TextComposition`
+  (`ImmSetCompositionStringW` succeeds on the hosted runner, the composition read back is empty). It is an engine-core
+  test (`Source/FUSE/Core/tests`), not the UI module, and fails the same way on `main` (run 43323981954).
+- `fuse_ui_bench_10k` misses its wall-clock budget on the hosted Windows runners (0.5 ms for one dirty panel in a
+  10k-node tree; measured 0.50 to 0.94 ms there, 0.38 to 0.43 ms on the Linux development machine). It fails on `main`
+  too. The budget is enforced there on purpose; nothing was relaxed.
+- MSVC Debug only: the "zero heap allocations in steady frames" checks of `fuse_ui_zero_alloc_steady`,
+  `fuse_ui_style_motion`, `fuse_ui_mv_selection_1m`, `fuse_ui_mv_async`, `fuse_ui_vector_steady`,
+  `fuse_ui_port_zero_alloc`, `fuse_ui_css_animations` (`UI_CHECK_NO_ALLOC`) and of `fuse_editor_b6_idle_frame_gates`
+  print the count and do not fail: MSVC's debug STL allocates a `_Container_proxy` per container object. This is the
+  engine's existing rule (`Core/tests/fuse_test_msvc_debug_stl.hpp`); MSVC Release / Profile / Shipping and all other
+  compilers enforce them. Whether every one of the counted allocations is such a proxy was not checked one by one.
 - Failing on `main` as well and left alone (outside the UI module):
   - Linux: `fuse_vulkan_validation_gate` (VUID-VkImageViewCreateInfo-image-04441), `fuse_runtime_steady_state_alloc`
     (editor phase allocates), Qt gates `fuse_editor_qt_idle_frames`, `fuse_editor_qt_lighting`,
     `fuse_editor_qt_shell_assets`.
-  - Windows: `EditorShell/SceneHost/src/scene_viewport_host.cpp` cannot find
-    `fuse/renderer/geometry/meshlet_builder.hpp`; `EditorShell/Controller/src/editor_panel_models.cpp` uses the
-    deprecated `std::filesystem::u8path`; `Editor/tests/qt/test_editor_qt_gates.cpp` (a variable named `far`
-    collides with `windows.h`, discarded `[[nodiscard]]`) and `test_editor_qt_shell.cpp`.
+  - Windows: the build errors `main` has in `EditorShell` (`meshlet_builder.hpp` not found, deprecated
+    `std::filesystem::u8path`) and in the Qt editor tests (`far`, discarded `[[nodiscard]]`) are fixed on this
+    branch; see "What has been verified" for what the Windows jobs do now.
 - `fuse_world_extract_synthetic` (Tools/FUSE/WorldExtract) failed once on this branch and passed on the next run;
   cause not investigated.
 - Wall-clock gates (label `perf`: `fuse_ui_bench_10k`, `fuse_ui_modelview_1m_rows`, `fuse_ui_mv_selection_1m`,

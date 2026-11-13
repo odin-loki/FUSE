@@ -1966,7 +1966,7 @@ int gateEditTools() {
         reg.add(light, t);
         reg.add(light, ecs::PointLight{});
         f32 sx = 0.f, sy = 0.f;
-        vp->panel().worldToScreen(t.position, sx, sy);
+        expect(vp->panel().worldToScreen(t.position, sx, sy), "the new light is in front of the camera");
         expected = QPointF(sx / dpr, sy / dpr);
     }
     (void)vp->grab();

@@ -49,7 +49,7 @@ int main() {
     for (int i = 0; i < 50; ++i) frame(i);
     g_counting = false;
     std::printf("allocations in 50 steady frames: %ld (clicks %d)\n", g_allocs.load(), clicks);
-    UI_CHECK_EQ(g_allocs.load(), 0L);
+    UI_CHECK_NO_ALLOC(g_allocs.load());
     UI_CHECK(clicks >= 50);
     return finish("fuse_ui_zero_alloc_steady");
 }

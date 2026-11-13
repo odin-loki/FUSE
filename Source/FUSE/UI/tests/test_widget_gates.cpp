@@ -13,7 +13,7 @@
 #include "fuse/ui/widgets/platform_feel.hpp"
 #include "test_util.hpp"
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__clang__) // (clang-cl defines only __clang__)
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers" // stb_image_write's `= { 0 }`
 #endif
 #define STB_IMAGE_IMPLEMENTATION

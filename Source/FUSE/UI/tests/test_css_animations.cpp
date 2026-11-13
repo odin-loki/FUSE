@@ -290,7 +290,7 @@ int main() {
         for (int k = 0; k < 120; ++k) ui.update(0.016f);
         g_count = false;
         std::printf("24 animated nodes, 120 frames: %ld allocations, style table %u -> %u\n", g_allocs, table, ui.styles().tableSize());
-        UI_CHECK_EQ(g_allocs, 0L);
+        UI_CHECK_NO_ALLOC(g_allocs);
         UI_CHECK_EQ(ui.styles().tableSize(), table);
         // destroyed mid-flight
         for (NodeHandle n : nodes) ui.destroy(n);
