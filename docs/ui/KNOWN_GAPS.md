@@ -1,6 +1,6 @@
 # FUSE UI — not done and not verified
 
-Status as of 2026-11-12, branch `ccr-111d9b83-2iujo8`. This lists what is missing or has never been exercised, so
+Status as of 2026-11-13, branch `ccr-111d9b83-2iujo8`. This lists what is missing or has never been exercised, so
 nobody mistakes "compiles in CI" for "works on a device". Phase-by-phase detail is in
 [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md) §9; usage is in [`README.md`](README.md).
 
@@ -20,7 +20,8 @@ implementations to port where both have one. Its FORGE submodule was not taken.
 
 | Platform | How | Result |
 |---|---|---|
-| Linux (UI standalone) | Local build + ctest | 208/208 (MINIMAL text) after the `gui-framework` merge; before the two branch merges 178/178 (MINIMAL), 177/177 (FULL). FULL not re-run since |
+| Linux (UI standalone) | Local build + ctest | After all ports (2026-11-13): MINIMAL 327/327 (4 skipped: no Vulkan device, FULL-only text gates), FULL 298/298 (2 skipped), COOKED 326/326 (7 skipped: real-font gates, FULL-only gates). Before the two branch merges 178/178 (MINIMAL), 177/177 (FULL) |
+| Linux (FUSE-UI editor shell, in tree, `-DFUSE_EDITOR_SHELL=fuse -DFUSE_BUILD_VULKAN=OFF`) | Local build + `ctest -L fuse_editor_ui` under Xvfb | Builds and links; 78 entries: 72 passed, 4 skipped (Vulkan), 2 failed (one gate under two names, `ui_frame`: its 8 ms full-window CPU raster budget measured 7.5 to 9.0 ms here). The rest of the in-tree suite was not run in that configuration |
 | Linux (whole engine, in-tree) | `fuse-umbrella-linux.yml` | 1245 of 1247; the two failures also fail on `main` (see below) |
 | Android arm64 (NDK r26d) | `fuse-core-android.yml` + local cross-build | Builds and links, apps as `lib<name>.so` |
 | macOS | `fuse-core-ios.yml` (macOS job, MoltenVK headers) | Builds; headless gates pass |
@@ -213,8 +214,16 @@ pushed after those CI runs and re-checked on Linux only.
 
 - Cooked fonts, MSDF glyphs, CBDT / sbix and COLRv1 colour fonts and variable fonts are live (ported from the
   `claude/magical-bassi-815825` branch). What is missing around them:
-  - GPU: `packDrawList` skips colour-image (`kGlyphColor`) and MSDF (`kGlyphMsdf`) glyph commands; only the CPU
-    rasteriser draws them. The branch's shader work for them was not ported (no Vulkan device to verify on).
+  - GPU: `packDrawList` skips loose colour-image (`kGlyphColor`) and MSDF (`kGlyphMsdf`) glyph commands (counted in
+    `GpuDrawData::skippedGlyphs`); only the CPU rasteriser draws them. Inside a group the packer bakes on the CPU
+    (layer, clip path, non-translation transform, filter, mask) they are in the baked image, so the same text can be
+    visible inside such a group and missing next to it. The branch's shader work for them was not ported (no Vulkan
+    device to verify on); `tests/test_text_color.cpp` still carries the branch's GPU parity code behind
+    `FUSE_TEXT_COLOR_HAVE_VK`, which nothing defines and which does not match this tree's `GpuDrawData`.
+  - MSDF under a CSS `transform`: the group's layer is rasterised 1:1 in the node's own space and then resampled, so
+    an MSDF glyph is as soft as a coverage glyph when a transform scales it up. `setMsdfThreshold` looks at
+    `font-size` x render scale only, not at the transform. (Rendering the layer at the transform's scale would fix
+    both; not done.)
   - `FUSE_UI_TEXT=COOKED`: MINIMAL shaping only (no GSUB / GPOS, no bidi), one face and one instance per pack, no
     synthetic oblique, no face names / weight in a pack, no font-feature-settings. A cross-compiled COOKED build
     needs a host `fuse_text_cook` (`FUSE_TEXT_COOK_HOST`); none was built for Android or FreeBSD.
@@ -245,8 +254,10 @@ pushed after those CI runs and re-checked on Linux only.
 - `Painter`: images under rotation / skew / mirroring are rejected; text under rotation or skew is drawn upright.
 - Icon packs (`.fuseicons`, `fuse_ui_icon_cook`, `IconSet`, the `icon` style property) are live. Missing: `:name:`
   icon markup in menu item text, dimming of fixed-colour paints on `:disabled` nodes, the designer's icon picker,
-  `fuse_ui_cook --icons`; `icon` is honoured by `button`, `toolbutton` and the `icon` widget only; packs of the
-  merged branch (coverage atlases, versions 1 / 2) do not load.
+  `fuse_ui_cook --icons`; `icon` is honoured by `button`, `toolbutton` and the `icon` widget only (menu items, tabs,
+  tool-box pages, list / combo items and the ported `widgets/extra.hpp` widgets take no icon name: combo and list
+  items take image indices, the others have no icon slot); packs of the merged branch (coverage atlases, versions
+  1 / 2) do not load.
 - No backdrop-blur GPU pass, no custom shaders, no damage-driven incremental GPU present.
 - The game module rasterises its draw list at scale 1 only.
 
@@ -289,6 +300,16 @@ Ported from `gui-framework` onto this tree's engine as a subset; the branch's ow
   no `"animate"` / `"order"` keys yet.
 - GPU: every non-translation effect group is rasterised on the CPU each time it repaints (a large blurred area is
   slow), and none of it has run on a device (see above).
+- Themes and the style engine: the widget theme's rules are outside every `@layer`, so layered application rules
+  lose to them (as CSS says; there is no way to put the theme into a layer). Tokens (`:root { --x }`) are not
+  layered and not scoped: the last sheet that defines one under `@media` conditions that hold wins; a token inside
+  `@container` or `@scope` is treated as unconditional. `prefers-contrast` knows `more` and `no-preference` only
+  (`less` / `custom` never match); `forced-colors` is not a feature. `setMediaTheme` is driven by
+  `widgets::install` / `setTheme` and `AppWindow::applyTheme`; an application that loads its own theme sheet with
+  `setThemeStyleSheet` has to call it itself. A high-contrast `SystemTheme` always reports `prefers-color-scheme:
+  dark` (the default palette is the dark one).
+- `font-variation-settings` / `font-feature-settings` and `icon` do not interpolate (they switch half-way in
+  keyframes and at once in transitions); `font-weight` is not animatable.
 
 ### Interaction and widgets
 

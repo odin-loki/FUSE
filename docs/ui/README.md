@@ -102,6 +102,12 @@ ui.update(dt);                                         // commands → timers �
 if (ui.drawList().size()) { /* hand ui.drawList() to a backend, or CpuRasterizer for tests */ }
 ```
 
+A key press goes to the focused node first, then to the action shortcuts and focus navigation; a key nobody took
+ends at the root's `SignalKind::Event` slots as `{value = Key, event}` (also when nothing has the focus), which is
+where an application handles keys of its own such as Escape for a drag it runs itself. A pointer moving from one
+node to another only changes `:hover` on the nodes that differ between the two ancestor chains, so hovering along a
+tool bar restyles and damages the two buttons, not the window.
+
 From another thread: `ui.post(fn, node, a, b)` (bounded queue, applied at the next `update()`).
 
 ### Platform input (UI1)
@@ -316,7 +322,7 @@ wizard, popover, toast and file dialog open from code.
 `doc::registerDocumentClass` adds your own (the game HUD widgets, for instance). Compound widgets are rebuilt on a
 hot reload; plain widgets with an id inside them keep their identity. The cooker's registration list
 (`registrationList`) resolves document classes to the widget classes they build. Cooked blobs carry
-`kCookedVersion` (3 now: it moves whenever the property set or the stored form changes; a blob of another version is
+`kCookedVersion` (5 now: it moves whenever the property set or the stored form changes; a blob of another version is
 refused, so re-cook after updating). `App/samples/ui/gallery.fuseui` uses every one of them. Gates `fuse_ui_doc_*`.
 
 ## Application shell (UI5)
@@ -1046,7 +1052,9 @@ icons->draw(painter, u32(icons->find("star")), {0, 0, 32, 32}, color);   // or i
 - A name is looked up in the attached pack first, then among the built-in icons, so `icon: save` works without a
   pack and a pack can replace a built-in picture. Names are `[a-z0-9_.-]` (the SVG file stem).
 - `icon` / `icon-size` are ordinary style properties (inline, style sheets, cooked sheets, `:hover` / `:disabled`
-  rules). `button` and `toolbutton` draw the icon left of their text (16 px unless `icon-size` or `setIcon`'s size
+  rules, `@media` / `@container` / `@layer` blocks, nested rules, `@keyframes`: `icon-size` interpolates, `icon`
+  switches half-way). An icon drawn in `currentColor` takes the node's `color`, so it follows the theme
+  (dark / light / high contrast) without a rule of its own. `button` and `toolbutton` draw the icon left of their text (16 px unless `icon-size` or `setIcon`'s size
   says otherwise); the `icon` widget is just the picture. Other classes ignore the property.
 - Colour: paints written as `currentColor` take the node's `color`. An icon whose paints are all `currentColor` or
   black (the SVG default fill) is cooked fully tintable (`IconSet::multiColor(i)` false); any other colour makes it
@@ -1150,14 +1158,22 @@ attribute, text or tree change restyles exactly what the loaded selectors can re
 of the combinators, later siblings, `:has()` anchors); sheets without such selectors behave as before.
 
 **At-rules.** `@media` with `width` / `height` ranges (`min-`, `max-`, `400px <= width < 800px`), `orientation`,
-`aspect-ratio`, `prefers-color-scheme`, `prefers-reduced-motion`, `hover`, `pointer`, `resolution`, `not` / `and` /
-`or` and comma lists; it follows `setViewport`, `setRenderScale`, `setReducedMotion` and
-`ui.setMediaPreferences(dark, hover, pointer)`, and only a query that changes its answer restyles anything.
+`aspect-ratio`, `prefers-color-scheme`, `prefers-contrast` (`more` / `no-preference`), `prefers-reduced-motion`,
+`hover`, `pointer`, `resolution`, `not` / `and` / `or` and comma lists; it follows `setViewport`, `setRenderScale`,
+`setReducedMotion`, `ui.setMediaPreferences(dark, hover, pointer)` and `ui.setMediaTheme(dark, moreContrast)`, and
+only a query that changes its answer restyles anything. The theme drives the last one: `widgets::install` (dark),
+`widgets::setTheme` and `AppWindow::applyTheme` (the system theme, `setFollowSystemTheme`) call `setMediaTheme`, so
+`@media (prefers-color-scheme: dark) { ... }` in an application sheet or a document follows the theme the window
+shows, and `(prefers-contrast: more)` holds under the high-contrast variant. A `:root` token defined inside an
+`@media` block counts only while the block applies (`@media (prefers-color-scheme: light) { :root { --brand: #0a0; } }`;
+rules, `var()` and paint-code `themeColor` all see the same value).
 `@container [name] (min-width: 300px)` asks the content box of the nearest ancestor with
 `container-type: inline-size | size` (`container-name`, shorthand `container: name / type`); when a container's size
 changes its subtree is restyled and laid out again in the same `update()`. `@layer a, b;` / `@layer a { ... }`
 (anonymous and nested `a.b` too): later layers win over earlier ones whatever the specificity, rules outside any
-layer win over all, and layers merge by name across sheets. `@scope (.card) to (.content) { .img { ... } :scope { ... } }`.
+layer win over all, and layers merge by name across sheets. The widget theme is not in a layer, so an application
+rule inside `@layer` loses to the theme's rule for the same property whatever its specificity: keep overrides of
+theme rules outside layers (tokens are not layered: the last sheet that defines one wins). `@scope (.card) to (.content) { .img { ... } :scope { ... } }`.
 `@supports (prop: value)`, `selector(...)`, `not / and / or` (decided at parse time). `@keyframes`.
 
 **Positioning.** `position: relative` (laid out in flow, then moved by `left / top / right / bottom`), `absolute`
@@ -1280,9 +1296,14 @@ ui.setCss(label, "font-feature-settings", "\"tnum\", \"liga\" off");   // FULL p
   strikes are one RGBA image per glyph in the atlas' colour page (`GlyphAtlas::getColor`, draw mode `kGlyphColor`);
   without it COLRv1 falls back to flattened solid layers and bitmap-only glyphs draw nothing.
 - MSDF: one field per glyph at 32 px (`GlyphAtlas::getMsdf`, `Font::renderMsdf`), drawn scaled (`kGlyphMsdf`).
-- **GPU:** the compute kernel and its packer know only coverage glyphs. `packDrawList` skips `kGlyphColor` and
-  `kGlyphMsdf` commands, so image colour glyphs and MSDF text are drawn by the CPU rasteriser only (CPU-upload
-  presents show them; the GPU draw-list path does not). COLRv0 emoji and everything else are unaffected.
+- **GPU:** the compute kernel and its packer know only coverage glyphs. `packDrawList` skips loose `kGlyphColor` and
+  `kGlyphMsdf` commands and counts them in `GpuDrawData::skippedGlyphs`, so image colour glyphs and MSDF text are
+  drawn by the CPU rasteriser only (CPU-upload presents show them; the GPU draw-list path does not). Inside a group
+  the packer bakes on the CPU (a layer, a clip path, a non-translation `transform`, a `filter`, a mask) they are part
+  of the baked image and are shown. COLRv0 emoji and everything else are unaffected.
+- Effects: text under `transform` / `filter` / `mask-image` keeps its glyph mode inside the group (MSDF and colour
+  glyphs are drawn into the group's layer). A scaling transform resamples that layer, so MSDF does not sharpen text
+  scaled up by a transform; raise `font-size` (or the render scale) for large text instead.
 - Fallbacks follow weight where the primary is really bold: for a real bold face, a variable instance or
   `Font::emboldened()` at weight >= 600, `face(i)` is the fallback's `setBoldFace` face, else its variable instance
   at that weight, else its `emboldened()` form. The UI's synthesised bold of a static family
@@ -1417,6 +1438,9 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_css_masking` | `clip-path` / `mask-image` / `filter`: parsing, pixels (colour matrices, blur against the Gaussian CDF, drop-shadow), hit testing, transitions, damage |
 | `fuse_ui_css_gradient` | multi-stop `background-image` gradients: parsing and pixels along the gradient line |
 | `fuse_ui_draw_fx_groups` | the draw list's transform / filter / mask groups against references computed in the gate; scissored == full render, `translate` / `scale`, robustness, zero allocation |
+| `fuse_ui_merge_registry` | one property registry (97 properties by name, applied and read back), cooked sheet format 5: Raw payloads, `FontSettings` / `Ident` tags and tokens with their `@media` block survive a round trip, formats 3 / 4 / 6 are refused, truncated and bit-flipped blobs |
+| `fuse_ui_merge_style_rules` | `icon` / `icon-size` / `font-stretch` under `@layer`, `@media`, `@container`, nesting and `:has()`; `font-stretch` and `icon-size` in `@keyframes`, scripted animations and transitions (`icon` switches half-way); the widget theme with an application sheet: layered rules lose to the theme, tokens per `prefers-color-scheme` / `prefers-contrast`, an icon in the text colour in all three variants |
+| `fuse_ui_merge_glyph_fx` | MSDF and colour-image glyph commands inside transform (translation, scale, rotation) / filter / mask groups on the CPU rasteriser, from draw lists and from a styled tree |
 | `fuse_ui_style_fuzz` | the sheet parser and value parsers on truncated, mutated and random input (8000+ inputs, each accepted one cooked, loaded, matched, animated and painted) |
 | `fuse_ui_vector_golden_effects` | golden image of the effect groups and of CSS transform / filter / clip-path / mask / gradients / z-index on a node tree |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
@@ -1452,7 +1476,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_theme_focus_ring` | each of the 32 focusable classes renders differently with `:focus-visible`, in all three variants |
 | `fuse_ui_theme_golden_{light,contrast}_<scene>` | the widget golden scenes (containers, text, dialogs, wizard, mainwindow, spinmenu, controls, editors; not the game HUD, which keeps its own colours) in the light and high-contrast themes; MINIMAL text profile only |
 | `fuse_ui_widget_golden_{controls,editors}` | Tier A controls in their states with one keyboard-focused, and the token-painted editors (code edit, node graph, timeline, curve editor, calendar, markdown); MINIMAL only |
-| `fuse_app_theme_sheets` | `applyTheme` keeps one override sheet over 25 system theme changes, uses the widget library's tokens, high contrast outlines controls and gives a 2px hot-light focus ring |
+| `fuse_app_theme_sheets` | `applyTheme` keeps one override sheet over 25 system theme changes, uses the widget library's tokens, high contrast outlines controls and gives a 2px hot-light focus ring; an application sheet's `@media (prefers-color-scheme / prefers-contrast)` rules and tokens follow the system theme and `widgets::setTheme` |
 | `fuse_ui_bench_hud` (`perf`) | a 293-node game HUD animated as in play: UI CPU per frame median ≤ 0.5 ms (measures ~0.10 ms) |
 | `fuse_app_binary_size` (`perf`) | stripped `hello_app` within baseline + 10 % (Linux x86-64 GCC Release MINIMAL standalone: 2,130,000 B; other toolchains report and skip until `-DFUSE_APP_BINARY_BUDGET` is set) |
 | `fuse_project_schema2`, `fuse_project_schema2_native` (in tree) | schema 1 files unchanged, schema 2 round trip and validation, the Application template, an app project through `ProjectHost` (only `AppPresent` comes up, first frame ≤ 150 ms headless), `ui.theme`; with the engine game side also the deferred hybrid game side |
@@ -1465,7 +1489,7 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_svg` | SVG subset parse + render, malformed and fuzzed documents, the built-in icons, `svgimage` and button icons |
 | `fuse_ui_vector_steady` | zero allocations with vector ops (update + CPU raster), no vector ops in a classic tree, icon raster budget (cached < 0.02 ms, uncached < 0.5 ms at 24 px), large-path cost |
 | `fuse_ui_vector_golden_{paths,icons}` | `tests/golden/vector_paths.png`, `vector_icons.png` |
-| `fuse_ui_gpu_pack_vector` | vector ops packed as kernel Image commands reproduce the CPU frame exactly (CPU model of the kernel's Image op), statistics, over-budget drop |
+| `fuse_ui_gpu_pack_vector` | vector ops packed as kernel Image commands reproduce the CPU frame exactly (CPU model of the kernel's Image op), statistics, over-budget drop; effect groups; MSDF / colour glyphs inside baked groups are in the image, loose ones are counted in `skippedGlyphs` |
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
@@ -1504,4 +1528,4 @@ Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`,
 
 ## Editor shell (UI9)
 
-Configure with `-DFUSE_EDITOR_SHELL=fuse` to build `fuse_editor_fuse`, which is the editor chrome in FUSE UI on the shared Qt-free `EditorController`. Run `ctest -L fuse_editor_ui`. All ten editor panels and the New Project wizard are ported (45 gates, including the Top / Front / Side orthographic views with View > Viewport Layout single / two / quad on Ctrl+Alt+1..3 (`multi_viewport`), the play-mode frame / badge and Maximize Viewport on Play (`play_frame`), the asset browser grid / type filter / breadcrumb / context menu (`asset_browser_polish`), timeline zoom / pan / loop / snap / key jumps (`timeline_nav`), Preferences shortcut rebinding (`shortcut_rebind`), File > Recent Projects (`recent_projects`), Group / Ungroup / Duplicate subtree / Frame Selected (`entity_group`), collider wireframes and drag handles (`colliders`), Entity > Open Script (`open_script`), the Terrain panel (`terrain`), the Navigation panel (`navigation`), Edit > Preferences (`preferences`) and view modes Lit / Unlit / Wireframe / Lit Wireframe and mesh bounds: `view_modes`). `--gpu-viewport` shows the live 3D scene in the viewport, zero-copy through a `ui_vk` external-texture slot (gates `scene_viewport`, `gpu_viewport`), with a Move/Rotate/Scale gizmo drawn as a viewport overlay (`viewport_gizmo`). Status is in [FUSE_EDITOR_QT_FIRST_PLAN.md §11](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md).
+Configure with `-DFUSE_EDITOR_SHELL=fuse` to build `fuse_editor_fuse`, which is the editor chrome in FUSE UI on the shared Qt-free `EditorController`. Run `ctest -L fuse_editor_ui`. (State on this tree, 2026-11-13: it builds and links on Linux, also with `-DFUSE_BUILD_VULKAN=OFF`; under Xvfb without a Vulkan device the gates pass except the four GPU ones, which skip, and the wall-clock raster budget of `ui_frame` on a loaded machine. The a11y gates need `fuse_app_a11y`, which is not ported. The description below is the branch's.) All ten editor panels and the New Project wizard are ported (45 gates, including the Top / Front / Side orthographic views with View > Viewport Layout single / two / quad on Ctrl+Alt+1..3 (`multi_viewport`), the play-mode frame / badge and Maximize Viewport on Play (`play_frame`), the asset browser grid / type filter / breadcrumb / context menu (`asset_browser_polish`), timeline zoom / pan / loop / snap / key jumps (`timeline_nav`), Preferences shortcut rebinding (`shortcut_rebind`), File > Recent Projects (`recent_projects`), Group / Ungroup / Duplicate subtree / Frame Selected (`entity_group`), collider wireframes and drag handles (`colliders`), Entity > Open Script (`open_script`), the Terrain panel (`terrain`), the Navigation panel (`navigation`), Edit > Preferences (`preferences`) and view modes Lit / Unlit / Wireframe / Lit Wireframe and mesh bounds: `view_modes`). `--gpu-viewport` shows the live 3D scene in the viewport, zero-copy through a `ui_vk` external-texture slot (gates `scene_viewport`, `gpu_viewport`), with a Move/Rotate/Scale gizmo drawn as a viewport overlay (`viewport_gizmo`). Status is in [FUSE_EDITOR_QT_FIRST_PLAN.md §11](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md).

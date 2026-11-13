@@ -909,9 +909,19 @@ void inheritFrom(ComputedStyle& s, const ComputedStyle& parent) {
     s.fontFeatureValues = parent.fontFeatureValues;
 }
 
-bool StyleSheet::token(u32 h, std::string_view& out) const {
-    for (auto it = m_tokens.rbegin(); it != m_tokens.rend(); ++it)
-        if (it->first == h) { out = it->second; return true; }
+bool StyleSheet::token(u32 h, std::string_view& out, const std::vector<u8>* condOk) const {
+    for (std::size_t i = m_tokens.size(); i-- > 0;) {
+        if (m_tokens[i].first != h) continue;
+        if (condOk && i < m_tokenConds.size()) // defined inside an @media block: only while that block applies
+            if (const i32 c = m_tokenConds[i]; c >= 0 && (std::size_t(c) >= condOk->size() || !(*condOk)[std::size_t(c)])) continue;
+        out = m_tokens[i].second;
+        return true;
+    }
+    return false;
+}
+bool StyleEngine::sheetToken(u32 h, std::string_view& out) const {
+    for (std::size_t i = m_sheets.size(); i-- > 0;)
+        if (m_sheets[i].token(h, out, i < m_condOk.size() ? &m_condOk[i] : nullptr)) return true;
     return false;
 }
 
@@ -970,6 +980,7 @@ bool evalQuery(const std::vector<QueryTerm>& program, const MediaEnv& env) {
             case QueryTerm::Feature::Hover: v = env.hover ? 1.f : 0.f; break;
             case QueryTerm::Feature::Pointer: v = f32(env.pointer); break;
             case QueryTerm::Feature::Resolution: v = env.resolution; break;
+            case QueryTerm::Feature::PrefersContrast: v = env.moreContrast ? 1.f : 0.f; break;
             }
             bool r = false;
             switch (t.cmp) {
@@ -1460,7 +1471,7 @@ bool StyleEngine::resolveVar(std::string_view raw, Prop p, PropValue& out, int d
     bool found = false;
     for (auto it = m_localTokens.rbegin(); it != m_localTokens.rend() && !found; ++it)
         if (it->first == h) { tok = it->second; found = true; }
-    for (auto it = m_sheets.rbegin(); it != m_sheets.rend() && !found; ++it) found = it->token(h, tok);
+    if (!found) found = sheetToken(h, tok);
     if (!found) {
         if (fallback.empty()) return false;
         tok = fallback;

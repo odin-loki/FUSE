@@ -48,8 +48,10 @@ if(WIN32)
 endif()
 
 # options of the bundled UI font's pack (also the fuse_text_cooked gate's determinism cook). Besides the whole sizes:
-# 10.5 and 11.25 (0.8 x the 13 / 14 px theme sizes: chart and axis labels), the 1.25 / 1.5 scale sizes of the gates.
-set(FUSE_TEXT_UI_COOK_ARGS "--sizes=8-40,10.5,11.25,17.5,21,22.5,26.25,42,45,48,56,64,72" --msdf)
+# 10.5 and 11.25 (0.8 x the 13 / 14 px theme sizes: chart and axis labels), 12.5 (pack sizes are quarter pixels: the
+# strike the 12.6 px of calendar day numbers and code editor line numbers, 0.9 x 14 px, resolves to), the 1.25 / 1.5
+# scale sizes of the gates.
+set(FUSE_TEXT_UI_COOK_ARGS "--sizes=8-40,10.5,11.25,12.5,17.5,21,22.5,26.25,42,45,48,56,64,72" --msdf)
 if(FUSE_UI_TEXT STREQUAL "COOKED")
     # The bundled fonts cooked at build time (sizes the UI and its gates use; MSDFs for the Latin / RTL / Indic faces,
     # any other size of those is drawn from them; the big emoji and CJK faces keep a few strikes, resampled otherwise).

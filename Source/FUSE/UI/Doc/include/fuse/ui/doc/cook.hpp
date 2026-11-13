@@ -25,7 +25,10 @@ namespace fuse::ui::doc {
 // 4: the style engine port: Raw property values (transform, filter, clip-path, gradients, animation lists), selector
 //    parts (attribute / structural / functional pseudo-classes, sibling combinators), @media / @container conditions,
 //    cascade layers, @scope and @keyframes
-inline constexpr u32 kCookedVersion = 4;
+// 5: the style engine port and the text / icon port together: 97 properties (the 21 of the style engine, then
+//    font-stretch, font-variation-settings, font-feature-settings, icon, icon-size) and the FontSettings / Ident value
+//    types, whose tags follow the Raw payload of a value
+inline constexpr u32 kCookedVersion = 5;
 
 struct CookInfo {
     u32 nodes = 0, bindings = 0, instructions = 0;

@@ -15,6 +15,37 @@ Names used below:
   the working tree. Read it with `git diff 5dcee19e 7178393b4fea -- <path>` (what the branch changed) or
   `git show 7178393b4fea:<path>` (the branch's whole file).
 
+## 0. State after all ports (2026-11-13)
+
+The port series (text / icons / i18n, app platform layer, Wayland, themes / documents / ProjectHost, widgets) and the
+`gui-framework` series (style engine + drawing core, see `PORT_gui_framework.md`) are merged and were made consistent
+with each other. This is the split the rest of the file details; §2 has the files and gates, §3 the leftovers.
+
+| Live (built, gated) | Item |
+|---|---|
+| Text: `FUSE_UI_TEXT=COOKED`, MSDF, COLRv1 / CBDT / sbix colour glyphs, variable fonts, OpenType features, font catalogue | 3.1 |
+| Icons: `fuse_ui_icon_cook`, `IconSet`, `.fuseicons`, `icon` / `icon-size`, `widgets::icon`, `setIcon` by name, Lucide starter pack | 3.3 |
+| App platform layer: dialogs, clipboard formats, XSETTINGS, OS tool windows, saved state, synthetic input; window chrome; notifications | 3.5, 3.7, 3.8 |
+| Wayland backend | 3.6 |
+| ProjectHost, `project.json` schema 2 | 3.11 |
+| Widgets: dock splits, tree line geometry, timeline clip drag (the editor API) | 3.12 |
+| Themes: light / high contrast, token-only colours, focus rings, sheets by handle | 3.13 |
+| Performance gates: `fuse_ui_bench_hud`, `fuse_app_binary_size` | 3.14 |
+| i18n fold (`fuse/text/i18n.hpp` into `fuse_ui_l10n_lib`), `LocaleHooks`, `StringTable`, `doc::Translator`, extract-strings CLI | 3.16, §2 |
+| From 3.2 (core deltas), ported with the final merge because the editor shell needs them: a hover change keeps `:hover` on shared ancestors (no whole-window damage), unconsumed keys reach the root's `Event` signal `{value = key, event}`, the viewport widget forwards Tab without trapping the focus; `setMsdfThreshold` came with 3.1 | 3.2 (part) |
+| `-DFUSE_EDITOR_SHELL=fuse`: `fuse_editor_fuse`, `fuse_editor_fuse_app` and the `fuse_editor_ui_*` gates build and link on Linux without Vulkan; see §5 for the run | §5 |
+
+| Remaining (in the tree unbuilt, or a branch delta not taken) | Item |
+|---|---|
+| Core deltas: `zoom` / kinetic zoom, Alt-release menu bar focus, the keyboard-only pass (focus rings on scroll-into-view, F10, tooltips on keyboard focus), OS text scale, `PointerKind` / pressure, the CPU rasteriser work (span runs, worker bands, SSE2 / NEON), the branch's RTL assertions; `test_keyboard_only.cpp`, `test_cpu_raster_bench.cpp` parked | 3.2 |
+| GPU: backdrop blur pass, damage-driven present, SDF-quad backend, custom effects, pipeline cache; colour-image and MSDF glyphs on the GPU path (the packer skips and counts them) | 3.4, 3.1 |
+| Wayland leftovers: drag out of the app, OS tool windows, live desktop settings (no XSETTINGS equivalent queried), the sway-driven gates (`windowFocused`), runs on a real compositor with a GPU | 3.6 |
+| Accessibility on a native window: `WindowAccessibility`, UIA / AT-SPI window adapters (`fuse/app/accessibility.hpp`), AccessKit extended roles | 3.9 |
+| Android: the branch backend's JNI IME, APK packer, emulator gates | 3.10 |
+| Widgets: per-class gates and goldens (`test_widget_gates.cpp`), RTL mirroring of hit tests, `setListRowFont`, keyboard additions; icons by name on menu items / tabs / list rows | 3.12 |
+| Designer: icon picker, effect picker, registry-driven property grid | 3.15 |
+| Apple `.mm` backends were not touched by any port; nothing here was compiled for Apple or run on Windows | §6 |
+
 ## 1. How the merge was resolved
 
 | Area | Rule applied | Result |
@@ -116,8 +147,11 @@ Each item: what it is, where the branch code is, what it overlaps on main, what 
 M: days, L: a week or more), and how to verify. "Gates" are the branch's ctest names; their registrations are in the
 branch's `U/tests/CMakeLists.txt` (`git show 7178393b4fea:Source/FUSE/UI/tests/CMakeLists.txt`), which main did not take.
 
-Order that unblocks the most: 3.1 (text) and 3.2 (core deltas) first; 3.3, 3.4, 3.6 and 3.9 depend on them.
-Items tagged **editor** are needed before `-DFUSE_EDITOR_SHELL=fuse` compiles (§5).
+Order (as written before the ports; §0 has the state now): 3.1 (text) and 3.2 (core deltas) first; 3.3, 3.4, 3.6
+and 3.9 depend on them. Of what is left, 3.4 (GPU) needs a Vulkan device to verify on and 3.9 a Rust toolchain for
+AccessKit; the rest of 3.2 is independent work per sub-feature.
+Items tagged **editor** were needed before `-DFUSE_EDITOR_SHELL=fuse` compiled; it builds now (§5), 3.9 is what its
+a11y gates still wait for.
 
 ### 3.1 Text: COOKED profile, MSDF, colour glyphs, variable fonts, OpenType features, font catalogue — **ported 2026-11-13**
 
@@ -154,9 +188,12 @@ Live (§2). Decisions taken and what is left:
   `a925efbd1`), `cursor`, `reducedMotion / setReducedMotion`, `touchCancel`, `touchPanning`, `flip`, `markAllDirty`,
   `nodeFont`, `paintIcon`; `CursorShape` (branch: `fuse/ui/style.hpp`; main: `fuse/app/services.hpp`); RTL
   (`direction`, `mirrorX`, `baseDirection`; main: commit `37c62f78d`, gate `fuse_ui_rtl_layout`).
+- **Ported 2026-11-13** (with the final merge of the ports, gate `fuse_ui_merge_shell_core`): the hover fix
+  (`setHover` leaves ancestors shared by the old and the new hover chain alone), unconsumed keys on the root's
+  `Event` signal, Tab through the viewport widget; `m_msdfThreshold` / `setMsdfThreshold` (with 3.1).
 - **Missing on main (port)**: `zoom` property and `kineticZoom` / `setKineticZoom` (`platform_feel.hpp` / `.cpp`
   deltas, pinch and Ctrl+wheel); `Key::Alt` release toggling the menu bar; focus rings and scroll-into-view fixes
-  from the keyboard-only pass; `m_msdfThreshold`; OS text scale; `PointerKind` / pressure on pointer events (check
+  from the keyboard-only pass; OS text scale; `PointerKind` / pressure on pointer events (check
   against main's pen / touch events first); the CPU rasteriser work in `draw_list.cpp` (span runs, banded worker
   threads, SSE2 / NEON edges, `-ffp-contract=off`, paint-time text cache).
 - **In the tree, unbuilt**: `U/tests/test_keyboard_only.cpp` (907 lines), `U/tests/test_cpu_raster_bench.cpp`,
@@ -408,20 +445,18 @@ were read against them). Semantics that differ from the branch, because main's d
   its own panel drag; whether both should be active on its stacks is a shell decision (not built here).
 
 - **Still not live**:
-  - `setListRowFont` (`widgets_internal.hpp` delta; per-row fonts of the font picker): belongs with 3.1 (font
-    catalogue).
-  - `setIcon(ui, node, name)` / `icon(...)` by `IconSet` name: 3.3.
+  - `setListRowFont` (`widgets_internal.hpp` delta; per-row fonts of the font picker): not ported with 3.1 (the
+    font picker lists family names in the UI font).
+  - Icons by name beyond `button` / `toolbutton` / the `icon` widget (`setIcon(ui, node, name)` and `icon(...)` are
+    live since 3.3): menu items, tabs, tool-box pages and list rows have no icon slot that takes a name.
   - Per-widget-class gates and goldens: `U/tests/test_widget_gates.cpp` (924 lines), `U/tests/golden/widgets/*.png`
     (36 images) stay parked. The images were rendered with the branch's theme and text stack and cannot be reused;
     the gate file needs the branch's RTL helpers and icon API (3.2, 3.3) to compile.
   - The RTL parts of the branch's widget deltas (mirrored hit testing in tree / tab bar / dock title): 3.2.
   - Keyboard additions in the branch's deltas that main lacks: F10 focuses the menu bar; tooltips on keyboard focus;
     node-graph and curve-editor keys (PageUp / PageDown / arrows); timeline PageUp / PageDown scrub by a second.
-  - The editor shell itself (`-DFUSE_EDITOR_SHELL=fuse`) was not built: it also needs 3.3, 3.5 and 3.9 (§5).
-    `g++ -fsyntax-only` over `EditorShell/Fuse/src/editor_shell.cpp` and `editor_shell_panels.cpp` against the
-    ported headers (2026-11-13) reports no error for the dock, tree-line or timeline API any more; what is left there
-    is `fuse::ui::IconSet`, `UiContext::setIcons`, `setIcon(ui, node, name)` (3.3) and `UiContext::osWindows` (3.5).
-- **Verify**: the gates in §2; `fuse_editor_ui_*` once the shell builds.
+  - The editor shell (`-DFUSE_EDITOR_SHELL=fuse`) builds since the final merge of the ports: §5.
+- **Verify**: the gates in §2; `ctest -L fuse_editor_ui` in a tree configured with `-DFUSE_EDITOR_SHELL=fuse`.
 
 ### 3.13 Themes: light, high contrast, token-only colours, focus rings (M)
 
@@ -463,9 +498,10 @@ were read against them). Semantics that differ from the branch, because main's d
 
 ### 3.15 Designer additions (S, after 3.3 and 3.4)
 
-*Still parked (checked 2026-11-13): the icon picker needs the `IconSet` / `icon` style property of 3.3 and the effect
-picker the custom effects of 3.4; neither was live when this item was looked at. The registry-driven property grid
-has no such prerequisite and can be ported alone.*
+*Still parked (checked 2026-11-13 after all ports): the icon picker's prerequisite (`IconSet`, the `icon` style
+property, 3.3) is live now; the effect picker still needs the custom effects of 3.4. The registry-driven property
+grid has no prerequisite; with 97 properties and the `Raw` / `FontSettings` / `Ident` value types it needs an editor
+per type (the Designer edits properties as CSS text through `setCss` today, which covers all of them).*
 
 - **What**: icon picker, effect picker, registry-driven property grid.
 - **Branch deltas not taken**: `U/Designer/include/fuse/ui/designer/designer.hpp` (+25), `U/Designer/src/designer.cpp`
@@ -524,15 +560,18 @@ files is a branch delta assigned to the item in the last column.
 
 | Target | Enabled by | State | Needs |
 |---|---|---|---|
-| `fuse_editor_fuse`, `fuse_editor_fuse_app`, gates `fuse_editor_ui_*` (`Source/FUSE/EditorShell/Fuse`, `EditorShell/tests/test_editor_ui_*.cpp`) | `-DFUSE_EDITOR_SHELL=fuse` (default `qt`) | **Does not compile.** Not part of the default build, so nothing was gated off. | ~~3.12 (`DockEdge`, `dockSplit`, `dockSplitOf`, `dockSideOf`, `dockOpen`, `dockRemove`, `treeLineAt`, `treeLineRect`, `TimelineClipDrag`, `timelineSelectClip`)~~ (live since 2026-11-13), 3.3 (`IconSet`, `UiContext::setIcons`, `setIcon` by name), 3.5 (`fuse/app/platform.hpp` without the `DisplayInfo` / `openUrl` clash, `NativeOptions::osWindows`, `NativePlatform::toolWindow / toolWindowCount / toolWindowScreenRect / captureToolWindow / postPointerMove / postPointerButton`, `UiContext::osWindows / windowSurfaces`), 3.9 (`fuse/app/accessibility.hpp`) |
+| `fuse_editor_fuse`, `fuse_editor_fuse_app`, gates `fuse_editor_ui_*` (`Source/FUSE/EditorShell/Fuse`, `EditorShell/tests/test_editor_ui_*.cpp`) | `-DFUSE_EDITOR_SHELL=fuse` (default `qt`) | **Builds and links (2026-11-13, Linux, GCC 13.3, `-DFUSE_BUILD_VULKAN=OFF`, in tree).** `ctest -L fuse_editor_ui` under Xvfb: 78 entries, 72 passed, 4 skipped (`live_present`, `scene_viewport`, `gpu_viewport`, `present_adopt`: no Vulkan device), and the `ui_frame` gate (registered twice: `fuse_editor_ui_ui_frame`, `fuse_editor_ui_frame`) fails on one wall-clock budget: a full 1600x900 CPU raster took 7.5 to 9.0 ms on the merge machine against 8 ms (it passed in one run of several; with `FUSE_UI_PERF_REPORT_ONLY=1` both pass; the rasteriser is as fast as before the ports: 4.2 ms for a 1600x900 widget page with either binary). `fuse_editor_ui_a11y*` are not configured (no `fuse_app_a11y` target: 3.9). | Changed for it: `editor_shell_panels.cpp` no longer sets `position: absolute` on flame-graph bars (ignored before the style engine port, now CSS out-of-flow positioning; the bars are placed by their `layout: absolute` parent); core: shared-ancestor hover, unconsumed keys on the root's `Event` signal, Tab through the viewport widget (§0). Still missing: 3.9 (`fuse/app/accessibility.hpp`) for the a11y gates; a run with a Vulkan device; Windows / macOS |
 | `fuse_editor_controller`, `fuse_editor_scene_host`, `fuse_editor_controller_api`, `fuse_editor_panel_models` | `FUSE_BUILD_EDITOR_API` / `FUSE_BUILD_EDITOR` | Qt-free, no UI dependency; taken from the branch | nothing |
 | `fuse_runtime_android` (`Source/FUSE/Renderer/android`) | Android + command `fuse_app_add_android_app` | Off (the command is not defined) | 3.10 |
 | `demo_hybrid_hud` with `hud_ui.cpp` | `fuse_ui_game` + `fuse_ui_vk` + Vulkan | Compiles against main's UI (syntax check) | nothing; gate `fuse_demo_hybrid_hud_ui` not run |
-| `fuse_app_host` | (target not defined on main) | Unbuilt | 3.11 |
+| `fuse_app_host` | standalone and in tree | Live since the ProjectHost port (3.11) | nothing |
 
-The error list for the editor shell came from compiling `Source/FUSE/EditorShell/Fuse/src/*.cpp`, `Fuse/app/main.cpp`
-and `EditorShell/tests/test_editor_ui_*.cpp` with `-fsyntax-only` against main's UI headers. Main's own UI changed
-since base as well, so the shell may also need adapting to main-side API changes that those errors hide.
+The editor shell was built in a tree configured with `cmake -S . -DFUSE_EDITOR_SHELL=fuse -DFUSE_BUILD_VULKAN=OFF`
+(targets `fuse_editor_fuse`, `fuse_editor_fuse_app`, `fuse_editor_ui_gates`, `fuse_editor_ui_parity_gates`,
+`fuse_editor_ui_panels2_gates`; they pull in `fuse_editor_controller`, `fuse_editor_scene_host`, `fuse_editor_api`,
+`fuse_navigation` and through them most engine libraries, all of which build without Vulkan). The gates that failed
+on the first run showed behaviour differences, not compile errors: the three core items of §0 and the `position`
+property.
 
 ## 6. Not verified by the merge
 

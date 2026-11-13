@@ -271,7 +271,11 @@ void writeSheet(Writer& w, const StyleSheet& s) {
         w.u32_(rule.scopeFirst); w.u32_(rule.scopeCount); w.u32_(rule.limitFirst); w.u32_(rule.limitCount);
     }
     w.u32_(u32(s.tokens().size()));
-    for (const auto& [h, text] : s.tokens()) { w.u32_(h); w.str(text); }
+    for (std::size_t i = 0; i < s.tokens().size(); ++i) {
+        w.u32_(s.tokens()[i].first);
+        w.str(s.tokens()[i].second);
+        w.i32_(i < s.tokenConds().size() ? s.tokenConds()[i] : -1); // the @media block it was defined in
+    }
     w.u32_(u32(s.conditions().size()));
     for (const StyleCondition& c : s.conditions()) {
         w.u8_(u8(c.kind));
@@ -349,8 +353,13 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
         for (const SimpleSelector& sel : rule.sub) sane = sane && inside(sel.firstPart, sel.partCount, rule.parts.size());
         if (!sane) return std::unexpected("cooked style: selector reference out of range");
     }
-    std::vector<std::pair<u32, std::string>> tokens(r.count(8));
-    for (auto& [h, text] : tokens) { h = r.u32_(); text = r.str(); }
+    std::vector<std::pair<u32, std::string>> tokens(r.count(12));
+    std::vector<i32> tokenConds(tokens.size(), -1);
+    for (std::size_t i = 0; i < tokens.size() && r.ok; ++i) {
+        tokens[i].first = r.u32_();
+        tokens[i].second = r.str();
+        tokenConds[i] = r.i32_();
+    }
     std::vector<StyleCondition> conditions(r.count(14));
     for (std::size_t i = 0; i < conditions.size() && r.ok; ++i) {
         StyleCondition& c = conditions[i];
@@ -364,7 +373,7 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
         c.program.resize(r.count(7));
         for (QueryTerm& t : c.program) {
             const u8 op = r.u8_(), feature = r.u8_(), cmp = r.u8_();
-            if (op > u8(QueryTerm::Op::False) || feature > u8(QueryTerm::Feature::Resolution) || cmp > u8(QueryTerm::Cmp::Ge))
+            if (op > u8(QueryTerm::Op::False) || feature > u8(QueryTerm::Feature::PrefersContrast) || cmp > u8(QueryTerm::Cmp::Ge))
                 return std::unexpected("cooked style: bad query");
             t.op = QueryTerm::Op(op);
             t.feature = QueryTerm::Feature(feature);
@@ -392,7 +401,10 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
     for (const StyleRule& rule : rules)
         if (rule.cond < -1 || rule.cond >= i32(conditions.size()) || rule.layer > layers.size())
             return std::unexpected("cooked style: rule reference out of range");
-    return StyleSheet::fromParts(std::move(rules), std::move(tokens), std::move(conditions), std::move(layers), std::move(keyframes));
+    for (const i32 c : tokenConds)
+        if (c < -1 || c >= i32(conditions.size())) return std::unexpected("cooked style: token reference out of range");
+    return StyleSheet::fromParts(std::move(rules), std::move(tokens), std::move(conditions), std::move(layers), std::move(keyframes),
+                                 std::move(tokenConds));
 }
 } // namespace
 

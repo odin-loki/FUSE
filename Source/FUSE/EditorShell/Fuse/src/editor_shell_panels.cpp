@@ -651,7 +651,8 @@ void ShellPanelPages::syncFlame_() {
         const std::size_t fit = wpx > 14.f ? std::size_t((wpx - 8.f) / 7.f) : 0u;
         std::string text = fit >= b.name.size() ? b.name : fit >= 3 ? b.name.substr(0, fit - 2) + ".." : std::string();
         const NodeHandle n = w::label(m_ui, m_prFlame, text, "profiler.flame.bar" + std::to_string(i));
-        m_ui.setCss(n, "position", "absolute");
+        // (the flame area is a `layout: absolute` box: left / top place the bar inside it. CSS `position: absolute` would
+        // take the bar out of it and place it against the window.)
         m_ui.setCss(n, "left", std::to_string(int(x)) + "px");
         m_ui.setCss(n, "top", std::to_string(int(y)) + "px");
         m_ui.setCss(n, "width", std::to_string(std::max(1, int(wpx) - 1)) + "px");

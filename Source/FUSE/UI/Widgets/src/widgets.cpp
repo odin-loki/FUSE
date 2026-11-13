@@ -535,6 +535,7 @@ void install(UiContext& ui) {
     registerEditWidgets(ui);  // completer, completeritem, editcombo, combodrop
     registerExtraWidgets(ui); // lcdnumber, keysequenceedit, mdiarea, mdisubwindow, mdititle, graphicsview, vkeyboard
     (void)ui.setThemeStyleSheet(defaultThemeCss());
+    ui.setMediaTheme(true); // the default theme is the dark one: @media (prefers-color-scheme: dark) holds
 }
 
 u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, bool theme) {
@@ -559,7 +560,10 @@ u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, boo
         if (id == 0xFFFFFFFFu) { ++unknown; continue; }
         ui.registry().add(all.get(id));
     }
-    if (theme) (void)ui.setThemeStyleSheet(defaultThemeCss());
+    if (theme) {
+        (void)ui.setThemeStyleSheet(defaultThemeCss());
+        ui.setMediaTheme(true);
+    }
     return unknown;
 }
 

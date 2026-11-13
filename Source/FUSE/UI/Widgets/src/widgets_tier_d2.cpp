@@ -744,7 +744,7 @@ struct ViewportW {
         if (e.type == EventType::KeyDown || e.type == EventType::KeyUp) s->last.pos = {};
         ++s->count;
         ec.ui.emit(ec.node, SignalKind::Event, {.value = f32(u32(e.type))});
-        return true;
+        return e.key != Key::Tab; // forwarded, but Tab still moves focus on (no keyboard trap)
     }
 };
 

@@ -22,7 +22,7 @@
 //               :not() :is() :where() :has() (relative selectors `:has(> a)`, `:has(+ a)`), :scope, the sibling
 //               combinators `+` and `~`, CSS nesting (`&`, implicit descendant)
 //   at-rules    @media (width / height ranges, min- / max-, orientation, aspect-ratio, prefers-color-scheme,
-//               prefers-reduced-motion, hover, pointer, resolution; not / and / or / lists; re-evaluated by
+//               prefers-contrast, prefers-reduced-motion, hover, pointer, resolution; not / and / or / lists; re-evaluated by
 //               StyleEngine::setMediaEnv), @container [name] (width / height / inline-size / block-size / aspect-ratio /
 //               orientation of the nearest `container-type` ancestor), @layer (statement, block, anonymous, nested
 //               `a.b`; unlayered rules win), @scope (root) [to (limit)], @supports (declarations, selector(), not /
@@ -411,7 +411,7 @@ struct SelectorRange {
 /// One term of a media / container condition in postfix order.
 struct QueryTerm {
     enum class Op : u8 { Feature, And, Or, Not, True, False };
-    enum class Feature : u8 { Width, Height, AspectRatio, Orientation, PrefersDark, PrefersReducedMotion, Hover, Pointer, Resolution };
+    enum class Feature : u8 { Width, Height, AspectRatio, Orientation, PrefersDark, PrefersReducedMotion, Hover, Pointer, Resolution, PrefersContrast };
     enum class Cmp : u8 { Truthy, Eq, Lt, Le, Gt, Ge };
     Op op = Op::True;
     Feature feature = Feature::Width;
@@ -435,6 +435,7 @@ struct MediaEnv {
     bool hover = true;                 ///< the primary pointer can hover
     u8 pointer = 2;                    ///< 0 none, 1 coarse, 2 fine
     f32 resolution = 1.f;              ///< dppx (render scale)
+    bool moreContrast = false;         ///< prefers-contrast: more (a high-contrast theme is in use)
     friend bool operator==(const MediaEnv&, const MediaEnv&) = default;
 };
 /// True when `program` holds for the values in `env` (container queries: width / height = the container's content box).
@@ -519,9 +520,14 @@ public:
     static std::expected<StyleSheet, StyleDiagnostic> parse(std::string_view css,
                                                             std::vector<StyleDiagnostic>* diagnostics = nullptr);
     const std::vector<StyleRule>& rules() const { return m_rules; }
-    /// Theme tokens (from :root).
-    bool token(u32 nameHash, std::string_view& out) const;
+    /// Theme tokens (from :root): the last definition wins. With `condOk` (per condition of this sheet: its @media
+    /// chain holds; StyleEngine keeps it) a token defined inside an @media block that does not hold is skipped, so
+    /// `@media (prefers-color-scheme: light) { :root { --accent: ... } }` re-colours only while it applies.
+    bool token(u32 nameHash, std::string_view& out, const std::vector<u8>* condOk = nullptr) const;
     const std::vector<std::pair<u32, std::string>>& tokens() const { return m_tokens; }
+    /// Per token: the condition (index into conditions()) of the block it was defined in, -1 for none. May be shorter
+    /// than tokens() (the rest: -1).
+    const std::vector<i32>& tokenConds() const { return m_tokenConds; }
     /// @media / @container blocks (StyleRule::cond), @layer names in order of first appearance ("a", "a.b"; anonymous
     /// layers get a private name), @keyframes rules.
     const std::vector<StyleCondition>& conditions() const { return m_conditions; }
@@ -530,8 +536,9 @@ public:
     /// Rebuilds a parsed sheet from its parts (cooked `.fusestyle` loading; see fuse/ui/doc/cook.hpp).
     static StyleSheet fromParts(std::vector<StyleRule> rules, std::vector<std::pair<u32, std::string>> tokens,
                                 std::vector<StyleCondition> conditions = {}, std::vector<std::string> layers = {},
-                                std::vector<KeyframesRule> keyframes = {}) {
+                                std::vector<KeyframesRule> keyframes = {}, std::vector<i32> tokenConds = {}) {
         StyleSheet s;
+        s.m_tokenConds = std::move(tokenConds);
         s.m_rules = std::move(rules);
         s.m_tokens = std::move(tokens);
         s.m_conditions = std::move(conditions);
@@ -545,6 +552,7 @@ private:
     friend struct StyleParser;
     std::vector<StyleRule> m_rules;
     std::vector<std::pair<u32, std::string>> m_tokens;
+    std::vector<i32> m_tokenConds;
     u32 m_handle = 0; ///< StyleEngine::addSheetTracked identity (0: added with addSheet)
     std::vector<StyleCondition> m_conditions;
     std::vector<std::string> m_layers;
@@ -647,6 +655,8 @@ private:
     std::vector<InvalKey> m_keys;
     std::vector<std::vector<u8>> m_condOk; ///< per sheet, per condition: its @media chain holds
     bool resolveVar(std::string_view raw, Prop p, PropValue& out, int depth) const;
+    /// The token `h` from the sheets: the last sheet that defines it under conditions that hold now.
+    bool sheetToken(u32 h, std::string_view& out) const;
     u32 intern(const ComputedStyle& cs);
     void rehash(std::size_t slots);
     std::vector<u8> m_isScratch;   ///< parallel to m_table

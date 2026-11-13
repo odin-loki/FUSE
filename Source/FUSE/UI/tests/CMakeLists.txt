@@ -434,7 +434,8 @@ endforeach()
 # the kernel's Image op; the kernel itself is covered by fuse_ui_vk_parity where a Vulkan device exists)
 fuse_ui_test(fuse_ui_gpu_pack_vector test_gpu_pack_vector.cpp)
 target_link_libraries(fuse_ui_gpu_pack_vector PRIVATE fuse_ui_render)
-set_tests_properties(fuse_ui_gpu_pack_vector PROPERTIES LABELS "fuse_ui;gate")
+# (run from the tests directory: the colour-glyph case loads data/colrv1_test.ttf)
+set_tests_properties(fuse_ui_gpu_pack_vector PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Dock drag and drop, catalogue coverage / extra goldens, accessibility families, sample and packaging gates
 include(${CMAKE_CURRENT_SOURCE_DIR}/finishing.cmake)
@@ -610,7 +611,9 @@ if(TARGET fuse_ui_extras)
         add_test(NAME fuse_ui_extras_richtext_${g} COMMAND fuse_ui_richtext_tests --gate=${g})
         set_tests_properties(fuse_ui_extras_richtext_${g} PROPERTIES LABELS "fuse_ui;gate")
     endforeach()
-    if(NOT FUSE_UI_TEXT STREQUAL "FULL") # the golden is rendered with the MINIMAL text profile
+    # The golden is rendered with the MINIMAL text profile. FULL rasterises with FreeType; COOKED has one face per
+    # pack and no synthetic oblique, so the bold / italic faces the scene is about are not what it draws.
+    if(FUSE_UI_TEXT STREQUAL "MINIMAL")
         add_test(NAME fuse_ui_extras_richtext_golden COMMAND fuse_ui_richtext_tests --gate=golden)
         set_tests_properties(fuse_ui_extras_richtext_golden PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     endif()
@@ -627,13 +630,20 @@ endif()
 #                options / validators / masks, completer, editable combo, spin box and tab options, the extras widgets,
 #                dock splits - so they are linked into every app that calls install)
 #   2,683,504 B  + theme tokens for those widgets, title bar tokens, X11 high-contrast detection (+8,192)
-# Budget = 2,683,504 + 10 % = 2,951,854 -> 2,951,000.
+#                (budget then: 2,951,000)
+#   2,974,320 B  + style engine and drawing core port (+290,816: selectors level 4, at-rules, keyframe animations,
+#                positioning, transform / filter / mask / clip-path values, the effect groups of the CPU rasteriser;
+#                all of it is reachable from StyleSheet::parse and UiContext::update, so every app links it)
+#   3,424,968 B  + text / icon port and the merge of the two (+450,648: MSDF generation, COLRv1 / CBDT / sbix colour
+#                glyphs with their PNG decoder, variable fonts, the system font catalogue and script tables, IconSet,
+#                font-settings / icon properties; reachable from Font loading and the text paint path)
+# Budget = 3,424,968 + 10 % = 3,767,464 -> 3,767,000.
 if(TARGET hello_app AND NOT CMAKE_CROSSCOMPILING)
     set(_fuse_app_budget 0)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64" AND FUSE_UI_TEXT STREQUAL "MINIMAL"
        AND CMAKE_BUILD_TYPE STREQUAL "Release" AND CMAKE_STRIP AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
        AND CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR) # the standalone UI tree
-        set(_fuse_app_budget 2951000)
+        set(_fuse_app_budget 3767000)
     endif()
     if(FUSE_APP_BINARY_BUDGET)
         set(_fuse_app_budget ${FUSE_APP_BINARY_BUDGET})
@@ -827,3 +837,27 @@ endif()
 
 # COOKED text profile: gates about real font files (face names, outline shear, installed fonts) skip with 77
 set_property(TEST fuse_text_font_styles PROPERTY SKIP_RETURN_CODE 77)
+
+# ---- the ports together: style engine x text / icons x themes (test_port_merge.cpp) ----------------------------------
+# registry: one property registry and the cooked sheet format 5 (Raw payloads, FontSettings / Ident tags, tokens with
+# their @media block). style_rules: icon / icon-size / font-stretch under @media, @layer, @container, nesting,
+# keyframes and transitions; the widget theme's token sheets with @layer and prefers-color-scheme / prefers-contrast.
+# glyph_fx: MSDF and colour-image glyphs inside transform / filter / mask groups on the CPU rasteriser.
+# shell_core: unconsumed keys on the root's Event signal, hover without touching shared ancestors, Tab out of a viewport.
+if(TARGET fuse_ui_doc)
+    add_executable(fuse_ui_port_merge test_port_merge.cpp)
+    target_link_libraries(fuse_ui_port_merge PRIVATE fuse_ui_widgets fuse_ui_doc)
+    target_include_directories(fuse_ui_port_merge PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+    if(FUSE_UI_TEXT STREQUAL "FULL")
+        target_compile_definitions(fuse_ui_port_merge PRIVATE FUSE_UI_TEST_TEXT_FULL=1)
+    elseif(FUSE_UI_TEXT STREQUAL "COOKED")
+        target_compile_definitions(fuse_ui_port_merge PRIVATE FUSE_UI_TEST_TEXT_COOKED=1
+                                   FUSE_UI_TEST_COOKED_FONTS="${CMAKE_CURRENT_BINARY_DIR}/fonts")
+        add_dependencies(fuse_ui_port_merge fuse_ui_test_fonts)
+    endif()
+    foreach(g registry style_rules glyph_fx shell_core)
+        add_test(NAME fuse_ui_merge_${g} COMMAND fuse_ui_port_merge --gate=${g})
+        set_tests_properties(fuse_ui_merge_${g} PROPERTIES LABELS "fuse_ui;gate" SKIP_RETURN_CODE 77
+                             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endforeach()
+endif()

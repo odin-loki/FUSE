@@ -61,9 +61,9 @@ private:
     std::string m_title, m_author;
     std::vector<Page> m_pages;
     std::vector<XObject> m_images;
-    int m_atlasXo = -1;
+    [[maybe_unused]] int m_atlasXo = -1; // (reserved for glyph atlas embedding; nothing reads it yet)
     std::vector<std::pair<u32, int>> m_glyphInks; // packed colour -> xobject (1x1 ink soft-masked by the atlas)
-    const u8* m_atlasPtr = nullptr;
+    [[maybe_unused]] const u8* m_atlasPtr = nullptr;
 };
 
 /// Paginated preview model (QPrintPreviewWidget): page images rendered from a DrawList-producing callback.

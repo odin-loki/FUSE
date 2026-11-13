@@ -359,5 +359,99 @@ int main() {
         for (u32 px : cpuUi.pixels) lit += px != 0xFF101418u;
         UI_CHECK(lit > 8000);
     }
+    // MSDF and colour-image glyphs (kGlyphMsdf / kGlyphColor; the atlas' colour page, which the kernel does not read).
+    // Inside a baked group the CPU rasteriser draws them into the group's image, so they are shown; loose ones are
+    // skipped and counted in skippedGlyphs - never drawn as coverage glyphs from the wrong page.
+    {
+        using namespace fuse::text;
+        enableColorGlyphs();
+        enableMsdf();
+        auto colr = Font::fromFile(testFontPath("colrv1_test"));
+        if (colr && msdfEnabled()) {
+            Font base = std::move(*Font::bundled());
+            std::vector<const Font*> chain{&*colr};
+            base.setFallbacks(chain);
+            std::string text = "M&";
+            appendUtf8(text, U'\uE004');
+            appendUtf8(text, U'\uE005');
+            UiContext tu({.viewport = {f32(W), f32(H)}, .font = &base});
+            tu.setMsdfThreshold(40.f);
+            UI_CHECK(tu.addStyleSheet(".big { font-size: 56px; color: #ffffff; }").has_value());
+            const NodeHandle label = tu.create(tu.registry().find("label"), tu.root());
+            tu.addClass(label, "big");
+            tu.setText(label, text);
+            tu.update();
+            std::vector<DrawCmd> glyphs;
+            Rect ink;
+            int special = 0;
+            for (const DrawCmd& c : tu.drawList().cmds())
+                if (c.op == DrawOp::Glyph) {
+                    glyphs.push_back(c);
+                    ink = ink.empty() ? c.rect : ink.unite(c.rect);
+                    special += c.gradient != kGlyphCoverage;
+                }
+            UI_CHECK_EQ(special, 4); // 2 MSDF + 2 colour images
+            const Rect src{ink.x - 4.f, ink.y - 4.f, ink.w + 8.f, ink.h + 8.f};
+            const FilterOp hue{FilterKind::HueRotate, 2.f, {}, {}};
+            const GradientStop fadeOut[2]{{0.f, Color::rgb(0x000000)}, {1.f, Color{0.f, 0.f, 0.f, 0.3f}}};
+            auto groups = [&](DrawList& out) { // the label three times: rotated, filtered, masked
+                out.pushTransform(Affine::translation(40.f, 150.f) * Affine::rotation(-0.25f) * Affine::scaling(0.8f, 0.8f) * Affine::translation(-src.x, -src.y), src);
+                for (const DrawCmd& c : glyphs) out.push(c);
+                out.popClip();
+                out.pushFilter({&hue, 1}, src);
+                for (const DrawCmd& c : glyphs) out.push(c);
+                out.popClip();
+                DrawList moved;
+                for (const DrawCmd& c : glyphs) moved.push(c);
+                moved.translate({90.f, 70.f});
+                const Rect ms{src.x + 90.f, src.y + 70.f, src.w, src.h};
+                out.pushMask(Gradient::linear({ms.x, 0}, {ms.right(), 0}, fadeOut), ms);
+                for (const DrawCmd& c : moved.cmds()) out.push(c);
+                out.popClip();
+            };
+            DrawList grouped, withLoose;
+            groups(grouped);
+            groups(withLoose);
+            { // the same glyphs loose, under a pure translation (packed in place: still loose commands)
+                withLoose.pushTransform(Affine::translation(150.f, 160.f), src);
+                for (const DrawCmd& c : glyphs) withLoose.push(c);
+                withLoose.popClip();
+            }
+            CpuRasterizer rs;
+            rs.setGlyphAtlas(tu.atlas().pixels(), tu.atlas().size());
+            Image cpuG, gpuG, gpuL;
+            cpuG.resize(int(W), int(H), 0xFF181818u);
+            gpuG.resize(int(W), int(H), 0xFF181818u);
+            gpuL.resize(int(W), int(H), 0xFF181818u);
+            rs.render(grouped, cpuG);
+            GpuDrawData gd, ld;
+            packDrawList(grouped, W, H, gd, tu.atlas().pixels(), u32(tu.atlas().size()));
+            UI_CHECK_EQ(gd.bakedOps, 3u);
+            UI_CHECK_EQ(gd.skippedGlyphs, 0u);
+            UI_CHECK_EQ(gd.unsupportedOps, 0u);
+            UI_CHECK(runKernel(gd, gpuG)); // only Image commands: the three baked groups
+            const Diff gdiff = compare(cpuG, gpuG);
+            int colored = 0;
+            for (u32 px : gpuG.pixels) {
+                const int r = int(px & 0xFF), g = int((px >> 8) & 0xFF), b = int((px >> 16) & 0xFF);
+                colored += std::max({r, g, b}) - std::min({r, g, b}) > 60;
+            }
+            std::printf("MSDF / colour glyphs in baked groups, kernel model vs CPU rasteriser: max err %d, %d coloured pixels\n", gdiff.maxErr, colored);
+            UI_CHECK_EQ(gdiff.maxErr, 0);
+            UI_CHECK(colored > 300); // the colour glyphs are in the baked images
+            // with the loose copy: its 4 special glyphs are skipped and counted, its coverage glyphs (none here) and
+            // the groups are unchanged, and nothing else is emitted for them
+            packDrawList(withLoose, W, H, ld, tu.atlas().pixels(), u32(tu.atlas().size()));
+            UI_CHECK_EQ(ld.skippedGlyphs, u32(special));
+            UI_CHECK_EQ(ld.bakedOps, 3u);
+            UI_CHECK_EQ(ld.cmds.size(), gd.cmds.size() + (glyphs.size() - std::size_t(special)));
+            if (glyphs.size() == std::size_t(special)) { // no coverage glyph in the label: the model can run the frame
+                UI_CHECK(runKernel(ld, gpuL));
+                UI_CHECK_EQ(compare(gpuL, gpuG).maxErr, 0);
+            }
+        } else {
+            std::printf("MSDF / colour glyph groups: no colour test font / MSDF in this build, skipped\n");
+        }
+    }
     return finish("fuse_ui_gpu_pack_vector");
 }

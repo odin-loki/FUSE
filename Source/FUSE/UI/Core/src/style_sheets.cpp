@@ -87,9 +87,7 @@ bool StyleEngine::tokenColor(u32 nameHash, Color& out) const {
     u32 h = nameHash;
     std::string_view text;
     for (int depth = 0; depth < 8; ++depth) {
-        bool found = false;
-        for (auto it = m_sheets.rbegin(); it != m_sheets.rend() && !found; ++it) found = it->token(h, text);
-        if (!found) break;
+        if (!sheetToken(h, text)) break;
         text = trimSpaces(text);
         if (!text.starts_with("var(")) {
             ok = parseColor(text, c);
@@ -101,9 +99,7 @@ bool StyleEngine::tokenColor(u32 nameHash, Color& out) const {
         const auto comma = inner.find(',');
         h = hashId(trimSpaces(inner.substr(0, comma)));
         std::string_view probe;
-        bool defined = false;
-        for (auto it = m_sheets.rbegin(); it != m_sheets.rend() && !defined; ++it) defined = it->token(h, probe);
-        if (!defined) {
+        if (!sheetToken(h, probe)) {
             if (comma != std::string_view::npos) ok = parseColor(trimSpaces(inner.substr(comma + 1)), c);
             break;
         }

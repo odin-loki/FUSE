@@ -448,9 +448,11 @@ void gateMergedClasses() {
     w::viewCancelEdit(trimmed, ct);
     // a cooked blob of another format version is refused (the version moves with the property set)
     std::vector<u8> old(cooked->begin(), cooked->end());
-    UI_CHECK(kCookedVersion == 4u && old.size() > 8 && old[4] == 4u);
-    old[4] = 3;
-    UI_CHECK(!Document::loadCooked(trimmed, old, &model).has_value());
+    UI_CHECK(kCookedVersion == 5u && old.size() > 8 && old[4] == 5u);
+    for (u8 v : {u8(3), u8(4), u8(6)}) { // 4: the style engine port alone, before the text / icon properties
+        old[4] = v;
+        UI_CHECK(!Document::loadCooked(trimmed, old, &model).has_value());
+    }
 }
 } // namespace
 

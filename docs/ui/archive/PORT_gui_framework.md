@@ -19,6 +19,39 @@ Names used below:
 - `U/_port/gui-framework/<relative path>` = the branch's version of a file whose path `U/<relative path>` was already
   taken on main by a different file (§1.1). Nothing builds from `U/_port/`.
 
+## 0. State after all ports (2026-11-13)
+
+Both branches' port series are merged and consistent with each other (`PORT_magical_bassi.md` §0 has the other
+half). §2 lists files and gates of what is live, §3 what is left of each item.
+
+| Live (built, gated) | Item |
+|---|---|
+| Extras that compiled against main from the start: `fuse_ui_os`, undo, declarative bindings, PDF, desktop helpers, tray, web view, charts, 3D data visualisation | §2 |
+| OS drag and drop: X11 XDND both ways; Win32 OLE (compiled with MinGW-w64, never run) | 3.1 |
+| OS tool windows (bassi's API), frame pacing, live retitle, `dpiScale` | 3.5 |
+| Widgets: line edit options / validators / masks, completer, editable combo, spin box and tab options (§3.7), and the Extras widgets as `widgets/extra.hpp` (LCD number, key sequence edit, MDI, graphics view, on-screen keyboard, dialogs / containers: §3.12) | 3.7 (part), 3.12 |
+| Style engine: selectors level 4 with targeted invalidation, `@media` / `@container` / `@layer` / `@scope` / `@supports` / `@keyframes`, `animation-*`, the scripted animation API, `position` / `inset` / `z-index` / `aspect-ratio` / subgrid | 3.8 (part) |
+| Drawing core: transform / filter / mask groups (CPU reference, GPU by baking), CSS `transform` (2D) / `filter` / `clip-path` / `mask`, multi-stop `background-image`, `DrawList::path` on main's `Path` | 3.9 (part) |
+| Rich text editor, PDF path operators, audio level meter, gesture recogniser, style sheet hot reload, `.po` catalogues, `<fuse/gui.hpp>` | 3.13 (part), 3.14 (part), 3.16 (part) |
+| Combined with the other series (final merge): 97 properties in one registry and cooked format 5; `@media (prefers-color-scheme / prefers-contrast)` follows the widget theme and `AppWindow::applyTheme`; tokens inside `@media`; `icon` / `icon-size` / `font-stretch` under every at-rule and in animations; MSDF / colour glyphs inside effect groups | gates `fuse_ui_merge_*` |
+
+| Remaining (in the tree unbuilt, parked under `U/_port/`, or a branch delta not taken) | Item |
+|---|---|
+| Drag out of the app on Wayland, Cocoa drag and drop | 3.1 |
+| This branch's Wayland backend (kept for its drag-out and subsurface code; mb's backend is the live one) | 3.2 |
+| Apple backends (`.mm`: Cocoa, UIKit, Metal present, AVFoundation, NSStatusItem, WKWebView): never compiled | 3.3 |
+| Android: the branch backend, Java `FuseActivity`, APK script | 3.4 |
+| Accessibility platform adapters (`PlatformAdapter`, `A11yState`, auto-complete state) | 3.6 |
+| Widgets: date / time edit sections, calendar options, item-view options (list icon mode, header modes), tool bar overflow / movable bars, tab position / elide / per-tab icons, MIME drag-and-drop payloads | 3.7 (rest) |
+| Style: `cubic-bezier()` / `steps()`, `transition-*` longhands, `animation-composition` / timelines, `"animate"` / `"order"` document keys, `!important`, container units, stacking contexts across parents | 3.8 (rest) |
+| Drawing: 3D transforms, `clip-path: path() / url()`, image masks, SVG filter programs, conic / repeating gradients | 3.9 (rest) |
+| GPU-native paths, gradients, clips, filters, backdrop kernel, incremental pack, mesh pass | 3.10 |
+| Colour management and HDR | 3.11 |
+| SVG documents (`extras/svg.hpp`), system video and audio output (`extras/media.hpp`) | 3.13 (rest) |
+| FORGE script bindings and everything FORGE-dependent; the Designer pass | 3.14 (rest), §5 |
+| SIMD: box blur and chart min-max kernels | 3.15 |
+| Remaining Extras modules and platforms | 3.16 (rest) |
+
 ## 1. How the merge was resolved
 
 | Area | Rule applied | Result |

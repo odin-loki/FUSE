@@ -1851,7 +1851,15 @@ bool UiContext::dispatch(u32 target, const Event& ev) {
 void UiContext::setHover(u32 i) {
     const u32 old = node(m_hover) ? m_hover.index : kNone;
     if (old == i) return;
-    for (u32 a = old; a != kNone; a = m_nodes[a].parent) setState({a, m_nodes[a].gen}, kStateHover, false);
+    // ancestors shared with the new chain keep :hover (toggling them off and on again restyled and repainted them: a
+    // pointer moving from one button to the next damaged the whole window)
+    const auto onNewChain = [&](u32 a) {
+        for (u32 b = i; b != kNone; b = m_nodes[b].parent)
+            if (b == a) return true;
+        return false;
+    };
+    for (u32 a = old; a != kNone; a = m_nodes[a].parent)
+        if (!onNewChain(a)) setState({a, m_nodes[a].gen}, kStateHover, false);
     for (u32 a = i; a != kNone; a = m_nodes[a].parent) setState({a, m_nodes[a].gen}, kStateHover, true);
     m_hover = handleOf(i);
     if (old != kNone) {
@@ -2235,6 +2243,11 @@ bool UiContext::keyDown(Key k, u8 mods) {
         default: break;
         }
     }
+    // keys nobody took go to the root's Event signal {value = key, event}: application-wide keys that must work
+    // whatever has the focus, or with no focus at all (Escape ends a drag the application runs itself)
+    const NodeHandle before = m_focus;
+    emit(m_root, SignalKind::Event, {.value = f32(u32(k)), .event = &e});
+    if (m_focus != before) return true;
     return node(m_focus) != nullptr && m_registry.get(m_nodes[m_focus.index].cls).focusable;
 }
 
@@ -3152,7 +3165,14 @@ void UiContext::syncMedia() {
     env.hover = m_mediaHover;
     env.pointer = m_mediaPointer;
     env.resolution = m_renderScale;
+    env.moreContrast = m_mediaContrast;
     m_styles.setMediaEnv(env);
+}
+void UiContext::setMediaTheme(bool dark, bool moreContrast) {
+    if (m_mediaDark == dark && m_mediaContrast == moreContrast) return;
+    m_mediaDark = dark;
+    m_mediaContrast = moreContrast;
+    syncMedia();
 }
 void UiContext::setMediaPreferences(bool dark, bool hover, u8 pointer) {
     m_mediaDark = dark;

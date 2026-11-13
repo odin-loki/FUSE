@@ -56,6 +56,10 @@ struct GpuDrawData {
     u32 bakedOps = 0;       ///< vector ops / groups drawn through a CPU pre-rasterised image
     u32 bakedPixels = 0;    ///< pixels of those images
     u32 unsupportedOps = 0; ///< vector ops / groups dropped (over kMaxBakedPixels)
+    /// Colour-image / MSDF glyph commands (kGlyphColor / kGlyphMsdf) outside every baked group: not drawn, the kernel
+    /// has no op for the atlas' colour page. Inside a baked group (PushLayer, clip path, transform, filter, mask) the
+    /// CPU rasteriser draws them into the group's image, so those are shown and not counted.
+    u32 skippedGlyphs = 0;
     Image bakeScratch;      ///< reused pre-rasterisation target
 
     std::size_t cmdBytes() const { return cmds.size() * sizeof(GpuCmd); }

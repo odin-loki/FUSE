@@ -316,6 +316,12 @@ struct QueryParser {
             else if (text == "light") v = 0.f;
             else return false;
             return true;
+        case QueryTerm::Feature::PrefersContrast: // `less` / `custom` are never the case here
+            if (text == "more") v = 1.f;
+            else if (text == "no-preference") v = 0.f;
+            else if (text == "less" || text == "custom") v = 2.f;
+            else return false;
+            return true;
         case QueryTerm::Feature::PrefersReducedMotion:
             if (text == "reduce") v = 1.f;
             else if (text == "no-preference") v = 0.f;
@@ -348,6 +354,7 @@ struct QueryParser {
         else if (name == "orientation") f = F::Orientation;
         else if (container) return false;
         else if (name == "prefers-color-scheme") f = F::PrefersDark;
+        else if (name == "prefers-contrast") f = F::PrefersContrast;
         else if (name == "prefers-reduced-motion") f = F::PrefersReducedMotion;
         else if (name == "hover" || name == "any-hover") f = F::Hover;
         else if (name == "pointer" || name == "any-pointer") f = F::Pointer;
@@ -1071,7 +1078,11 @@ struct StyleParser {
             rule.cond = ctx.cond;
             rule.layer = ctx.layer;
             if (isRoot)
-                for (auto& t : tokens) sheet.m_tokens.push_back(t);
+                for (auto& t : tokens) {
+                    sheet.m_tokenConds.resize(sheet.m_tokens.size(), -1);
+                    sheet.m_tokens.push_back(t);
+                    sheet.m_tokenConds.push_back(ctx.cond);
+                }
             if (sheet.m_rules.size() < 1000000) sheet.m_rules.push_back(std::move(rule));
             return true;
         });

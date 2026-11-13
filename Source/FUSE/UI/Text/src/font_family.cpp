@@ -380,7 +380,7 @@ bool fontExtension(std::string_view path) {
     const std::string_view e = path.substr(dot + 1);
     return equalNoCase(e, "ttf") || equalNoCase(e, "otf") || equalNoCase(e, "ttc") || equalNoCase(e, "otc");
 }
-std::string envOr(const char* name, const char* fallback = "") {
+[[maybe_unused]] std::string envOr(const char* name, const char* fallback = "") { // (no font directories from the environment on Android / Apple)
     const char* v = std::getenv(name); // NOLINT(concurrency-mt-unsafe): read once under the font list lock
     return v && *v ? std::string(v) : std::string(fallback);
 }

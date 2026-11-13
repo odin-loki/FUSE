@@ -21,6 +21,8 @@ with a load average of 16 to 36 from other builds the whole time, so timings are
 | `fuse_ui_bench_hud`: 293-node HUD, UI CPU per frame, median of 300 frames, best of 3 rounds (6 runs) | 0.65–0.77 ms (p95 1.1–4.6 ms) | 0.104–0.109 ms (p95 0.13–0.14 ms) | ≤ 0.5 ms |
 | `hello_app`, stripped | 1,936,432 B | (same) | `fuse_app_binary_size`: 2,130,000 B (+10 %) |
 | `hello_app`, stripped, after the platform layer + Wayland backend, the theme port and the widget port were merged (2026-11-13) | 1,936,432 B | 2,683,504 B | `fuse_app_binary_size`: 2,951,000 B (+10 %) |
+| `hello_app`, stripped, after the style engine + drawing core port and the text / icon port were merged on top (2026-11-13) | 2,683,504 B | 3,424,968 B | `fuse_app_binary_size`: 3,767,000 B (+10 %) |
+| `fuse_ui_bench_10k`: dirty-panel update of a 10,001-node tree, median per run, 12 runs of each binary interleaved | 0.393–0.481 ms (median of runs 0.44) | 0.359–0.519 ms (median of runs 0.415) | ≤ 0.5 ms |
 
 Where the 747,072 B went (same machine and toolchain, each step measured): app platform layer and Wayland backend
 +345,632 B (2,282,064; both the X11 and the Wayland backend are linked into every `fuse_app_native` program); widget
@@ -29,6 +31,18 @@ validators / masks, the completer, editable combo box, spin box and tab options,
 are linked into every app that calls it; an app that wants less uses `installClasses`); theme tokens of those
 widgets, the title bar's tokens and X11 high-contrast detection +8,192 B. The budget was moved to the new size + 10 %
 because the growth is the ported feature set, not a regression in existing code.
+
+The second step, +741,464 B (2026-11-13, same machine and toolchain): the style engine and drawing core port
++290,816 B (2,974,320, measured on its own commit: selectors level 4, at-rules, keyframe animations, positioning,
+transform / filter / mask / clip-path values and the effect groups of the CPU rasteriser are all reachable from
+`StyleSheet::parse` and `UiContext::update`); the text / icon port with the merge fixes +450,648 B (3,424,968: MSDF
+generation, COLRv1 / CBDT / sbix colour glyphs and their PNG decoder, variable fonts, the system font catalogue and
+script tables, `IconSet`, the font-settings and icon properties). Nothing in a MINIMAL `hello_app` uses MSDF, colour
+fonts or variable fonts, but the code hangs off `Font` loading and the text paint path, and the UI libraries are not
+built with `-ffunction-sections` / `--gc-sections`, so it is linked. Two PNG decoders are in the binary now (stb_image
+for the clipboard in `fuse_app`, `fuse::text::png` for bitmap glyph strikes); sharing one is open. The budget was
+moved to the new size + 10 % for the same reason as before. `fuse_ui_bench_10k` did not get slower (the hover change
+that no longer restyles shared ancestors is in the "now" binary).
 
 Why main was slower than the branch on the HUD scene: `StyleEngine::intern` hashed only a few fields of a computed
 style (two background channels, one colour channel, size, padding, gap, font size, opacity, border width, one radius,

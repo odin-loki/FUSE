@@ -338,6 +338,9 @@ void AppWindow::applyTheme(const SystemTheme& t) {
         // one override sheet, replaced in place on every later call (the sheet list does not grow)
         if (m_ui.styles().hasSheet(m_themeOverride)) (void)m_ui.replaceStyleSheet(m_themeOverride, std::move(*sheet));
         else m_themeOverride = m_ui.addStyleSheetTracked(std::move(*sheet));
+        // the same answer for the application's own @media (prefers-color-scheme / prefers-contrast) rules; the
+        // default high-contrast token set is the dark one
+        m_ui.setMediaTheme(t.highContrast || t.scheme != ColorScheme::Light, t.highContrast);
         m_ui.markAllDirty();
         m_forceRedraw = true;
     }

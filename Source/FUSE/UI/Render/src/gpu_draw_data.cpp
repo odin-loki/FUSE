@@ -40,7 +40,7 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     out.atlasSize = atlas ? atlasSize : 0;
     const u32 tilesX = (width + kUiTile - 1) / kUiTile, tilesY = (height + kUiTile - 1) / kUiTile;
     const u32 tileCount = tilesX * tilesY;
-    out.bakedOps = out.bakedPixels = out.unsupportedOps = 0;
+    out.bakedOps = out.bakedPixels = out.unsupportedOps = out.skippedGlyphs = 0;
     // vector ops are drawn as pre-rasterised images: one extra image table entry per top-level vector op / group
     u32 bakeSlots = 0;
     if (list.hasVectorOps()) { // the same walk as pass 1 below, counting only
@@ -187,7 +187,11 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         if (c.op == DrawOp::Glyph && !atlas) continue;
         // Colour-image and MSDF glyphs live in the atlas' RGBA page, which this backend does not upload: not drawn on
         // the GPU path (draw_list.hpp, kGlyphColor / kGlyphMsdf). The CPU rasteriser is the reference for them.
-        if (c.op == DrawOp::Glyph && c.gradient != kGlyphCoverage) continue;
+        // (Inside a baked group they are part of the group's image; only loose ones get here. Counted, never silent.)
+        if (c.op == DrawOp::Glyph && c.gradient != kGlyphCoverage) {
+            ++out.skippedGlyphs;
+            continue;
+        }
         if (c.op == DrawOp::Image && c.image >= imageCount) continue;
         GpuCmd g{};
         put4(g.rect, rect.x, rect.y, rect.w, rect.h);

@@ -505,6 +505,12 @@ public:
     /// @media inputs that are not derived: prefers-color-scheme, hover, pointer (0 none, 1 coarse, 2 fine). Width /
     /// height follow setViewport, resolution follows setRenderScale, prefers-reduced-motion follows setReducedMotion.
     void setMediaPreferences(bool dark, bool hover = true, u8 pointer = 2);
+    /// The theme side of @media alone: prefers-color-scheme (dark / light) and prefers-contrast (more /
+    /// no-preference); hover and pointer stay. widgets::install / setTheme and AppWindow::applyTheme call it, so a
+    /// document's `@media (prefers-color-scheme: dark)` rules follow the theme the application shows.
+    void setMediaTheme(bool dark, bool moreContrast = false);
+    bool mediaDark() const { return m_mediaDark; }
+    bool mediaMoreContrast() const { return m_mediaContrast; }
     /// `p` (context coordinates) in the layout space of `n`: mapped back through the CSS transforms of `n` and its
     /// ancestors, so it can be compared with rect(n). fromLocal is the inverse. Without transforms both return `p`.
     Vec2 toLocal(NodeHandle n, Vec2 p) const;
@@ -664,6 +670,9 @@ public:
     /// Modifier state (kMod*) stamped on pointer events; platform layers update it on every modifier change.
     void setModifiers(u8 mods) { m_mods = mods; }
     u8 modifiers() const { return m_mods; }
+    /// A key press goes to the focused node (capture / target / bubble), then to the shortcut hook, focus navigation
+    /// (Tab, arrows) and last, when nothing took it, to the root's SignalKind::Event slots as {value = Key, event}:
+    /// the place for application-wide keys that must work whatever has the focus, or with no focus at all.
     bool keyDown(Key k, u8 mods = 0);
     bool keyUp(Key k, u8 mods = 0);
     bool textInput(std::string_view utf8);
@@ -1142,7 +1151,7 @@ private:
     mutable std::vector<ZEntry> m_zScratch;
     struct ContainerEntry { u32 node; Size size; };
     std::vector<ContainerEntry> m_containers; ///< query containers and the size their subtree was last styled for
-    bool m_mediaDark = false, m_mediaHover = true;
+    bool m_mediaDark = false, m_mediaHover = true, m_mediaContrast = false;
     u8 m_mediaPointer = 2;
 
     struct Command {

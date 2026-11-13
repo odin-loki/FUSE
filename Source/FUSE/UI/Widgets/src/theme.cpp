@@ -407,7 +407,14 @@ std::string highContrastThemeCss(const HighContrastPalette& p) {
 std::expected<void, UiError> setTheme(UiContext& ui, const ThemeDesc& d) {
     const bool plain = !d.hasAccent && (d.variant != ThemeVariant::HighContrast || d.contrast == HighContrastPalette{});
     auto r = plain ? ui.setThemeStyleSheet(themeCss(d.variant)) : ui.setThemeStyleSheet(fullCss(d));
-    if (r) ui.markAllDirty();
+    if (r) {
+        // @media (prefers-color-scheme / prefers-contrast) of the application's own sheets follow the theme shown
+        const Color& w = d.contrast.window;
+        const bool dark = d.variant == ThemeVariant::Dark ||
+                          (d.variant == ThemeVariant::HighContrast && 0.2126f * w.r + 0.7152f * w.g + 0.0722f * w.b < 0.5f);
+        ui.setMediaTheme(dark, d.variant == ThemeVariant::HighContrast);
+        ui.markAllDirty();
+    }
     return r;
 }
 

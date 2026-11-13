@@ -24,7 +24,7 @@ using namespace fuse::text;
 using fuse::ui::test::finish;
 
 namespace {
-std::vector<std::uint8_t> readAll(const std::string& path) {
+[[maybe_unused]] std::vector<std::uint8_t> readAll(const std::string& path) { // (unused in a cross build of a non-COOKED profile)
     std::ifstream f(path, std::ios::binary);
     return std::vector<std::uint8_t>((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 }

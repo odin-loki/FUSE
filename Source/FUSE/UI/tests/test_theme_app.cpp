@@ -78,6 +78,51 @@ int main() {
     UI_CHECK(ui.computed(b).borderWidth < 2.f); // the outline rules left with the high-contrast sheet
     UI_CHECK_EQ(ui.styles().sheetCount(), before + 1);
 
+    // The application's own @media (prefers-color-scheme / prefers-contrast) rules follow the theme the window shows:
+    // applyTheme / widgets::setTheme drive UiContext::setMediaTheme. Tokens defined in such a block count only while
+    // it applies (paint code reads them through themeColor).
+    {
+        UI_CHECK(ui.addStyleSheet("@media (prefers-color-scheme: dark) { .probe { width: 11px; } :root { --probe: #112233; } } "
+                                  "@media (prefers-color-scheme: light) { .probe { width: 22px; } :root { --probe: #445566; } } "
+                                  ".probe { height: 5px; } "
+                                  "@media (prefers-contrast: more) { .probe { height: 33px; } } "
+                                  "@media (prefers-contrast: no-preference) { .probe { min-width: 3px; } }").has_value());
+        const NodeHandle probe = w::panel(ui, ui.root());
+        ui.addClass(probe, "probe");
+        settle();
+        UI_CHECK(!ui.mediaDark() && !ui.mediaMoreContrast()); // light was applied last
+        UI_CHECK(ui.computed(probe).width == Length::px(22.f) && ui.computed(probe).height == Length::px(5.f));
+        UI_CHECK(ui.themeColor(hashId("--probe"), {}) == Color::rgb(0x445566));
+        a.setSystemTheme(dark);
+        settle();
+        UI_CHECK(ui.mediaDark() && ui.computed(probe).width == Length::px(11.f));
+        UI_CHECK(ui.themeColor(hashId("--probe"), {}) == Color::rgb(0x112233));
+        UI_CHECK(ui.computed(probe).minWidth == Length::px(3.f));
+        a.setSystemTheme(contrast); // the default high-contrast palette is a dark one
+        settle();
+        UI_CHECK(ui.mediaDark() && ui.mediaMoreContrast());
+        UI_CHECK(ui.computed(probe).width == Length::px(11.f) && ui.computed(probe).height == Length::px(33.f));
+        UI_CHECK(!(ui.computed(probe).minWidth == Length::px(3.f)));
+        a.setSystemTheme(light);
+        settle();
+        UI_CHECK(ui.computed(probe).width == Length::px(22.f) && ui.computed(probe).height == Length::px(5.f));
+        // pinned by the application (ProjectHost ui.theme "dark" / "light"): widgets::setTheme answers the same way
+        win.setFollowSystemTheme(false);
+        UI_CHECK(w::setTheme(ui, w::ThemeVariant::Dark).has_value());
+        settle();
+        UI_CHECK(ui.mediaDark() && !ui.mediaMoreContrast());
+        UI_CHECK(w::setTheme(ui, w::ThemeVariant::HighContrast).has_value());
+        settle();
+        UI_CHECK(ui.mediaDark() && ui.mediaMoreContrast());
+        UI_CHECK(w::setTheme(ui, {.variant = w::ThemeVariant::HighContrast, .contrast = {.window = Color::rgb(0xFFFFFF), .windowText = Color::rgb(0x000000)}}).has_value());
+        settle();
+        UI_CHECK(!ui.mediaDark() && ui.mediaMoreContrast()); // a light high-contrast palette
+        UI_CHECK(w::setTheme(ui, w::ThemeVariant::Light).has_value());
+        win.setFollowSystemTheme(true); // applies the system theme (light) again
+        settle();
+        UI_CHECK(!ui.mediaDark() && !ui.mediaMoreContrast());
+    }
+
     // The client-side title bar (fuse::app::titleBar, also the Wayland client-side decoration) is styled from theme
     // tokens only: every theme switch restyles the bar and its buttons, and the close button's hover face is a token.
     {
