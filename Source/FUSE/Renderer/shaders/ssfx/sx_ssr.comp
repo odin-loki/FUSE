@@ -58,7 +58,15 @@ void main() {
             // Sky fallback: the ray left the screen / reached the sky at full confidence (x the gloss fade).
             const vec3 dir = sx_pixel_reflection(p.x, p.y);
             if (sx_sky_exit(P, p.x, p.y, dir)) {
-                result = vec4(sx_sky(sx_normalize(dir)), useRoughness ? sx_gloss_fade(P.maxDistance, r) : 1.0);
+                // The sky in a local and the fade by an `if`, not vec4(sx_sky(..), useRoughness ? sx_gloss_fade(..)
+                // : 1.0): with a call as a constructor argument next to the fade glslangValidator 15.1 runs out of
+                // memory on this file (more than 13 GB; it took the Linux CI runners down). Same values.
+                const vec3 sky = sx_sky(sx_normalize(dir));
+                float fade = 1.0;
+                if (useRoughness) {
+                    fade = sx_gloss_fade(P.maxDistance, r);
+                }
+                result = vec4(sky, fade);
             }
         }
     }

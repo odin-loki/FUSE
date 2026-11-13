@@ -27,9 +27,9 @@ implementations to port where both have one. Its FORGE submodule was not taken.
 | macOS | `fuse-core-ios.yml` (macOS job, MoltenVK headers) | Builds; headless gates pass |
 | iOS simulator | `fuse-core-ios.yml` (iOS job) | Builds and links |
 | FreeBSD 14 x86-64 | `fuse-ui-freebsd.yml` in a FreeBSD VM | Builds; headless gates pass |
-| Windows (MSVC release / profile / shipping / debug, clang-cl) | `fuse-windows-native.yml`, run 43370404838 | All five build with warnings as errors and run ctest (747 tests; shipping 670). Failing: `fuse_core_ui1_text_input` (all five) and `fuse_ui_bench_10k` (all but debug); see "Known failures" |
+| Windows (MSVC release / profile / shipping / debug, clang-cl) | `fuse-windows-native.yml`, runs 43370404838 and 43377707488 | All five build with warnings as errors and run ctest (747 tests; shipping 670). Failing: `fuse_core_ui1_text_input` (all five) and `fuse_ui_bench_10k` (all but debug); see "Known failures" |
 | Windows + Qt 6 editor | same run | Builds for the first time (it does not on `main`); `ctest -R editor`: 76 of 81, see "Known failures" |
-| Windows + Vulkan (build only) | same run | The two Slang shaders pass `spirv-val`; `demo_hybrid_hud` did not compile (`UiFrameSource::recordOver` missing), fixed after that run |
+| Windows + Vulkan (build only) | run 43377707488 | Builds |
 
 
 ## Never run
