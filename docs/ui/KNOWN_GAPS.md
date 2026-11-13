@@ -22,7 +22,7 @@ implementations to port where both have one. Its FORGE submodule was not taken.
 |---|---|---|
 | Linux (UI standalone) | Local build + ctest | After all ports (2026-11-13): MINIMAL 327/327 (4 skipped: no Vulkan device, FULL-only text gates), FULL 298/298 (2 skipped), COOKED 326/326 (7 skipped: real-font gates, FULL-only gates). Before the two branch merges 178/178 (MINIMAL), 177/177 (FULL) |
 | Linux (FUSE-UI editor shell, in tree, `-DFUSE_EDITOR_SHELL=fuse -DFUSE_BUILD_VULKAN=OFF`) | Local build + `ctest -L fuse_editor_ui` under Xvfb | Builds and links; 78 entries: 72 passed, 4 skipped (Vulkan), 2 failed (one gate under two names, `ui_frame`: its 8 ms full-window CPU raster budget measured 7.5 to 9.0 ms here). The rest of the in-tree suite was not run in that configuration |
-| Linux (whole engine, in-tree) | `fuse-umbrella-linux.yml`, run 43387912364 | 1454 of 1460 in the core job, Qt editor gates 44 of 47, single-thread and U8 present jobs pass; the `-Werror` and ASan jobs did not run (they need the core job). See "Known failures" |
+| Linux (whole engine, in-tree) | `fuse-umbrella-linux.yml`, run 43477707978 | 1457 of 1460 in the core job (two fail on `main` as well, one timed out once), Qt editor gates 44 of 47 (the three that fail on `main`), single-thread and U8 present jobs pass; the `-Werror` and ASan jobs have never run for this branch: they need the core job, which fails on `main` too. See "Known failures" |
 | Android arm64 (NDK r26d) | `fuse-core-android.yml` + local cross-build | Builds and links, apps as `lib<name>.so` |
 | macOS | `fuse-core-ios.yml` (macOS job, MoltenVK headers) | Builds; headless gates pass |
 | iOS simulator | `fuse-core-ios.yml` (iOS job) | Builds and links |
@@ -101,8 +101,14 @@ implementations to port where both have one. Its FORGE submodule was not taken.
   0.1 -> 1.5 s, material resolve 2.4 -> 3.6 s, lighting + VSM 0.75 -> 1.9 s). The SSRC kernels are now created
   by the first frame that enables SSRC (off by default), which leaves 12.3 s, and on a software device that phase
   is held to 20 s (`--boot-budget-software-gpu-ms`) while the rest of the boot keeps the 3 s. Nothing shortens the
-  kernel compile itself; every Lavapipe gate that builds a frame composer is about three times slower than on
-  `main` for the same reason.
+  kernel compile itself, so every Lavapipe gate that builds a frame composer stays slower than on `main`.
+- `fuse_ui_extras_notify` timed out (120 s) in the core job of run 43477707978 and passed in 8.8 s in the run
+  before (43387912364); the commit between them touches no UI code. The gate talks to the session D-Bus of the
+  runner. Not investigated.
+- `fuse_hybrid_renderer_bootstrap` fails in an in-tree build without a Vulkan loader (stub backend): "disabled
+  software placeholder skips RGBA buffer writes" (the first frame fills the placeholder buffer, nothing empties it
+  when the placeholder is switched off). The test and the code it runs are the same on `main`; no CI job builds
+  that configuration.
 - `Renderer/shaders/ssfx/sx_ssr.comp` is written around a glslangValidator 15.1 defect: with
   `vec4(sx_sky(..), useRoughness ? sx_gloss_fade(..) : 1.0)` the compiler allocated more than 13 GB and the hosted
   Linux runners were shut down mid-build ("the runner has received a shutdown signal"). Nothing guards against the

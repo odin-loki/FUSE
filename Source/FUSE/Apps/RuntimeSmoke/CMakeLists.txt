@@ -59,8 +59,8 @@ endif()
 # The Lavapipe variant below runs the GPU frame on a software rasteriser, where "hybrid renderer + 4 GPU frames" is
 # the driver compiling the frame composer's kernels on the CPU (LLVM): 4.7 s before the kernels took the correctly
 # rounded division / square root (common/exact_math) and the tiled light loop, 12.3 s with them on the machine that
-# measured both (7 to 8 s expected on a GitHub ubuntu-24.04 runner, which ran the 18.6 s of the unfixed tree in
-# 11.9 s). That phase gets its own budget there (--boot-budget-software-gpu-ms, applied only when the device is a
+# measured both (a GitHub ubuntu-24.04 runner ran the 18.6 s of the tree before the SSRC change in 11.9 s). That
+# phase gets its own budget there (--boot-budget-software-gpu-ms, applied only when the device is a
 # CPU one); everything else of the boot (about 60 ms) keeps the 3 s. On a hardware device the 3 s cover it all.
 if(TARGET fuse_audio AND FUSE_BUILD_PROJECT)
     target_link_libraries(fuse_runtime_smoke PRIVATE fuse_audio)
