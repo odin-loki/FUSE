@@ -39,13 +39,13 @@ immediate-mode front-end. See the plan's status table for what is still open.
 `fuse_ui_core` does not depend on `fuse_core`; the platform bridge is header-only.
 
 The tree also holds source files that no target builds yet: the UI work of the merged branch
-`claude/magical-bassi-815825` that still has to be ported onto this code (Wayland backend, cooked / MSDF / variable
+`claude/magical-bassi-815825` that still has to be ported onto this code (cooked / MSDF / variable
 fonts, the SVG icon cooker, AccessKit window adapters, GPU effects, `ProjectHost`, their tests
 and goldens). [`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md) lists every one of them, what blocks
 it and how to verify it once ported. Nothing in this document describes those files unless it says so.
 
 The same holds for the merged branch `gui-framework`: its `Extras/` modules that compile against this code are built
-(the row above); the rest of its UI work is in the tree unbuilt (a second Wayland backend, Cocoa /
+(the row above); the rest of its UI work is in the tree unbuilt (a second Wayland backend kept for its drag-out code, Cocoa /
 UIKit / Android backends with a Java activity, the CSS engine additions, GPU paths / filters / HDR, FORGE script
 bindings, rich text, SVG documents, media, more widgets). [`archive/PORT_gui_framework.md`](archive/PORT_gui_framework.md)
 is the list. Files of that branch whose path was already taken on main are kept under
@@ -215,7 +215,7 @@ fuse::app::Application app{{.name = "Hello", .argc = argc, .argv = argv}};
 fuse::app::NativePlatform native(app);                      // declare after the Application; installs the OS event source
 auto& w = app.createWindow({.title = "Hello", .width = 800, .height = 600});
 if (auto r = w.load("ui/main.fuseui", &model); !r) return 1;
-native.show(w);                                             // X11 / Win32 window + Vulkan swapchain (GDI on Win32 without Vulkan)
+native.show(w);                                             // X11 / Wayland / Win32 window + Vulkan swapchain (GDI / wl_shm / XPutImage without Vulkan)
 return app.run();                                           // sleeps until input, a timer or an animation needs a frame
 ```
 
@@ -231,6 +231,7 @@ Under Xvfb set `VK_ICD_FILENAMES` to lavapipe; under Wine the Win32 path and the
 | Platform | Backend | Present | Entry |
 |---|---|---|---|
 | Linux (X11), Windows | `App/src/native.cpp` | Vulkan swapchain; GDI on Win32 without Vulkan | `main` |
+| Linux / FreeBSD (Wayland) | `App/src/native_wayland.cpp` (protocol layer) + `native_wayland_platform.cpp`, built into the same library as the X11 backend and chosen at run time; `libwayland-client.so.0` (and optionally `libxkbcommon.so.0`, `libwayland-cursor.so.0`) are loaded at run time, so no Wayland headers or libraries at build time | Vulkan swapchain (`VK_KHR_wayland_surface`) when the build finds a Vulkan loader, else the CPU raster through `wl_shm` | `main` |
 | FreeBSD (X11) | `App/src/native.cpp` (same backend as Linux; `libX11.so.6` is loaded at run time) | Vulkan swapchain (`VK_KHR_xlib_surface`) when the build finds a Vulkan loader, else the CPU raster presenters only | `main` |
 | macOS | `App/src/native_apple.mm` (Cocoa `NSWindow`, `NSTextInputClient` IME, `NSPasteboard`) | Vulkan over a `CAMetalLayer` (MoltenVK) when the build finds a Vulkan loader, else the CPU raster as the layer contents | `main` |
 | iOS | `App/src/native_apple.mm` (UIKit `UIWindow`, touch, software keyboard through `UIKeyInput`) + `entry_ios.mm` | same as macOS | `UIApplicationMain`, which runs your `FUSE_APP_MAIN` |
@@ -298,7 +299,7 @@ Things that differ on these platforms:
   column edges, header sections, video seek bar); `setCapturesDrag(node, true)` does it for one node. On touch a
   drag over a text / code edit scrolls it; selecting by dragging is a mouse feature. Lists and tables select the row
   on the press, so a pan that starts on a row selects it. One finger drives the UI; there is no pinch.
-- Popups are overlays inside the window (`osPopups` is X11 / Win32 only). Packaging: see below.
+- Popups are overlays inside the window (`osPopups` is X11 / Win32 / Wayland only). Packaging: see below.
 
 These backends are compiled in CI (`fuse-core-android.yml`, `fuse-core-ios.yml`) and have not been run on a device.
 
@@ -404,6 +405,58 @@ fuse::app::openUrl("https://example.org");
 - **Frame pacing.** `AppWindow::setMaxFrameRate(hz)` caps a window whose presenter does not wait for the display
   (`Presenter::vsynced` false): a `Continuous` window sleeps between frames instead of spinning. 0 = unlimited.
 - **Synthetic input** for tests: `postClick`, `postPointerMove`, `postPointerButton`, `postClose` (X11 / Win32).
+
+#### Wayland (Linux / FreeBSD)
+
+The same `NativePlatform` runs on Wayland; nothing in the application changes. Which window system is used is
+decided when the `NativePlatform` is constructed:
+
+1. `NativeOptions::backend` (`NativeBackend::X11` / `Wayland`) when not `Auto`,
+2. else `$FUSE_UI_BACKEND` = `x11` | `wayland`,
+3. else Wayland when `$WAYLAND_DISPLAY` is set, `libwayland-client.so.0` loads and a compositor with `wl_compositor`,
+   `wl_shm` and `xdg_wm_base` answers,
+4. else X11 (`$DISPLAY`, which under a Wayland session is XWayland).
+
+A backend forced by 1 or 2 that cannot start leaves the platform unavailable (`available()` false, `lastError()`
+says why, windows stay headless); only the automatic choice falls back. `NativePlatform::backend()` reports the one
+in use. Every ctest gate other than the two Wayland ones runs with `FUSE_UI_BACKEND=x11`.
+
+```cpp
+fuse::app::NativePlatform native(app, {.backend = fuse::app::NativeBackend::Wayland}); // or leave it Auto
+if (native.backend() == fuse::app::NativeBackend::Wayland) { /* nativeDisplay() is the wl_display*, nativeWindow(w) the wl_surface* */ }
+```
+
+What the Wayland backend does:
+
+- **Windows.** `xdg_toplevel` per `AppWindow`; title, app id (the `Application` name), size limits, maximise,
+  fullscreen, restore, minimise, hide / show, close through the close guard. The compositor's configure sets the
+  size and the mode (`AppWindow::mode()`, `WindowEvent::ModeChanged`), its `activated` state is `AppWindow::active()`.
+  Coming back from maximise / fullscreen restores the size from before. `resizeWindow` sets the size directly (the
+  client owns it on Wayland).
+- **Present.** With Vulkan: a swapchain on the `wl_surface`. Without: the CPU raster in `wl_shm` buffers (XRGB8888,
+  three rotating buffers), throttled by `wl_surface.frame`: while the compositor has not shown the last frame the
+  next one is held back and drawn when the callback arrives (or after 100 ms without one, e.g. an occluded window).
+- **HiDPI.** `wp_fractional_scale_v1` + `wp_viewporter` when offered (the window's scale is the compositor's
+  preferred one, e.g. 1.5; the buffer is logical size x scale and a viewport maps it back), else the integer
+  `wl_output` scale. `NativeOptions::scale` or `$FUSE_UI_SCALE` force a factor (fractional ones need
+  `wp_viewporter`). A change arrives as `WindowEvent::ScaleChanged`.
+- **Input.** `wl_pointer` (buttons, wheel steps, smooth finger scrolling in pixels), `wl_keyboard` with the
+  compositor's xkb keymap through libxkbcommon and key repeat at the compositor's rate (without libxkbcommon: a US
+  layout table), `wl_touch` into the multi-touch path (`UiContext::touchDown / touchMove / touchUp` with the touch
+  id, so taps, pans, flings, pinch and rotate work), `zwp_text_input_v3` pre-edit and commit while a text field has
+  focus.
+- **Cursors.** `wp_cursor_shape_v1` when offered, else theme cursors through libwayland-cursor (`$XCURSOR_THEME`,
+  `$XCURSOR_SIZE`); `Cursor::Hidden` hides it.
+- **Clipboard and drops.** Text through `wl_data_device` (`text/plain;charset=utf-8`, `UTF8_STRING`, `text/plain`);
+  a drop of `text/uri-list` or text from another client goes to `UiContext::dragExternalMove / dropExternal`
+  (`kDragFiles` with one path per line, or `kDragText`).
+- **Decorations.** Server side through `xdg-decoration` when the compositor has it (KDE, sway, labwc).
+  Without it (GNOME, weston) the window has no frame: see `KNOWN_GAPS.md`.
+- **Popups.** In-window overlays by default; with `NativeOptions::osPopups` each popup is an `xdg_popup` placed by
+  an `xdg_positioner` relative to the window (submenus on the menu's popup), grabbed with the press that opened it.
+- **Not possible by protocol**, and reported as such: `setPosition` and `activate` return false, `position()` and
+  `screenOrigin` stay 0, minimise sends the request but `mode()` never reads `Minimized`, `postClick` is delivered
+  inside the process, `capture()` reads the app's last committed buffer.
 
 The macOS / iOS parts are compiled in CI only; the Win32 parts are cross-compiled with MinGW and have not been run
 (that includes all of `App/src/native_platform_win32.inl`: tool windows, chrome, OLE drag and drop, clipboard formats,
@@ -921,6 +974,8 @@ checks it against the overlay under one scripted event stream.
 
 | `fuse_app_idle_zero_frames`, `fuse_app_multiwindow`, `fuse_app_hello_startup`, `fuse_app_settings` | UI5 loop, windows, startup ≤ 150 ms, settings / command line / single instance |
 | `fuse_app_native_window` | real X11 / Win32 window, Vulkan GPU-draw and CPU-upload presenters vs the CPU raster (skips 77 without a display or device) |
+| `fuse_app_wayland` | Wayland backend: protocol tables against libwayland-client's, xkb keymap vs the fallback table, backend selection, wheel / uri-list maths, clean failure without a compositor (always); then under a headless weston it starts itself (output scale 1 and 2): `wl_shm` buffer == CPU raster, injected click / key, frame throttle, resize, title, size limits, maximise / fullscreen / restore, hide / show, close guard, fractional 1.5 through a viewport, `xdg_popup` menus, a child tool toplevel, the Vulkan presenter when the build has one (skips 77 without libwayland-client or weston) |
+| `fuse_app_wayland_seat` | the seat against an in-process compositor on libwayland-server: real `wl_pointer` / `wl_keyboard` (keymap, Shift, repeat) / `wl_touch` (tap, pan, cancel) events, wheel steps and finger scrolling, cursor shapes, clipboard both ways, a `text/uri-list` drop, text-input-v3 pre-edit / commit, fractional scale, server-side decoration, compositor-sent maximise / restore, compositor exit (skips 77 without libwayland-server / -client / libxkbcommon) |
 | `fuse_app_cursor_resolution`, `fuse_app_menu_description`, `fuse_app_dpi_scale`, `fuse_app_theme_restyle`, `fuse_app_window_state`, `fuse_app_file_dialog_fallback` | platform services, headless: cursor from styles / hooks / hover / drag, `MenuDesc` -> in-window menu bar, scale detection maths and pixel mapping, theme change -> restyle, window state API + events + close guard, toolkit file-dialog fallback and helper command lines |
 | `fuse_app_native_services` | the same on real X11 windows under Xvfb: scale-2 window and popup vs the CPU raster, clicks in window pixels, applied cursors, CLIPBOARD between two connections, position / show / hide / focus / size limits, displays, `zenity` / `xdg-open` helpers (skips 77 without a display) |
 | `fuse_app_saved_state`, `fuse_app_window_chrome`, `fuse_app_dialog_helpers`, `fuse_app_clipboard_png`, `fuse_app_frame_pacing`, `fuse_app_tool_surfaces` | the platform layer, headless (`tests/test_app_platform.cpp`): UI state + window geometry through `saveState` / `restoreState` and a state file; `WindowFrame` / `titleBar` / `chromeHitTest` regions and title-bar commands; zenity / kdialog command lines, colour / path / uri-list / XSETTINGS parsers; the `image/png` clipboard codec; `setMaxFrameRate` on a virtual clock; `setOsWindows` surfaces of floating docks and `dragFinishExternal` |

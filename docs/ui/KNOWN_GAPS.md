@@ -4,14 +4,14 @@ Status as of 2026-11-12, branch `ccr-111d9b83-2iujo8`. This lists what is missin
 nobody mistakes "compiles in CI" for "works on a device". Phase-by-phase detail is in
 [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md) §9; usage is in [`README.md`](README.md).
 
-Several gaps below (cooked / MSDF / variable fonts, Wayland, the icon cooker, GPU blur, damage present, custom
+Several gaps below (cooked / MSDF / variable fonts, the icon cooker, GPU blur, damage present, custom
 shaders, `ProjectHost`) have an implementation in the tree that no target builds yet: the UI code of the merged
 branch `claude/magical-bassi-815825`. They stay gaps until ported; [`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md)
 says where each one is and what blocks it.
 
 The merged branch `gui-framework` is in the same position: part of its `Extras/` module is live (`fuse_ui_os`,
 `fuse_ui_extras`: undo, declarative bindings, PDF, desktop helpers, tray, web view, charts, 3D data visualisation);
-everything else of it (a second Wayland backend, OS drag and drop, `@keyframes` and the other CSS engine work, GPU
+everything else of it (a second Wayland backend whose drag-out and subsurface tool windows are not ported, OS drag and drop, `@keyframes` and the other CSS engine work, GPU
 paths / filters / HDR, more widgets, rich text, SVG documents, media) is in the tree unbuilt and listed in
 [`archive/PORT_gui_framework.md`](archive/PORT_gui_framework.md), which also says which of the two branches'
 implementations to port where both have one. Its FORGE submodule was not taken.
@@ -104,11 +104,33 @@ pushed after those CI runs and re-checked on Linux only.
 - Android: no IME string commits (needs a Java `InputConnection`), no pointer icons, no system file picker, no
   refresh-rate query; theme-change notification needs `android:configChanges="uiMode"`.
 - No gamepad backend in `fuse_app` (the `game_menu` sample takes pad input from a script or the host).
-- X11: one scale per connection, no Wayland backend. XSETTINGS (DPI, theme, cursor theme) is read from the settings
+- X11: one scale per connection. XSETTINGS (DPI, theme, cursor theme) is read from the settings
   manager that owns the selection when the platform starts; one that starts later is not noticed. No XIM pre-edit
   (text input is `XLookupString`: Latin-1, no input methods), no RandR change notification, no clipboard `MULTIPLE`
   target, no hand-over to a clipboard manager at exit.
-- Popups as separate OS windows exist on X11 / Win32 only. One OS window per process on Android / iOS.
+- Wayland (`App/src/native_wayland.cpp`, `native_wayland_platform.cpp`; gates `fuse_app_wayland`,
+  `fuse_app_wayland_seat`):
+  - Run against headless weston 13 (desktop shell, output scale 1 and 2) and against the test's own in-process
+    compositor. It has not run on GNOME (mutter), KDE (kwin), sway / wlroots or on real hardware; the seat paths
+    (pointer, keyboard, touch, clipboard, drops, IME, fractional scale, cursor shapes) have only met the in-process
+    compositor, which checks the wire protocol and not a desktop's behaviour.
+  - Decorations: server side through `xdg-decoration` only. GNOME does not offer it, so windows there have no title
+    bar or borders (no client-side frame is drawn and libdecor is not used). `wl::beginMove` / `beginResize` exist for
+    a client-side frame; nothing calls them yet.
+  - No drag from the app out to other clients (`wl_data_device.start_drag`), no primary selection on
+    `NativePlatform` (the protocol layer has it), clipboard is text only, no tablet tools, no `xdg-activation`
+    (`AppWindow::activate()` reports false), no `xdg_popup.reposition` (a popup that moves is made again), no
+    tool-window API on `NativePlatform` (the protocol layer has child toplevels).
+  - By protocol: no window position (`setPosition` false, `position()` and `screenOrigin` stay 0), minimise has no
+    state (`mode()` never reports `Minimized`), `postClick` is delivered in-process, `capture()` reads the last
+    buffer the app committed, not the screen.
+  - The Vulkan presenter on `VK_KHR_wayland_surface` was run with lavapipe only (a private build against an unpacked
+    Mesa; the default build on the gate machine has no Vulkan loader, so the gate's Vulkan part does not run there).
+    No frame-callback throttle on the Vulkan path (the swapchain's FIFO mode paces it).
+  - Key repeat runs on the event pump's timeout; keys held while the loop is stalled repeat at most 8 times per
+    wake-up.
+- Popups as separate OS windows exist on X11 / Win32 / Wayland (`xdg_popup`). One OS window per process on Android /
+  iOS.
 - macOS: moving a window to a screen with a different backing scale is picked up only on the next layout.
 - Native dialogs block the app's windows while open. No custom image cursors. Multi-file selection, colour and
   message dialogs exist only as the window-less functions (zenity / kdialog on Linux / BSD, Win32 not run, nothing

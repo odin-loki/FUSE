@@ -9,14 +9,20 @@
 namespace fuse::app::detail {
 
 struct SurfaceSource {
-    enum Kind { Xlib, Win32, Android, Metal } kind = Xlib;
+    enum Kind { Xlib, Win32, Android, Metal, Wayland } kind = Xlib;
     void* display = nullptr;        ///< X11 Display*
     unsigned long xwindow = 0;      ///< X11 Window
     void* hinstance = nullptr;      ///< Win32 HINSTANCE
     void* hwnd = nullptr;           ///< Win32 HWND
     void* nativeWindow = nullptr;   ///< Android ANativeWindow*
     void* metalLayer = nullptr;     ///< macOS / iOS CAMetalLayer* (VK_EXT_metal_surface, MoltenVK)
+    void* wlDisplay = nullptr;      ///< Wayland wl_display* (VK_KHR_wayland_surface)
+    void* wlSurface = nullptr;      ///< Wayland wl_surface*
 };
+
+/// X11 / xkbcommon keysym -> UI key (the two share the values); Key::Other when the key set has no such key. The
+/// Wayland backend's table; native.cpp keeps its own x11::mapKey with the same content.
+fuse::ui::Key keysymKey(unsigned long sym);
 
 /// Printable ASCII -> UI key (letters either case, digits, space, brackets); 0 when the key set has no such key.
 inline fuse::ui::u8 asciiKey(fuse::ui::Key& k, fuse::ui::u32 c) {

@@ -41,8 +41,10 @@ because the branch vendors `NotoSansThai-Regular.ttf` and `NotoSansCJKsc-Subset.
 | `JsonValue` out-of-line special members (Clang < 19 with libstdc++ 14) | `U/Doc/include/fuse/ui/doc/json.hpp`, `U/Doc/src/json.cpp` | every `fuse_ui_doc_*` gate |
 | `FUSE_INSTRUMENTED_RUN` switch for wall-clock budgets (`timingBudgetsEnforced`) | `U/tests/test_env.hpp` (new), used by `test_app.cpp`, `test_bench_10k.cpp` | `fuse_app_hello_startup`, `fuse_ui_bench_10k` |
 | HUD benchmark executable | `U/tests/test_bench_hud.cpp`, `U/Game/samples/hud_bench_scene.hpp` (new). Built always; the ctest gate is registered only with `-DFUSE_UI_PORTING_BENCH_HUD=ON` (§3.12) | (not registered by default) |
+| Wayland backend of `fuse_app_native` (was 3.6): xdg-shell toplevels, `wl_shm` and Vulkan present, pointer / keyboard / touch, integer and fractional scale, cursor shapes, text clipboard, drops, text-input-v3, xdg-decoration, `osPopups` as xdg_popups, icons. Backend choice: `NativeOptions::backend`, `$FUSE_UI_BACKEND` (the branch's `$FUSE_APP_BACKEND` is gone), then `$WAYLAND_DISPLAY` | `U/App/src/native_wayland.cpp` + `wayland_internal.hpp` (the branch's protocol layer, adapted: main's `Cursor`, `WindowBackend` / `AppWindow::notify*` instead of the branch's chrome hooks and `platform.hpp`; added `wl_touch`, wheel steps / smooth axis, the frame-callback throttle, hide / show, size limits, restore size, `FreeBSD` shm file, connection loss); `U/App/src/native_wayland_platform.{hpp,cpp}` (new: the `NativePlatform` side); dispatch seam in `U/App/src/native.cpp` (`FUSE_APP_WL`), `native_services.inl` (2 lines); `SurfaceSource::Wayland` in `native_internal.hpp` / `vk_present.cpp`; `NativeBackend` in `native.hpp` | `fuse_app_wayland` (`U/tests/test_app_wayland.cpp`, rewritten for main: headless weston started by the gate), `fuse_app_wayland_seat` (`U/tests/test_app_wayland_seat.cpp`, new: in-process compositor) |
 
 Standalone UI build on Linux after the merge: 180 ctest gates (the 178 main had, `fuse_ui_l10n`, `fuse_ui_script_bind`).
+With the Wayland port: +2 (`fuse_app_wayland`, `fuse_app_wayland_seat`).
 
 Non-UI code that includes UI headers and compiles against main's UI (syntax-checked, not linked: the full engine does
 not build on the merge machine): `Source/FUSE/Apps/HybridHud/hud_ui.cpp`, `Source/FUSE/Renderer/tests/test_scene_renderer_vk.cpp`
@@ -231,18 +233,32 @@ Items tagged **editor** are needed before `-DFUSE_EDITOR_SHELL=fuse` compiles (�
   `fuse_app_idle_native`, `fuse_app_input_latency`, `fuse_app_native_startup`, `fuse_app_binary_size`; main's
   `fuse_app_native_services` and `fuse_app_native_window` unchanged. All need Xvfb.
 
-### 3.6 Wayland backend (L)
+### 3.6 Wayland backend: ported (2026-11-13), remainder (S-M)
 
-- **What**: plan phase UI11. xdg-shell, xdg_popup, child tool windows, fractional scale, clipboard / primary
-  selection / drops, text-input-v3; libwayland-client, xkbcommon and wayland-cursor loaded at run time, protocol
-  tables written out (no wayland-scanner).
-- **In the tree, unbuilt**: `U/App/src/native_wayland.cpp` (2093 lines), `wayland_internal.hpp`;
-  `U/tests/test_app_wayland.cpp`, `test_app_wayland_parity.cpp`, `wayland_peer.hpp`.
-- **Blocks**: depends on 3.5 (`platform.hpp` types, `clipboard.hpp`, the branch's `native_internal.hpp` backend
-  seam, `CursorShape` in `fuse::ui`). Backend choice is by `FUSE_APP_BACKEND` and `WAYLAND_DISPLAY`. `gui-framework`
-  has a second Wayland backend (`App/src/wayland.cpp`): pick one when that branch is merged.
-- **Verify**: `fuse_app_wayland`, `fuse_app_wayland_popups` (headless weston), `fuse_app_wayland_seat` (headless
-  sway with a second client driving the seat); the gates skip (77) without a compositor.
+The backend is live: see §2. `native_wayland.cpp`, `wayland_internal.hpp` and `tests/test_app_wayland.cpp` are built
+(adapted in place). What of the branch is **not** ported:
+
+- **Still parked, unbuilt**: `U/tests/test_app_wayland_parity.cpp` (841 lines) and `U/tests/wayland_peer.hpp` (658
+  lines, a second Wayland client on its own thread). They are the branch's `fuse_app_wayland_popups` and
+  `fuse_app_wayland_seat` gates. Their popup checks (xdg_popup vs the CPU raster, a click on an item outside the
+  window, a child tool toplevel) are now part of `fuse_app_wayland`; real seat events are covered by main's new
+  `fuse_app_wayland_seat` against an in-process compositor. Not covered anywhere, and the reason the two files stay:
+  a headless **sway** run with the second client driving `zwlr_virtual_pointer_v1` / `zwp_virtual_keyboard_v1`
+  (grabbed popups ended by an outside click, keys driving a grabbed menu), live per-output scale changes
+  (`swaymsg output scale`), an input method client (`zwp_input_method_v2`), clipboard formats beyond text
+  (image/png, custom MIME, lazy items) and the primary selection end to end, a drag from the second client. They
+  need mb 3.5's `clipboard.hpp` and `NativePlatform::postPointerMove / postPointerButton / postClose /
+  windowFocused`, none of which main has, and a sway binary (not installed on the port machine).
+- **In the protocol layer but with no `NativePlatform` API on main**: primary selection (`wl::setSelection(...,
+  primary = true)`), child tool toplevels (`wl::createTool`, `moveChild`, `resizeChild`: wire them to the tool-window
+  API when mb 3.5 / gf 3.5 lands), interactive move / resize for a client-side frame (`wl::beginMove`,
+  `beginResize`: for 3.7 window chrome; the branch's `chromeHitTest` hooks were removed from the pointer path).
+- **Dropped**: the branch's `asyncVulkan` start (main's presenter creation is synchronous), tablet tool cursor
+  shapes (the interface table is there, nothing binds a tablet seat), `$FUSE_APP_BACKEND` (now `$FUSE_UI_BACKEND`),
+  the rule "X11 when `$DISPLAY` is set" (now Wayland first when `$WAYLAND_DISPLAY` is set).
+- **Verify**: `fuse_app_wayland` (headless weston 13: passes), `fuse_app_wayland_seat` (in-process compositor:
+  passes); the Vulkan part of `fuse_app_wayland` needs a build with a Vulkan loader and an ICD with
+  `VK_KHR_wayland_surface` (run once with lavapipe: GPU draw, 0 pixels off the CPU raster).
 
 ### 3.7 Window chrome (M)
 

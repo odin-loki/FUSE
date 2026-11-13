@@ -3,7 +3,10 @@
 // straight into a storage image (GpuDraw) or by the CPU rasteriser and uploaded (CpuUpload); either result is blitted
 // into the swapchain image and presented. Without a Vulkan device the CPU raster is shown by the OS: GDI on Win32
 // (StretchDIBits), a CALayer's contents on macOS / iOS, ANativeWindow_lock on Android, XPutImage on X11 (24 / 32 bit
-// TrueColor visuals; deeper or shallower ones keep the window but cannot draw it).
+// TrueColor visuals; deeper or shallower ones keep the window but cannot draw it), wl_shm buffers on Wayland.
+// Linux / BSD have two window systems, X11 and Wayland (a runtime-loaded libwayland-client), picked when the
+// NativePlatform is made: see NativeBackend. What Wayland cannot do by protocol (window position, activation, a
+// minimised state) is reported as "cannot"; docs/ui/README.md has the list.
 //
 // Mobile and macOS notes:
 //  - Android and iOS own the process entry point. Include fuse/app/main.hpp and define the entry as
@@ -67,17 +70,26 @@ struct ExternalTexture {
     void* view = nullptr;   ///< VkImageView, sampled usage
     unsigned layout = 0;    ///< its VkImageLayout when the UI frame is submitted; restored after the UI pass
 };
+/// The window system of a Linux / BSD desktop (the other platforms have one and ignore it).
+enum class NativeBackend : fuse::ui::u8 {
+    Auto,    ///< $FUSE_UI_BACKEND (x11 | wayland) if set; else Wayland when $WAYLAND_DISPLAY is set and libwayland-client
+             ///< loads and a compositor answers; else X11 ($DISPLAY)
+    X11,     ///< libX11 (also under XWayland)
+    Wayland, ///< libwayland-client: xdg-shell toplevels, wl_shm / VK_KHR_wayland_surface (see docs/ui/README.md)
+};
 struct NativeOptions {
     VulkanDeviceHandles adoptDevice{}; ///< instance + device set: present on that device (see VulkanDeviceHandles)
     bool vulkan = true;            ///< false: never create a Vulkan presenter
     VkDrawMode drawMode = VkDrawMode::Auto;
     bool vsync = true;             ///< FIFO (true) or MAILBOX / IMMEDIATE when available
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
-    /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
+    /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows;
+    /// Wayland: xdg_popups placed relative to the window (the compositor keeps them on screen).
     bool osPopups = false;
     /// Logical-unit scale: UI units = display pixels / scale. 0 = the OS content scale (Android density / 160,
     /// UIScreen / NSScreen scale, Win32 monitor DPI / 96, X11 $FUSE_UI_SCALE, else XSETTINGS Xft/DPI (followed
-    /// live: every window is re-scaled when it changes), else Xft.dpi / 96, else $GDK_SCALE, else 1); 1 = work in
+    /// live: every window is re-scaled when it changes), else Xft.dpi / 96, else $GDK_SCALE, else 1; Wayland
+    /// $FUSE_UI_SCALE, else the compositor's preferred fractional scale, else the wl_output scale); 1 = work in
     /// physical pixels. The frame is always rendered at the display's pixel size (the window's
     /// AppWindow::scale() is set to this).
     float scale = 0.f;
@@ -85,14 +97,18 @@ struct NativeOptions {
     /// (widgets::dockFloat) - each get their own borderless OS window owned by the main one, placed at window origin
     /// + node rect, so a floated panel can leave the main window. Pointer input comes back in context coordinates,
     /// keys keep going to the main window. X11: override-redirect utility windows; Win32: WS_EX_TOOLWINDOW owned
-    /// popups. Elsewhere, and when off (the default), floating docks stay in-window panels.
+    /// popups. Elsewhere (Wayland included), and when off (the default), floating docks stay in-window panels.
     bool osWindows = false;
-    /// OS drag and drop (X11: XDND v5; Win32: OLE). In: files / text dragged from another application reach the
-    /// window's drop targets through UiContext::dragExternalMove / dropExternal (DragData type kDragFiles with
-    /// LF-separated paths in `text`, or kDragText). Out: a drag started in the UI (UiContext::beginDrag) whose data
-    /// is kDragText / kDragFiles continues over other applications once the pointer leaves the app's windows; the
-    /// source gets DragEnd with what the other side did (UiContext::dragFinishExternal).
+    /// OS drag and drop (X11: XDND v5; Win32: OLE; Wayland: drops in only). In: files / text dragged from another
+    /// application reach the window's drop targets through UiContext::dragExternalMove / dropExternal (DragData type
+    /// kDragFiles with LF-separated paths in `text`, or kDragText). Out (X11 / Win32): a drag started in the UI
+    /// (UiContext::beginDrag) whose data is kDragText / kDragFiles continues over other applications once the pointer
+    /// leaves the app's windows; the source gets DragEnd with what the other side did
+    /// (UiContext::dragFinishExternal).
     bool dragAndDrop = true;
+    /// Linux / BSD: which window system to use. A forced backend (here or by $FUSE_UI_BACKEND) that cannot start
+    /// leaves the platform unavailable (headless) instead of falling back to the other one.
+    NativeBackend backend = NativeBackend::Auto;
 };
 
 #if defined(__ANDROID__)
@@ -113,6 +129,8 @@ public:
     /// True when an OS display connection is open (X11: $DISPLAY; Win32 / macOS: always; iOS: inside
     /// UIApplicationMain; Android: an android_app is set).
     bool available() const;
+    /// Linux / BSD: the window system in use (X11 or Wayland); Auto when none is open and on the other platforms.
+    NativeBackend backend() const;
     /// Opens an OS window for `w` (title / size from its WindowDesc) and installs the best presenter.
     PresenterKind show(AppWindow& w);
     PresenterKind kind(const AppWindow& w) const;
@@ -123,8 +141,9 @@ public:
     std::string_view lastError() const;
     /// Reads back what the OS shows in the window's client area (tests / screenshots of real windows).
     bool capture(const AppWindow& w, fuse::ui::Image& out);
-    /// Native handles: X11 Display* / Window, Win32 HINSTANCE / HWND, macOS NSApplication* / NSWindow*, iOS
-    /// UIApplication* / UIWindow*, Android android_app* / ANativeWindow* (0 when not shown).
+    /// Native handles: X11 Display* / Window, Wayland wl_display* / wl_surface*, Win32 HINSTANCE / HWND, macOS
+    /// NSApplication* / NSWindow*, iOS UIApplication* / UIWindow*, Android android_app* / ANativeWindow* (0 when not
+    /// shown).
     void* nativeDisplay() const;
     /// Binds `tex` to external slot `slot` (0..3) of the window's GPU draw kernel; images whose externalSlot == slot
     /// then show it. Re-set it whenever the image, view or its layout change (each engine frame). False when the
@@ -156,7 +175,8 @@ public:
     /// AppWindow::scale().
     float scale(const AppWindow& w) const;
     /// Posts a real left click to a native window (XSendEvent / PostMessage) at window-local `at` (window pixels); it
-    /// is then delivered by the normal event pump (tests drive popup windows this way).
+    /// is then delivered by the normal event pump (tests drive popup windows this way). Wayland has no way to post
+    /// input to a surface: the click is delivered inside the process, below the wl_pointer handlers.
     bool postClick(unsigned long long nativeWin, fuse::ui::Vec2 at);
     /// Posts a pointer move / a left button press or release / a close request (the title-bar close button) to a
     /// native window at window-local device pixels `at`; delivered by the normal event pump. `at` may lie outside

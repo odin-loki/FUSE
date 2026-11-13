@@ -502,3 +502,36 @@ if(TARGET fuse_ui_extras_tests)
     add_test(NAME fuse_ui_extras_notify COMMAND fuse_ui_extras_tests --gate=notify)
     set_tests_properties(fuse_ui_extras_notify PROPERTIES LABELS "fuse_ui;gate" TIMEOUT 120)
 endif()
+
+# ---- Wayland backend of fuse_app_native (Linux / BSD; port list mb 3.6 + gf 3.2) ----
+# fuse_app_wayland: protocol tables / keymaps / backend selection without a compositor, then real windows under a
+# headless weston the gate starts itself (found in PATH or $FUSE_TEST_WESTON at run time; exit 77 without one or
+# without libwayland-client). fuse_app_wayland_seat: the seat (pointer, keyboard, touch, scroll, clipboard, drops,
+# IME, fractional scale) against a small compositor the test runs in-process on libwayland-server (exit 77 without it).
+if(TARGET fuse_app_native AND UNIX AND NOT APPLE AND NOT ANDROID)
+    find_package(Threads REQUIRED)
+    foreach(g fuse_app_wayland fuse_app_wayland_seat)
+        if(g STREQUAL "fuse_app_wayland")
+            add_executable(${g} test_app_wayland.cpp)
+        else()
+            add_executable(${g} test_app_wayland_seat.cpp)
+        endif()
+        target_link_libraries(${g} PRIVATE fuse_app_native fuse_ui_widgets Threads::Threads ${CMAKE_DL_LIBS})
+        target_include_directories(${g} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME ${g} COMMAND ${g})
+        set_tests_properties(${g} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300 LABELS "fuse_ui;gate"
+            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+    endforeach()
+    # Every other gate keeps testing what it was written for: on a developer's Wayland session NativePlatform would
+    # pick Wayland ($WAYLAND_DISPLAY), so they pin X11. Deferred to the end of this directory so that gates added
+    # below this block are covered too.
+    function(fuse_ui_pin_x11_gates)
+        get_property(_all DIRECTORY PROPERTY TESTS)
+        foreach(t IN LISTS _all)
+            if(NOT t MATCHES "^fuse_app_wayland")
+                set_property(TEST ${t} APPEND PROPERTY ENVIRONMENT "FUSE_UI_BACKEND=x11")
+            endif()
+        endforeach()
+    endfunction()
+    cmake_language(DEFER CALL fuse_ui_pin_x11_gates)
+endif()

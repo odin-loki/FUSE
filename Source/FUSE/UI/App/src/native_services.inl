@@ -275,7 +275,7 @@ bool NativePlatform::Impl::windowRequest(void* user, AppWindow& w, WindowRequest
 SystemTheme NativePlatform::systemTheme() {
     // X11 has no theme protocol of its own. GTK_THEME was read at start; the GNOME / portal setting is asked once
     // through gsettings when present. No change notification (XSETTINGS is not implemented): Unknown stays Unknown.
-    if (m->dpy && !m->themeQueried) {
+    if ((m->dpy || m->wl) && !m->themeQueried) { // the same on Wayland: the setting is the desktop's, not the protocol's
         m->themeQueried = true;
         if (m->app.systemTheme().scheme == ColorScheme::Unknown && findInPath("gsettings")) {
             std::string out;
@@ -287,6 +287,7 @@ SystemTheme NativePlatform::systemTheme() {
     return m->app.systemTheme();
 }
 std::vector<DisplayInfo> NativePlatform::displays() const {
+    if (m->wl) return m->wl->displays(); // wl_output
     std::vector<DisplayInfo> out;
     if (!m->dpy) return out;
     auto& x = m->x;

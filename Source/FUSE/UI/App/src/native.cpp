@@ -42,6 +42,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 extern char** environ;
+#include "native_wayland_platform.hpp" // the Wayland backend (chosen at run time, see NativeOptions::backend)
+#include "wayland_internal.hpp"
 #endif
 
 namespace fuse::app {
@@ -332,6 +334,7 @@ struct NativePlatform::Impl {
     void revokeDrop(Rec& r);
     void dragOutCheck(Rec& r);
 #else
+    std::unique_ptr<detail::WaylandPlatform> wl; ///< set: Wayland is the window system, everything X11 below is unused
     x11::Lib x;
     x11::Display* dpy = nullptr;
     x11::Atom wmProtocols = 0, wmDelete = 0;
@@ -484,6 +487,14 @@ struct NativePlatform::Impl {
         return nullptr;
     }
 };
+
+// The Wayland seam: with the Wayland backend open (Linux / BSD) the public call goes to it.
+#if defined(_WIN32)
+#define FUSE_APP_WL(call)
+#else
+#define FUSE_APP_WL(call) \
+    if (m->wl) return m->wl->call
+#endif
 
 void NativePlatform::Impl::syncPopups(Rec& r) {
     if (!opts.osPopups || !r.handle) return;
@@ -1305,6 +1316,16 @@ bool NativePlatform::Impl::captureX(unsigned long win, unsigned w, unsigned h, I
 
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
     const char* disp = std::getenv("DISPLAY");
+    {
+        const char* be = std::getenv("FUSE_UI_BACKEND");
+        const char* wd = std::getenv("WAYLAND_DISPLAY");
+        const std::string_view env = be ? be : "";
+        if (wl::chooseBackend(o.backend, env, wd ? wd : "") == NativeBackend::Wayland) {
+            m->wl = detail::WaylandPlatform::open(app, o, m->error);
+            if (m->wl || wl::backendForced(o.backend, env)) return; // forced: no fallback to X11
+            m->error.clear(); // no compositor / no libwayland-client: X11 (XWayland) when there is a DISPLAY
+        }
+    }
     if (disp && *disp && m->x.load()) {
         m->dpy = m->x.OpenDisplay(nullptr);
         if (m->dpy) {
@@ -1338,11 +1359,21 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
     }
     if (m->dpy) app.setEventSource({m.get(), &Impl::pump});
 }
-bool NativePlatform::available() const { return m->dpy != nullptr; }
-void* NativePlatform::nativeDisplay() const { return m->dpy; }
+bool NativePlatform::available() const { return m->wl || m->dpy != nullptr; }
+void* NativePlatform::nativeDisplay() const {
+    FUSE_APP_WL(nativeDisplay());
+    return m->dpy;
+}
+NativeBackend NativePlatform::backend() const { return m->wl ? NativeBackend::Wayland : m->dpy ? NativeBackend::X11 : NativeBackend::Auto; }
 #endif
 
 NativePlatform::~NativePlatform() {
+#if !defined(_WIN32)
+    if (m->wl) { // detaches its windows, closes the connection, restores the event source
+        m->wl.reset();
+        return;
+    }
+#endif
     // detach every shown window (restores its headless presenter) before the display / instance go away
     while (!m->recs.empty()) m->recs.back()->win->setPresenter({});
     detail::vkCtxDestroy(m->vk);
@@ -1359,6 +1390,7 @@ NativePlatform::~NativePlatform() {
 }
 
 PresenterKind NativePlatform::show(AppWindow& w) {
+    FUSE_APP_WL(show(w));
     if (const Impl::Rec* existing = m->find(w)) return existing->kind;
     if (!available()) return PresenterKind::Headless;
     auto* r = new Impl::Rec{};
@@ -1414,36 +1446,50 @@ PresenterKind NativePlatform::show(AppWindow& w) {
 }
 
 PresenterKind NativePlatform::kind(const AppWindow& w) const {
+    FUSE_APP_WL(kind(w));
     const Impl::Rec* r = m->find(w);
     return r ? r->kind : PresenterKind::Headless;
 }
-std::string_view NativePlatform::gpuName() const { return detail::vkCtxDeviceName(m->vk); }
+std::string_view NativePlatform::gpuName() const {
+    FUSE_APP_WL(gpuName());
+    return detail::vkCtxDeviceName(m->vk);
+}
 bool NativePlatform::gpuDraws(const AppWindow& w) const {
+    FUSE_APP_WL(gpuDraws(w));
     const Impl::Rec* r = m->find(w);
     return r && detail::vkWinGpuDraws(r->vk);
 }
-std::string_view NativePlatform::lastError() const { return m->error; }
+std::string_view NativePlatform::lastError() const {
+    FUSE_APP_WL(lastError());
+    return m->error;
+}
 bool NativePlatform::setExternalTexture(const AppWindow& w, unsigned slot, const ExternalTexture& tex) {
+    FUSE_APP_WL(setExternalTexture(w, slot, tex));
     const Impl::Rec* r = m->find(w);
     return r && detail::vkWinSetExternal(r->vk, slot, tex);
 }
 bool NativePlatform::capture(const AppWindow& w, Image& out) {
+    FUSE_APP_WL(capture(w, out));
     const Impl::Rec* r = m->find(w);
     return r && r->handle && m->captureOs(*r, out);
 }
 std::size_t NativePlatform::popupCount(const AppWindow& w) const {
+    FUSE_APP_WL(popupCount(w));
     const Impl::Rec* r = m->find(w);
     return r ? r->popups.size() : 0;
 }
 unsigned long long NativePlatform::popupWindow(const AppWindow& w, std::size_t i) const {
+    FUSE_APP_WL(popupWindow(w, i));
     const Impl::Rec* r = m->find(w);
     return r && i < r->popups.size() ? r->popups[i].handle : 0;
 }
 Rect NativePlatform::popupScreenRect(const AppWindow& w, std::size_t i) const {
+    FUSE_APP_WL(popupScreenRect(w, i));
     const Impl::Rec* r = m->find(w);
     return r && i < r->popups.size() ? r->popups[i].screen : Rect{};
 }
 bool NativePlatform::capturePopup(const AppWindow& w, std::size_t i, Image& out) {
+    FUSE_APP_WL(capturePopup(w, i, out));
     const Impl::Rec* r = m->find(w);
     return r && i < r->popups.size() && m->capturePopupOs(r->popups[i], out);
 }
@@ -1459,17 +1505,29 @@ Rect NativePlatform::safeArea(const AppWindow& w) const {
     return {0.f, 0.f, s.w, s.h};
 }
 float NativePlatform::scale(const AppWindow& w) const {
+    FUSE_APP_WL(scale(w));
     const Impl::Rec* r = m->find(w);
     return r ? r->scale : 1.f;
 }
 Cursor NativePlatform::cursor(const AppWindow& w) const {
+    FUSE_APP_WL(cursor(w));
     const Impl::Rec* r = m->find(w);
     return r ? r->cursor : Cursor::Arrow;
 }
-bool NativePlatform::setClipboardText(std::string_view utf8) { return m->clipboardUsable() && Impl::clipSet(m.get(), utf8); }
-bool NativePlatform::clipboardText(std::string& out) { return m->clipboardUsable() && Impl::clipGet(m.get(), out); }
-bool NativePlatform::postClick(unsigned long long nativeWin, Vec2 at) { return nativeWin && m->postClickOs(nativeWin, at); }
+bool NativePlatform::setClipboardText(std::string_view utf8) {
+    FUSE_APP_WL(setClipboardText(utf8));
+    return m->clipboardUsable() && Impl::clipSet(m.get(), utf8);
+}
+bool NativePlatform::clipboardText(std::string& out) {
+    FUSE_APP_WL(clipboardText(out));
+    return m->clipboardUsable() && Impl::clipGet(m.get(), out);
+}
+bool NativePlatform::postClick(unsigned long long nativeWin, Vec2 at) {
+    FUSE_APP_WL(postClick(nativeWin, at));
+    return nativeWin && m->postClickOs(nativeWin, at);
+}
 unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
+    FUSE_APP_WL(nativeWindow(w));
     const Impl::Rec* r = m->find(w);
     return r ? r->handle : 0;
 }
@@ -1559,6 +1617,7 @@ std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
 }
 #else
 bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
+    FUSE_APP_WL(setIcon(w, sizes));
     const Impl::Rec* r = m->find(w);
     if (!r || !r->handle || !m->dpy) return false;
     std::vector<unsigned long> data; // format-32 X properties are arrays of C long
@@ -1577,6 +1636,7 @@ bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
     return true;
 }
 bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned height) {
+    FUSE_APP_WL(resizeWindow(w, width, height));
     const Impl::Rec* r = m->find(w);
     if (!r || !r->handle || !m->dpy) return false;
     const Size px = dpi::toPixels({f32(width), f32(height)}, r->scale);
@@ -1585,6 +1645,7 @@ bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned h
     return true;
 }
 std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
+    FUSE_APP_WL(iconSizes(w));
     std::vector<int> out;
     const Impl::Rec* r = m->find(w);
     if (!r || !r->handle || !m->dpy) return out;

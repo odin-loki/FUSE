@@ -44,6 +44,30 @@ FUSE itself is AGPL-3.0 (see [`LICENSE.md`](LICENSE.md)).
 | Twemoji Mozilla (font) | Apache-2.0 (build code) + CC-BY-4.0 (artwork, Twitter / X Corp and contributors) | Pin in [`vendor/fonts/twemoji/VERSION`](vendor/fonts/twemoji/VERSION) | vendored | `vendor/fonts/twemoji` | [`vendor/fonts/twemoji/LICENSE.md`](vendor/fonts/twemoji/LICENSE.md) | CC-BY-4.0: attribute the Twemoji artwork where the emoji are shown or in the product credits. |
 | Khronos Vulkan headers (from SDL tree path) | Apache-2.0 OR MIT (Khronos) | Bundled under vendored SDL sources | headers-only | `vendor/sdl/src/video/khronos` | Copyright block in headers (e.g. `vulkan.h`); SDL itself is not built by FUSE | Used when no Vulkan SDK is found ([`cmake/FuseFindVulkan.cmake`](cmake/FuseFindVulkan.cmake), Relight MinGW). Keep Khronos licence terms if redistributing the headers. |
 
+### 1.1 Wayland protocol descriptions (FUSE UI Wayland backend)
+
+`Source/FUSE/UI/App/src/native_wayland.cpp` contains interface tables (interface, request and event names, argument
+signatures, opcode order) written by hand from the protocol descriptions below. No protocol XML and no
+`wayland-scanner` output is in the FUSE UI tree, and nothing of them is needed to build. The copyright and permission
+notices are reproduced in a comment next to the tables. `libwayland-client`, `libwayland-cursor` (MIT) and
+`libxkbcommon` (MIT) are not vendored, not linked and not shipped: the backend opens the system's copies with
+`dlopen` at run time and works without the last two. The test `fuse_app_wayland_seat` opens the system's
+`libwayland-server` (MIT) the same way.
+
+| Protocol | Licence | Copyright holders | Used for |
+|---|---|---|---|
+| `xdg-shell` (stable; version 1 messages) | MIT | Kristian Høgsberg (2008-2013), Rafael Antognolli (2013), Jasper St. Pierre (2013), Intel Corporation (2010-2013), Samsung Electronics Co., Ltd (2015-2017), Red Hat Inc. (2015-2017) | toplevel windows, popups |
+| `xdg-decoration-unstable-v1` | MIT | Simon Ser (2018) | server-side window frames |
+| `viewporter` | MIT | Collabora, Ltd. (2013-2016) | fractional scaling (buffer -> logical size) |
+| `fractional-scale-v1` | MIT | Kenny Levinsen (2022) | the compositor's preferred scale |
+| `cursor-shape-v1` | MIT | The Chromium Authors (2018), Simon Ser (2023) | cursor shapes drawn by the compositor |
+| `xdg-toplevel-icon-v1` | MIT | Matthias Klumpp (2023-2024), David Edmundson (2024) | window icons |
+| `primary-selection-unstable-v1` | MIT | Red Hat (2015, 2016) | primary selection |
+| `text-input-unstable-v3` | HPND-style permission notice (sell variant, as in the X.Org / Wayland licences) | Intel Corporation (2012, 2013), Jan Arne Petersen (2015, 2016), Red Hat, Inc. (2017, 2018), Purism SPC (2018) | IME pre-edit and commit |
+
+Obligation: keep the notices in `native_wayland.cpp` in source distributions. The upstream XML files themselves are in
+the tree only as part of the unused SDL copy (`vendor/sdl/wayland-protocols`, section 4).
+
 ## 2. Shared with FUSE Relight (see Relight doc for detail)
 
 These trees sit under `vendor/` and are also consumed by the optional Relight module. Pin sets, patch markers, nested licences (Vulkan-Headers, SPIRV-Headers, OpenVR, libdisplay-info), and packaging rules are spelled out in [`Source/FUSE/Relight/THIRD_PARTY.md`](Source/FUSE/Relight/THIRD_PARTY.md).

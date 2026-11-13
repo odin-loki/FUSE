@@ -1,9 +1,9 @@
-// fuse_app Wayland backend: see wayland_internal.hpp. Everything Wayland is reached through dlopen'd entry points
+// fuse_app Wayland client: see wayland_internal.hpp. Everything Wayland is reached through dlopen'd entry points
 // and the hand-written protocol tables below (the wire format only needs names, signatures and opcodes).
 #include "wayland_internal.hpp"
 
-#if !defined(_WIN32) && !defined(__ANDROID__)
-#include "fuse/app/chrome.hpp"
+#if !defined(_WIN32) && !defined(__ANDROID__) && !defined(__APPLE__)
+#include "native_internal.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -17,7 +17,9 @@
 #include <fcntl.h>
 #include <limits>
 #include <poll.h>
+#include <string_view>
 #include <thread>
+#include <type_traits>
 
 #include <dlfcn.h>
 #include <sys/mman.h>
@@ -70,12 +72,13 @@ struct Lib {
     uint32_t (*proxy_get_version)(wl_proxy*) = nullptr;
     // core protocol interfaces (data symbols of libwayland-client)
     const wl_interface *registry = nullptr, *compositor = nullptr, *surface = nullptr, *shm = nullptr, *shmPool = nullptr,
-                       *buffer = nullptr, *seat = nullptr, *pointer = nullptr, *keyboard = nullptr, *output = nullptr,
-                       *callback = nullptr, *ddManager = nullptr, *dataDevice = nullptr, *dataSource = nullptr,
+                       *buffer = nullptr, *seat = nullptr, *pointer = nullptr, *keyboard = nullptr, *touch = nullptr,
+                       *output = nullptr, *callback = nullptr, *ddManager = nullptr, *dataDevice = nullptr, *dataSource = nullptr,
                        *dataOffer = nullptr;
     bool load(std::string& err) {
         if (so) return true;
         so = dlopen("libwayland-client.so.0", RTLD_NOW | RTLD_LOCAL);
+        if (!so) so = dlopen("libwayland-client.so", RTLD_NOW | RTLD_LOCAL);
         if (!so) {
             err = "libwayland-client.so.0 not found";
             return false;
@@ -101,6 +104,12 @@ struct Lib {
         get(proxy_add_listener, "wl_proxy_add_listener");
         get(proxy_destroy, "wl_proxy_destroy");
         get(proxy_get_version, "wl_proxy_get_version");
+        if (!all) {
+            err = "libwayland-client.so.0 lacks an entry point";
+            dlclose(so);
+            so = nullptr;
+            return false;
+        }
         auto data = [&](const wl_interface*& i, const char* n) {
             i = static_cast<const wl_interface*>(dlsym(so, n));
             all = all && i;
@@ -114,13 +123,18 @@ struct Lib {
         data(seat, "wl_seat_interface");
         data(pointer, "wl_pointer_interface");
         data(keyboard, "wl_keyboard_interface");
+        data(touch, "wl_touch_interface");
         data(output, "wl_output_interface");
         data(callback, "wl_callback_interface");
         data(ddManager, "wl_data_device_manager_interface");
         data(dataDevice, "wl_data_device_interface");
         data(dataSource, "wl_data_source_interface");
         data(dataOffer, "wl_data_offer_interface");
-        if (!all) err = "libwayland-client.so.0 lacks an entry point";
+        if (!all) {
+            err = "libwayland-client.so.0 lacks a core interface";
+            dlclose(so);
+            so = nullptr;
+        }
         return all;
     }
 };
@@ -151,6 +165,7 @@ struct Xkb {
         if (tried) return ok;
         tried = true;
         so = dlopen("libxkbcommon.so.0", RTLD_NOW | RTLD_LOCAL);
+        if (!so) so = dlopen("libxkbcommon.so", RTLD_NOW | RTLD_LOCAL);
         if (!so) return false;
         bool all = true;
         auto get = [&](auto& f, const char* n) {
@@ -192,6 +207,7 @@ struct Cur {
         if (tried) return ok;
         tried = true;
         so = dlopen("libwayland-cursor.so.0", RTLD_NOW | RTLD_LOCAL);
+        if (!so) so = dlopen("libwayland-cursor.so", RTLD_NOW | RTLD_LOCAL);
         if (!so) return false;
         bool all = true;
         auto get = [&](auto& f, const char* n) {
@@ -210,6 +226,39 @@ Cur C;
 
 // ---- protocol tables: xdg-shell (stable, version 1 messages), xdg-decoration-unstable-v1, viewporter,
 // fractional-scale-v1, cursor-shape-v1, text-input-unstable-v3, xdg-toplevel-icon-v1, primary-selection-unstable-v1 ----
+// Written by hand from the protocol descriptions of wayland-protocols (interface names, message names, signatures and
+// opcode order; no generated code and no protocol XML is in this file). The descriptions are:
+//   xdg-shell                      Copyright (c) 2008-2013 Kristian Hogsberg, 2013 Rafael Antognolli, 2013 Jasper St. Pierre,
+//                                  2010-2013 Intel Corporation, 2015-2017 Samsung Electronics Co., Ltd, 2015-2017 Red Hat Inc.
+//   xdg-decoration-unstable-v1     Copyright (c) 2018 Simon Ser
+//   viewporter                     Copyright (c) 2013-2016 Collabora, Ltd.
+//   fractional-scale-v1            Copyright (c) 2022 Kenny Levinsen
+//   cursor-shape-v1                Copyright 2018 The Chromium Authors, 2023 Simon Ser
+//   xdg-toplevel-icon-v1           Copyright (c) 2023-2024 Matthias Klumpp, 2024 David Edmundson
+//   primary-selection-unstable-v1  Copyright (c) 2015, 2016 Red Hat
+//     Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+//     documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+//     the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and
+//     to permit persons to whom the Software is furnished to do so, subject to the following conditions: The above
+//     copyright notice and this permission notice (including the next paragraph) shall be included in all copies or
+//     substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+//     IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+//     NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+//     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+//     SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//   text-input-unstable-v3         Copyright (c) 2012, 2013 Intel Corporation, 2015, 2016 Jan Arne Petersen,
+//                                  2017, 2018 Red Hat, Inc., 2018 Purism SPC
+//     Permission to use, copy, modify, distribute, and sell this software and its documentation for any purpose is
+//     hereby granted without fee, provided that the above copyright notice appear in all copies and that both that
+//     copyright notice and this permission notice appear in supporting documentation, and that the name of the
+//     copyright holders not be used in advertising or publicity pertaining to distribution of the software without
+//     specific, written prior permission. The copyright holders make no representations about the suitability of this
+//     software for any purpose. It is provided "as is" without express or implied warranty. THE COPYRIGHT HOLDERS
+//     DISCLAIM ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+//     FITNESS, IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR
+//     ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
+//     OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+// (THIRD_PARTY.md lists them.)
 extern const wl_interface xdgWmBase, xdgPositioner, xdgSurface, xdgToplevel, xdgPopup, decoManager, decoToplevel, viewporterI,
     viewportI, fracMgrI, fracI, shapeMgrI, shapeDevI, tabletToolI, tiMgrI, tiI, iconMgrI, iconI, psMgrI, psDevI, psSrcI, psOfferI;
 const wl_interface* tNone[8] = {};
@@ -322,9 +371,9 @@ void fillProtocolTypes() {
 // opcodes
 enum : uint32_t {
     kDisplayGetRegistry = 1, kRegistryBind = 0, kCompositorCreateSurface = 0,
-    kSurfaceDestroy = 0, kSurfaceAttach = 1, kSurfaceDamage = 2, kSurfaceCommit = 6, kSurfaceSetBufferScale = 8, kSurfaceDamageBuffer = 9,
+    kSurfaceDestroy = 0, kSurfaceAttach = 1, kSurfaceDamage = 2, kSurfaceFrame = 3, kSurfaceCommit = 6, kSurfaceSetBufferScale = 8, kSurfaceDamageBuffer = 9,
     kShmCreatePool = 0, kPoolCreateBuffer = 0, kPoolDestroy = 1, kBufferDestroy = 0,
-    kSeatGetPointer = 0, kSeatGetKeyboard = 1, kPointerSetCursor = 0, kPointerRelease = 1, kKeyboardRelease = 0,
+    kSeatGetPointer = 0, kSeatGetKeyboard = 1, kSeatGetTouch = 2, kPointerSetCursor = 0, kPointerRelease = 1, kKeyboardRelease = 0,
     kWmBaseDestroy = 0, kWmBaseCreatePositioner = 1, kWmBaseGetXdgSurface = 2, kWmBasePong = 3,
     kPosDestroy = 0, kPosSetSize = 1, kPosSetAnchorRect = 2, kPosSetAnchor = 3, kPosSetGravity = 4, kPosSetConstraint = 5, kPosSetOffset = 6,
     kXdgSurfaceDestroy = 0, kXdgSurfaceGetToplevel = 1, kXdgSurfaceGetPopup = 2, kXdgSurfaceAck = 4,
@@ -400,23 +449,30 @@ struct ShmSurface {
     ShmBuf bufs[3];
     int last = -1;
 };
+inline constexpr Cursor kNoCursor = Cursor(255);
 struct Window {
     Backend* b = nullptr;
     AppWindow* win = nullptr;
-    bool* focused = nullptr;
     wl_proxy *surface = nullptr, *xdgSurf = nullptr, *toplevel = nullptr, *deco = nullptr, *viewport = nullptr, *frac = nullptr;
     bool configured = false;
     int pendingW = 0, pendingH = 0;
     bool pendingMax = false, pendingFull = false, pendingActive = false;
-    bool fullscreen = false, activated = false;
-    unsigned long long acks = 0;
-    int scale = 1, committedScale = 1; ///< integer buffer scale (1 with fractional scaling)
+    bool maximized = false, fullscreen = false, activated = false, kbdFocus = false, serverDeco = false;
+    bool vulkanCommitted = false;
+    bool restoring = false, unmaximizeAfterCommit = false; ///< setMode(Normal) asked: see xdgSurfaceConfigure
+    unsigned long long acks = 0, throttled = 0;
+    int scale = 1, committedScale = 1; ///< integer buffer scale (1 when a wp_viewport scales the buffer)
     f32 fracScale = 0.f;              ///< wp_fractional_scale_v1 preferred scale (0: none yet)
     std::vector<Output*> entered;
     ShmSurface shm;
-    CursorShape cursor = CursorShape::Count;
+    wl_proxy* frameCb = nullptr;      ///< wl_surface.frame of the last wl_shm commit, not yet done
+    std::chrono::steady_clock::time_point frameSent{};
+    bool frameDeferred = false;       ///< a present was skipped while waiting: redraw when the callback arrives
+    Cursor cursor = kNoCursor;        ///< shape last sent while the pointer is inside (kNoCursor: none)
+    Cursor cursorWanted = Cursor::Arrow;
     unsigned shapeSent = 0;
-    std::chrono::steady_clock::time_point captionPress{};
+    Size minSize{}, maxSize{};        ///< logical; re-sent when the surface is mapped again
+    Size floatingSize{};              ///< the size before the compositor maximised / fullscreened the window
     std::string title;
     std::vector<ShmBuf> iconBufs;
     std::vector<int> iconWidths;
@@ -459,16 +515,22 @@ struct Backend {
     uint32_t compositorVersion = 1, seatName = 0, ddVersion = 1;
     std::vector<std::string> globals;
     std::vector<Output*> outputs;
-    wl_proxy *pointer = nullptr, *keyboard = nullptr;
+    wl_proxy *pointer = nullptr, *keyboard = nullptr, *touch = nullptr;
+    uint32_t seatVersion = 1;
     std::vector<Window*> windows;
     std::vector<Child*> children;
     Window *ptrFocus = nullptr, *kbdFocus = nullptr;
     Child* ptrChild = nullptr;
     uint32_t ptrSerial = 0, enterSerial = 0, pressSerial = 0, inputSerial = 0;
     Vec2 ptrPos{};
-    bool dpiAware = true;
-    f32 envScale = 0.f; ///< $FUSE_UI_SCALE (0: follow the outputs)
-    KeysymMap keys = nullptr;
+    // one wl_pointer frame of scrolling (delivered at wl_pointer.frame; at once for a seat older than version 5)
+    f32 axisValue[2] = {}, axisSteps[2] = {};
+    bool axisHasSteps[2] = {}, axisPending = false, axisContinuous = false;
+    // wl_touch: the surface each touch point went down on (ids are the compositor's)
+    struct TouchPoint { int32_t id; Window* win; Child* child; Vec2 pos; };
+    std::vector<TouchPoint> touches;
+    f32 fixedScale = 0.f; ///< NativeOptions::scale, else $FUSE_UI_SCALE (0: follow the outputs)
+    bool broken = false;  ///< the connection failed
     xkb_context* xctx = nullptr;
     xkb_keymap* keymap = nullptr;
     xkb_state* xstate = nullptr;
@@ -528,9 +590,10 @@ int outputScale(const Window& w) {
         for (const Output* o : w.b->outputs) s = std::max(s, o->scale); // not on an output yet: the largest known
     return std::max(1, s);
 }
-/// The UI scale `s` (fractional with wp_fractional_scale_v1, else an integer buffer scale).
+/// The UI scale `s`: any value when a wp_viewport maps the buffer onto the logical size (fractional scaling), else an
+/// integer buffer scale.
 void applyScale(Window& w, f32 s) {
-    if (w.frac) {
+    if (w.viewport) {
         s = std::clamp(s, 0.25f, 8.f);
         w.scale = 1;
     } else {
@@ -542,8 +605,7 @@ void applyScale(Window& w, f32 s) {
     w.win->requestRedraw();
 }
 void rescale(Window& w) {
-    if (!w.b->dpiAware) return;
-    if (w.b->envScale > 0.f) applyScale(w, w.b->envScale);
+    if (w.b->fixedScale > 0.f) applyScale(w, w.b->fixedScale);
     else if (w.frac && w.fracScale > 0.f) applyScale(w, w.fracScale);
     else applyScale(w, f32(outputScale(w)));
 }
@@ -568,9 +630,25 @@ const Fn* bufferListener() {
     static const Fn l[] = {fn(&bufferRelease)};
     return l;
 }
+/// An unlinked shared-memory file (the pool the compositor maps).
+int anonFile() {
+#if defined(__linux__)
+    return ::memfd_create("fuse-wl-shm", MFD_CLOEXEC);
+#elif defined(SHM_ANON)
+    return ::shm_open(SHM_ANON, O_RDWR | O_CREAT | O_CLOEXEC, 0600); // FreeBSD
+#else
+    char name[] = "/tmp/fuse-wl-shm-XXXXXX";
+    const int fd = ::mkstemp(name);
+    if (fd >= 0) {
+        ::unlink(name);
+        ::fcntl(fd, F_SETFD, FD_CLOEXEC);
+    }
+    return fd;
+#endif
+}
 bool makeBuf(Backend* b, ShmBuf& s, int w, int h, uint32_t format = kShmXrgb8888, bool listen = true) {
     const std::size_t stride = std::size_t(w) * 4, bytes = stride * std::size_t(h);
-    const int fd = ::memfd_create("fuse-wl-shm", MFD_CLOEXEC);
+    const int fd = anonFile();
     if (fd < 0) return false;
     if (::ftruncate(fd, off_t(bytes)) != 0) {
         ::close(fd);
@@ -707,14 +785,27 @@ void xdgSurfaceConfigure(void* data, wl_proxy* xs, uint32_t serial) {
     L.proxy_marshal(xs, kXdgSurfaceAck, serial);
     ++w->acks;
     AppWindow& a = *w->win;
+    const bool wasFloating = !w->maximized && !w->fullscreen, floating = !w->pendingMax && !w->pendingFull;
+    if (wasFloating && !floating) w->floatingSize = a.size(); // what to come back to
     if (w->pendingW > 0 && w->pendingH > 0) {
         const Size s = a.size();
         if (u32(w->pendingW) != u32(s.w) || u32(w->pendingH) != u32(s.h)) a.resize(u32(w->pendingW), u32(w->pendingH));
+    } else if (floating && !wasFloating && w->floatingSize.w > 0.f) {
+        // restored with "pick a size" (0 x 0): the size from before maximise / fullscreen
+        a.resize(u32(w->floatingSize.w), u32(w->floatingSize.h));
     }
-    if (a.chrome().maximized != w->pendingMax) a.chrome().maximized = w->pendingMax;
+    w->maximized = w->pendingMax;
     w->fullscreen = w->pendingFull;
     w->activated = w->pendingActive;
     w->configured = true;
+    if (w->restoring && !w->fullscreen) {
+        // weston returns from fullscreen to the maximised state it had before and ignores an unset_maximized sent
+        // before that state is current: ask again once the buffer for this configure is committed
+        w->unmaximizeAfterCommit = w->maximized;
+        w->restoring = false;
+    }
+    a.notifyMode(w->fullscreen ? WindowMode::Fullscreen : w->maximized ? WindowMode::Maximized : WindowMode::Normal);
+    a.notifyActive(w->activated);
     a.requestRedraw();
 }
 void toplevelConfigure(void* data, wl_proxy*, int32_t width, int32_t height, wl_array* states) {
@@ -731,8 +822,21 @@ void toplevelConfigure(void* data, wl_proxy*, int32_t width, int32_t height, wl_
             else if (s == 4) w->pendingActive = true; // ACTIVATED
         }
 }
-void toplevelClose(void* data, wl_proxy*) { static_cast<Window*>(data)->win->requestClose(); }
-void decoConfigure(void*, wl_proxy*, uint32_t) {}
+void toplevelClose(void* data, wl_proxy*) { static_cast<Window*>(data)->win->tryClose(); } // asks the close guard
+void decoConfigure(void* data, wl_proxy*, uint32_t mode) { static_cast<Window*>(data)->serverDeco = mode == 2; }
+void frameDone(void* data, wl_proxy* cb, uint32_t) {
+    auto* w = static_cast<Window*>(data);
+    L.proxy_destroy(cb);
+    if (w->frameCb == cb) w->frameCb = nullptr;
+    if (w->frameDeferred) { // a frame was held back for this: draw it now
+        w->frameDeferred = false;
+        w->win->requestRedraw();
+    }
+}
+const Fn* frameListener() {
+    static const Fn l[] = {fn(&frameDone)};
+    return l;
+}
 
 // ---- child surfaces ----
 void childSurfaceConfigure(void* data, wl_proxy* xs, uint32_t serial) {
@@ -755,7 +859,7 @@ void childToplevelClose(void*, wl_proxy*) {} // tool windows close from their ow
 // ---- pointer ----
 Vec2 localPos(int32_t sx, int32_t sy) { return {fixedToFloat(sx), fixedToFloat(sy)}; } // surface-local = UI units
 void applyCursor(Backend* b, Window* w);
-void applyCursorShape(Backend* b, CursorShape c, Window* w);
+void applyCursorShape(Backend* b, Cursor c, Window* w);
 Vec2 childPos(const Child& c, Vec2 local) { return {c.origin.x + local.x, c.origin.y + local.y}; }
 void pointerEnter(void* data, wl_proxy*, uint32_t serial, wl_proxy* surface, int32_t sx, int32_t sy) {
     auto* b = static_cast<Backend*>(data);
@@ -764,16 +868,16 @@ void pointerEnter(void* data, wl_proxy*, uint32_t serial, wl_proxy* surface, int
     b->enterSerial = serial;
     b->ptrPos = localPos(sx, sy);
     if (Window* w = b->ptrFocus) {
-        w->cursor = CursorShape::Count; // the compositor forgets ours on leave
-        applyCursor(b, w);
+        w->cursor = kNoCursor; // the compositor forgets ours on leave
         w->win->ui().setModifiers(b->mods);
         w->win->ui().pointerMove(b->ptrPos);
+        applyCursor(b, w);
     } else if (Child* c = b->ptrChild) {
-        c->owner->cursor = CursorShape::Count;
-        CursorShape cs = c->owner->win->ui().cursor();
-        applyCursorShape(b, cs == CursorShape::Auto ? CursorShape::Arrow : cs, c->owner);
+        c->owner->cursor = kNoCursor;
         c->owner->win->ui().setModifiers(b->mods);
         c->owner->win->ui().pointerMove(childPos(*c, b->ptrPos));
+        const Cursor cs = c->owner->win->ui().cursor();
+        applyCursorShape(b, cs == Cursor::Auto ? Cursor::Arrow : cs, c->owner);
         c->owner->win->requestRedraw();
     }
 }
@@ -798,52 +902,19 @@ void pointerMotion(void* data, wl_proxy*, uint32_t, int32_t sx, int32_t sy) {
         UiContext& ui = c->owner->win->ui();
         ui.setModifiers(b->mods);
         ui.pointerMove(childPos(*c, b->ptrPos));
-        CursorShape cs = ui.cursor();
-        applyCursorShape(b, cs == CursorShape::Auto ? CursorShape::Arrow : cs, c->owner);
+        const Cursor cs = ui.cursor();
+        applyCursorShape(b, cs == Cursor::Auto ? Cursor::Arrow : cs, c->owner);
         c->owner->win->requestRedraw();
-    }
-}
-uint32_t resizeEdge(HitArea a) { // xdg_toplevel.resize_edge
-    switch (a) {
-    case HitArea::Top: return 1;
-    case HitArea::Bottom: return 2;
-    case HitArea::Left: return 4;
-    case HitArea::TopLeft: return 5;
-    case HitArea::BottomLeft: return 6;
-    case HitArea::Right: return 8;
-    case HitArea::TopRight: return 9;
-    case HitArea::BottomRight: return 10;
-    default: return 0;
     }
 }
 MouseButton mouseButton(uint32_t button) {
     return button == kBtnRight ? MouseButton::Right : button == kBtnMiddle ? MouseButton::Middle : MouseButton::Left;
 }
-void deliverButton(Backend* b, Window* w, uint32_t serial, uint32_t button, bool down) {
-    AppWindow& a = *w->win;
-    UiContext& ui = a.ui();
+void deliverButton(Backend* b, Window* w, uint32_t button, bool down) {
+    UiContext& ui = w->win->ui();
     ui.setModifiers(b->mods);
-    const Vec2 pos = b->ptrPos;
-    if (down && button == kBtnLeft && a.chrome().frame != WindowFrame::System && w->toplevel && b->seat) {
-        const HitArea h = chromeHitTest(a, pos);
-        if (h == HitArea::Caption) {
-            const auto now = std::chrono::steady_clock::now();
-            if (now - w->captionPress < std::chrono::milliseconds(400)) { // double click toggles maximise
-                w->captionPress = {};
-                a.command(WindowCommand::ToggleMaximize);
-                return;
-            }
-            w->captionPress = now;
-            L.proxy_marshal(w->toplevel, kToplevelMove, b->seat, serial);
-            return;
-        }
-        if (const uint32_t e = resizeEdge(h); e && a.chrome().frame == WindowFrame::Custom) {
-            L.proxy_marshal(w->toplevel, kToplevelResize, b->seat, serial, e);
-            return;
-        }
-    }
-    if (down) ui.pointerDown(pos, mouseButton(button));
-    else ui.pointerUp(pos, mouseButton(button));
+    if (down) ui.pointerDown(b->ptrPos, mouseButton(button));
+    else ui.pointerUp(b->ptrPos, mouseButton(button));
     applyCursor(b, w);
 }
 void deliverChildButton(Backend* b, Child* c, uint32_t serial, uint32_t button, bool down) {
@@ -866,23 +937,43 @@ void pointerButton(void* data, wl_proxy*, uint32_t serial, uint32_t, uint32_t bu
     b->ptrSerial = serial;
     b->inputSerial = serial;
     if (state == 1) b->pressSerial = serial;
-    if (Window* w = b->ptrFocus) deliverButton(b, w, serial, button, state == 1);
+    if (Window* w = b->ptrFocus) deliverButton(b, w, button, state == 1);
     else if (Child* c = b->ptrChild) deliverChildButton(b, c, serial, button, state == 1);
 }
-void pointerAxis(void* data, wl_proxy*, uint32_t, uint32_t axis, int32_t value) {
-    auto* b = static_cast<Backend*>(data);
-    const f32 v = fixedToFloat(value) / 10.f; // ~10 per notch; positive = down / right
-    const Vec2 d = axis == 0 ? Vec2{0.f, -v} : Vec2{v, 0.f};
-    if (Window* w = b->ptrFocus) w->win->ui().wheel(b->ptrPos, d);
-    else if (Child* c = b->ptrChild) {
+/// Delivers the scrolling gathered since the last wl_pointer.frame as one wheel event.
+void flushAxis(Backend* b) {
+    if (!b->axisPending) return;
+    const Vec2 d = wheelNotches({b->axisValue[1], b->axisValue[0]}, {b->axisSteps[1], b->axisSteps[0]}, b->axisHasSteps[1],
+                                b->axisHasSteps[0], b->axisContinuous);
+    b->axisValue[0] = b->axisValue[1] = b->axisSteps[0] = b->axisSteps[1] = 0.f;
+    b->axisHasSteps[0] = b->axisHasSteps[1] = b->axisPending = b->axisContinuous = false;
+    if (d.x == 0.f && d.y == 0.f) return;
+    if (Window* w = b->ptrFocus) {
+        w->win->ui().setModifiers(b->mods);
+        w->win->ui().wheel(b->ptrPos, d);
+    } else if (Child* c = b->ptrChild) {
+        c->owner->win->ui().setModifiers(b->mods);
         c->owner->win->ui().wheel(childPos(*c, b->ptrPos), d);
         c->owner->win->requestRedraw();
     }
 }
-void pointerFrame(void*, wl_proxy*) {}
-void pointerAxisSource(void*, wl_proxy*, uint32_t) {}
+void pointerAxis(void* data, wl_proxy*, uint32_t, uint32_t axis, int32_t value) {
+    auto* b = static_cast<Backend*>(data);
+    b->axisValue[axis & 1u] += fixedToFloat(value); // axis 0 vertical (positive = down), 1 horizontal (positive = right)
+    b->axisPending = true;
+    if (b->seatVersion < 5) flushAxis(b); // no frame events before wl_seat 5
+}
+void pointerFrame(void* data, wl_proxy*) { flushAxis(static_cast<Backend*>(data)); }
+void pointerAxisSource(void* data, wl_proxy*, uint32_t source) {
+    static_cast<Backend*>(data)->axisContinuous = source == 1 || source == 2; // finger / continuous: pixel scrolling
+}
 void pointerAxisStop(void*, wl_proxy*, uint32_t, uint32_t) {}
-void pointerAxisDiscrete(void*, wl_proxy*, uint32_t, int32_t) {}
+void pointerAxisDiscrete(void* data, wl_proxy*, uint32_t axis, int32_t steps) {
+    auto* b = static_cast<Backend*>(data);
+    b->axisSteps[axis & 1u] += f32(steps);
+    b->axisHasSteps[axis & 1u] = true;
+    b->axisPending = true;
+}
 const Fn* pointerListener() {
     static const Fn l[] = {fn(&pointerEnter), fn(&pointerLeave), fn(&pointerMotion), fn(&pointerButton), fn(&pointerAxis),
                            fn(&pointerFrame), fn(&pointerAxisSource), fn(&pointerAxisStop), fn(&pointerAxisDiscrete)};
@@ -912,13 +1003,13 @@ void keyboardEnter(void* data, wl_proxy*, uint32_t serial, wl_proxy* surface, wl
     auto* b = static_cast<Backend*>(data);
     b->kbdFocus = ownerOf(b, surface); // a grabbing popup takes the keyboard: its keys drive the owner's menu
     b->inputSerial = serial;
-    if (b->kbdFocus && b->kbdFocus->focused) *b->kbdFocus->focused = true;
+    if (b->kbdFocus) b->kbdFocus->kbdFocus = true;
 }
 void keyboardLeave(void* data, wl_proxy*, uint32_t, wl_proxy* surface) {
     auto* b = static_cast<Backend*>(data);
     Window* w = ownerOf(b, surface);
     if (w && w != b->kbdFocus) return; // a popup gave the keyboard back to its owner already
-    if (b->kbdFocus && b->kbdFocus->focused) *b->kbdFocus->focused = false;
+    if (b->kbdFocus) b->kbdFocus->kbdFocus = false;
     b->kbdFocus = nullptr;
     b->repeatKey = 0;
 }
@@ -934,11 +1025,13 @@ void deliverKey(Backend* b, Window* w, uint32_t key, bool down, [[maybe_unused]]
         sym = evdevSym(key, b->shiftRaw);
         if (down && sym >= 0x20 && sym < 0x7f) text[0] = char(sym);
     }
-    bool ascii = false;
-    const Key k = b->keys ? b->keys(sym, ascii) : Key::Other;
-    if (k != Key::Other) {
-        if (down) ui.keyDown(k, b->mods);
-        else ui.keyUp(k, b->mods);
+    const Key k = detail::keysymKey(sym);
+    if (k != Key::Other) { // printable keys too (viewport WASD); their text arrives separately
+        if (down) {
+            if (!ui.keyDown(k, b->mods)) w->win->menuShortcut(k, b->mods); // unconsumed: a menu shortcut (AppWindow::setMenu)
+        } else {
+            ui.keyUp(k, b->mods);
+        }
     }
     if (down && !(b->mods & (kModCtrl | kModAlt))) {
         std::string s(text);
@@ -978,6 +1071,52 @@ void keyboardRepeat(void* data, wl_proxy*, int32_t rate, int32_t delay) {
 const Fn* keyboardListener() {
     static const Fn l[] = {fn(&keyboardKeymap), fn(&keyboardEnter), fn(&keyboardLeave), fn(&keyboardKey), fn(&keyboardModifiers),
                            fn(&keyboardRepeat)};
+    return l;
+}
+
+// ---- touch (UiContext's touch path: tap = click, drag = pan + fling, two fingers = pinch / rotate) ----
+Backend::TouchPoint* touchPoint(Backend* b, int32_t id) {
+    for (auto& t : b->touches)
+        if (t.id == id) return &t;
+    return nullptr;
+}
+AppWindow& touchWindow(const Backend::TouchPoint& t) { return *(t.win ? t.win : t.child->owner)->win; }
+void touchDown(void* data, wl_proxy*, uint32_t serial, uint32_t time, wl_proxy* surface, int32_t id, int32_t x, int32_t y) {
+    auto* b = static_cast<Backend*>(data);
+    b->inputSerial = b->pressSerial = serial;
+    Window* w = windowOf(b, surface);
+    Child* c = w ? nullptr : childOf(b, surface);
+    if (!w && !c) return;
+    std::erase_if(b->touches, [&](const Backend::TouchPoint& t) { return t.id == id; });
+    const Vec2 p = c ? childPos(*c, localPos(x, y)) : localPos(x, y);
+    b->touches.push_back({id, w, c, p});
+    AppWindow& a = touchWindow(b->touches.back());
+    a.ui().setModifiers(b->mods);
+    a.ui().touchDown(u32(id), p, double(time) / 1000.0);
+}
+void touchUp(void* data, wl_proxy*, uint32_t serial, uint32_t time, int32_t id) {
+    auto* b = static_cast<Backend*>(data);
+    b->inputSerial = serial;
+    if (Backend::TouchPoint* t = touchPoint(b, id)) {
+        touchWindow(*t).ui().touchUp(u32(id), t->pos, double(time) / 1000.0);
+        std::erase_if(b->touches, [&](const Backend::TouchPoint& o) { return o.id == id; });
+    }
+}
+void touchMotion(void* data, wl_proxy*, uint32_t time, int32_t id, int32_t x, int32_t y) {
+    auto* b = static_cast<Backend*>(data);
+    if (Backend::TouchPoint* t = touchPoint(b, id)) {
+        t->pos = t->child ? childPos(*t->child, localPos(x, y)) : localPos(x, y);
+        touchWindow(*t).ui().touchMove(u32(id), t->pos, double(time) / 1000.0);
+    }
+}
+void touchFrame(void*, wl_proxy*) {}
+void touchCancelEv(void* data, wl_proxy*) { // the compositor took the gesture: no click, no fling
+    auto* b = static_cast<Backend*>(data);
+    for (const auto& t : b->touches) touchWindow(t).ui().touchCancel(); // also forgets the pointer ids
+    b->touches.clear();
+}
+const Fn* touchListener() {
+    static const Fn l[] = {fn(&touchDown), fn(&touchUp), fn(&touchMotion), fn(&touchFrame), fn(&touchCancelEv)};
     return l;
 }
 
@@ -1062,15 +1201,21 @@ void ddEnter(void* data, wl_proxy*, uint32_t serial, wl_proxy* surface, int32_t 
     if (!b->dragOffer) return;
     L.proxy_marshal(b->dragOffer->proxy, kOfferAccept, serial, b->dragMime.empty() || !b->dragWin ? nullptr : b->dragMime.c_str());
     if (b->ddVersion >= 3) L.proxy_marshal(b->dragOffer->proxy, kOfferSetActions, uint32_t(1), uint32_t(1)); // copy
+    if (b->dragWin && !b->dragMime.empty() && b->dropFn) b->dropFn(b->dropUser, b->dragWin, 0, b->dragPos, b->dragMime, {});
 }
 void ddLeave(void* data, wl_proxy*) {
     auto* b = static_cast<Backend*>(data);
+    if (b->dragWin && !b->dragMime.empty() && b->dropFn) b->dropFn(b->dropUser, b->dragWin, 1, b->dragPos, b->dragMime, {});
     if (b->dragWin) b->dragWin->dragOver = false;
     if (b->dragOffer && b->sel[0].offer != b->dragOffer) destroyOffer(b, b->dragOffer);
     b->dragOffer = nullptr;
     b->dragWin = nullptr;
 }
-void ddMotion(void* data, wl_proxy*, uint32_t, int32_t x, int32_t y) { static_cast<Backend*>(data)->dragPos = localPos(x, y); }
+void ddMotion(void* data, wl_proxy*, uint32_t, int32_t x, int32_t y) {
+    auto* b = static_cast<Backend*>(data);
+    b->dragPos = localPos(x, y);
+    if (b->dragWin && !b->dragMime.empty() && b->dropFn) b->dropFn(b->dropUser, b->dragWin, 0, b->dragPos, b->dragMime, {});
+}
 void ddDrop(void* data, wl_proxy*) {
     auto* b = static_cast<Backend*>(data);
     Offer* o = b->dragOffer;
@@ -1078,7 +1223,10 @@ void ddDrop(void* data, wl_proxy*) {
     std::vector<unsigned char> bytes;
     const bool got = o && w && !b->dragMime.empty() && receiveOffer(b, o, b->dragMime, bytes, 2000);
     if (o && b->ddVersion >= 3 && got) L.proxy_marshal(o->proxy, kOfferFinish);
-    if (got && b->dropFn) b->dropFn(b->dropUser, w, b->dragPos, b->dragMime, std::string(bytes.begin(), bytes.end()));
+    if (b->dropFn && w && !b->dragMime.empty()) {
+        if (got) b->dropFn(b->dropUser, w, 2, b->dragPos, b->dragMime, std::string(bytes.begin(), bytes.end()));
+        else b->dropFn(b->dropUser, w, 1, b->dragPos, b->dragMime, {}); // the source went away: ends the hover
+    }
     if (w) {
         w->dragOver = false;
         w->win->requestRedraw();
@@ -1236,7 +1384,17 @@ void seatCaps(void* data, wl_proxy* seat, uint32_t caps) {
     } else if (!(caps & 2u) && b->keyboard) {
         L.proxy_destroy(b->keyboard);
         b->keyboard = nullptr;
+        if (b->kbdFocus) b->kbdFocus->kbdFocus = false;
         b->kbdFocus = nullptr;
+        b->repeatKey = 0;
+    }
+    if ((caps & 4u) && !b->touch) {
+        b->touch = L.proxy_marshal_constructor(seat, kSeatGetTouch, L.touch, nullptr);
+        if (b->touch) L.proxy_add_listener(b->touch, const_cast<Fn*>(touchListener()), b);
+    } else if (!(caps & 4u) && b->touch) {
+        L.proxy_destroy(b->touch);
+        b->touch = nullptr;
+        touchCancelEv(b, nullptr);
     }
     ensureSeatObjects(b);
 }
@@ -1266,7 +1424,8 @@ void registryGlobal(void* data, wl_proxy* reg, uint32_t name, const char* iface,
     } else if (n == "zxdg_decoration_manager_v1" && !b->decoMgr) {
         b->decoMgr = bindGlobal(reg, name, &decoManager, 1);
     } else if (n == "wl_seat" && !b->seat) {
-        b->seat = bindGlobal(reg, name, L.seat, std::min(version, 5u));
+        b->seatVersion = std::min(version, 5u); // 5: wl_pointer.frame / axis_discrete
+        b->seat = bindGlobal(reg, name, L.seat, b->seatVersion);
         b->seatName = name;
         L.proxy_add_listener(b->seat, const_cast<Fn*>(seatListener()), b);
     } else if (n == "wl_output") {
@@ -1314,14 +1473,21 @@ const Fn* registryListener() {
 }
 
 // ---- cursor ----
-uint32_t shapeOf(CursorShape c) { // wp_cursor_shape_device_v1.shape
-    static constexpr uint32_t kShape[] = {1, 1, 9, 4, 27, 26, 29, 28, 13, 6, 15, 8};
-    static_assert(sizeof(kShape) / sizeof(kShape[0]) == std::size_t(CursorShape::Count));
+uint32_t shapeOf(Cursor c) { // wp_cursor_shape_device_v1.shape, in fuse::ui::Cursor order (Hidden has none)
+    static constexpr uint32_t kShape[] = {1 /*default*/, 1, 9 /*text*/, 4 /*pointer*/, 26 /*ew-resize*/, 27 /*ns-resize*/,
+                                          29 /*nwse-resize*/, 28 /*nesw-resize*/, 13 /*move*/, 8 /*crosshair*/,
+                                          15 /*not-allowed*/, 6 /*wait*/, 0};
+    static_assert(sizeof(kShape) / sizeof(kShape[0]) == std::size_t(kCursorCount));
     return kShape[std::size_t(c)];
 }
-void applyCursorShape(Backend* b, CursorShape c, Window* w) {
-    if (!b->pointer || c == w->cursor) return;
+void applyCursorShape(Backend* b, Cursor c, Window* w) {
+    if (!b->pointer || c == w->cursor || int(c) >= kCursorCount) return;
     w->cursor = c;
+    if (c == Cursor::Hidden) { // no cursor image while the pointer is over the surface
+        L.proxy_marshal(b->pointer, kPointerSetCursor, b->enterSerial, static_cast<wl_proxy*>(nullptr), int32_t(0), int32_t(0));
+        w->shapeSent = 0;
+        return;
+    }
     if (b->shapeDev) { // the compositor draws its own cursor in the shape asked for
         L.proxy_marshal(b->shapeDev, kShapeDevSetShape, b->enterSerial, shapeOf(c));
         w->shapeSent = shapeOf(c);
@@ -1339,10 +1505,10 @@ void applyCursorShape(Backend* b, CursorShape c, Window* w) {
     }
     if (!b->theme) return;
     static constexpr const char* kNames[][2] = {{"default", "left_ptr"}, {"default", "left_ptr"}, {"text", "xterm"},
-        {"pointer", "hand2"}, {"ns-resize", "sb_v_double_arrow"}, {"ew-resize", "sb_h_double_arrow"},
+        {"pointer", "hand2"}, {"ew-resize", "sb_h_double_arrow"}, {"ns-resize", "sb_v_double_arrow"},
         {"nwse-resize", "bottom_right_corner"}, {"nesw-resize", "bottom_left_corner"}, {"move", "fleur"},
-        {"wait", "watch"}, {"not-allowed", "crossed_circle"}, {"crosshair", "cross"}};
-    static_assert(sizeof(kNames) / sizeof(kNames[0]) == std::size_t(CursorShape::Count));
+        {"crosshair", "cross"}, {"not-allowed", "crossed_circle"}, {"wait", "watch"}, {"default", "left_ptr"}};
+    static_assert(sizeof(kNames) / sizeof(kNames[0]) == std::size_t(kCursorCount));
     wl_cursor* cur = nullptr;
     for (int k = 0; !cur && k < 2; ++k) cur = C.theme_get_cursor(b->theme, kNames[std::size_t(c)][k]);
     if (!cur) cur = C.theme_get_cursor(b->theme, "left_ptr");
@@ -1359,29 +1525,11 @@ void applyCursorShape(Backend* b, CursorShape c, Window* w) {
                     int32_t(img->hotspot_y / unsigned(scale)));
 }
 void applyCursor(Backend* b, Window* w) {
-    if (!b->pointer || b->ptrFocus != w) return;
-    CursorShape c = w->win->ui().cursor();
-    if (c == CursorShape::Auto) c = CursorShape::Arrow;
-    if (w->win->chrome().frame == WindowFrame::Custom) switch (chromeHitTest(*w->win, b->ptrPos)) {
-        case HitArea::Left: case HitArea::Right: c = CursorShape::ResizeEW; break;
-        case HitArea::Top: case HitArea::Bottom: c = CursorShape::ResizeNS; break;
-        case HitArea::TopLeft: case HitArea::BottomRight: c = CursorShape::ResizeNWSE; break;
-        case HitArea::TopRight: case HitArea::BottomLeft: c = CursorShape::ResizeNESW; break;
-        default: break;
-        }
+    Cursor c = w->win->ui().cursor();
+    if (c == Cursor::Auto) c = Cursor::Arrow;
+    w->cursorWanted = c;
+    if (!b->pointer || b->ptrFocus != w) return; // sent when the pointer enters (set_cursor needs the enter serial)
     applyCursorShape(b, c, w);
-}
-
-void chromeCommand(void* user, AppWindow& a, WindowCommand c) {
-    auto* w = static_cast<Window*>(user);
-    switch (c) {
-    case WindowCommand::Minimize: L.proxy_marshal(w->toplevel, kToplevelSetMinimized); break;
-    case WindowCommand::ToggleMaximize:
-        L.proxy_marshal(w->toplevel, a.chrome().maximized ? kToplevelUnsetMaximized : kToplevelSetMaximized);
-        break;
-    case WindowCommand::Close: a.requestClose(); break;
-    }
-    L.display_flush(w->b->dpy);
 }
 
 /// Waits (round trips) for a child's first configure.
@@ -1394,22 +1542,59 @@ wl_proxy* parentXdgSurface(const Child* c) { return c->parent ? c->parent->xdgSu
 } // namespace
 
 // ---- API -----------------------------------------------------------------------------------------------------------
-bool wanted() {
-    const char* be = std::getenv("FUSE_APP_BACKEND");
-    if (be && std::string_view(be) == "wayland") return true;
-    if (be && std::string_view(be) == "x11") return false;
-    const char* d = std::getenv("DISPLAY");
-    const char* wd = std::getenv("WAYLAND_DISPLAY");
-    return !(d && *d) && wd && *wd;
+NativeBackend chooseBackend(NativeBackend option, std::string_view env, std::string_view waylandDisplay) {
+    if (option != NativeBackend::Auto) return option;
+    if (env == "wayland") return NativeBackend::Wayland;
+    if (env == "x11") return NativeBackend::X11;
+    return waylandDisplay.empty() ? NativeBackend::X11 : NativeBackend::Wayland;
+}
+bool backendForced(NativeBackend option, std::string_view env) {
+    return option != NativeBackend::Auto || env == "wayland" || env == "x11";
+}
+Vec2 wheelNotches(Vec2 value, Vec2 steps, bool hasStepsX, bool hasStepsY, bool continuous) {
+    // a wheel click is 10 units on most compositors when no step count came with it; finger / continuous scrolling is
+    // in surface pixels and a notch scrolls 40 px (UiContext::wheel), so it follows the fingers 1:1
+    const f32 unit = continuous ? 40.f : 10.f;
+    const f32 x = hasStepsX ? steps.x : value.x / unit, y = hasStepsY ? steps.y : value.y / unit;
+    return {x, -y};
+}
+std::string uriListToPaths(std::string_view list) {
+    std::string out;
+    while (!list.empty()) {
+        const std::size_t nl = list.find('\n');
+        std::string_view line = list.substr(0, nl);
+        list = nl == std::string_view::npos ? std::string_view{} : list.substr(nl + 1);
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.remove_suffix(1);
+        if (line.empty() || line.front() == '#' || !line.starts_with("file://")) continue;
+        line.remove_prefix(7);
+        const std::size_t slash = line.find('/'); // file://host/path: the host part (empty or "localhost") goes
+        if (slash == std::string_view::npos) continue;
+        line.remove_prefix(slash);
+        if (!out.empty()) out += '\n';
+        auto hex = [](char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; };
+        for (std::size_t i = 0; i < line.size(); ++i) {
+            if (line[i] == '%' && i + 2 < line.size() + 0 && hex(line[i + 1]) >= 0 && hex(line[i + 2]) >= 0) {
+                out += char(hex(line[i + 1]) * 16 + hex(line[i + 2]));
+                i += 2;
+            } else {
+                out += line[i];
+            }
+        }
+    }
+    return out;
+}
+bool loadLibrary(std::string& err) {
+    if (!L.load(err)) return false;
+    fillProtocolTypes();
+    return true;
 }
 
-Backend* open(std::string& err, bool dpiAware, KeysymMap keys) {
+Backend* open(std::string& err, f32 scaleOption) {
     if (gBackend) {
         err = "one Wayland backend per process";
         return nullptr;
     }
-    if (!L.load(err)) return nullptr;
-    fillProtocolTypes();
+    if (!loadLibrary(err)) return nullptr;
     wl_display* d = L.display_connect(nullptr);
     if (!d) {
         err = "cannot connect to the Wayland compositor";
@@ -1417,9 +1602,8 @@ Backend* open(std::string& err, bool dpiAware, KeysymMap keys) {
     }
     auto* b = new Backend{};
     b->dpy = d;
-    b->dpiAware = dpiAware;
-    b->keys = keys;
-    if (const char* e = std::getenv("FUSE_UI_SCALE"); e && *e) b->envScale = std::clamp(std::strtof(e, nullptr), 0.f, 8.f);
+    if (scaleOption > 0.f) b->fixedScale = std::clamp(scaleOption, 0.25f, 8.f);
+    else if (const char* e = std::getenv("FUSE_UI_SCALE"); e && *e) b->fixedScale = std::clamp(std::strtof(e, nullptr), 0.f, 8.f);
     gBackend = b;
     b->registry = L.proxy_marshal_constructor(reinterpret_cast<wl_proxy*>(d), kDisplayGetRegistry, L.registry, nullptr);
     L.proxy_add_listener(b->registry, const_cast<Fn*>(registryListener()), b);
@@ -1455,6 +1639,7 @@ void close(Backend* b) {
     if (b->psDev) destroyRequest(b->psDev, kPsdDestroy);
     if (b->pointer) L.proxy_destroy(b->pointer);
     if (b->keyboard) L.proxy_destroy(b->keyboard);
+    if (b->touch) L.proxy_destroy(b->touch);
     for (Output* o : b->outputs) {
         L.proxy_destroy(o->proxy);
         delete o;
@@ -1486,18 +1671,32 @@ bool hasGlobal(const Backend* b, const char* iface) {
 }
 
 int beforePoll(Backend* b) {
-    while (L.display_prepare_read(b->dpy) != 0) L.display_dispatch_pending(b->dpy);
     b->readPrepared = true;
+    while (L.display_prepare_read(b->dpy) != 0)
+        if (L.display_dispatch_pending(b->dpy) < 0) { // a dead connection dispatches nothing: do not spin on it
+            b->broken = true;
+            b->readPrepared = false;
+            break;
+        }
     L.display_flush(b->dpy);
     return L.display_get_fd(b->dpy);
 }
+constexpr auto kFrameWait = std::chrono::milliseconds(100); // a frame callback later than this is not waited for
 void afterPoll(Backend* b, bool readable) {
     if (b->readPrepared) {
-        if (readable) L.display_read_events(b->dpy);
-        else L.display_cancel_read(b->dpy);
+        if (readable) {
+            if (L.display_read_events(b->dpy) < 0) b->broken = true;
+        } else {
+            L.display_cancel_read(b->dpy);
+        }
         b->readPrepared = false;
     }
-    L.display_dispatch_pending(b->dpy);
+    if (L.display_dispatch_pending(b->dpy) < 0 || L.display_get_error(b->dpy) != 0) b->broken = true;
+    for (Window* w : b->windows) // an occluded surface gets no frame callback: draw the held-back frame anyway
+        if (w->frameDeferred && std::chrono::steady_clock::now() - w->frameSent >= kFrameWait) {
+            w->frameDeferred = false;
+            w->win->requestRedraw();
+        }
     if (b->repeatKey && b->kbdFocus && b->repeatRate > 0) {
         const auto now = std::chrono::steady_clock::now();
         const auto step = std::chrono::microseconds(1000000 / b->repeatRate);
@@ -1510,17 +1709,20 @@ void afterPoll(Backend* b, bool readable) {
     L.display_flush(b->dpy);
 }
 f32 nextTimeout(const Backend* b) {
-    if (!b->repeatKey || !b->kbdFocus) return std::numeric_limits<f32>::infinity();
-    const auto d = b->repeatAt - std::chrono::steady_clock::now();
-    return std::max(0.f, std::chrono::duration<f32>(d).count());
+    f32 t = std::numeric_limits<f32>::infinity();
+    const auto now = std::chrono::steady_clock::now();
+    if (b->repeatKey && b->kbdFocus) t = std::max(0.f, std::chrono::duration<f32>(b->repeatAt - now).count());
+    for (const Window* w : b->windows)
+        if (w->frameDeferred) t = std::min(t, std::max(0.f, std::chrono::duration<f32>(w->frameSent + kFrameWait - now).count()));
+    return t;
 }
 bool roundtrip(Backend* b) { return L.display_roundtrip(b->dpy) >= 0; }
+bool alive(const Backend* b) { return b && !b->broken; }
 
-Window* createWindow(Backend* b, AppWindow& a, bool* focused, std::string& err) {
+Window* createWindow(Backend* b, AppWindow& a, std::string& err) {
     auto* w = new Window{};
     w->b = b;
     w->win = &a;
-    w->focused = focused;
     w->surface = L.proxy_marshal_constructor(b->compositor, kCompositorCreateSurface, L.surface, nullptr);
     if (!w->surface) {
         err = "wl_compositor.create_surface failed";
@@ -1529,11 +1731,12 @@ Window* createWindow(Backend* b, AppWindow& a, bool* focused, std::string& err) 
     }
     static const Fn surfaceL[] = {fn(&surfaceEnter), fn(&surfaceLeave), fn(&surfaceInt), fn(&surfaceUint)};
     L.proxy_add_listener(w->surface, const_cast<Fn*>(surfaceL), w);
-    if (b->fracMgr && b->viewporter && b->dpiAware) { // fractional scale: the buffer is scaled by a viewport, not set_buffer_scale
+    // with a viewport the buffer (logical size x any scale) is mapped onto the logical size: fractional scales work
+    if (b->viewporter) w->viewport = L.proxy_marshal_constructor(b->viewporter, kViewporterGet, &viewportI, nullptr, w->surface);
+    if (b->fracMgr && w->viewport && b->fixedScale <= 0.f) {
         w->frac = L.proxy_marshal_constructor(b->fracMgr, kFracMgrGet, &fracI, nullptr, w->surface);
         static const Fn fL[] = {fn(&fracPreferred)};
         if (w->frac) L.proxy_add_listener(w->frac, const_cast<Fn*>(fL), w);
-        w->viewport = L.proxy_marshal_constructor(b->viewporter, kViewporterGet, &viewportI, nullptr, w->surface);
     }
     w->xdgSurf = L.proxy_marshal_constructor(b->wmBase, kWmBaseGetXdgSurface, &xdgSurface, nullptr, w->surface);
     static const Fn xsL[] = {fn(&xdgSurfaceConfigure)};
@@ -1543,22 +1746,15 @@ Window* createWindow(Backend* b, AppWindow& a, bool* focused, std::string& err) 
     L.proxy_add_listener(w->toplevel, const_cast<Fn*>(tL), w);
     w->title = a.title();
     L.proxy_marshal(w->toplevel, kToplevelSetTitle, w->title.c_str());
-    L.proxy_marshal(w->toplevel, kToplevelSetAppId, "fuse");
-    L.proxy_marshal(w->toplevel, kToplevelSetMinSize, int32_t(64), int32_t(48));
-    WindowChrome& c = a.chrome();
-    if (c.frame == WindowFrame::System && b->decoMgr) { // server-side frame where the compositor draws one (KDE, sway)
+    L.proxy_marshal(w->toplevel, kToplevelSetAppId, a.app().name().empty() ? "fuse" : a.app().name().c_str());
+    if (b->decoMgr) { // server-side frame where the compositor draws one (KDE, sway, labwc); none otherwise
         w->deco = L.proxy_marshal_constructor(b->decoMgr, kDecoManagerGet, &decoToplevel, nullptr, w->toplevel);
         static const Fn dL[] = {fn(&decoConfigure)};
         L.proxy_add_listener(w->deco, const_cast<Fn*>(dL), w);
         L.proxy_marshal(w->deco, kDecoSetMode, 2u /*server_side*/);
     }
-    if (c.frame != WindowFrame::System) {
-        c.user = w;
-        c.command = &chromeCommand;
-    }
     b->windows.push_back(w);
-    if (b->dpiAware) rescale(*w); // until the surface enters an output / gets a preferred scale
-    else applyScale(*w, 1.f);
+    rescale(*w); // until the surface enters an output / gets a preferred scale
     sendBufferScale(b, w->surface, w->scale, w->committedScale);
     L.proxy_marshal(w->surface, kSurfaceCommit); // no buffer: asks for the first configure
     for (int i = 0; i < 50 && !w->configured; ++i)
@@ -1575,10 +1771,8 @@ void destroyWindow(Backend* b, Window* w) {
     if (!w) return;
     for (std::size_t i = b->children.size(); i-- > 0;)
         if (b->children[i]->owner == w) destroyChild(b, b->children[i]);
-    if (w->win && w->win->chrome().command == &chromeCommand) {
-        w->win->chrome().command = nullptr;
-        w->win->chrome().user = nullptr;
-    }
+    std::erase_if(b->touches, [&](const Backend::TouchPoint& t) { return t.win == w; });
+    if (w->frameCb) L.proxy_destroy(w->frameCb);
     if (b->ptrFocus == w) b->ptrFocus = nullptr;
     if (b->kbdFocus == w) {
         b->kbdFocus = nullptr;
@@ -1603,22 +1797,52 @@ void destroyWindow(Backend* b, Window* w) {
 void* surface(const Window* w) { return w ? w->surface : nullptr; }
 int bufferScale(const Window* w) { return w ? w->scale : 1; }
 unsigned long long serialOf(const Window* w) { return w ? w->acks : 0; }
-f32 windowScale(const Window* w) { return w ? w->win->scale() : 1.f; }
+unsigned long long framesThrottled(const Window* w) { return w ? w->throttled : 0; }
 bool fractional(const Window* w) { return w && w->frac; }
 
-void presentShm(Backend* b, Window* w, const Image& img) {
-    if (!w->configured || img.pixels.empty()) return;
+namespace {
+/// Requests that only take once the state of the last configure is current (a buffer for it was committed).
+void afterCommit(Window* w) {
+    if (w->unmaximizeAfterCommit) {
+        w->unmaximizeAfterCommit = false;
+        L.proxy_marshal(w->toplevel, kToplevelUnsetMaximized);
+    }
+}
+} // namespace
+Window* findWindow(const Backend* b, const AppWindow& a) {
+    for (Window* w : b->windows)
+        if (w->win == &a) return w;
+    return nullptr;
+}
+bool frameReady(Backend*, Window* w) {
+    if (!w->frameCb || std::chrono::steady_clock::now() - w->frameSent >= kFrameWait) return true;
+    w->frameDeferred = true; // frameDone (or the deadline in afterPoll) asks for the redraw
+    ++w->throttled;
+    return false;
+}
+bool presentShm(Backend* b, Window* w, const Image& img) {
+    if (!w->configured || img.pixels.empty()) return false;
+    const auto now = std::chrono::steady_clock::now();
     sendBufferScale(b, w->surface, w->scale, w->committedScale);
     sendViewport(*w);
     if (!attachImage(b, w->surface, w->shm, img, img.width, img.height)) {
         w->win->requestRedraw();
-        return;
+        return false;
     }
+    if (w->frameCb) L.proxy_destroy(w->frameCb); // overdue: its done event (if it ever comes) is dropped
+    w->frameCb = L.proxy_marshal_constructor(w->surface, kSurfaceFrame, L.callback, nullptr);
+    if (w->frameCb) L.proxy_add_listener(w->frameCb, const_cast<Fn*>(frameListener()), w);
+    w->frameSent = now;
+    w->frameDeferred = false;
     L.proxy_marshal(w->surface, kSurfaceCommit);
+    afterCommit(w);
     L.display_flush(b->dpy);
+    return true;
 }
 
 void beforeVulkanPresent(Backend* b, Window* w) {
+    if (w->vulkanCommitted) afterCommit(w); // the swapchain committed at least one buffer since the configure
+    w->vulkanCommitted = !w->unmaximizeAfterCommit;
     w->shm.last = -1; // the swapchain owns the surface's buffers now
     sendBufferScale(b, w->surface, w->scale, w->committedScale);
     sendViewport(*w); // applies with the swapchain's commit
@@ -1626,8 +1850,8 @@ void beforeVulkanPresent(Backend* b, Window* w) {
 
 bool capture(const Window* w, Image& out) { return w && readShm(w->shm, out); }
 
-void setCursor(Backend* b, Window* w, CursorShape) { applyCursor(b, w); }
-void setScale(Backend*, Window* w, f32 scale) { applyScale(*w, scale); }
+void syncCursor(Backend* b, Window* w) { applyCursor(b, w); }
+Cursor cursorShown(const Window* w) { return w ? w->cursorWanted : Cursor::Arrow; }
 void resize(Backend*, Window* w, unsigned width, unsigned height) {
     w->win->resize(std::max(1u, width), std::max(1u, height));
     w->win->requestRedraw();
@@ -1638,14 +1862,80 @@ void setTitle(Backend* b, Window* w, const std::string& title) {
     L.proxy_marshal(w->toplevel, kToplevelSetTitle, title.c_str());
     L.display_flush(b->dpy);
 }
-void setFullscreen(Backend* b, Window* w, bool on) {
+namespace {
+void sendSizeLimits(Window* w) {
+    auto px = [](f32 v) { return int32_t(std::max(0L, std::lround(v))); };
+    L.proxy_marshal(w->toplevel, kToplevelSetMinSize, px(w->minSize.w), px(w->minSize.h));
+    L.proxy_marshal(w->toplevel, kToplevelSetMaxSize, px(w->maxSize.w), px(w->maxSize.h));
+}
+} // namespace
+void setSizeLimits(Backend* b, Window* w, Size mn, Size mx) {
     if (!w) return;
-    if (on) L.proxy_marshal(w->toplevel, kToplevelSetFullscreen, static_cast<wl_proxy*>(nullptr));
-    else L.proxy_marshal(w->toplevel, kToplevelUnsetFullscreen);
+    w->minSize = mn;
+    w->maxSize = mx;
+    sendSizeLimits(w);
+    if (w->configured) L.proxy_marshal(w->surface, kSurfaceCommit); // the limits are double-buffered surface state
     L.display_flush(b->dpy);
 }
-bool fullscreen(const Window* w) { return w && w->fullscreen; }
+bool mapped(const Window* w) { return w && w->configured; }
+bool setVisible(Backend* b, Window* w, bool on) {
+    if (!w) return false;
+    if (on == w->configured) return true;
+    if (!on) { // a null buffer unmaps an xdg_surface and resets it (title, limits, state)
+        if (w->frameCb) L.proxy_destroy(w->frameCb);
+        w->frameCb = nullptr;
+        w->frameDeferred = false;
+        w->configured = false;
+        w->shm.last = -1;
+        L.proxy_marshal(w->surface, kSurfaceAttach, static_cast<wl_proxy*>(nullptr), int32_t(0), int32_t(0));
+        L.proxy_marshal(w->surface, kSurfaceCommit);
+        L.display_flush(b->dpy);
+        return true;
+    }
+    L.proxy_marshal(w->toplevel, kToplevelSetTitle, w->title.c_str());
+    L.proxy_marshal(w->toplevel, kToplevelSetAppId, w->win->app().name().empty() ? "fuse" : w->win->app().name().c_str());
+    sendSizeLimits(w);
+    L.proxy_marshal(w->surface, kSurfaceCommit); // no buffer: the initial commit again, answered by a configure
+    for (int i = 0; i < 10 && !w->configured; ++i)
+        if (L.display_roundtrip(b->dpy) < 0) return false;
+    // weston keeps a toplevel configured through an unmap and sends nothing: the next buffer maps it again
+    w->configured = true;
+    w->win->requestRedraw();
+    return true;
+}
+void setMode(Backend* b, Window* w, WindowMode m) {
+    if (!w) return;
+    w->restoring = m == WindowMode::Normal;
+    if (m == WindowMode::Minimized) {
+        L.proxy_marshal(w->toplevel, kToplevelSetMinimized);
+    } else if (m == WindowMode::Fullscreen) {
+        L.proxy_marshal(w->toplevel, kToplevelSetFullscreen, static_cast<wl_proxy*>(nullptr)); // the compositor picks the output
+    } else {
+        // unset both first: a fullscreen window may be maximised underneath without the configure saying so
+        L.proxy_marshal(w->toplevel, kToplevelUnsetFullscreen);
+        if (m == WindowMode::Maximized) L.proxy_marshal(w->toplevel, kToplevelSetMaximized);
+        else L.proxy_marshal(w->toplevel, kToplevelUnsetMaximized);
+    }
+    L.display_flush(b->dpy);
+}
+WindowMode mode(const Window* w) {
+    return !w ? WindowMode::Normal : w->fullscreen ? WindowMode::Fullscreen : w->maximized ? WindowMode::Maximized : WindowMode::Normal;
+}
 bool activated(const Window* w) { return w && w->activated; }
+bool keyboardFocus(const Window* w) { return w && w->kbdFocus; }
+bool serverDecorated(const Window* w) { return w && w->serverDeco; }
+bool beginMove(Backend* b, Window* w) {
+    if (!w || !b->seat || !b->pressSerial) return false;
+    L.proxy_marshal(w->toplevel, kToplevelMove, b->seat, b->pressSerial);
+    L.display_flush(b->dpy);
+    return true;
+}
+bool beginResize(Backend* b, Window* w, unsigned edge) {
+    if (!w || !b->seat || !b->pressSerial || edge == 0 || edge > 10) return false;
+    L.proxy_marshal(w->toplevel, kToplevelResize, b->seat, b->pressSerial, uint32_t(edge));
+    L.display_flush(b->dpy);
+    return true;
+}
 unsigned cursorShapeSent(const Window* w) { return w ? w->shapeSent : 0; }
 
 bool setIcon(Backend* b, Window* w, const std::vector<const Image*>& sizes) {
@@ -1684,7 +1974,7 @@ std::vector<DisplayInfo> displays(const Backend* b) {
         DisplayInfo d;
         d.name = o->make.empty() && o->model.empty() ? "wayland" : o->make + " " + o->model;
         d.bounds = {f32(o->x), f32(o->y), f32(o->w), f32(o->h)};
-        d.work = d.bounds;
+        d.workArea = d.bounds; // the protocol does not tell clients about panels
         d.scale = f32(o->scale);
         d.refreshHz = f32(o->refresh) / 1000.f;
         d.primary = out.empty();
@@ -1786,6 +2076,7 @@ void destroyChild(Backend* b, Child* c) {
     for (std::size_t i = b->children.size(); i-- > 0;) // nested popups first (protocol: topmost first)
         if (b->children[i]->parent == c) destroyChild(b, b->children[i]);
     if (b->ptrChild == c) b->ptrChild = nullptr;
+    std::erase_if(b->touches, [&](const Backend::TouchPoint& t) { return t.child == c; });
     if (c->viewport) destroyRequest(c->viewport, kViewportDestroy);
     destroyRequest(c->role, c->popup ? kPopupDestroy : kToplevelDestroy);
     destroyRequest(c->xdgSurf, kXdgSurfaceDestroy);
@@ -1946,7 +2237,7 @@ void injectPointer(Backend* b, Window* w, Vec2 at, int kind) {
         w->win->ui().setModifiers(b->mods);
         w->win->ui().pointerMove(b->ptrPos);
     } else {
-        deliverButton(b, w, b->ptrSerial, kBtnLeft, kind == 1);
+        deliverButton(b, w, kBtnLeft, kind == 1);
     }
 }
 void injectChildPointer(Backend* b, Child* c, Vec2 at, int kind) {
@@ -1973,10 +2264,19 @@ void injectKey(Backend* b, Window* w, unsigned code) {
 }
 void injectClose(Window* w) { toplevelClose(w, w->toplevel); }
 
-std::string selfTest(KeysymMap keys) {
+const void* protocolInterface(std::string_view name) {
+    if (!L.so) return nullptr;
+    const wl_interface* all[] = {&xdgWmBase, &xdgPositioner, &xdgSurface, &xdgToplevel, &xdgPopup, &decoManager, &decoToplevel,
+                                 &viewporterI, &viewportI, &fracMgrI, &fracI, &shapeMgrI, &shapeDevI, &tiMgrI, &tiI, &iconMgrI,
+                                 &iconI, &psMgrI, &psDevI, &psSrcI, &psOfferI};
+    for (const wl_interface* i : all)
+        if (name == i->name) return i;
+    return nullptr;
+}
+
+std::string selfTest() {
     std::string err;
-    if (!L.load(err)) return err;
-    fillProtocolTypes();
+    if (!loadLibrary(err)) return err;
     // every message: one types entry per argument (wl_closure reads types[i] for each), opcodes as used above
     const wl_interface* all[] = {&xdgWmBase, &xdgPositioner, &xdgSurface, &xdgToplevel, &xdgPopup, &decoManager, &decoToplevel,
                                  &viewporterI, &viewportI, &fracMgrI, &fracI, &shapeMgrI, &shapeDevI, &tiMgrI, &tiI, &iconMgrI,
@@ -2036,6 +2336,7 @@ std::string selfTest(KeysymMap keys) {
     // core interfaces from libwayland-client: the opcodes used here
     struct Core { const wl_interface* i; uint32_t op; const char* name; };
     const Core core[] = {{L.surface, kSurfaceAttach, "attach"}, {L.surface, kSurfaceCommit, "commit"},
+                         {L.surface, kSurfaceFrame, "frame"}, {L.seat, kSeatGetTouch, "get_touch"},
                          {L.surface, kSurfaceSetBufferScale, "set_buffer_scale"}, {L.surface, kSurfaceDamageBuffer, "damage_buffer"},
                          {L.shm, kShmCreatePool, "create_pool"}, {L.shmPool, kPoolCreateBuffer, "create_buffer"},
                          {L.shmPool, kPoolDestroy, "destroy"}, {L.seat, kSeatGetPointer, "get_pointer"},
@@ -2051,7 +2352,8 @@ std::string selfTest(KeysymMap keys) {
         if (int(c.op) >= c.i->method_count || std::string_view(c.i->methods[c.op].name) != c.name)
             return std::string("core opcode ") + c.i->name + "." + c.name;
     // listener tables against the core interfaces' event counts (a listener shorter than the events would crash)
-    if (L.dataDevice->event_count != 6 || L.dataOffer->event_count > 3 || L.dataSource->event_count > 6 || L.pointer->event_count < 9)
+    if (L.dataDevice->event_count != 6 || L.dataOffer->event_count > 3 || L.dataSource->event_count > 6 || L.pointer->event_count < 9 ||
+        L.touch->event_count < 5 || L.keyboard->event_count < 6)
         return "core event counts";
     // keys: xkbcommon's default US keymap (evdev codes) and the no-xkb fallback both reach the same FUSE keys
     struct K { unsigned code; Key key; const char* text; };
@@ -2078,8 +2380,7 @@ std::string selfTest(KeysymMap keys) {
                 sym = evdevSym(k.code, false);
                 if (sym >= 0x20 && sym < 0x7f) text[0] = char(sym);
             }
-            bool ascii = false;
-            if (keys(sym, ascii) != k.key) return std::string(pass ? "fallback" : "xkb") + " key " + std::to_string(k.code);
+            if (detail::keysymKey(sym) != k.key) return std::string(pass ? "fallback" : "xkb") + " key " + std::to_string(k.code);
             if (*k.text && std::string_view(text) != k.text) return std::string(pass ? "fallback" : "xkb") + " text " + std::to_string(k.code);
         }
         if (st) X.state_unref(st);

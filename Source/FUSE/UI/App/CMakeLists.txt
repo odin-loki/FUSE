@@ -8,6 +8,7 @@ endif()
 
 # fuse_app_native: real OS windows + the Vulkan swapchain presenter. One window backend per platform:
 #   Win32 / X11 (libX11 loaded at runtime)   src/native.cpp
+#   Wayland (libwayland-client at runtime)   src/native_wayland.cpp, src/native_wayland_platform.cpp (with X11)
 #   Android (NativeActivity + app glue)      src/native_android.cpp, src/entry_android.cpp
 #   macOS (Cocoa) / iOS (UIKit)              src/native_apple.mm (+ src/entry_ios.mm)
 if(ANDROID)
@@ -22,6 +23,13 @@ elseif(APPLE)
     set_target_properties(fuse_app_native PROPERTIES OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED ON OBJCXX_EXTENSIONS OFF)
 else()
     add_library(fuse_app_native STATIC src/native.cpp)
+    if(NOT WIN32 AND NOT MINGW)
+        # the Wayland backend next to X11 (Linux / BSD), chosen at run time; libwayland-client, libxkbcommon and
+        # libwayland-cursor are dlopen'd, no Wayland headers or libraries at build time
+        target_sources(fuse_app_native PRIVATE src/native_wayland.cpp src/native_wayland_platform.cpp)
+        find_package(Threads REQUIRED) # a selection paste is written to its pipe on a thread
+        target_link_libraries(fuse_app_native PRIVATE Threads::Threads)
+    endif()
 endif()
 target_sources(fuse_app_native PRIVATE src/native_common.cpp)
 target_link_libraries(fuse_app_native PUBLIC fuse_app)

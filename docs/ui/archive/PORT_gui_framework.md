@@ -57,6 +57,7 @@ No golden image changed. Nothing main had was deleted.
 | Charts library `fuse::ui::charts` (line, area, bar, scatter, pie / donut, candlestick, box, waterfall, contour, radar, treemap, sankey, gauge, funnel; axes, legend, tooltips, zoom / pan, model binding, min-max / LTTB decimation, transitions, PNG export, `chartView`, `Chart3D`, `chart3dView`) | `extras/charts.hpp`, `Extras/src/{charts,charts_simd}.cpp`, `charts_simd.hpp`, `charts_simd_kernel.hpp` | `fuse_ui_charts_{series,axes,decimation,ring,hit,widget,model,export,bench,demo,3d,3d_large,demo3d,mesh3d,mesh3d_large,beyond,transition,demo_beyond}` (`U/tests/test_charts.cpp`) |
 | 3D data visualisation (`fuse::ui::dv3d`: surface, scatter, bars, volume slices, BSP ordering, picking) and the CPU mesh rasteriser | `extras/datavis3d.hpp`, `Extras/src/datavis3d.cpp`, `U/Core/include/fuse/ui/mesh3d.hpp` (header only) | `fuse_ui_extras_dataviz3d`, `fuse_ui_extras_dataviz3d_bsp`, the `3d` / `mesh3d` chart gates |
 | Key-code / modifier / role tables of the branch's Cocoa backend | `U/App/src/cocoa_map.hpp` (plain header) | `fuse_app_cocoa_map` (`U/tests/test_cocoa_map.cpp`). The backend that uses the table is parked (3.3). |
+| From the branch's Wayland backend (3.2), onto the backend ported from `claude/magical-bassi-815825`: the Vulkan Wayland surface (`SurfaceSource::Wayland`, `VK_KHR_wayland_surface` resolved through `vkGetInstanceProcAddr`, no `vulkan_wayland.h` needed), the `wl_surface.frame` throttle for `wl_shm` presents, and the in-process compositor as a gate that needs no installed compositor | `U/App/src/vk_present.cpp`, `native_internal.hpp`, `native_wayland.cpp` (`frameReady`), `U/tests/test_app_wayland_seat.cpp` (new, written for main's backend; the branch's test stays under `_port/`) | `fuse_app_wayland`, `fuse_app_wayland_seat` |
 
 Standalone UI build on Linux after the merge: 208 ctest gates (the 180 main had + 28). `fuse_ui_os` and
 `fuse_ui_extras` are in the FuseUI install set (`U/cmake/fuse_ui_install.cmake`; `fuse_ui_install_consumer` passes).
@@ -128,7 +129,23 @@ build on them. 3.1, 3.5, 3.6 and 3.15 are independent of those.
 - **Verify**: `fuse_app_xdnd`, `fuse_app_x11_widget_dnd` (Xvfb, a second X client as the peer), `fuse_app_win32_ole`
   (Windows / Wine); main's `fuse_app_native_window`, `fuse_ui_drag_drop`, `fuse_ui_inventory_dnd` gates unchanged.
 
-### 3.2 Wayland backend (L, decision: see §6)
+### 3.2 Wayland backend (L, decision: see §6): **mb's backend is live (2026-11-13); remainder of this one below**
+
+Status after the port: main has a live Wayland backend (`U/App/src/native_wayland.cpp`, mb 3.6, see
+[PORT_magical_bassi.md](PORT_magical_bassi.md) §2). From this branch it took the Vulkan Wayland surface, the frame
+throttle and the in-process compositor test approach (§2 above). **Not ported from this branch, which is why its files
+stay parked** (`U/App/src/wayland.cpp`, `U/App/include/fuse/app/wayland.hpp`, `U/App/src/wl_protocol.hpp`,
+`U/tests/test_app_weston.cpp`, `U/_port/gui-framework/tests/test_app_wayland.cpp`):
+
+- drag out of the app (`wl_data_device.start_drag` with several formats and a pixmap icon surface, `dnd_finished`):
+  needs the OS drag-out API of 3.1 (`AppWindow::beginExternalDrag`), which main does not have;
+- tool windows as `wl_subsurface`s that follow a title drag (the live backend has child `xdg_toplevel`s in its
+  protocol layer instead, without a `NativePlatform` API: 3.5);
+- the in-app-drag cursor feedback and the `fuse_app_weston` gate that drives a nested weston with xdotool;
+- the `--vulkan` / `--vulkan-gpu` variants of the in-process test (the WSI's committed buffers vs the CPU raster).
+
+Do not build `wayland.cpp` beside the live backend: take the pieces above into `native_wayland.cpp` and delete the
+five files when done. The original description follows.
 
 - **What**: native libwayland-client backend loaded at run time: xdg-shell toplevels and popups, `wl_shm`
   presentation, seat (pointer, keyboard with xkbcommon, client-side key repeat), data-device drag and drop in and
@@ -431,7 +448,7 @@ names the two ways out (pass a checkout, or use the default std backend). It is 
 
 | Feature | `gui-framework` (this list) | `claude/magical-bassi-815825` ([mb list](PORT_magical_bassi.md)) | Recommendation |
 |---|---|---|---|
-| Wayland backend | 3.2: `wayland.cpp`, 1182 lines + `wl_protocol.hpp`; uses the `fuse::ui::os` seam for libraries and fds; has data-device drag out, Vulkan `VK_KHR_wayland_surface`, frame-callback throttle; gate with an in-process compositor (no weston needed) plus a weston gate | mb 3.6: `native_wayland.cpp`, 2093 lines, self-contained (dlopen); also primary selection, xdg-decoration, tablet tool, positioner-based popups, child tool windows, window chrome hooks; gates against headless weston and sway with a second client | **Port mb's** as the backend (wider protocol coverage, no seam dependency, tested against real compositors, and the editor shell expects its tool windows). Then take from this branch: the Vulkan Wayland surface in `vk_present.cpp`, frame throttling, drag out, and the in-process compositor test as a gate that needs no installed compositor. Both depend on their own branch's `native_internal.hpp`; mb's also on mb 3.5. |
+| Wayland backend (**done 2026-11-13 as recommended; drag out remains, see 3.2**) | 3.2: `wayland.cpp`, 1182 lines + `wl_protocol.hpp`; uses the `fuse::ui::os` seam for libraries and fds; has data-device drag out, Vulkan `VK_KHR_wayland_surface`, frame-callback throttle; gate with an in-process compositor (no weston needed) plus a weston gate | mb 3.6: `native_wayland.cpp`, 2093 lines, self-contained (dlopen); also primary selection, xdg-decoration, tablet tool, positioner-based popups, child tool windows, window chrome hooks; gates against headless weston and sway with a second client | **Port mb's** as the backend (wider protocol coverage, no seam dependency, tested against real compositors, and the editor shell expects its tool windows). Then take from this branch: the Vulkan Wayland surface in `vk_present.cpp`, frame throttling, drag out, and the in-process compositor test as a gate that needs no installed compositor. Both depend on their own branch's `native_internal.hpp`; mb's also on mb 3.5. |
 | Tray icon | **Live** (§2): `Extras/tray` + `dbus.cpp`, StatusNotifierItem + dbusmenu + AppMenu global menu, Win32, Cocoa (parked) | mb 3.8: `fuse/app/shell.hpp`, SNI + dbusmenu, Win32, toast notifications; blocked on mb 3.5 | **Keep this branch's** (already live and gated). From mb take what it adds: Win32 toast notifications and the `fuse_app_tray_host` test host; do not build a second D-Bus client (`dbus_internal.hpp` vs `extras/dbus.hpp`). |
 | Notifications | **Live**: `desktop::notify` through `notify-send` / PowerShell / osascript helper processes (on main only the POSIX-desktop helpers can run) | mb 3.8: native D-Bus `org.freedesktop.Notifications` and Win32 toasts | mb's native path is the better end state (no helper process, action callbacks); implement it on `extras/dbus.hpp` and keep `notifyCommand` as the fallback. |
 | Accessibility adapters | 3.6: `a11y::PlatformAdapter` in `fuse_ui_a11y` (UIA / NSAccessibility / AT-SPI through AccessKit), `A11yState`; no real-client gate | mb 3.9: `fuse_app_a11y` `WindowAccessibility` + AccessKit Windows / Unix adapters, `Bridge::setScale`, wake handler, gates with a real AT-SPI client and a real UIA client; needed by the editor shell | **Port mb's** adapter and gates. Take this branch's `A11yState` / auto-complete additions and its macOS adapter selection as extensions of it. |
