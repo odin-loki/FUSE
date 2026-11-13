@@ -168,7 +168,8 @@ if(FUSE_BUILD_UI_EXTRAS AND FUSE_BUILD_UI_WIDGETS)
         Extras/src/desktop.cpp Extras/src/dbus.cpp
         Extras/src/tray.cpp Extras/src/tray_sni.cpp Extras/src/tray_win32.cpp Extras/src/tray_none.cpp
         Extras/src/webview.cpp Extras/src/webview_gtk.cpp Extras/src/webview_win32.cpp Extras/src/webview_none.cpp
-        Extras/src/charts.cpp Extras/src/charts_simd.cpp Extras/src/datavis3d.cpp Extras/src/richtext.cpp)
+        Extras/src/charts.cpp Extras/src/charts_simd.cpp Extras/src/datavis3d.cpp Extras/src/richtext.cpp
+        Extras/src/audio_meter.cpp Extras/src/gesture.cpp)
     target_include_directories(fuse_ui_extras PUBLIC Extras/include)
     target_link_libraries(fuse_ui_extras PUBLIC fuse_ui_widgets fuse_ui_os)
     # the branch's code uses partial designated initialisers throughout; in tree that warns under -Wextra

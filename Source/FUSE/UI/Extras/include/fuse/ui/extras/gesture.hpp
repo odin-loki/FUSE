@@ -1,5 +1,10 @@
-// Gesture recognition (Qt QGesture parity: tap, double tap, tap-and-hold, pan, pinch incl. rotation, swipe) from raw
-// touch / pen / mouse points. Backends (Android, iOS, Wayland, Win32 touch) feed points; widgets consume gestures.
+// Stand-alone gesture recogniser (Qt QGesture parity: tap, double tap, tap-and-hold, pan, pinch incl. rotation,
+// swipe) over raw touch / pen / mouse points, in namespace fuse::ui::gesture.
+//
+// The core already recognises gestures for nodes of a UiContext (UiContext::touch -> GestureLongPress / DoubleTap /
+// Pinch / Rotate events, kinetic scrolling; fuse::ui::GestureConfig in ui.hpp). This recogniser is for input that
+// does not go through a context's touch path: a game view fed raw points, a canvas inside one widget, a test. What it
+// adds over the core: pan with total offset and release velocity, swipe with a direction, and a finger count.
 #pragma once
 
 #include "fuse/ui/types.hpp"
@@ -7,7 +12,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace fuse::ui {
+namespace fuse::ui::gesture {
 
 enum class TouchPhase : std::uint8_t { Down, Move, Up, Cancel };
 struct TouchPoint {
@@ -66,4 +71,4 @@ private:
     int m_maxFingers = 0;
 };
 
-} // namespace fuse::ui
+} // namespace fuse::ui::gesture

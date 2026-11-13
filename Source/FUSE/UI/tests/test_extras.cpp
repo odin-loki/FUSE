@@ -113,55 +113,7 @@ void gateUndo() {
 }
 
 #if FUSE_UI_EXTRAS_ALL
-void gateGesture() {
-    GestureRecognizer r;
-    auto has = [](const std::vector<Gesture>& v, GestureType t, GestureState s) {
-        for (auto& g : v) if (g.type == t && g.state == s) return true;
-        return false;
-    };
-    // tap, then double tap
-    r.feed({1, {100, 100}, TouchPhase::Down}, 0.0);
-    auto o = r.feed({1, {102, 101}, TouchPhase::Up}, 0.1);
-    CHECK(has(o, GestureType::Tap, GestureState::Finished) && !has(o, GestureType::DoubleTap, GestureState::Finished));
-    r.feed({1, {104, 100}, TouchPhase::Down}, 0.2);
-    o = r.feed({1, {104, 100}, TouchPhase::Up}, 0.25);
-    CHECK(has(o, GestureType::DoubleTap, GestureState::Finished));
-    // long press
-    r.feed({1, {50, 50}, TouchPhase::Down}, 5.0);
-    o = r.tick(5.6);
-    CHECK(has(o, GestureType::LongPress, GestureState::Started));
-    o = r.feed({1, {50, 50}, TouchPhase::Up}, 5.8);
-    CHECK(has(o, GestureType::LongPress, GestureState::Finished) && !has(o, GestureType::Tap, GestureState::Finished));
-    // pan -> swipe right
-    r.feed({1, {0, 0}, TouchPhase::Down}, 10.0);
-    bool started = false;
-    Vec2 off;
-    for (int i = 1; i <= 10; ++i) {
-        o = r.feed({1, {f32(i * 20), 2}, TouchPhase::Move}, 10.0 + i * 0.01);
-        started |= has(o, GestureType::Pan, GestureState::Started);
-        for (auto& g : o) if (g.type == GestureType::Pan) off = g.offset;
-    }
-    CHECK(started && std::abs(off.x - 200.f) < 0.5f);
-    o = r.feed({1, {200, 2}, TouchPhase::Up}, 10.11);
-    CHECK(has(o, GestureType::Pan, GestureState::Finished));
-    bool right = false;
-    for (auto& g : o) if (g.type == GestureType::Swipe) right = g.direction == SwipeDirection::Right;
-    CHECK(right);
-    // pinch: spread x2 and rotate 90deg
-    r.feed({1, {100, 100}, TouchPhase::Down}, 20.0);
-    o = r.feed({2, {200, 100}, TouchPhase::Down}, 20.01);
-    CHECK(has(o, GestureType::Pinch, GestureState::Started));
-    r.feed({1, {150, 50}, TouchPhase::Move}, 20.05);
-    o = r.feed({2, {150, 250}, TouchPhase::Move}, 20.06);
-    f32 scale = 0, rot = 0;
-    for (auto& g : o) if (g.type == GestureType::Pinch) { scale = g.scale; rot = g.rotation; }
-    CHECK(std::abs(scale - 2.f) < 0.01f);
-    CHECK(std::abs(rot - 1.5708f) < 0.01f);
-    o = r.feed({2, {150, 250}, TouchPhase::Up}, 20.1);
-    CHECK(has(o, GestureType::Pinch, GestureState::Finished));
-    r.feed({1, {150, 50}, TouchPhase::Up}, 20.12);
-}
-
+// (the gesture recogniser gate moved to test_extras_small.cpp)
 void gateI18n() {
     using namespace fuse::ui::i18n;
     CHECK(directionOf("ar_EG") == LayoutDirection::RightToLeft && directionOf("he") == LayoutDirection::RightToLeft);
@@ -1321,50 +1273,8 @@ void gateMedia() {
     UiContext& ui = s.ui;
     ui.setCss(ui.root(), "flex-direction", "row");
     ui.setCss(ui.root(), "align-items", "flex-start");
-    // ---- audio level meter: ballistics are exact functions of the pushed sample time
-    w::AudioMeterOptions mo;
-    const NodeHandle meter = w::audioLevelMeter(ui, ui.root(), 2, mo, "meter");
-    ui.setCss(meter, "height", "200px");
-    CHECK(w::audioLevelMeterChannels(ui, meter) == 2);
-    std::vector<f32> blk(2 * 4800); // 0.1 s at 48 kHz: L = 0.5 sine-ish square, R silent
-    for (std::size_t i = 0; i < 4800; ++i) blk[i * 2] = (i & 1) ? 0.5f : -0.5f;
-    w::audioLevelMeterPush(ui, meter, blk, 2, 48000.f);
-    w::AudioLevels L = w::audioLevelMeterLevels(ui, meter, 0), R = w::audioLevelMeterLevels(ui, meter, 1);
-    CHECK(std::abs(L.peakDb - (-6.0206f)) < 0.01f && std::abs(L.rmsDb - (-6.0206f)) < 0.01f);
-    CHECK(std::abs(L.holdDb - L.peakDb) < 1e-4f && !L.clipped);
-    CHECK(R.peakDb <= -119.f);
-    CHECK(std::abs(ui.value(meter) - L.peakDb) < 1e-3f);
-    // 1 s of silence: peak falls 24 dB, hold stays for 1.5 s then falls
-    w::audioLevelMeterAdvance(ui, meter, 1.f);
-    L = w::audioLevelMeterLevels(ui, meter, 0);
-    CHECK(std::abs(L.peakDb - (-30.0206f)) < 0.01f && std::abs(L.holdDb - (-6.0206f)) < 0.01f);
-    w::audioLevelMeterAdvance(ui, meter, 1.f); // 0.5 s more hold, then 0.5 s * 24 = 12 dB fall
-    L = w::audioLevelMeterLevels(ui, meter, 0);
-    CHECK(std::abs(L.holdDb - (-18.0206f)) < 0.01f);
-    // a full-scale sample latches the clip lamp; a click clears it
-    std::vector<f32> hot(2 * 480, 0.f);
-    hot[100] = 1.f, hot[101] = 0.25f;
-    w::audioLevelMeterPush(ui, meter, hot, 2, 48000.f);
-    CHECK(w::audioLevelMeterLevels(ui, meter, 0).clipped && !w::audioLevelMeterLevels(ui, meter, 1).clipped);
-    CHECK(std::abs(w::audioLevelMeterLevels(ui, meter, 1).peakDb - (-12.041f)) < 0.01f);
-    CHECK(std::abs(ui.value(meter)) < 1e-3f);
-    w::audioLevelMeterAdvance(ui, meter, 0.25f);
-    step(ui);
+    // (the audio level meter gate moved to test_extras_small.cpp)
     Image img;
-    fuse::ui::test::render(ui, img);
-    {   // the left bar's lamp is red, its lower body green; the right bar has its -12 dB peak region lit (yellow band)
-        const Rect c = ui.contentRect(meter);
-        const u32 lamp = img.at(int(c.x + 4.f), int(c.y + 3.f));
-        CHECK((lamp & 0xFF) > 200 && ((lamp >> 8) & 0xFF) < 120);
-        const u32 low = img.at(int(c.x + 4.f), int(c.bottom() - 6.f));
-        CHECK(((low >> 8) & 0xFF) > 150 && (low & 0xFF) < 120);
-    }
-    const Rect mc = ui.contentRect(meter);
-    click(ui, {mc.x + 4.f, mc.y + 40.f});
-    CHECK(!w::audioLevelMeterLevels(ui, meter, 0).clipped);
-    w::audioLevelMeterReset(ui, meter);
-    CHECK(w::audioLevelMeterLevels(ui, meter, 0).peakDb <= -119.f && ui.value(meter) <= -119.f);
-    w::audioLevelMeterPush(ui, meter, blk, 2, 48000.f);
     // ---- system video decoder (runtime-loaded); missing files fail cleanly
     fuse::ui::media::SystemVideo bad;
     std::string err;
@@ -1822,7 +1732,7 @@ int main(int argc, char** argv) {
         {"undo", gateUndo}, {"desktop", gateDesktop}, {"pdf", gatePdf}, {"tray", gateTray}, {"webview", gateWebView}, {"notify", gateNotify},
         {"declarative", gateDeclarative}, {"dataviz3d", gateDataViz3d}, {"dataviz3d_bsp", gateDataViz3dBsp},
 #if FUSE_UI_EXTRAS_ALL
-        {"gesture", gateGesture}, {"i18n", gateI18n}, {"containers", gateContainers}, {"dialogs", gateDialogs}, {"lcd_keyseq", gateLcdKeyseq},
+        {"i18n", gateI18n}, {"containers", gateContainers}, {"dialogs", gateDialogs}, {"lcd_keyseq", gateLcdKeyseq},
         {"mdi", gateMdi}, {"completer", gateCompleter}, {"graphics", gateGraphics}, {"widget_pdf", gateWidgetPdf},
         {"vkeyboard", gateVirtualKeyboard}, {"svg", gateSvg}, {"charts", gateCharts}, {"media", gateMedia},
 #endif

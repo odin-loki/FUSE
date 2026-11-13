@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fuse::ui {
+namespace fuse::ui::gesture {
 namespace {
 f32 dist(Vec2 a, Vec2 b) { return std::hypot(a.x - b.x, a.y - b.y); }
 Vec2 sub(Vec2 a, Vec2 b) { return {a.x - b.x, a.y - b.y}; }
@@ -121,4 +121,4 @@ std::vector<Gesture> GestureRecognizer::feed(const TouchPoint& tp, double time) 
     return out;
 }
 
-} // namespace fuse::ui
+} // namespace fuse::ui::gesture

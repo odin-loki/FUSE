@@ -117,6 +117,12 @@ inline constexpr u32 code_string = hashId("--code-string");
 inline constexpr u32 code_number = hashId("--code-number");
 inline constexpr u32 code_comment = hashId("--code-comment");
 inline constexpr u32 hover_wash = hashId("--hover-wash");
+inline constexpr u32 meter_bg = hashId("--meter-bg");
+inline constexpr u32 meter_ok = hashId("--meter-ok");
+inline constexpr u32 meter_warn = hashId("--meter-warn");
+inline constexpr u32 meter_danger = hashId("--meter-danger");
+inline constexpr u32 meter_hold = hashId("--meter-hold");
+inline constexpr u32 meter_lamp_off = hashId("--meter-lamp-off");
 // @tok-end
 } // namespace tok
 /// Token colour (fallback: the dark literal `rgb` with `alpha`). Not multiplied by the node opacity: wrap in pc.tint().

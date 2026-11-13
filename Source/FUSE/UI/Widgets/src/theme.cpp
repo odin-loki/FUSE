@@ -96,6 +96,12 @@ constexpr TokenRow kTokens[] = {
     {"--code-number", "#b5cea8", "#116644", 'T'},
     {"--code-comment", "#6a9955", "#3d6b2f", 'G'},
     {"--hover-wash", "rgba(255, 255, 255, 0.06)", "rgba(0, 0, 0, 0.06)", '0'},
+    {"--meter-bg", "#15171c", "#e7e8ed", 'D'},
+    {"--meter-ok", "#3bd16f", "#1e9e4a", 'T'},
+    {"--meter-warn", "#f2c94c", "#b98900", 'L'},
+    {"--meter-danger", "#eb5757", "#c62f35", 'H'},
+    {"--meter-hold", "#e8eaee", "#1c1d21", 'T'},
+    {"--meter-lamp-off", "#3a1e22", "#e6c9cc", 'D'},
 };
 // @tokens-end
 

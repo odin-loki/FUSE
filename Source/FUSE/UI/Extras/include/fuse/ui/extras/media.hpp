@@ -1,4 +1,6 @@
 #pragma once
+
+#include "fuse/ui/extras/audio_meter.hpp"
 // Multimedia extras: a video source backed by the platform's own decoder, loaded at runtime, and an audio level meter.
 //
 //   SystemVideo  plays any file the system decoder handles through widgets::videoWidget, with its audio track
@@ -85,32 +87,5 @@ private:
 
 } // namespace fuse::ui::media
 
-namespace fuse::ui::widgets {
+// (the audio level meter is its own live module: fuse/ui/extras/audio_meter.hpp)
 
-struct AudioLevels {
-    f32 peakDb = -120.f; ///< displayed peak (instant attack, releaseDbPerSec fall)
-    f32 rmsDb = -120.f;  ///< displayed RMS (same ballistics)
-    f32 holdDb = -120.f; ///< peak-hold tick
-    bool clipped = false; ///< latched once a sample reaches 0 dBFS; cleared by a click or audioLevelMeterReset
-};
-struct AudioMeterOptions {
-    f32 floorDb = -60.f;
-    f32 releaseDbPerSec = 24.f;
-    f32 holdSec = 1.5f;
-    f32 warnDb = -12.f;  ///< green below, yellow from here
-    f32 dangerDb = -3.f; ///< red from here
-    bool vertical = true;
-    bool scale = true; ///< draw the dB tick labels
-};
-
-/// value() = loudest displayed peak in dBFS.
-NodeHandle audioLevelMeter(UiContext& ui, NodeHandle parent, u32 channels, const AudioMeterOptions& opt = {}, std::string_view id = {});
-/// Feed `frames` interleaved samples of `channels` (extra meter channels stay silent); time advances frames / sampleRate.
-void audioLevelMeterPush(UiContext& ui, NodeHandle meter, std::span<const f32> interleaved, u32 channels, f32 sampleRate);
-/// Advance the ballistics with silence (e.g. when the stream pauses).
-void audioLevelMeterAdvance(UiContext& ui, NodeHandle meter, f32 seconds);
-void audioLevelMeterReset(UiContext& ui, NodeHandle meter);
-AudioLevels audioLevelMeterLevels(const UiContext& ui, NodeHandle meter, u32 channel);
-u32 audioLevelMeterChannels(const UiContext& ui, NodeHandle meter);
-
-} // namespace fuse::ui::widgets
