@@ -8,8 +8,9 @@ name: FUSE Windows x64 (MSVC native)
 #   native    cl.exe Debug / Release / Profile / Shipping + clang-cl Release, Ninja inside a VS x64
 #             developer shell, /W3 (cl) or /W4 (clang-cl) with /WX on FUSE targets
 #             (CMakePresets.json: fuse-msvc-*, fuse-clangcl-*). Vulkan off.
-#   editor    cl.exe Release with Qt 6 (fuse_editor + Qt gate binaries compile; the Qt gates are
-#             xcb-calibrated and skip without an X display), editor ctest subset.
+#   editor    cl.exe Release with Qt 6 (fuse_editor + Qt gate binaries), editor ctest subset. The Qt
+#             gates run on the runner's desktop, set to 1920x1080 like the Linux job's xvfb screen
+#             (the runner's default 1024x768 is smaller than the editor's minimum at scale 1.5).
 #   vulkan    cl.exe Release with FUSE_BUILD_VULKAN=ON against the Khronos headers + loader: compile
 #             and link only. Vulkan ctest on Windows (software ICD) is a follow-up: the Renderer test
 #             registration still launches through a bash/flock wrapper and a Linux ICD path.
@@ -202,6 +203,15 @@ jobs:
 
       - name: Build
         run: cmake --build build/fuse-msvc-editor -- -k 0
+
+      - name: Desktop 1920x1080 (the Linux Qt job's xvfb screen)
+        shell: pwsh
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Add-Type -AssemblyName System.Windows.Forms
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          Write-Host "primary screen: $($b.Width)x$($b.Height)"
+          if ($b.Width -lt 1920 -or $b.Height -lt 1080) { throw "desktop is $($b.Width)x$($b.Height), not 1920x1080" }
 
       - name: CTest (editor subset)
         run: ctest --test-dir build/fuse-msvc-editor --output-on-failure --no-tests=error -j 2 --timeout 900 -R "editor"
