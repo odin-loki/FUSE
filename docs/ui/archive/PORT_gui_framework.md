@@ -63,6 +63,7 @@ No golden image changed. Nothing main had was deleted.
 | **Ported 2026-11-13.** Audio level meter widget, split out of the media module | `extras/audio_meter.hpp`, `Extras/src/audio_meter.cpp` | `fuse_ui_extras_audio_meter` (`U/tests/test_extras_small.cpp`) |
 | **Ported 2026-11-13.** Gesture recogniser as `fuse::ui::gesture::GestureRecognizer` (recogniser helpers next to the core's gestures) | `extras/gesture.hpp`, `Extras/src/gesture.cpp` | `fuse_ui_extras_gesture` |
 | **Ported 2026-11-13.** Style sheet hot reload as `doc::StyleSheetFileWatcher` on main's file poll (`StyleEngine::replaceSheet` by handle) | `U/Doc/include/fuse/ui/doc/hot_reload.hpp`, `U/Doc/src/hot_reload.cpp`, `U/Core/src/style_sheets.cpp` | `fuse_ui_hot_reload_style` (`U/tests/test_hot_reload.cpp`, rewritten) |
+| **Ported 2026-11-13.** gettext `.po` catalogues as string-table entries: `l10n::parsePo`, `poKey`, `poToTable` (the reader of `extras/i18n.hpp`, folded into `fuse_ui_l10n_lib`) | `U/L10n/include/fuse/ui/l10n/l10n.hpp`, `U/L10n/src/po.cpp` (new) | `fuse_ui_l10n_po` (`U/tests/test_l10n_po.cpp`) |
 | **Ported 2026-11-13.** `<fuse/gui.hpp>` umbrella header and target `fuse::gui`, over the live modules | `U/Public/include/fuse/gui.hpp`, `U/Public/examples/gui_quickstart.cpp` | `fuse_gui_quickstart` |
 
 Standalone UI build on Linux after the merge: 208 ctest gates (the 180 main had + 28). `fuse_ui_os` and
@@ -407,11 +408,15 @@ five files when done. The original description follows.
   collide with main's). Compared with main's core gestures it adds pan with offset and release velocity, swipe
   with a direction and a finger count, for raw points that do not go through `UiContext::touch`. Backends still do
   not feed pinch / rotate from OS gesture events (KNOWN_GAPS); that is platform work, not this module.
-- *(still parked, checked 2026-11-13: main's `l10n::parseTable` reads `key=value` tables, not gettext `.po`; the
-  fold is a `.po` -> table reader in `fuse_ui_l10n_lib` that maps `msgstr[n]` onto CLDR plural categories)*
-  `extras/i18n.hpp`, `Extras/src/i18n.cpp` (`.po` catalogues, plurals, `%1` formatting): compiles on main; unbuilt
-  because it would be the third i18n library (`fuse/text/i18n.hpp`, `fuse_ui_l10n_lib`; mb 3.16). Fold its `.po`
-  reader into one of those if it reads more than main's. Gate `fuse_ui_extras_i18n`.
+- `.po` catalogues: **ported 2026-11-13** into `fuse_ui_l10n_lib` as `l10n::parsePo / poKey / poToTable`
+  (`U/L10n/src/po.cpp`, gate `fuse_ui_l10n_po`): msgctxt, multi-line strings, fuzzy and untranslated entries, and
+  plural entries turned into ICU plural messages on the CLDR categories by evaluating the catalogue's own
+  Plural-Forms expression, so a `.po` file feeds `StringTable` like a `key=value` table. What is left in the parked
+  `extras/i18n.hpp` / `Extras/src/i18n.cpp` and is covered elsewhere on main: number formatting (`l10n::formatNumber`),
+  layout direction (the core's `direction` / RTL), plural indices (CLDR rules in `l10n`). Not covered: `%1`..`%9`
+  positional formatting (`i18n::format`; ICU messages use `{0}`) and the process-wide `installTranslator`. The two
+  files are still in the tree because the parked `extras.hpp` umbrella and `gateI18n` in `test_extras.cpp` name them;
+  delete them with the `widgets_extra` port (3.12).
 - Windows: turn `FUSE_BUILD_UI_EXTRAS` on in `fuse-windows-native.yml`, fix what MSVC reports, run
   `fuse_ui_tray_win32`; implement `os::runProcess` with `CreateProcessW`; WebView2 needs `FUSE_UI_WEBVIEW2_DIR`
   (`Extras/src/compat/mingw/EventToken.h` is the MinGW shim).

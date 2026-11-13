@@ -17,7 +17,7 @@
 //                bar, list, scroll bar, dial, progress bar, table rows with stripes     [MINIMAL goldens only]
 //   editors    — code editor (syntax colours, selection, gutter), timeline, node graph, curve editor, calendar,
 //                date-time edit: the widgets whose paint code reads theme tokens      [MINIMAL goldens only]
-// Themes: `--theme=light` / `--theme=contrast` renders the same scenes with the light / high-contrast token sets
+// Themes: `--theme=light` / `--theme=contrast` renders the same scenes (all but hud) with the light / high-contrast token sets
 // (ctest fuse_ui_theme_golden_<light|contrast>_<scene>, goldens widgets_<scene>_<light|contrast>.png, MINIMAL text
 // profile only). The dark goldens predate keyboard focus rings; their FULL-profile twins cannot be re-rendered without
 // the fetched FULL text stack, so the dark dialogs / wizard cells are captured with the focus parked (their pixels

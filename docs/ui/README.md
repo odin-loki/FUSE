@@ -594,7 +594,7 @@ of `fuse::ui::os` need helper programs and work on POSIX desktops only; `os::run
 iOS and Android. `fuse::ui::desktop::openUrl` exists next to `fuse::app::openUrl` (`services.hpp`); prefer the latter
 in applications. `test_extras.cpp` runs the web view gate without WebKitGTK as a skip. Still parked: the branch's
 `widgets_extra`, SVG documents (`extras/svg.hpp`; main's `SvgImage` is the SVG reader), system video and audio output
-(`extras/media.hpp`), and `extras/i18n.hpp` (`.po` catalogues).
+(`extras/media.hpp`), and `extras/i18n.hpp` (its `.po` reader lives on as `l10n::parsePo`, see Localisation).
 
 `<fuse/gui.hpp>` (`Source/FUSE/UI/Public/include`, target `fuse::gui` inside this build) is one umbrella header over
 the core, widgets, documents, the application shell and, when built, the Extras (`FUSE_GUI_HAS_EXTRAS`), with the
@@ -709,6 +709,25 @@ st.bind(ui, label, "items", {{"n", 3}}); // re-texted on refresh()
 ```
 
 Table files are one `key=value` per line, `#` comment lines, escapes `\\ \n \t` (and `\=`, a leading `\#` in keys).
+
+### gettext `.po` catalogues
+
+`l10n::parsePo(text)` reads a gettext catalogue into string-table entries, so translations made with gettext tools
+(Poedit, Weblate, `msgmerge`) feed the same `StringTable`:
+
+```cpp
+auto cat = l10n::parsePo(poText);                       // std::expected<PoCatalog, MessageError>
+table.add(cat->language, l10n::poToTable(*cat));        // "Language:" of the header, e.g. "pl"
+table.tr("%n file", {{"n", 3}});                        // "3 pliki"
+table.tr(l10n::poKey("menu", "Open"));                  // an entry with msgctxt "menu"
+```
+
+`msgid` is the key (with a `msgctxt`: `poKey(context, msgid)`), `msgstr` the value. A plural entry becomes one ICU
+plural message on the argument `n`: which `msgstr[i]` serves which CLDR category is worked out by evaluating the
+catalogue's own `Plural-Forms` expression against the language's CLDR rule; `%n` / `%d` become `#`, ICU syntax
+characters in a translation are quoted. Fuzzy and untranslated entries are skipped (counted in the result), a form
+left empty falls back to the source text, a malformed file fails with the byte offset of the line. Singular values are
+taken as they are (`%1`-style positional arguments are not rewritten; ICU messages use `{0}`).
 
 ### `fuse_ui_extract_strings`
 
@@ -905,7 +924,9 @@ std::string tokens = widgets::themeTokensCss({.variant = widgets::ThemeVariant::
   `widgets::themeTokenCount / themeTokenName / themeTokenColor` read it). Paint functions call
   `themed(pc, tok::name, 0xDARK)` (`widgets_internal.hpp`), which is `UiContext::themeColor(hashId("--name"),
   fallback)`: the last sheet that defines the token wins, cached per sheet version, no allocation. An application
-  re-colours any widget part with a later `:root { --track: #...; }` sheet. Not themed on purpose: data colours (the
+  re-colours any widget part with a later `:root { --track: #...; }` sheet. New widget paint code follows the same rule
+  (`fuse_ui_theme_paint_literals` scans the sources): add a token to `kTokens` with its three values and the
+  `tok::` hash, or mark a data-colour line `// theme-exempt: why`. Not themed on purpose: data colours (the
   colour picker's gradients and markers, flame / pin / clip palettes and the text over them, images).
 - **Sheets by handle.** `ui.addStyleSheetTracked(sheet)` returns a handle for `ui.replaceStyleSheet(handle, sheet)`
   (same cascade position) and `ui.removeStyleSheet(handle)`; `ui.setThemeStyleSheet(css)` is the theme slot
@@ -1068,9 +1089,10 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_hot_reload_style` | a style sheet file reloads in place (no growth, same cascade position, theme tokens follow), a broken edit keeps the last good sheet, deleted file |
 | `fuse_ui_theme_sheet_handles` | sheets by handle: replace keeps the cascade position, remove, dead handles, the theme slot never stacks sheets, token colours follow the newest sheet, accent / custom high-contrast palette |
 | `fuse_ui_theme_token_only` | every variant defines every token as a colour, no literal colour in the theme rules, dark and light share the rule text, paint code follows a token override, fallback literals without the theme |
+| `fuse_ui_theme_paint_literals` | scans `Widgets/src/*.cpp`: every `Color::rgb(0x...)` is the fallback of a theme token (`themed` / `themedA`) or on a line marked `theme-exempt` (data colours); a new widget with a hard-coded colour fails here |
 | `fuse_ui_theme_contrast` | WCAG contrast of text vs background per widget (computed styles of a gallery + paint-code token pairs): ≥ 4.5 light / dark, ≥ 7 high contrast (also with a white custom palette); the known dark exceptions are pinned |
 | `fuse_ui_theme_focus_ring` | each of the 32 focusable classes renders differently with `:focus-visible`, in all three variants |
-| `fuse_ui_theme_golden_{light,contrast}_<scene>` | the widget golden scenes (containers, text, dialogs, wizard, mainwindow, spinmenu, hud, controls, editors) in the light and high-contrast themes; MINIMAL text profile only |
+| `fuse_ui_theme_golden_{light,contrast}_<scene>` | the widget golden scenes (containers, text, dialogs, wizard, mainwindow, spinmenu, controls, editors; not the game HUD, which keeps its own colours) in the light and high-contrast themes; MINIMAL text profile only |
 | `fuse_ui_widget_golden_{controls,editors}` | Tier A controls in their states with one keyboard-focused, and the token-painted editors (code edit, node graph, timeline, curve editor, calendar, markdown); MINIMAL only |
 | `fuse_app_theme_sheets` | `applyTheme` keeps one override sheet over 25 system theme changes, uses the widget library's tokens, high contrast outlines controls and gives a 2px hot-light focus ring |
 | `fuse_ui_bench_hud` (`perf`) | a 293-node game HUD animated as in play: UI CPU per frame median ≤ 0.5 ms (measures ~0.10 ms) |
@@ -1113,7 +1135,7 @@ library, helper process, pipes), `fuse_ui_extras_{undo,desktop,pdf,tray,declarat
 decimation,ring,hit,widget,model,export,bench,demo,3d,3d_large,demo3d,mesh3d,mesh3d_large,beyond,transition,
 demo_beyond}`, `fuse_app_cocoa_map` (key table of the parked Cocoa backend), `fuse_ui_extras_richtext_{model,undo,
 widget,view,golden}` (rich text editor on main's text stack), `fuse_ui_extras_pdf_paths`, `fuse_ui_extras_audio_meter`,
-`fuse_ui_extras_gesture`, `fuse_gui_quickstart` (`<fuse/gui.hpp>`). `fuse_ui_extras_tray` starts its own
+`fuse_ui_extras_gesture`, `fuse_gui_quickstart` (`<fuse/gui.hpp>`), `fuse_ui_l10n_po` (gettext `.po` catalogues). `fuse_ui_extras_tray` starts its own
 `dbus-daemon` and needs `busctl` for one of its checks.
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,

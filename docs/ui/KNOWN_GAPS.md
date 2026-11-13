@@ -178,7 +178,8 @@ pushed after those CI runs and re-checked on Linux only.
   `Application::setSystemTheme`, and the palette is the default one unless the app calls `widgets::setTheme` with its
   own. High contrast does not strip shadows / blur / gradients of application sheets (the branch's
   `StyleEngine::setForcedColors` is not ported); it only clears the theme's own. The light and high-contrast goldens
-  exist for the MINIMAL text profile only. Data colours are not themed (colour picker, flame / pin / clip palettes).
+  exist for the MINIMAL text profile only. Data colours are not themed (colour picker, flame / pin / clip palettes), and neither are the game HUD widgets of
+  `fuse_ui_game` (they draw over a game frame in their own colours).
   The existing dark dialogs / wizard goldens are captured with the focus parked, because they predate focus rings
   and their FULL-profile twins cannot be re-rendered without the fetched text stack; the light / high-contrast
   goldens and `fuse_ui_widget_golden_controls` show the rings.
@@ -187,8 +188,8 @@ pushed after those CI runs and re-checked on Linux only.
   The editor has no images, tables, per-run font family, line spacing or BiDi caret movement; the clipboard carries
   plain text; undo keeps whole-document snapshots per command (fine for pages, not for books).
 - Extras still parked: SVG documents (`extras/svg.hpp`: `<text>`, `clipPath`, `mask`, patterns, focal radial gradients,
-  filters; to be folded into main's `SvgImage`), system video and audio output (`extras/media.hpp`), `extras/i18n.hpp`
-  (`.po` catalogues), the Designer additions of both branches. `PdfDocument::renderDrawList` writes a gradient as the
+  filters; to be folded into main's `SvgImage`), system video and audio output (`extras/media.hpp`), the Designer
+  additions of both branches. `l10n::parsePo` does not rewrite `%1`-style positional arguments of singular strings. `PdfDocument::renderDrawList` writes a gradient as the
   mean of its stops and skips nine-patches and layer effects.
 - `fuse_app_binary_size` has a budget only for Linux x86-64 GCC Release MINIMAL in the standalone tree; the HUD binary
   size gate of the branch needs the COOKED text profile and is not registered.

@@ -164,4 +164,26 @@ std::string escapeTableValue(std::string_view value);
 bool parseTableLine(std::string_view line, std::string& key, std::string& value);
 std::string unescapeTable(std::string_view s);
 
+// ---- gettext .po catalogues (L10n/src/po.cpp) --------------------------------------------------------------------
+// A .po catalogue read into string-table entries, so translations made with gettext tools go through the same
+// StringTable / formatMessage path as a "key=value" table:
+//   * msgid -> key, msgstr -> value; with a msgctxt the key is poKey(context, msgid) (context, U+0004, msgid);
+//   * a plural entry (msgid_plural, msgstr[0..n-1]) becomes one ICU plural message on the argument `n`, e.g. for
+//     Polish "{n, plural, one {# plik} few {# pliki} many {# plikow} other {# pliki}}". Which msgstr[i] serves which
+//     CLDR category is worked out from the catalogue's own Plural-Forms expression (evaluated, not looked up) and the
+//     language's CLDR rule; `%n` / `%d` in a form become '#', ICU syntax characters in it are quoted;
+//   * the header gives `language`; fuzzy entries and entries without a translation are skipped (and counted);
+//   * the escapes \n \t \" \\ and multi-line strings are read; a malformed file fails with the byte offset of the
+//     line.
+// Singular values are taken as they are: text used with StringTable::tr(key, args) is an ICU message.
+struct PoCatalog {
+    std::string language; ///< "Language:" of the header ("ru", "pt_BR"); empty when absent
+    std::vector<TableEntry> entries;
+    std::uint32_t skippedFuzzy = 0, untranslated = 0;
+};
+std::expected<PoCatalog, MessageError> parsePo(std::string_view po);
+std::string poKey(std::string_view context, std::string_view msgid);
+/// The entries as "key=value" table text (StringTable::add(catalog.language, poToTable(catalog))).
+std::string poToTable(const PoCatalog& catalog);
+
 } // namespace fuse::ui::l10n

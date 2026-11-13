@@ -9,6 +9,9 @@
 //                  WCAG exempts inactive controls), (2) for text the paint code draws in token colours, from the
 //                  token pairs it uses. The dark values that miss 4.5 are listed in kDarkKnown with a pinned floor
 //                  (the dark theme is frozen pixel for pixel by the existing goldens); nothing else may miss.
+//   paint_literals no hard-coded colour in the widget paint code: every `Color::rgb(0x...)` in Widgets/src/*.cpp is the
+//                  fallback of a theme token (themed / themedA, widgets_internal.hpp) or sits on a line marked
+//                  `theme-exempt` (data colours: the colour picker's gradients and markers). Scans the sources.
 //   focus_ring     every focusable class of the library shows keyboard focus: rendering a node of the class with
 //                  and without :focus-visible differs inside its box, in each of the three variants
 #include "test_util.hpp"
@@ -18,6 +21,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -360,6 +365,40 @@ void gateContrast() {
     }
 }
 
+// ---- paint_literals --------------------------------------------------------------------------------------------------
+#ifndef FUSE_UI_WIDGETS_SRC
+#define FUSE_UI_WIDGETS_SRC ""
+#endif
+void gatePaintLiterals() {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    int files = 0, tokens = 0, exempt = 0, bad = 0;
+    for (const fs::directory_entry& e : fs::directory_iterator(FUSE_UI_WIDGETS_SRC, ec)) {
+        if (e.path().extension() != ".cpp") continue;
+        ++files;
+        std::ifstream in(e.path());
+        std::string line;
+        for (int n = 1; std::getline(in, line); ++n) {
+            for (std::size_t at = line.find("0x"); at != std::string::npos; at = line.find("0x", at + 2)) {
+                // a colour literal: `Color::rgb(0x` directly, or the fallback argument of themed( / themedA(
+                const std::string_view before = std::string_view(line).substr(0, at);
+                if (before.ends_with("Color::rgb(")) {
+                    if (line.find("theme-exempt") != std::string::npos) { ++exempt; continue; }
+                    std::fprintf(stderr, "%s:%d: hard-coded colour in widget code: use themed(pc, tok::..., 0x...) or mark the line "
+                                         "theme-exempt\n", e.path().filename().string().c_str(), n);
+                    ++bad;
+                } else if (before.rfind("themed(") != std::string_view::npos || before.rfind("themedA(") != std::string_view::npos) {
+                    ++tokens;
+                }
+            }
+        }
+    }
+    std::printf("  %d widget sources: %d token colours, %d exempt data-colour literals, %d hard-coded\n", files, tokens, exempt, bad);
+    UI_CHECK(files >= 10);   // the directory was found
+    UI_CHECK(tokens >= 100); // the paint code does read tokens
+    UI_CHECK_EQ(bad, 0);
+}
+
 // ---- focus_ring ------------------------------------------------------------------------------------------------------
 void gateFocusRing() {
     for (w::ThemeVariant v : kVariants) {
@@ -422,6 +461,7 @@ int main(int argc, char** argv) {
     else if (gate == "token_only") gateTokenOnly();
     else if (gate == "contrast") gateContrast();
     else if (gate == "focus_ring") gateFocusRing();
+    else if (gate == "paint_literals") gatePaintLiterals();
     else {
         std::fprintf(stderr, "unknown gate '%s'\n", gate.c_str());
         return 2;

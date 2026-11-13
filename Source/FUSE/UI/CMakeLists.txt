@@ -233,7 +233,8 @@ endif()
 # ---- fuse_ui_l10n_lib: CLDR plural rules, ICU-style messages, locale number / date / time / currency formatting and
 # string tables (standard library only). fuse_ui_game's StringTable formats with it; widgets reach it through
 # UiContext::setLocale hooks (fuse/ui/l10n/ui_locale.hpp), so binaries that never localise do not link the tables.
-add_library(fuse_ui_l10n_lib STATIC L10n/src/plural.cpp L10n/src/format.cpp L10n/src/message.cpp L10n/src/table.cpp)
+add_library(fuse_ui_l10n_lib STATIC L10n/src/plural.cpp L10n/src/format.cpp L10n/src/message.cpp L10n/src/table.cpp
+    L10n/src/po.cpp)
 target_include_directories(fuse_ui_l10n_lib PUBLIC L10n/include)
 target_include_directories(fuse_ui_l10n_lib PRIVATE Text/include) # header-only fuse/text/from_chars.hpp; no link to fuse_text
 target_compile_features(fuse_ui_l10n_lib PUBLIC cxx_std_23)
