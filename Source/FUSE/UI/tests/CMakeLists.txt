@@ -412,6 +412,65 @@ set_tests_properties(fuse_ui_gpu_pack_vector PROPERTIES LABELS "fuse_ui;gate")
 # Dock drag and drop, catalogue coverage / extra goldens, accessibility families, sample and packaging gates
 include(${CMAKE_CURRENT_SOURCE_DIR}/finishing.cmake)
 
+# ---- gates from the gui-framework branch (docs/ui/archive/PORT_gui_framework.md) ----
+# Key-code table of the branch's Cocoa backend (App/src/cocoa_map.hpp, a plain header; the backend itself is parked)
+add_executable(fuse_app_cocoa_map test_cocoa_map.cpp)
+target_link_libraries(fuse_app_cocoa_map PRIVATE fuse_ui_core)
+add_test(NAME fuse_app_cocoa_map COMMAND fuse_app_cocoa_map)
+set_tests_properties(fuse_app_cocoa_map PROPERTIES LABELS "fuse_ui;gate")
+
+if(TARGET fuse_ui_os)
+    # the fuse::ui::os seam on the configured backend (std by default)
+    add_executable(fuse_ui_os_seam test_os_seam.cpp)
+    target_link_libraries(fuse_ui_os_seam PRIVATE fuse_ui_os)
+    target_include_directories(fuse_ui_os_seam PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+    target_link_libraries(fuse_ui_os_seam PRIVATE fuse_ui_widgets) # test_util.hpp (font helpers)
+    add_test(NAME fuse_ui_os_seam COMMAND fuse_ui_os_seam)
+    set_tests_properties(fuse_ui_os_seam PROPERTIES LABELS "fuse_ui;gate")
+endif()
+
+# fuse_ui_extras: one ctest per gate of the modules main builds. The gates of the parked modules (gesture i18n
+# containers dialogs lcd_keyseq mdi completer graphics widget_pdf richtext vkeyboard svg charts media) are in
+# test_extras.cpp behind FUSE_UI_EXTRAS_ALL and are not registered.
+if(TARGET fuse_ui_extras)
+    add_executable(fuse_ui_extras_tests test_extras.cpp)
+    find_package(Threads REQUIRED) # the tray gate serves D-Bus from a std::thread
+    target_link_libraries(fuse_ui_extras_tests PRIVATE fuse_ui_extras Threads::Threads)
+    target_include_directories(fuse_ui_extras_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+    target_compile_definitions(fuse_ui_extras_tests PRIVATE FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
+    foreach(g undo desktop pdf tray declarative dataviz3d dataviz3d_bsp)
+        add_test(NAME fuse_ui_extras_${g} COMMAND fuse_ui_extras_tests --gate=${g})
+        set_tests_properties(fuse_ui_extras_${g} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+    # charts library (fuse::ui::charts) and the 3D data visualisation behind it
+    add_executable(fuse_ui_charts_tests test_charts.cpp)
+    target_link_libraries(fuse_ui_charts_tests PRIVATE fuse_ui_extras)
+    target_include_directories(fuse_ui_charts_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+    foreach(g series axes decimation ring hit widget model export bench demo 3d 3d_large demo3d mesh3d mesh3d_large beyond transition demo_beyond)
+        add_test(NAME fuse_ui_charts_${g} COMMAND fuse_ui_charts_tests --gate=${g})
+        set_tests_properties(fuse_ui_charts_${g} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang") # partial designated initialisers in the branch's tests and in stb
+        target_compile_options(fuse_ui_extras_tests PRIVATE -Wno-missing-field-initializers)
+        target_compile_options(fuse_ui_charts_tests PRIVATE -Wno-missing-field-initializers)
+    endif()
+    # system web engine (WebKitGTK, loaded at run time): needs a display, so Linux / BSD runs it on its own Xvfb
+    find_program(FUSE_XVFB_RUN Xvfb)
+    if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT CMAKE_CROSSCOMPILING AND FUSE_XVFB_RUN)
+        add_test(NAME fuse_ui_extras_webview
+                 COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_isolated_x.sh -- $<TARGET_FILE:fuse_ui_extras_tests> --gate=webview)
+        set_tests_properties(fuse_ui_extras_webview PROPERTIES LABELS "fuse_ui;gate" TIMEOUT 120
+            ENVIRONMENT "WEBKIT_DISABLE_COMPOSITING_MODE=1;LIBGL_ALWAYS_SOFTWARE=1")
+    endif()
+    # Win32 tray + HMENU global menu bar (the branch ran it under Wine; not run on main)
+    if(WIN32)
+        add_executable(fuse_ui_tray_win32 test_tray_win32.cpp)
+        target_link_libraries(fuse_ui_tray_win32 PRIVATE fuse_ui_extras)
+        add_test(NAME fuse_ui_tray_win32 COMMAND fuse_ui_tray_win32)
+        set_tests_properties(fuse_ui_tray_win32 PROPERTIES RUN_SERIAL TRUE TIMEOUT 120 LABELS "fuse_ui;gate")
+    endif()
+endif()
+
 # Wall-clock budget gates also carry the label `perf`: their thresholds assume a quiet machine, so CI on shared or
 # nested VMs (FreeBSD VM, macOS runners) runs `ctest -LE "vulkan|perf"`. That also leaves out what else these gates
 # check (steady-state allocation counts, row counts); the Linux gates run them all.

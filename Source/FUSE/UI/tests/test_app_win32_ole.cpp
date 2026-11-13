@@ -1,0 +1,184 @@
+// fuse_app_win32_ole (Windows / Wine): OLE drag and drop and the IFileDialog native dialog.
+//   1. the window's registered IDropTarget accepts our own CF_HDROP data object -> onExternalDrop paths
+//   2. a real DoDragDrop started by AppWindow::beginExternalDrag lands back on the window (self drop)
+//   1b. a multi-format data object (text + registered MIME formats) -> ExternalDrop::formats with the bytes
+//   1c. the custom copy / link drag cursors (win32CursorHandle): 32x32 ARGB, hotspot at the arrow tip, distinct
+//   1d. the drag pixmap as a premultiplied BGRA DIB, attached through IDragSourceHelper (Wine's helper may stub it)
+//   3. os::nativeFileDialog (IFileOpenDialog) shows, a helper thread presses OK, the preset file comes back
+#include "fuse/app/app.hpp"
+#include "fuse/app/native.hpp"
+#include "fuse/ui/os.hpp"
+
+#include <ole2.h>
+#include <windows.h>
+
+#include <atomic>
+#include <cstdio>
+#include <cstring>
+#include <cstdint>
+#include <string>
+#include <thread>
+
+namespace fuse::app::detail {
+IDataObject* win32MakeDataObject(const AppWindow::ExternalDrag& d);
+void* win32CursorHandle(fuse::ui::CursorShape);
+void* win32DragBitmap(const AppWindow::ExternalDrag& d);
+long win32AttachDragImage(IDataObject* data, const AppWindow::ExternalDrag& d);
+}
+namespace app = fuse::app;
+using namespace fuse::ui;
+static int g_fail = 0;
+#define CHECK(c) do { if (!(c)) { std::fprintf(stderr, "%s:%d: CHECK failed: %s\n", __FILE__, __LINE__, #c); ++g_fail; } } while (0)
+
+int main(int argc, char** argv) {
+    app::Application a{{.name = "gate_win32_ole", .argc = argc, .argv = argv, .loadSettings = false}};
+    auto& win = a.createWindow({.title = "fuse ole", .width = 320, .height = 220});
+    std::vector<std::string> got;
+    std::string mime;
+    int ended = -1, drops = 0;
+    app::AppWindow::ExternalDrop last;
+    win.onExternalDrop([&](app::AppWindow&, const app::AppWindow::ExternalDrop& d) { got = d.paths; mime = d.mime; last = d; ++drops; });
+    win.onExternalDragEnd([&](bool ok) { ended = ok ? 1 : 0; });
+    app::NativePlatform native(a);
+    native.show(win);
+    for (int i = 0; i < 50; ++i) a.step(0.01f);
+    HWND hwnd = reinterpret_cast<HWND>(native.nativeWindow(win));
+    CHECK(hwnd != nullptr);
+    auto* target = static_cast<IDropTarget*>(GetPropW(hwnd, L"FuseDropTarget"));
+    CHECK(target != nullptr);
+
+    // 1. direct IDropTarget round trip
+    if (target) {
+        IDataObject* data = app::detail::win32MakeDataObject({.paths = {"C:/tmp/a b.txt", "C:/tmp/c.png"}});
+        RECT rc;
+        GetWindowRect(hwnd, &rc);
+        POINTL pt{rc.left + 40, rc.top + 60};
+        DWORD eff = DROPEFFECT_COPY;
+        CHECK(target->DragEnter(data, MK_LBUTTON, pt, &eff) == S_OK && eff == DROPEFFECT_COPY);
+        eff = DROPEFFECT_COPY;
+        CHECK(target->Drop(data, 0, pt, &eff) == S_OK && eff == DROPEFFECT_COPY);
+        data->Release();
+        CHECK(got.size() == 2 && got[0] == "C:/tmp/a b.txt" && got[1] == "C:/tmp/c.png" && mime == "text/uri-list");
+        // 1b. multi-format
+        app::AppWindow::ExternalDrag md{.mime = "text/plain", .data = "hi"};
+        md.formats = {{"application/x-fuse-test", "42"}, {"text/html", "<i>x</i>"}};
+        data = app::detail::win32MakeDataObject(md);
+        eff = DROPEFFECT_COPY;
+        CHECK(target->DragEnter(data, MK_LBUTTON, pt, &eff) == S_OK && eff == DROPEFFECT_COPY);
+        eff = DROPEFFECT_COPY;
+        CHECK(target->Drop(data, 0, pt, &eff) == S_OK && eff == DROPEFFECT_COPY);
+        data->Release();
+        CHECK(last.mime == "text/plain" && last.data == "hi");
+        int found = 0;
+        for (const auto& [m, v] : last.formats) found += (m == "application/x-fuse-test" && v == "42") + (m == "text/html" && v == "<i>x</i>");
+        CHECK(found == 2);
+    }
+    // 1c. custom drag cursors
+    {
+        auto* copy = static_cast<HCURSOR>(app::detail::win32CursorHandle(CursorShape::Copy));
+        auto* link = static_cast<HCURSOR>(app::detail::win32CursorHandle(CursorShape::Link));
+        CHECK(copy && link && copy != link);
+        CHECK(app::detail::win32CursorHandle(CursorShape::Copy) == copy); // built once
+        CHECK(app::detail::win32CursorHandle(CursorShape::Move) == nullptr);
+        ICONINFO ii{};
+        if (copy && GetIconInfo(copy, &ii)) {
+            CHECK(!ii.fIcon && ii.xHotspot == 0 && ii.yHotspot == 0);
+            BITMAP bm{};
+            CHECK(ii.hbmColor && GetObjectW(ii.hbmColor, sizeof(bm), &bm) && bm.bmWidth == 32 && bm.bmHeight == 32);
+            if (ii.hbmColor) DeleteObject(ii.hbmColor);
+            if (ii.hbmMask) DeleteObject(ii.hbmMask);
+        } else CHECK(false);
+    }
+
+    // 1d. drag image
+    {
+        app::AppWindow::ExternalDrag d{.mime = "text/plain", .data = "img"};
+        d.imageW = 4; d.imageH = 2; d.hotX = 1; d.hotY = 1;
+        d.image.assign(8, 0x80402010u); // RGBA8 bytes 10 20 40 80
+        d.image[7] = 0xFF0000FFu;       // opaque red
+        HBITMAP bmp = static_cast<HBITMAP>(app::detail::win32DragBitmap(d));
+        CHECK(bmp);
+        if (bmp) {
+            DIBSECTION ds{};
+            CHECK(GetObjectW(bmp, sizeof(ds), &ds) == sizeof(ds) && ds.dsBm.bmWidth == 4 && ds.dsBm.bmHeight == 2 && ds.dsBm.bmBitsPixel == 32);
+            const auto* px = static_cast<const std::uint32_t*>(ds.dsBm.bmBits);
+            CHECK(px && px[0] == 0x80102040u && px[7] == 0xFFFF0000u); // BGRA, top-down (last pixel = bottom-right)
+            DeleteObject(bmp);
+        }
+        CHECK(app::detail::win32DragBitmap({.mime = "text/plain", .data = "x"}) == nullptr);
+        IDataObject* data = app::detail::win32MakeDataObject(d);
+        const long hr = app::detail::win32AttachDragImage(data, d);
+        if (hr == S_OK) {
+            FORMATETC f{CLIPFORMAT(RegisterClipboardFormatW(L"DragImageBits")), nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+            std::fprintf(stderr, "1d: IDragSourceHelper ok, DragImageBits %s\n", data->QueryGetData(&f) == S_OK ? "stored" : "not stored");
+        } else std::fprintf(stderr, "1d: IDragSourceHelper::InitializeFromBitmap -> 0x%08lx (stub / unavailable)\n", hr);
+        // SetData round trip (what the helper relies on)
+        FORMATETC f{CLIPFORMAT(RegisterClipboardFormatW(L"application/x-fuse-test")), nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+        STGMEDIUM m{};
+        m.tymed = TYMED_HGLOBAL;
+        m.hGlobal = GlobalAlloc(GMEM_MOVEABLE, 3);
+        std::memcpy(GlobalLock(m.hGlobal), "abc", 3);
+        GlobalUnlock(m.hGlobal);
+        CHECK(data->SetData(&f, &m, TRUE) == S_OK);
+        STGMEDIUM out{};
+        CHECK(data->GetData(&f, &out) == S_OK && GlobalSize(out.hGlobal) >= 3 && std::memcmp(GlobalLock(out.hGlobal), "abc", 3) == 0);
+        if (out.hGlobal) { GlobalUnlock(out.hGlobal); ReleaseStgMedium(&out); }
+        data->Release();
+    }
+
+    // 2. real DoDragDrop: cursor over our client area, button already up -> immediate drop on the window
+    got.clear();
+    {
+        POINT c{100, 100};
+        ClientToScreen(hwnd, &c);
+        SetForegroundWindow(hwnd);
+        SetCursorPos(c.x, c.y);
+        app::AppWindow::ExternalDrag dd{.paths = {"C:/srv/one two.txt"}};
+        dd.imageW = 2; dd.imageH = 2; dd.image.assign(4, 0xFF00FF00u); // the helper path runs inside the real drag too
+        CHECK(win.beginExternalDrag(dd));
+        SendMessageW(hwnd, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(100, 100));
+        for (int i = 0; i < 50 && ended < 0; ++i) a.step(0.01f);
+        CHECK(ended == 1);
+        CHECK(got.size() == 1 && got[0] == "C:/srv/one two.txt");
+    }
+
+    // 3. IFileOpenDialog with a helper pressing OK
+    {
+        char tmp[MAX_PATH];
+        GetTempPathA(MAX_PATH, tmp);
+        std::string dir = tmp;
+        const std::string file = "fuse_dialog_pick.txt";
+        if (FILE* f = std::fopen((dir + file).c_str(), "wb")) { std::fputs("x", f); std::fclose(f); }
+        std::atomic<bool> stop{false}, pressed{false};
+        std::thread helper([&] {
+            for (int i = 0; i < 400 && !stop; ++i) {
+                Sleep(50);
+                HWND d = FindWindowW(nullptr, L"FUSE dialog test");
+                if (d && IsWindowVisible(d)) {
+                    Sleep(300);
+                    PostMessageW(d, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), 0);
+                    pressed = true;
+                    return;
+                }
+            }
+        });
+        os::NativeDialogSpec spec;
+        spec.title = "FUSE dialog test";
+        spec.directory = dir;
+        spec.fileName = file;
+        spec.filters = {{"Text", {"*.txt"}}, {"All", {"*.*"}}};
+        const auto r = os::nativeFileDialog(spec);
+        stop = true;
+        helper.join();
+        CHECK(pressed.load());
+        CHECK(!r.unavailable);
+        std::string want = dir + file;
+        for (auto& ch : want) if (ch == '\\') ch = '/';
+        std::string have = r.paths.empty() ? "" : r.paths[0];
+        for (auto& ch : have) if (ch == '\\') ch = '/';
+        CHECK(r.paths.size() == 1);
+        if (_stricmp(have.c_str(), want.c_str()) != 0) { std::fprintf(stderr, "dialog: got '%s' want '%s'\n", have.c_str(), want.c_str()); ++g_fail; }
+    }
+    std::printf("fuse_app_win32_ole: drops=%d ended=%d %s\n", drops, ended, g_fail ? "FAIL" : "OK");
+    return g_fail ? 1 : 0;
+}

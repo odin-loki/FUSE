@@ -117,6 +117,81 @@ if(FUSE_BUILD_UI_WIDGETS)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core)
 endif()
 
+# ---- fuse_ui_os + fuse_ui_extras (from the gui-framework branch; docs/ui/archive/PORT_gui_framework.md) ----
+# fuse_ui_os is the fuse::ui::os seam (Os/include/fuse/ui/os.hpp) that fuse_ui_extras reaches files, the environment,
+# dynamic libraries and helper processes through. Backends:
+#   std    (default) Os/src/os_std.cpp: C++ standard library + POSIX / Win32, no third-party code.
+#   forge  Os/src/os_forge.cpp on the FORGE library the branch used. FORGE is NOT part of this repository (repository
+#          policy: no new git submodules) and nothing is fetched: pass -DFUSE_FORGE_DIR=<your FORGE checkout>.
+#   custom your own translation unit(s) in FUSE_UI_OS_SOURCES.
+# fuse_ui_extras builds the modules of the branch's Extras/ that compile against main's core API: undo framework,
+# declarative properties / state machines, PDF writer, desktop integration, D-Bus client, tray icon + global menu,
+# system web view, charts library and 3D data visualisation. The other Extras sources stay in the tree unbuilt
+# (gesture, i18n, widgets_extra, button box, rich text, SVG documents, media, the Objective-C++ backends).
+# Verified on Linux, Android (NDK) and FreeBSD. Off by default on Windows and Apple platforms: os_std.cpp and the
+# Win32 backends compile with MinGW-w64 but were not built with MSVC, and no Apple build was possible.
+if(WIN32 OR APPLE)
+    set(_fuse_ui_extras_default OFF)
+else()
+    set(_fuse_ui_extras_default ON)
+endif()
+option(FUSE_BUILD_UI_EXTRAS "Build fuse_ui_os + fuse_ui_extras (undo, declarative, PDF, desktop, tray, web view, charts, 3D dataviz)" ${_fuse_ui_extras_default})
+set(FUSE_UI_OS_BACKEND "std" CACHE STRING "OS layer behind fuse::ui::os: std (standard library + POSIX / Win32), forge (needs FUSE_FORGE_DIR) or custom")
+set_property(CACHE FUSE_UI_OS_BACKEND PROPERTY STRINGS std forge custom)
+set(FUSE_UI_OS_SOURCES "" CACHE STRING "custom backend: source file(s) implementing fuse/ui/os.hpp")
+if(FUSE_BUILD_UI_EXTRAS AND FUSE_BUILD_UI_WIDGETS)
+    if(FUSE_UI_OS_BACKEND STREQUAL "forge")
+        include("${FUSE_UI_REPO_ROOT}/cmake/FuseForge.cmake")
+        fuse_add_forge() # FATAL_ERROR with instructions when FUSE_FORGE_DIR is not a FORGE checkout
+        add_library(fuse_ui_os STATIC Os/src/os_forge.cpp)
+        target_link_libraries(fuse_ui_os PRIVATE fuse_forge)
+    elseif(FUSE_UI_OS_BACKEND STREQUAL "custom")
+        if(NOT FUSE_UI_OS_SOURCES)
+            message(FATAL_ERROR "FUSE_UI_OS_BACKEND=custom needs FUSE_UI_OS_SOURCES")
+        endif()
+        add_library(fuse_ui_os STATIC ${FUSE_UI_OS_SOURCES})
+    elseif(FUSE_UI_OS_BACKEND STREQUAL "std")
+        add_library(fuse_ui_os STATIC Os/src/os_std.cpp)
+        target_link_libraries(fuse_ui_os PRIVATE ${CMAKE_DL_LIBS})
+    else()
+        message(FATAL_ERROR "FUSE_UI_OS_BACKEND must be std, forge or custom (got '${FUSE_UI_OS_BACKEND}')")
+    endif()
+    if(WIN32 AND NOT FUSE_UI_OS_BACKEND STREQUAL "custom")
+        target_sources(fuse_ui_os PRIVATE Os/src/file_dialog_win32.cpp)
+        target_link_libraries(fuse_ui_os PRIVATE ole32 shell32 uuid)
+    endif()
+    target_include_directories(fuse_ui_os PUBLIC Os/include)
+    target_compile_features(fuse_ui_os PUBLIC cxx_std_23)
+
+    # (explicit list, not a glob: Extras/src also holds the parked sources)
+    add_library(fuse_ui_extras STATIC Extras/src/undo.cpp Extras/src/declarative.cpp Extras/src/pdf.cpp
+        Extras/src/desktop.cpp Extras/src/dbus.cpp
+        Extras/src/tray.cpp Extras/src/tray_sni.cpp Extras/src/tray_win32.cpp Extras/src/tray_none.cpp
+        Extras/src/webview.cpp Extras/src/webview_gtk.cpp Extras/src/webview_win32.cpp Extras/src/webview_none.cpp
+        Extras/src/charts.cpp Extras/src/charts_simd.cpp Extras/src/datavis3d.cpp)
+    target_include_directories(fuse_ui_extras PUBLIC Extras/include)
+    target_link_libraries(fuse_ui_extras PUBLIC fuse_ui_widgets fuse_ui_os)
+    # the branch's code uses partial designated initialisers throughout; in tree that warns under -Wextra
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(fuse_ui_extras PRIVATE -Wno-missing-field-initializers)
+    endif()
+    if(WIN32)
+        target_link_libraries(fuse_ui_extras PUBLIC shell32 user32 gdi32 ole32)
+    endif()
+    # The branch's AVX2 / NEON min-max kernels for charts (Extras/src/charts_simd_{avx2,neon}.cpp) take their vector
+    # type and CPU detection from FORGE's lane layer; they are built only on the forge backend.
+    if(TARGET fuse_forge_lane)
+        target_link_libraries(fuse_ui_extras PRIVATE fuse_forge fuse_forge_lane)
+        target_compile_definitions(fuse_ui_extras PRIVATE FUSE_UI_CHARTS_LANE=1)
+        fuse_target_is_x86_64(_ux_x64)
+        if(_ux_x64)
+            target_sources(fuse_ui_extras PRIVATE Extras/src/charts_simd_avx2.cpp)
+            fuse_simd_flags(_ux_avx2 avx2)
+            set_source_files_properties(Extras/src/charts_simd_avx2.cpp PROPERTIES COMPILE_OPTIONS "${_ux_avx2}")
+        endif()
+    endif()
+endif()
+
 # ---- fuse_ui_doc: .fuseui JSON documents, binding model and expression bytecode ----
 # fuse_ui_sql: SqliteModel, an ItemModel over vendor/sqlite (lazy windowed row cache)
 option(FUSE_BUILD_UI_SQL "Build fuse_ui_sql (SQLite item model over vendor/sqlite)" ON)

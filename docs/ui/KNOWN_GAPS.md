@@ -9,11 +9,18 @@ shaders, `ProjectHost`) have an implementation in the tree that no target builds
 branch `claude/magical-bassi-815825`. They stay gaps until ported; [`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md)
 says where each one is and what blocks it.
 
+The merged branch `gui-framework` is in the same position: part of its `Extras/` module is live (`fuse_ui_os`,
+`fuse_ui_extras`: undo, declarative bindings, PDF, desktop helpers, tray, web view, charts, 3D data visualisation);
+everything else of it (a second Wayland backend, OS drag and drop, `@keyframes` and the other CSS engine work, GPU
+paths / filters / HDR, more widgets, rich text, SVG documents, media) is in the tree unbuilt and listed in
+[`archive/PORT_gui_framework.md`](archive/PORT_gui_framework.md), which also says which of the two branches'
+implementations to port where both have one. Its FORGE submodule was not taken.
+
 ## What has been verified
 
 | Platform | How | Result |
 |---|---|---|
-| Linux (UI standalone) | Local build + ctest | 178/178 (MINIMAL text), 177/177 (FULL text) |
+| Linux (UI standalone) | Local build + ctest | 208/208 (MINIMAL text) after the `gui-framework` merge; before the two branch merges 178/178 (MINIMAL), 177/177 (FULL). FULL not re-run since |
 | Linux (whole engine, in-tree) | `fuse-umbrella-linux.yml` | 1245 of 1247; the two failures also fail on `main` (see below) |
 | Android arm64 (NDK r26d) | `fuse-core-android.yml` + local cross-build | Builds and links, apps as `lib<name>.so` |
 | macOS | `fuse-core-ios.yml` (macOS job, MoltenVK headers) | Builds; headless gates pass |
@@ -48,6 +55,11 @@ pushed after those CI runs and re-checked on Linux only.
   non-Xcode generator.
 - **AccessKit backend** (`A11y/src/a11y_accesskit.cpp`) with the extended accessibility data was not compiled (needs
   accesskit-c / a Rust toolchain).
+- **`fuse_ui_os` / `fuse_ui_extras`** (from `gui-framework`): off by default on Windows and Apple platforms, where
+  they were never built (MinGW-w64 syntax check only). On Android and FreeBSD they are cross-built, no gate run. The
+  web view gate passed without a web engine installed (it skips inside the test); desktop notifications, URL
+  opening and printing were checked as command lines only; the tray only against a private `dbus-daemon`. The charts
+  were not compared image by image with the branch's renderer. Nothing GPU-side of that branch is built.
 - **Sanitizers**: one ASan + UBSan pass over the UI suite was done before the last fixes; not repeated on the final
   tree. Not built at all: `-DFUSE_UI_TEXT=FULL` on any platform other than Linux.
 
@@ -82,8 +94,9 @@ pushed after those CI runs and re-checked on Linux only.
 - X11: one scale per connection, no INCR clipboard transfers, no theme-change notification, no Wayland backend.
 - Popups as separate OS windows exist on X11 / Win32 only. One OS window per process on Android / iOS.
 - macOS: moving a window to a screen with a different backing scale is picked up only on the next layout.
-- Native dialogs block the app's windows while open. No tray icons, notifications, custom image cursors,
-  multi-file selection, or system web view.
+- Native dialogs block the app's windows while open. No custom image cursors or multi-file selection. `fuse_app`
+  itself has no tray icon, notification or web view API; those exist in `fuse_ui_extras` (verified on Linux only) and
+  are not tied to `fuse_app` windows.
 - `applyTheme` adds a style sheet per call (the style engine has no sheet removal).
 - In-window menus built from `MenuDesc` show `[x]` text for checkable items and do not grey disabled ones.
 - These are native backends, not the SDL3 route decision D1 recommended for macOS / iOS / Android.
@@ -124,6 +137,8 @@ pushed after those CI runs and re-checked on Linux only.
 - Model / view: rows are single-line and fixed-height; a filtered or sorted proxy rebuilds fully on any source
   change; tree selection is by visible row (collapsing deselects); `SqliteModel` is not async; the combo-box cell
   editor commits on Enter / Tab / click-away, not on picking from the popup.
+- The `chart` widget has line, bar, area, scatter and flame kinds; the richer charts are a separate library
+  (`fuse::ui::charts` in `fuse_ui_extras`) with its own `chartView` widget, not reachable from `.fuseui` documents.
 - A chart flame graph exists; a dedicated profiler model does not. Message box, wizard, popover, toast and file
   dialog cannot be created from a `.fuseui` document.
 - The Designer and the Lua bindings were not extended for the new style properties.

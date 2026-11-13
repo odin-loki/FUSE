@@ -24,6 +24,8 @@ immediate-mode front-end. See the plan's status table for what is still open.
 | `Source/FUSE/UI/Doc` | `fuse_ui_doc`, `fuse_ui_cook`, `fuse_ui_extract_strings` | `.fuseui` JSON documents, binding model, expression bytecode; the cooker and the string-extraction CLI |
 | `Source/FUSE/UI/L10n` | `fuse_ui_l10n_lib` | CLDR plural rules, ICU-style message formatting, locale number / date / time / currency formatting, string-table file format (standard library only, no ICU) |
 | `Source/FUSE/UI/Script` | `fuse_ui_script` | Lua `ui` table (vendored Lua 5.2) |
+| `Source/FUSE/UI/Os` | `fuse_ui_os` | `fuse::ui::os` seam (`fuse/ui/os.hpp`): files, environment, clocks, dynamic libraries, helper processes, file watcher, instance lock. Default backend `Os/src/os_std.cpp` (standard library + POSIX / Win32). Built with `fuse_ui_extras` |
+| `Source/FUSE/UI/Extras` | `fuse_ui_extras` | Undo framework, declarative properties and state machines, PDF writer, desktop integration, tray icon and global menu, system web view, charts library, 3D data visualisation (option `FUSE_BUILD_UI_EXTRAS`; see [Extras](#extras-fuse_ui_extras)) |
 | `Source/FUSE/UI/Render` | `fuse_ui_render`, `fuse_ui_vk` | GPU draw data packing, `ui.draw_list` compute kernel, `UiLayerGpu` render-graph pass and `UiFrameSource` (in tree with the Vulkan RHI) |
 | `Source/FUSE/UI/App` | `fuse_app`, `fuse_app_native` | `Application` / `AppWindow` on-demand loop, settings, command line, single instance; native X11 / Win32 windows and the Vulkan swapchain presenter; samples `hello_app`, `notes_app`, `widget_gallery`, `game_menu` |
 | `Source/FUSE/UI/Game` | `fuse_ui_game` | HUD widgets, world markers, `UiSurface` world panels, gamepad navigation, input arbitration, prompts, time domains, locale table, subtitles, dialogue; samples `hud_demo`, `world_panel_demo` |
@@ -41,6 +43,14 @@ The tree also holds source files that no target builds yet: the UI work of the m
 fonts, the SVG icon cooker, window chrome, tray, AccessKit window adapters, GPU effects, `ProjectHost`, their tests
 and goldens). [`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md) lists every one of them, what blocks
 it and how to verify it once ported. Nothing in this document describes those files unless it says so.
+
+The same holds for the merged branch `gui-framework`: its `Extras/` modules that compile against this code are built
+(the row above); the rest of its UI work is in the tree unbuilt (a second Wayland backend, OS drag and drop, Cocoa /
+UIKit / Android backends with a Java activity, the CSS engine additions, GPU paths / filters / HDR, FORGE script
+bindings, rich text, SVG documents, media, more widgets). [`archive/PORT_gui_framework.md`](archive/PORT_gui_framework.md)
+is the list. Files of that branch whose path was already taken on main are kept under
+`Source/FUSE/UI/_port/gui-framework/<same relative path>`; nothing builds from `_port/`. `docs/gui/` and `scripts/gui/`
+are that branch's own plan, test notes and scripts, kept as an archive.
 
 ## Build and test
 
@@ -386,6 +396,44 @@ own: feed your platform's pad into the `GamepadState` in its loop (`--pad=udlrab
   and packs `assets/ui` + `assets/fonts`. It has never produced an APK (the machine it was written on has no Android
   SDK): expect to adjust versions. `fuse_app_stage_assets(target OUT dir UI_DIR dir FONTS)` (target `<name>_assets`)
   stages the same assets tree from CMake; gate `fuse_app_stage_assets`.
+
+## Extras (`fuse_ui_extras`)
+
+From the `gui-framework` branch. Link `fuse_ui_extras` (it brings `fuse_ui_widgets` and `fuse_ui_os`). Built by default
+on Linux, FreeBSD and Android; `-DFUSE_BUILD_UI_EXTRAS=ON` on Windows and Apple platforms, where it has not been
+verified (the sources compile with MinGW-w64; MSVC and Apple builds were not tried, and the Objective-C++ backends are
+not built at all).
+
+| Header (`fuse/ui/extras/`) | Namespace | What |
+|---|---|---|
+| `undo.hpp` | `fuse::ui` | `UndoCommand`, `UndoStack` (merge, macros, clean state, limit), `UndoGroup` |
+| `declarative.hpp` | `fuse::ui::decl` | `Property<T>` with tracked bindings, `bindText / bindValue / bindCss / bindVisible`, `Effect`, hierarchical `StateMachine` |
+| `pdf.hpp` | `fuse::ui::pdf` | `PdfDocument` (PDF 1.4: vector shapes, standard fonts, images), `renderDrawList` (a draw list as a vector page) |
+| `desktop.hpp` | `fuse::ui::desktop` | notifications, `openUrl`, printers and print jobs through helper programs (`notify-send`, `xdg-open`, `lp`); each call has a `*Command()` twin returning the argv |
+| `tray.hpp`, `dbus.hpp` | `fuse::ui`, `fuse::ui::dbus` | `TrayIcon`, `GlobalMenuBar`: StatusNotifierItem + dbusmenu over a runtime-loaded libdbus on Linux / BSD, `Shell_NotifyIcon` on Windows (compiled, not run) |
+| `webview.hpp` | `fuse::ui::web` | `WebView` on the system engine loaded at run time (WebKitGTK; WebView2 with `FUSE_UI_WEBVIEW2_DIR`, untested); `available()` is false without one |
+| `charts.hpp` | `fuse::ui::charts` | `Chart` data model, `render` to a `DrawList`, `chartView` widget: line, area, bar, scatter, pie / donut, candlestick, box, waterfall, contour, radar, treemap, sankey, gauge, funnel; axes, legend, tooltips, zoom / pan, model binding, decimation (min-max, LTTB), transitions, PNG export; `Chart3D` / `chart3dView` |
+| `datavis3d.hpp`, `fuse/ui/mesh3d.hpp` | `fuse::ui::dv3d`, `fuse::ui` | 3D surface / scatter / bars / volume slices projected on the CPU into draw-list paths (BSP ordering, picking); `Mesh3D` + `rasterMesh` CPU mesh rasteriser |
+
+```cpp
+#include "fuse/ui/extras/charts.hpp"
+namespace ch = fuse::ui::charts;
+NodeHandle view = ch::chartView(ui, parent, "sales");
+ch::Chart& c = *ch::chartOf(ui, view);
+ch::Series s;
+s.type = ch::SeriesType::Line;
+s.name = "2026";
+s.y = {3, 5, 4, 8};
+c.series.push_back(std::move(s));
+ch::chartChanged(ui, view);
+```
+
+Limits on main: charts and 3D graphs draw through main's `Path` / `fillPath` / `strokePath` (adapter
+`Extras/src/path_compat.hpp`), so on the GPU path they are pre-rasterised on the CPU like every other path. The GPU
+mesh pass (`ui_vk_mesh`) and the SIMD min-max kernels are not built. `desktop` and the clipboard / file-dialog parts
+of `fuse::ui::os` need helper programs and work on POSIX desktops only; `os::runProcess` returns an error on Windows,
+iOS and Android. `fuse::ui::desktop::openUrl` exists next to `fuse::app::openUrl` (`services.hpp`); prefer the latter
+in applications. `test_extras.cpp` runs the web view gate without WebKitGTK as a skip.
 
 ## Game UI (UI7)
 
@@ -840,6 +888,13 @@ Finishing gates: `fuse_ui_dock_drag_*` (dock drag and drop), `fuse_ui_gap_*` (pu
 called), `fuse_ui_widget_golden_spinmenu`, `fuse_ui_a11y_family_*`, `fuse_ui_doc_*` (document classes, cooked
 registration for them), `fuse_app_widget_gallery_page*`, `fuse_app_game_menu_sample`, `fuse_ui_install_consumer`,
 `fuse_app_stage_assets`. Their CMake wiring is in `tests/finishing.cmake` and at the end of the UI `CMakeLists.txt`.
+
+From the `gui-framework` branch (label `gate`): `fuse_ui_os_seam` (the std OS backend: files, watcher, lock, dynamic
+library, helper process, pipes), `fuse_ui_extras_{undo,desktop,pdf,tray,declarative,dataviz3d,dataviz3d_bsp}`,
+`fuse_ui_extras_webview` (Xvfb; skips inside the test when no WebKitGTK is installed), `fuse_ui_charts_{series,axes,
+decimation,ring,hit,widget,model,export,bench,demo,3d,3d_large,demo3d,mesh3d,mesh3d_large,beyond,transition,
+demo_beyond}`, `fuse_app_cocoa_map` (key table of the parked Cocoa backend). `fuse_ui_extras_tray` starts its own
+`dbus-daemon` and needs `busctl` for one of its checks.
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,
 `fuse_ui_relight_equivalence`, `fuse_ui_platform_keys_v2`, `fuse_ui_text_input`, `fuse_ui_doc_load`,
