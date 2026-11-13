@@ -400,14 +400,11 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         d.framesInFlight = desc.framesInFlight;
         optional(m_ssfx.init(d), kStageSsfx, "ssfx");
     }
-    {
-        ssrc::SsrcGpuDesc d{};
-        d.device = desc.device;
-        d.allocator = desc.allocator;
-        d.bindless = desc.bindless;
-        d.framesInFlight = desc.framesInFlight;
-        optional(m_ssrc.init(d), kStageSsrc, "ssrc");
-    }
+    // WP-6.5b SSRC is off in FrameSettings{}: its kernels are created by the first frame that plans the stage
+    // (ensureSsrc), not here. They are the slowest of the composer to build on a software rasteriser (Lavapipe:
+    // 6.4 s of the 18.4 s this init took when fuse_runtime_boot_time was measured), and no default frame runs
+    // them. available() reports the device capability until then.
+    optional(ssrc::querySsrcCapabilities(desc.device).ssrc, kStageSsrc, "ssrc");
     {
         research::rc::RcGpuDesc d{};
         d.device = desc.device;
@@ -575,6 +572,7 @@ void FrameComposer::destroy() {
     m_atmosphere.destroy();
     m_ssfx.destroy();
     m_ssrc.destroy();
+    m_ssrcCreated = false;
     m_rc.destroy();
     m_lighting.destroy();
     m_ddgi.destroy();
@@ -751,6 +749,27 @@ void FrameComposer::fillRcSceneDiagnostic_(u32 frameIndex) {
     if (bytes <= m_rcScene.buffer.desc.size) {
         std::memcpy(m_rcScene.buffer.mapped, scene.texels.data(), bytes);
     }
+}
+
+bool FrameComposer::ensureSsrc() {
+    if (m_ssrcCreated) {
+        return true;
+    }
+    ssrc::SsrcGpuDesc d{};
+    d.device = m_desc.device;
+    d.allocator = m_desc.allocator;
+    d.bindless = m_desc.bindless;
+    d.framesInFlight = m_desc.framesInFlight;
+    if (!m_ssrc.init(d)) {
+        // Not tried again: the stage is dropped like one that failed in init().
+        m_available &= ~static_cast<u32>(kStageSsrc);
+        if (std::strcmp(m_reason, "ok") == 0) {
+            m_reason = "ssrc";
+        }
+        return false;
+    }
+    m_ssrcCreated = true;
+    return true;
 }
 
 bool FrameComposer::createTargets() {
@@ -1032,6 +1051,9 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         plan &= ~static_cast<u32>(kStageRestir | kStageRestirDenoise | kStageSky | kStageSsrc | kStageSsfx |
                                   kStageRtReflections | kStageReflectionDenoise | kStageAerial | kStageRcFlatland |
                                   kStageDdgi | kStageRtShadows | kStageDenoise);
+    }
+    if ((plan & kStageSsrc) != 0u && !ensureSsrc()) {
+        plan &= ~static_cast<u32>(kStageSsrc);
     }
     const bool atmosphere = (plan & kStageAtmosphere) != 0u;
     const bool ddgiSky = (plan & kStageDdgi) != 0u && settings.ddgiAtmosphereSky && atmosphere;
@@ -2221,7 +2243,7 @@ void FrameComposer::collectRetired(u64 completedSerial) {
     if ((m_available & kStageSsfx) != 0u) {
         m_ssfx.collectRetired(completedSerial);
     }
-    if ((m_available & kStageSsrc) != 0u) {
+    if (m_ssrcCreated) {
         m_ssrc.collectRetired(completedSerial);
     }
     if ((m_available & kStageRcFlatland) != 0u) {

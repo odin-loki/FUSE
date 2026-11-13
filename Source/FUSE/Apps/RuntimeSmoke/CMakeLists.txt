@@ -56,6 +56,12 @@ endif()
 # process start -> engine boot (core, jobs, VFS, scripts, renderer, GPU frame) -> .fuselevel load -> 30
 # physics steps -> a tone through the audio mixer, and fails over the budget. The editor is not in this
 # process. Label "perf": the 3 s budget is for the reference workstation (ThinkStation P920 + RTX 3090).
+# The Lavapipe variant below runs the GPU frame on a software rasteriser, where "hybrid renderer + 4 GPU frames" is
+# the driver compiling the frame composer's kernels on the CPU (LLVM): 4.7 s before the kernels took the correctly
+# rounded division / square root (common/exact_math) and the tiled light loop, 12.3 s with them on the machine that
+# measured both (7 to 8 s expected on a GitHub ubuntu-24.04 runner, which ran the 18.6 s of the unfixed tree in
+# 11.9 s). That phase gets its own budget there (--boot-budget-software-gpu-ms, applied only when the device is a
+# CPU one); everything else of the boot (about 60 ms) keeps the 3 s. On a hardware device the 3 s cover it all.
 if(TARGET fuse_audio AND FUSE_BUILD_PROJECT)
     target_link_libraries(fuse_runtime_smoke PRIVATE fuse_audio)
     target_compile_definitions(fuse_runtime_smoke PRIVATE FUSE_SMOKE_HAS_BOOT_SCENE=1)
@@ -63,7 +69,8 @@ if(TARGET fuse_audio AND FUSE_BUILD_PROJECT)
        AND EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
         add_test(NAME fuse_runtime_boot_time
                  COMMAND ${FUSE_VULKAN_TEST_LAUNCHER}
-                         $<TARGET_FILE:fuse_runtime_smoke> --gpu-frame --boot-budget-ms 3000)
+                         $<TARGET_FILE:fuse_runtime_smoke> --gpu-frame --boot-budget-ms 3000
+                         --boot-budget-software-gpu-ms 20000)
         set_tests_properties(fuse_runtime_boot_time PROPERTIES
             ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}" RUN_SERIAL TRUE LABELS "perf")
     else()

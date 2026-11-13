@@ -394,7 +394,8 @@ public:
     bool valid() const { return m_initialized; }
     const char* reason() const { return m_reason; }
     FrameTier tier() const { return m_desc.tier; }
-    /// FrameStage bits of the stages that can run.
+    /// FrameStage bits of the stages that can run. kStageSsrc: the device can run it; its kernels are created by
+    /// the first frame with FrameSettings::ssrc (a failure there clears the bit and drops the stage).
     u32 available() const { return m_available; }
     const char* kernelLanguage() const { return m_language; }
 
@@ -513,6 +514,7 @@ private:
     };
 
     bool createPipeline();
+    bool ensureSsrc(); ///< creates the SSRC kernels on first use (false: the stage is dropped from available())
     bool createTargets();
     void destroyTargets();
     bool createImage(OwnedImage& o, u32 width, u32 height, const char* name);
@@ -547,6 +549,7 @@ private:
     lighting_gpu::ClusteredLighting m_lighting;
     ssfx_gpu::SsfxGpu m_ssfx;
     ssrc::SsrcGpu m_ssrc;
+    bool m_ssrcCreated = false; ///< m_ssrc.init ran (first frame with FrameSettings::ssrc)
     research::rc::RadianceCascadesGpu m_rc;
     atmosphere::AtmosphereGpu m_atmosphere;
     volumetric_gpu::FroxelFog m_fog;

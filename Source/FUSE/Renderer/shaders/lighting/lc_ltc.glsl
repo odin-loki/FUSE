@@ -559,7 +559,8 @@ vec3 fuse_lc_shadowed_px(uint64_t shadows, uint64_t rt, uvec2 pixel, uint slot, 
     return fuse_lc_shadowed(shadows, slot, s, c);
 }
 
-// The light loop in pieces: fuse_lc_shade_begin = emissive + ambient x albedo x AO + the directional list
+// The light loop in pieces: fuse_lc_shade_state = the frame's addresses and flags, fuse_lc_shade_begin (on that
+// state) = emissive + ambient x albedo x AO + the directional list
 // (+ the per-surface BRDF terms and the pixel's RtfxShadowView, read once), fuse_lc_shade_cluster_light = one
 // entry of the cluster list (ascending slot). fuse_lc_shade_lights_px runs every entry; light.shade's tiled loop
 // (lc_shade.comp) runs only the entries its conservative tile test keeps, in the same order (the others add an
@@ -623,18 +624,19 @@ vec3 fuse_lc_shadowed_code(FuseLcShadeState st, uint slot, FuseLcSurface s, vec3
     return r;
 }
 
-vec3 fuse_lc_shade_begin(FuseLcFrame F, FuseLcSurface s, vec3 v, uvec2 pixel, out FuseLcShadeState st) {
-    FuseGpuLightsRef lights = fuse_gpu_scene_lights(fuse_gpu_scene(F.scene));
-    st.lights = uint64_t(lights);
+// The part of the state that does not depend on the surface: the frame's buffer addresses and flags, no RT view.
+// light.shade (lc_shade.comp) gives it to every invocation of the workgroup, the ones without a surface too, before
+// fuse_lc_shade_begin runs for the others. Its tiled loop is workgroup-uniform control flow, and Lavapipe executes
+// a step's shadow lookup for a SIMD group of invocations even when none of them shades in that step, reading
+// VsmShadowConstants through the address held by the group's first invocation. Left unset (0) in an invocation
+// without a surface, that read was a null dereference (SIGSEGV in fuse_rp_vsm_raster_vk_shade_set / _buffer).
+FuseLcShadeState fuse_lc_shade_state(FuseLcFrame F, uvec2 pixel) {
+    FuseLcShadeState st;
+    st.lights = uint64_t(fuse_gpu_scene_lights(fuse_gpu_scene(F.scene)));
     st.shadows = uint64_t(F.shadowsLo) | (uint64_t(F.shadowsHi) << 32u);
-    const uint64_t rt = pixel.x == 0xFFFFFFFFu ? 0ul : (uint64_t(F.rtShadowsLo) | (uint64_t(F.rtShadowsHi) << 32u));
     st.lut = F.brdfLut;
     st.compensated = F.brdfLut != 0ul;
     st.skipArea = pixel.x != 0xFFFFFFFFu && (F.flags & FUSE_LC_FLAG_SKIP_AREA_LIGHTS) != 0u;
-    FuseLcLutRef lut = FuseLcLutRef(F.brdfLut);
-    if (st.compensated) {
-        st.terms = fuse_lc_surface_terms(s, v, lut);
-    }
     st.rtValid = false;
     st.rtCount = 0u;
     for (uint k = 0u; k < 4u; ++k) {
@@ -643,6 +645,16 @@ vec3 fuse_lc_shade_begin(FuseLcFrame F, FuseLcSurface s, vec3 v, uvec2 pixel, ou
     st.rtVisibility = 0ul;
     st.rtPlane = 0u;
     st.rtPixel = 0u;
+    return st;
+}
+
+vec3 fuse_lc_shade_begin(FuseLcFrame F, FuseLcSurface s, vec3 v, uvec2 pixel, inout FuseLcShadeState st) {
+    FuseGpuLightsRef lights = FuseGpuLightsRef(st.lights);
+    const uint64_t rt = pixel.x == 0xFFFFFFFFu ? 0ul : (uint64_t(F.rtShadowsLo) | (uint64_t(F.rtShadowsHi) << 32u));
+    FuseLcLutRef lut = FuseLcLutRef(F.brdfLut);
+    if (st.compensated) {
+        st.terms = fuse_lc_surface_terms(s, v, lut);
+    }
     if (rt != 0ul) {
         const FuseLcRtView view = FuseLcRtViewRef(rt).v;
         if (pixel.x < view.width && pixel.y < view.height) {
@@ -702,7 +714,7 @@ vec3 fuse_lc_shade_cluster_light(FuseLcFrame F, FuseLcShadeState st, FuseLcSurfa
 
 // The light loop with the pixel light.shade shades (WP-6.2 ray-traced visibility); `pixel` = ~0u: none.
 vec3 fuse_lc_shade_lights_px(FuseLcFrame F, FuseLcSurface s, vec3 v, uint cluster, uvec2 pixel) {
-    FuseLcShadeState st;
+    FuseLcShadeState st = fuse_lc_shade_state(F, pixel);
     vec3 radiance = fuse_lc_shade_begin(F, s, v, pixel, st);
     FuseLcWordsRef grid = FuseLcWordsRef(F.grid);
     FuseLcWordsRef list = FuseLcWordsRef(F.lightList);

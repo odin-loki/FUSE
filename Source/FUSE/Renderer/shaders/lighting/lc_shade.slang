@@ -31,7 +31,7 @@ void main(uint3 tid: SV_DispatchThreadID, uint t: SV_GroupIndex) {
     LcSurface s = {};
     float3 v = float3(0.0, 0.0, 0.0);
     float3 radiance = float3(0.0, 0.0, 0.0);
-    LcShadeState st = {};
+    LcShadeState st = fuseLcShadeState(F, p); // every invocation: see fuse_lc_shade_state (lc_ltc.glsl)
     if (inside) {
         const float sx = (float(p.x) + 0.5) * F.invWidth;
         const float sy = (float(p.y) + 0.5) * F.invHeight;

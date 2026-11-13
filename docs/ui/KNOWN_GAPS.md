@@ -93,16 +93,16 @@ implementations to port where both have one. Its FORGE submodule was not taken.
   print the count and do not fail: MSVC's debug STL allocates a `_Container_proxy` per container object. This is the
   engine's existing rule (`Core/tests/fuse_test_msvc_debug_stl.hpp`); MSVC Release / Profile / Shipping and all other
   compilers enforce them. Whether every one of the counted allocations is such a proxy was not checked one by one.
-- Linux, Vulkan (lavapipe), from the renderer work merged with `claude/magical-bassi-815825`; they pass on `main`
-  and were first seen in run 43387912364 (earlier runs of this branch never finished their build, see the
-  `sx_ssr.comp` note below). Reproduced locally with lavapipe, with and without the shader edits made for CI:
-  - `fuse_rp_vsm_raster_vk_shade_set` / `_buffer`: frame 0 (PCF) is bit-exact against the CPU reference in Slang and
-    GLSL, then the process dies with SIGSEGV on a lavapipe shader thread (a kernel reads through a bad buffer
-    address). Not investigated further.
-  - `fuse_hybrid_frame_vk_golden`: `hybrid_frame_t0` differs from the golden (FLIP 0.0189 under the 0.02 limit, but
-    1459 pixels over 4 / 255 against a budget of 276). Not investigated; the golden was not regenerated.
-  - `fuse_runtime_boot_time` (label `perf`): 11.9 s against a 3 s budget, all of it in "hybrid renderer + 4 GPU
-    frames" on the software rasteriser.
+- `fuse_runtime_boot_time` (label `perf`, new with the renderer work merged from `claude/magical-bassi-815825`) has
+  two budgets. Its 3 s are for a hardware GPU; on Linux the gate runs the GPU frame on Lavapipe, where "hybrid
+  renderer + 4 GPU frames" is the driver compiling the frame composer's kernels on the CPU. That phase took 4.7 s
+  on `main` and 18.4 s after the merge on the same machine (the kernels gained the correctly rounded division /
+  square root of `common/exact_math` and the tiled light loop: SSRC 0.25 -> 6.4 s, SSFX 0.05 -> 1.9 s, DDGI
+  0.1 -> 1.5 s, material resolve 2.4 -> 3.6 s, lighting + VSM 0.75 -> 1.9 s). The SSRC kernels are now created
+  by the first frame that enables SSRC (off by default), which leaves 12.3 s, and on a software device that phase
+  is held to 20 s (`--boot-budget-software-gpu-ms`) while the rest of the boot keeps the 3 s. Nothing shortens the
+  kernel compile itself; every Lavapipe gate that builds a frame composer is about three times slower than on
+  `main` for the same reason.
 - `Renderer/shaders/ssfx/sx_ssr.comp` is written around a glslangValidator 15.1 defect: with
   `vec4(sx_sky(..), useRoughness ? sx_gloss_fade(..) : 1.0)` the compiler allocated more than 13 GB and the hosted
   Linux runners were shut down mid-build ("the runner has received a shutdown signal"). Nothing guards against the

@@ -13,6 +13,7 @@
 #if defined(FUSE_SMOKE_HAS_HYBRID)
 #include <fuse/frame/frame_ctx.hpp>
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
+#include <fuse/renderer/vk/device.hpp>
 #include <fuse/world3d/world_3d.hpp>
 #endif
 
@@ -185,6 +186,9 @@ void runScriptSmoke() {
 #if defined(FUSE_SMOKE_HAS_HYBRID)
 /// E03 (--gpu-frame): the runtime renders a World3D scene through the hybrid SceneRenderer path and the frame is
 /// checked by GPU readback. Without a Vulkan device the PlaceholderRenderer fallback is checked instead.
+/// The GPU scene of runGpuFrameSmoke ran on a software rasteriser (VK_PHYSICAL_DEVICE_TYPE_CPU: Lavapipe, WARP).
+bool g_gpuFrameSoftware = false;
+
 void runGpuFrameSmoke() {
     fuse::world3d::World3D world3D;
     const float floorCenter[3] = {0.f, -0.1f, -2.f};
@@ -226,6 +230,7 @@ void runGpuFrameSmoke() {
     fuse::hybrid::HybridComposer& composer = runtime->composer();
     if (composer.gpuSceneActive()) {
         fuse::hybrid::HybridSceneRenderer& gpu = *composer.gpuScene();
+        g_gpuFrameSoftware = gpu.device() != nullptr && gpu.device()->info().deviceType == 4u; // ..._TYPE_CPU
         check(gpu.waitIdle() && composer.gpuSceneFrames() == 4u, "4 frames on the GPU scene path");
         fuse::u8 rgb[3] = {0, 0, 0};
         check(fuse::hybrid::readbackPixel(gpu, gpu.width() / 2u, gpu.height() / 2u, rgb) && rgb[0] > rgb[1] &&
@@ -371,10 +376,17 @@ int main(int argc, char** argv) {
     const double beforeMain = preMainMs();
     bool gpuFrame = false;
     double bootBudgetMs = 0.0; // --boot-budget-ms N: B7.10 "boots ... in < 3 s" timing gate
+    // --boot-budget-software-gpu-ms M: when the GPU frame ran on a software rasteriser, the renderer phase
+    // ("hybrid renderer + 4 GPU frames": the driver compiles every kernel on the CPU) is held to M and the rest of
+    // the boot to the --boot-budget-ms budget; on a hardware device, or without the option, the whole boot is.
+    double softwareGpuBudgetMs = 0.0;
+    double gpuPhaseMs = 0.0;
     for (int i = 1; i < argc; ++i) {
         gpuFrame = gpuFrame || std::strcmp(argv[i], "--gpu-frame") == 0;
         if (std::strcmp(argv[i], "--boot-budget-ms") == 0 && i + 1 < argc) {
             bootBudgetMs = std::atof(argv[++i]);
+        } else if (std::strcmp(argv[i], "--boot-budget-software-gpu-ms") == 0 && i + 1 < argc) {
+            softwareGpuBudgetMs = std::atof(argv[++i]);
         }
     }
     fuse::log::info("fuse_runtime_smoke: starting FUSE product smoke");
@@ -416,9 +428,13 @@ int main(int argc, char** argv) {
     if (gpuFrame) {
         runGpuFrameSmoke();
         phases.mark("hybrid renderer + 4 GPU frames");
+        gpuPhaseMs = phases.ms[phases.count - 1];
     }
+    const bool softwareGpu = g_gpuFrameSoftware && softwareGpuBudgetMs > 0.0;
 #else
     (void)gpuFrame;
+    (void)softwareGpuBudgetMs;
+    const bool softwareGpu = false;
 #endif
 
     if (bootBudgetMs > 0.0) {
@@ -434,8 +450,19 @@ int main(int argc, char** argv) {
                     "renderer%s) %.1f ms, level load + physics + audio %.1f ms, total %.1f ms (budget %.0f ms)\n",
                     beforeMain, gpuFrame ? ", GPU frame" : "", engineMs, sceneMs, totalMs, bootBudgetMs);
         phases.print();
-        check(totalMs < bootBudgetMs, "boot: engine boots, scene loads, physics runs, audio plays within the budget");
+        if (softwareGpu) {
+            std::printf("fuse_runtime_smoke boot: software rasteriser: renderer phase %.1f ms (budget %.0f ms), the rest "
+                        "%.1f ms (budget %.0f ms)\n",
+                        gpuPhaseMs, softwareGpuBudgetMs, totalMs - gpuPhaseMs, bootBudgetMs);
+            check(gpuPhaseMs < softwareGpuBudgetMs, "boot: renderer bring-up on a software rasteriser within its budget");
+            check(totalMs - gpuPhaseMs < bootBudgetMs,
+                  "boot: engine boots, scene loads, physics runs, audio plays within the budget (renderer phase aside)");
+        } else {
+            check(totalMs < bootBudgetMs, "boot: engine boots, scene loads, physics runs, audio plays within the budget");
+        }
 #else
+        (void)softwareGpu;
+        (void)gpuPhaseMs;
         std::printf("fuse_runtime_smoke boot: level / audio libraries are not linked in this build\n");
         check(false, "boot timing gate needs fuse_world3d + fuse_audio + fuse_project");
 #endif
