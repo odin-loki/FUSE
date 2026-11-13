@@ -2,6 +2,8 @@
 
 #include <fuse/project/manifest.hpp>
 
+#include <fuse/core/parse_number.hpp>
+
 #include <charconv>
 
 namespace fuse::project::json {
@@ -118,8 +120,9 @@ private:
         double parsed = 0.0;
         const char* first = m_text.data() + start;
         const char* last = m_text.data() + m_pos;
-        const auto [end, ec] = std::from_chars(first, last, parsed);
-        if (ec != std::errc{} || end != last || start == m_pos) {
+        // fuse::core::parse_f64: NDK / Apple libc++ lack the floating-point std::from_chars. JSON has no leading '+'.
+        const std::string_view number(first, static_cast<std::size_t>(last - first));
+        if (start == m_pos || number.front() == '+' || !fuse::core::parse_f64(number, parsed)) {
             m_pos = start;
             return fail("invalid number");
         }
