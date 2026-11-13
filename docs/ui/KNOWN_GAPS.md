@@ -22,7 +22,7 @@ implementations to port where both have one. Its FORGE submodule was not taken.
 |---|---|---|
 | Linux (UI standalone) | Local build + ctest | After all ports (2026-11-13): MINIMAL 327/327 (4 skipped: no Vulkan device, FULL-only text gates), FULL 298/298 (2 skipped), COOKED 326/326 (7 skipped: real-font gates, FULL-only gates). Before the two branch merges 178/178 (MINIMAL), 177/177 (FULL) |
 | Linux (FUSE-UI editor shell, in tree, `-DFUSE_EDITOR_SHELL=fuse -DFUSE_BUILD_VULKAN=OFF`) | Local build + `ctest -L fuse_editor_ui` under Xvfb | Builds and links; 78 entries: 72 passed, 4 skipped (Vulkan), 2 failed (one gate under two names, `ui_frame`: its 8 ms full-window CPU raster budget measured 7.5 to 9.0 ms here). The rest of the in-tree suite was not run in that configuration |
-| Linux (whole engine, in-tree) | `fuse-umbrella-linux.yml` | 1245 of 1247; the two failures also fail on `main` (see below) |
+| Linux (whole engine, in-tree) | `fuse-umbrella-linux.yml`, run 43387912364 | 1454 of 1460 in the core job, Qt editor gates 44 of 47, single-thread and U8 present jobs pass; the `-Werror` and ASan jobs did not run (they need the core job). See "Known failures" |
 | Android arm64 (NDK r26d) | `fuse-core-android.yml` + local cross-build | Builds and links, apps as `lib<name>.so` |
 | macOS | `fuse-core-ios.yml` (macOS job, MoltenVK headers) | Builds; headless gates pass |
 | iOS simulator | `fuse-core-ios.yml` (iOS job) | Builds and links |
@@ -93,6 +93,20 @@ implementations to port where both have one. Its FORGE submodule was not taken.
   print the count and do not fail: MSVC's debug STL allocates a `_Container_proxy` per container object. This is the
   engine's existing rule (`Core/tests/fuse_test_msvc_debug_stl.hpp`); MSVC Release / Profile / Shipping and all other
   compilers enforce them. Whether every one of the counted allocations is such a proxy was not checked one by one.
+- Linux, Vulkan (lavapipe), from the renderer work merged with `claude/magical-bassi-815825`; they pass on `main`
+  and were first seen in run 43387912364 (earlier runs of this branch never finished their build, see the
+  `sx_ssr.comp` note below). Reproduced locally with lavapipe, with and without the shader edits made for CI:
+  - `fuse_rp_vsm_raster_vk_shade_set` / `_buffer`: frame 0 (PCF) is bit-exact against the CPU reference in Slang and
+    GLSL, then the process dies with SIGSEGV on a lavapipe shader thread (a kernel reads through a bad buffer
+    address). Not investigated further.
+  - `fuse_hybrid_frame_vk_golden`: `hybrid_frame_t0` differs from the golden (FLIP 0.0189 under the 0.02 limit, but
+    1459 pixels over 4 / 255 against a budget of 276). Not investigated; the golden was not regenerated.
+  - `fuse_runtime_boot_time` (label `perf`): 11.9 s against a 3 s budget, all of it in "hybrid renderer + 4 GPU
+    frames" on the software rasteriser.
+- `Renderer/shaders/ssfx/sx_ssr.comp` is written around a glslangValidator 15.1 defect: with
+  `vec4(sx_sky(..), useRoughness ? sx_gloss_fade(..) : 1.0)` the compiler allocated more than 13 GB and the hosted
+  Linux runners were shut down mid-build ("the runner has received a shutdown signal"). Nothing guards against the
+  next shader that trips it; a build that dies that way a few minutes in is this, not the runner.
 - Failing on `main` as well and left alone (outside the UI module):
   - Linux: `fuse_vulkan_validation_gate` (VUID-VkImageViewCreateInfo-image-04441), `fuse_runtime_steady_state_alloc`
     (editor phase allocates), Qt gates `fuse_editor_qt_idle_frames`, `fuse_editor_qt_lighting`,
