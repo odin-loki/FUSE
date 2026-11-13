@@ -4,6 +4,7 @@
 
 #include "fuse/ui/style.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -18,6 +19,14 @@ inline std::string_view trim(std::string_view s) {
     while (!s.empty() && isSpace(s.front())) s.remove_prefix(1);
     while (!s.empty() && isSpace(s.back())) s.remove_suffix(1);
     return s;
+}
+
+/// `x` as an index in [lo, hi] (values come from cooked files and keyframes: never trusted to be in range, or finite).
+inline int toIndex(f32 x, int lo, int hi) { return x == x ? int(std::clamp(x, f32(lo), f32(hi))) : lo; }
+inline f32 finiteOr(f32 x, f32 fallback) { return std::isfinite(x) ? x : fallback; }
+inline Color saneColor(Color c) {
+    return {std::clamp(finiteOr(c.r, 0.f), 0.f, 1.f), std::clamp(finiteOr(c.g, 0.f), 0.f, 1.f), std::clamp(finiteOr(c.b, 0.f), 0.f, 1.f),
+            std::clamp(finiteOr(c.a, 0.f), 0.f, 1.f)};
 }
 
 /// A number followed by a unit ("12.5px" -> 12.5, "px"). False when `s` does not start with a number.

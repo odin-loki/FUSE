@@ -155,6 +155,8 @@ PropValue transformValue(const Transform2D& t) {
 Transform2D detail::transformOf(const PropValue& v) {
     Transform2D t;
     if (v.fCount < 10) return t;
+    for (int i = 0; i < 10; ++i)
+        if (!std::isfinite(v.f[std::size_t(i)])) return t; // (a cooked or animated value: not trusted)
     for (int i = 0; i < 6; ++i) t.m[std::size_t(i)] = v.f[std::size_t(i)];
     for (int i = 0; i < 4; ++i) t.pct[std::size_t(i)] = v.f[std::size_t(6 + i)];
     return t;
@@ -263,11 +265,11 @@ FilterList detail::filterOf(const PropValue& v) {
     FilterList f;
     f.count = std::min<u8>(v.fCount, kMaxFilters);
     for (u8 i = 0; i < f.count; ++i) {
-        const int k = std::clamp(int(v.f[std::size_t(i) * 2]), 0, int(FilterKind::DropShadow));
-        f.fn[i] = {FilterKind(k), v.f[std::size_t(i) * 2 + 1]};
+        const int k = toIndex(v.f[std::size_t(i) * 2], 0, int(FilterKind::DropShadow));
+        f.fn[i] = {FilterKind(k), finiteOr(v.f[std::size_t(i) * 2 + 1], 0.f)};
     }
-    f.shadowOffset = {v.f[8], v.f[9]};
-    f.shadowColor = v.color;
+    f.shadowOffset = {finiteOr(v.f[8], 0.f), finiteOr(v.f[9], 0.f)};
+    f.shadowColor = saneColor(v.color);
     return f;
 }
 FilterList detail::lerpFilter(const FilterList& a, const FilterList& b, f32 k) {
@@ -403,8 +405,9 @@ ClipShape detail::clipShapeOf(const PropValue& v) {
     c.kind = ClipShapeKind(std::min<u8>(v.e, u8(ClipShapeKind::Polygon)));
     c.evenOdd = v.b;
     c.count = std::min<u8>(v.trackCount, kMaxClipPoints);
-    c.v = v.f;
+    for (std::size_t i = 0; i < c.v.size(); ++i) c.v[i] = std::clamp(finiteOr(v.f[i], 0.f), -1.0e7f, 1.0e7f);
     c.pct = v.fPct;
+    if (c.kind == ClipShapeKind::Polygon && c.count < 3) c = {};
     return c;
 }
 
@@ -592,11 +595,11 @@ PropValue detail::gradientSpecValue(const GradientSpec& g) {
 GradientSpec detail::gradientSpecOf(const PropValue& v) {
     GradientSpec g;
     g.kind = GradientSpecKind(std::min<u8>(v.e, u8(GradientSpecKind::Radial)));
-    g.angle = v.num;
+    g.angle = finiteOr(v.num, 3.14159265f);
     g.stopCount = std::min<u8>(v.fCount, kMaxGradientStops);
     for (u8 i = 0; i < g.stopCount; ++i) {
-        g.offset[i] = v.tracks[i].value;
-        g.color[i] = {v.f[std::size_t(i) * 4], v.f[std::size_t(i) * 4 + 1], v.f[std::size_t(i) * 4 + 2], v.f[std::size_t(i) * 4 + 3]};
+        g.offset[i] = std::clamp(finiteOr(v.tracks[i].value, 0.f), 0.f, 1.f);
+        g.color[i] = saneColor({v.f[std::size_t(i) * 4], v.f[std::size_t(i) * 4 + 1], v.f[std::size_t(i) * 4 + 2], v.f[std::size_t(i) * 4 + 3]});
     }
     if (g.stopCount < 2) g = {};
     return g;

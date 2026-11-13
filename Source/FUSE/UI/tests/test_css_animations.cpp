@@ -117,17 +117,17 @@ int main() {
     ui.update(0.f);
     auto op = [&](NodeHandle n) { return ui.computed(n).opacity; };
     auto wd = [&](NodeHandle n) { return ui.computed(n).width.value; };
-    /// The node's opacity `t` seconds after a fresh node got `cls`.
-    auto at = [&](const char* cls, f32 t, f32 (*what)(const ComputedStyle&) = [](const ComputedStyle& c) { return c.opacity; }) {
+    /// The node's opacity (or `what`) `t` seconds after a fresh node got `cls`.
+    auto at = [&](const char* cls, f32 t, f32 (*what)(const ComputedStyle&) = nullptr) {
         const NodeHandle n = make(ui, cls);
         ui.update(0.f);
         if (t > 0.f) ui.update(t);
-        const f32 v = what(ui.computed(n));
+        const f32 v = what ? what(ui.computed(n)) : ui.computed(n).opacity;
         ui.destroy(n);
         ui.update(0.f);
         return v;
     };
-    auto width = [](const ComputedStyle& c) { return c.width.value; };
+    f32 (*const width)(const ComputedStyle&) = [](const ComputedStyle& c) { return c.width.value; };
 
     // ---- keyframe timing ----
     UI_CHECK(near(at("fade", 0.f), 0.f));        // the first frame already shows the first keyframe

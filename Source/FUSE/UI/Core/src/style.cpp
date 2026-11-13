@@ -471,8 +471,8 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::ExitAnimation: s.exitAnim = MotionKind(v.e); break;
     case Prop::ExitDuration: s.exitDuration = std::max(0.f, v.num); break;
     case Prop::Position: s.position = PositionKind(std::min<u8>(v.e, u8(PositionKind::Sticky))); break;
-    case Prop::ZIndex: s.zIndex = v.e ? kZAuto : i32(std::clamp(v.num, -1.0e6f, 1.0e6f)); break;
-    case Prop::AspectRatio: s.aspectRatio = std::max(0.f, v.num); break;
+    case Prop::ZIndex: s.zIndex = v.e ? kZAuto : toIndex(v.num, -1000000, 1000000); break;
+    case Prop::AspectRatio: s.aspectRatio = std::clamp(finiteOr(v.num, 0.f), 0.f, 1.0e6f); break;
     case Prop::Transform: s.transform = transformOf(v); break;
     case Prop::TransformOriginX: s.originX = v.len; break;
     case Prop::TransformOriginY: s.originY = v.len; break;
@@ -483,7 +483,7 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::BackgroundImage: s.backgroundImage = gradientSpecOf(v); break;
     case Prop::AnimationName:
         s.animationCount = std::min<u8>(v.fCount, kMaxAnimations);
-        for (u8 k = 0; k < kMaxAnimations; ++k) s.animations[k].name = k < s.animationCount ? u32(v.f[k]) : 0u;
+        for (u8 k = 0; k < kMaxAnimations; ++k) s.animations[k].name = k < s.animationCount ? u32(toIndex(v.f[k], 0, 0xFFFFFF)) : 0u;
         if (s.animationCount == 1 && s.animations[0].name == 0) s.animationCount = 0; // animation-name: none
         break;
     case Prop::AnimationDuration: case Prop::AnimationTimingFunction: case Prop::AnimationDelay: case Prop::AnimationIterationCount:
@@ -493,18 +493,18 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
             const f32 x = v.f[k % std::min<u8>(v.fCount, kMaxAnimations)];
             AnimationSpec& a = s.animations[k];
             switch (p) {
-            case Prop::AnimationDuration: a.duration = std::max(0.f, x); break;
-            case Prop::AnimationTimingFunction: a.ease = Easing(std::min<u8>(u8(x), u8(Easing::Out))); break;
-            case Prop::AnimationDelay: a.delay = x; break;
-            case Prop::AnimationIterationCount: a.iterations = std::max(0.f, x); break;
-            case Prop::AnimationDirection: a.direction = AnimDirection(std::min<u8>(u8(x), 3)); break;
-            case Prop::AnimationFillMode: a.fill = AnimFill(std::min<u8>(u8(x), 3)); break;
+            case Prop::AnimationDuration: a.duration = std::max(0.f, finiteOr(x, 0.f)); break;
+            case Prop::AnimationTimingFunction: a.ease = Easing(toIndex(x, 0, int(Easing::Out))); break;
+            case Prop::AnimationDelay: a.delay = finiteOr(x, 0.f); break;
+            case Prop::AnimationIterationCount: a.iterations = x == x ? std::max(0.f, x) : 1.f; break; // infinity is a count
+            case Prop::AnimationDirection: a.direction = AnimDirection(toIndex(x, 0, 3)); break;
+            case Prop::AnimationFillMode: a.fill = AnimFill(toIndex(x, 0, 3)); break;
             default: a.paused = x != 0.f; break;
             }
         }
         break;
     case Prop::ContainerType: s.containerType = std::min<u8>(v.e, 2); break;
-    case Prop::ContainerName: s.containerName = u32(std::max(0.f, v.num)); break;
+    case Prop::ContainerName: s.containerName = u32(toIndex(v.num, 0, 0xFFFFFF)); break;
     case Prop::Count: break;
     }
 }
