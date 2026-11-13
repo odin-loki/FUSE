@@ -22,7 +22,10 @@ namespace fuse::ui::doc {
 // 2: style properties added (direction, transition, enter / exit animation)
 // 3: the merged property set (font family / weight / style / decoration / spacing, cursor, ...) and the document-class
 //    properties stored as plain data, never as bindings (tooltip, contextMenu, columns, rows, icon, ...)
-inline constexpr u32 kCookedVersion = 3;
+// 4: the style engine port: Raw property values (transform, filter, clip-path, gradients, animation lists), selector
+//    parts (attribute / structural / functional pseudo-classes, sibling combinators), @media / @container conditions,
+//    cascade layers, @scope and @keyframes
+inline constexpr u32 kCookedVersion = 4;
 
 struct CookInfo {
     u32 nodes = 0, bindings = 0, instructions = 0;

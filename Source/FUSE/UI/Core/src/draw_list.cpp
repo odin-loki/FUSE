@@ -271,7 +271,7 @@ std::size_t matchingPop(const DrawList& list, std::size_t i) {
     int depth = 0;
     for (std::size_t j = i; j < cmds.size(); ++j) {
         const DrawOp op = cmds[j].op;
-        if (op == DrawOp::PushClip || op == DrawOp::PushClipPath || op == DrawOp::PushLayer) ++depth;
+        if (op == DrawOp::PushClip || isLayerGroup(op)) ++depth;
         else if (op == DrawOp::PopClip && --depth <= 0) return j;
     }
     return cmds.size();
@@ -308,6 +308,9 @@ void detail::renderRange(const RasterEnv& env, const DrawList& list, std::size_t
         case DrawOp::PushLayer: // a group: rendered to a layer, composited once; resumes after its PopClip
             ci = drawGroup(env, list, ci, last, clip, target, level, groupOpacityOne && ci == first);
             continue;
+        case DrawOp::PushTransform:
+        case DrawOp::PushFilter:
+        case DrawOp::PushMask: ci = drawFxGroup(env, list, ci, last, clip, target, level); continue;
         default: break;
         }
         Rect bounds = c.rect;

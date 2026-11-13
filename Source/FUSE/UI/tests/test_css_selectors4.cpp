@@ -1,6 +1,13 @@
-// Gate fuse_ui_css_selectors4: Selectors 4 logical pseudo-classes (:not / :is / :where / :has, forgiving lists and
-// specificity), :empty, [class~=x] against the live class list, invalidation on tree / class / text changes, the node
-// reorder API, transition-behavior: allow-discrete and animation-composition.
+// Gate fuse_ui_css_selectors4: the extended selectors of the style engine.
+//   * a matching table: attribute selectors (every operator, the ` i` flag, `id`, [class~=x] against the class list),
+//     :first-child / :last-child / :only-child / :nth-child(an+b) / :nth-last-child, :empty (children and text),
+//     the sibling combinators `+` and `~`, :not / :is / :where / :has (relative selectors), :root in a complex
+//     selector, backtracking over descendant hops
+//   * parsing and specificity: the most specific argument of :not / :is / :has counts, :where adds nothing,
+//     forgiving lists for :is / :where, errors for the rest
+//   * the cascade follows the tree: class / attribute / text / structure changes restyle what a selector reaches
+// (Adapted from the gui-framework gate of the same name; its node reorder API, transition-behavior and
+// animation-composition parts are not ported.)
 #include "test_util.hpp"
 
 #include <cmath>
@@ -21,26 +28,141 @@ u32 spec(std::string_view sel) {
     auto sh = StyleSheet::parse(std::string(sel) + " { width: 1px; }");
     return sh && !sh->rules().empty() ? sh->rules()[0].specificity : ~0u;
 }
+
+/// A fixed tree; `matching(selector)` lists the ids of the nodes a selector matches, in tree order.
+struct Table {
+    UiContext ui{{.viewport = {400, 300}}};
+    std::vector<std::pair<std::string, NodeHandle>> nodes;
+    NodeHandle add(const char* cls, NodeHandle parent, const char* id, std::initializer_list<const char*> classes = {}) {
+        const NodeHandle n = ui.create(ui.registry().find(cls), parent, id);
+        for (const char* c : classes) ui.addClass(n, c);
+        nodes.emplace_back(id, n);
+        return n;
+    }
+    std::string matching(std::string_view selector) {
+        ui.clearStyleSheets();
+        std::vector<StyleDiagnostic> diags;
+        const bool ok = ui.addStyleSheet(std::string(selector) + " { min-width: 77px; }", &diags).has_value();
+        if (!ok || !diags.empty()) return "<bad>";
+        ui.update(0.f);
+        std::string out;
+        for (auto& [id, n] : nodes)
+            if (near(ui.computed(n).minWidth.value, 77.f)) out += (out.empty() ? "" : " ") + id;
+        return out;
+    }
+};
 } // namespace
 
 int main() {
     // ---- parsing and specificity ----
-    UI_CHECK_EQ(spec(":not(#a, .b)"), 1u << 16);       // max of the arguments
+    UI_CHECK_EQ(spec(":not(#a, .b)"), 1u << 16); // the most specific argument
     UI_CHECK_EQ(spec(":is(a, .b.c)"), 2u << 8);
-    UI_CHECK_EQ(spec("a:where(#x, .y)"), 1u);          // :where adds nothing
+    UI_CHECK_EQ(spec("a:where(#x, .y)"), 1u); // :where adds nothing
     UI_CHECK_EQ(spec("a:has(> .b)"), (1u << 8) | 1u);
     UI_CHECK_EQ(spec(":empty"), 1u << 8);
-    UI_CHECK(!bad(":is(a, :bogus(), .c)"));           // forgiving
+    UI_CHECK_EQ(spec("a[x=y]:nth-child(2n+1)"), (2u << 8) | 1u);
+    UI_CHECK_EQ(spec("#i .c > t + u ~ v"), (1u << 16) | (1u << 8) | 3u);
+    UI_CHECK(!bad(":is(a, :bogus(), .c)")); // forgiving
     UI_CHECK(!bad(":where()"));
-    UI_CHECK(bad(":not(a, :bogus())") && bad(":has()") && bad(":not(") && bad(":is(a"));
+    UI_CHECK(bad(":not(a, :bogus())") && bad(":has()") && bad(":not(") && bad(":is(a") && bad(":not()"));
     UI_CHECK(!bad("a:not(:is(.x, .y) > b)") && !bad("a:has(+ b, ~ c .d)"));
+    UI_CHECK(bad("a >") && bad("> a") && bad("a + + b") && bad("a::before") && bad("[x") && bad("[=y]") && bad("a[x=]"));
+    UI_CHECK(bad(":nth-child(n n)") && bad(":nth-child()") && bad(":nth-child(2n+)") && !bad(":nth-child( -n + 3 )"));
+    UI_CHECK(!bad("[data-x]") && !bad("[data-x='a b' i]") && !bad("[data-x^=\"a\"]") && !bad("a[b|=c][d$=e][f*=g]"));
+
+    // ---- matching table ----
     {
-        auto sh = StyleSheet::parse("a:has(b) {} c {}");
-        UI_CHECK(sh && sh->relational());
-        auto sh2 = StyleSheet::parse("a:is(b) {}");
-        UI_CHECK(sh2 && !sh2->relational());
+        Table t;
+        const NodeHandle root = t.ui.root();
+        const NodeHandle a = t.add("panel", root, "a", {"box"});
+        t.add("label", a, "a1", {"item", "first"});
+        const NodeHandle a2 = t.add("label", a, "a2", {"item", "hot"});
+        t.add("label", a, "a3", {"item"});
+        t.add("label", a, "a4", {"item", "last"});
+        const NodeHandle b = t.add("panel", root, "b", {"box", "alt"});
+        const NodeHandle b1 = t.add("panel", b, "b1", {"inner"});
+        t.add("label", b1, "b1x", {"deep"});
+        t.add("label", b, "b2", {});
+        const NodeHandle c = t.add("panel", root, "c", {});
+        t.ui.setText(a2, "text");
+        t.ui.setAttribute(a, "data-kind", "warning big");
+        t.ui.setAttribute(b, "data-kind", "info");
+        t.ui.setAttribute(b, "lang", "en-GB");
+        t.ui.setAttribute(c, "data-kind", "Warning");
+        struct Row { const char* selector; const char* want; };
+        const Row rows[] = {
+            // attributes
+            {"[data-kind]", "a b c"},
+            {"[data-kind=info]", "b"},
+            {"[data-kind='warning big']", "a"},
+            {"[data-kind~=big]", "a"},
+            {"[data-kind~=warning]", "a"},
+            {"[data-kind^=warn]", "a"},
+            {"[data-kind^=warn i]", "a c"},
+            {"[data-kind$=ing]", "c"},
+            {"[data-kind*=nin]", "a c"},
+            {"[lang|=en]", "b"},
+            {"[lang|=e]", ""},
+            {"[id=b1]", "b1"},
+            {"[id^=a]", "a a1 a2 a3 a4"},
+            {"[class~=hot]", "a2"},
+            {"panel[data-kind]:not([lang])", "a c"},
+            // structure
+            {"label:first-child", "a1 b1x"},
+            {"label:last-child", "a4 b1x b2"},
+            {"label:only-child", "b1x"},
+            {".item:nth-child(2)", "a2"},
+            {".item:nth-child(odd)", "a1 a3"},
+            {".item:nth-child(even)", "a2 a4"},
+            {".item:nth-child(2n+1)", "a1 a3"},
+            {".item:nth-child(n+3)", "a3 a4"},
+            {".item:nth-child(-n+2)", "a1 a2"},
+            {".item:nth-last-child(1)", "a4"},
+            {".item:nth-last-child(-n+2)", "a3 a4"},
+            {"label:empty", "a1 a3 a4 b1x b2"}, // a2 has text
+            {"panel:empty", "c"},
+            // siblings
+            {".first + .item", "a2"},
+            {".hot ~ .item", "a3 a4"},
+            {".first ~ .last", "a4"},
+            {".box + .box > .inner", "b1"},
+            {".box ~ panel", "b c"},
+            {".inner + label", "b2"},
+            // logical
+            {".item:not(.hot)", "a1 a3 a4"},
+            {".item:not(.first, .last)", "a2 a3"},
+            {":is(.first, .last)", "a1 a4"},
+            {"panel:is(.alt, #c)", "b c"},
+            {":where(.inner) > label", "b1x"},
+            {".box:has(.deep)", "b"},
+            {"panel:has(> .deep)", "b1"},
+            {".box:has(> .hot)", "a"},
+            {".item:has(+ .hot)", "a1"},
+            {".item:has(~ .last)", "a1 a2 a3"},
+            {".box:not(:has(.hot))", "b"},
+            {"panel:has(.hot, .deep)", "a b b1"},
+            {".box:has(> .inner > .deep)", "b"},
+            // descendant / child chains, backtracking over the nearest ancestor
+            {".box label", "a1 a2 a3 a4 b1x b2"},
+            {".box > label", "a1 a2 a3 a4 b2"},
+            {".alt > .inner label", "b1x"},
+            {"root > panel label.deep", "b1x"},
+            {":root > .alt", "b"},
+            {":root .deep", "b1x"},
+            {":root", "root"},
+            {"*:not(panel):not(label)", "root"},
+        };
+        t.nodes.insert(t.nodes.begin(), {"root", root});
+        for (const Row& r : rows) {
+            const std::string got = t.matching(r.selector);
+            if (got != r.want) {
+                std::fprintf(stderr, "selector `%s`: matched \"%s\", want \"%s\"\n", r.selector, got.c_str(), r.want);
+                UI_CHECK(false);
+            }
+        }
     }
 
+    // ---- the cascade follows the tree ----
     UiContext ui({.viewport = {800, 600}});
     const u32 panel = ui.registry().find("panel"), label = ui.registry().find("label");
     std::vector<StyleDiagnostic> diags;
@@ -56,7 +178,10 @@ label:has(+ label.next) { height: 8px; }
 panel:empty { min-width: 9px; }
 label:empty { min-height: 6px; }
 [class~=tok] { max-width: 50px; }
-[class~="z"] { max-height: 60px; }
+[data-state=open] > label { max-height: 60px; }
+label:first-child { width: 2px; }
+label:last-child { width: 30px; }
+label.x ~ label { letter-spacing: 3px; }
 )css", &diags).has_value());
     UI_CHECK(diags.empty());
     auto cs = [&](NodeHandle n) { return ui.computed(n); };
@@ -71,18 +196,13 @@ label:empty { min-height: 6px; }
     ui.addClass(p, "w");
     ui.update(0.f);
     UI_CHECK(near(cs(p).width.value, 5.f)); // :where loses to a plain class
-    // [class~=]
     ui.addClass(p, "tok");
     ui.update(0.f);
     UI_CHECK(near(cs(p).maxWidth.value, 50.f));
     ui.removeClass(p, "tok");
     ui.update(0.f);
     UI_CHECK(!near(cs(p).maxWidth.value, 50.f));
-    ui.setAttribute(p, "class", "z q");
-    ui.update(0.f);
-    UI_CHECK(near(cs(p).maxHeight.value, 60.f) && ui.hasClass(p, "q") && !ui.hasClass(p, "on"));
-    UI_CHECK(ui.attribute(p, "class") && *ui.attribute(p, "class") == "z q");
-    // :has(> label.hot) reacts to a child's class; :empty to children and text
+    // :empty reacts to children and to text; :has(> label.hot) to a child's class
     const NodeHandle l1 = ui.create(label, p);
     const NodeHandle l2 = ui.create(label, p);
     ui.update(0.f);
@@ -91,6 +211,9 @@ label:empty { min-height: 6px; }
     ui.setText(l1, "hi");
     ui.update(0.f);
     UI_CHECK(!near(cs(l1).minHeight.value, 6.f) && near(cs(l2).minHeight.value, 6.f));
+    ui.setText(l1, "");
+    ui.update(0.f);
+    UI_CHECK(near(cs(l1).minHeight.value, 6.f));
     UI_CHECK(!near(cs(p).opacity, 0.5f));
     ui.addClass(l2, "hot");
     ui.update(0.f);
@@ -113,127 +236,35 @@ label:empty { min-height: 6px; }
     ui.destroy(g);
     ui.update(0.f);
     UI_CHECK(!near(cs(p).gap, 7.f));
-
-    // ---- reorder API ----
-    {
-        const NodeHandle box = ui.create(panel, ui.root());
-        std::vector<NodeHandle> k;
-        for (int i = 0; i < 4; ++i) k.push_back(ui.create(label, box));
-        auto order = [&] {
-            std::string s;
-            for (NodeHandle c = ui.firstChild(box); c; c = ui.nextSibling(c))
-                for (int i = 0; i < 4; ++i)
-                    if (k[std::size_t(i)] == c) s += char('a' + i);
-            return s;
-        };
-        UI_CHECK_EQ(order(), std::string("abcd"));
-        UI_CHECK(ui.lastChild(box) == k[3] && ui.prevSibling(k[1]) == k[0] && ui.childAt(box, 2) == k[2]);
-        UI_CHECK_EQ(ui.childIndex(k[3]), 3);
-        UI_CHECK(ui.insertBefore(k[3], k[0]));
-        UI_CHECK_EQ(order(), std::string("dabc"));
-        UI_CHECK(ui.insertAfter(k[3], k[2]));
-        UI_CHECK_EQ(order(), std::string("abcd"));
-        UI_CHECK(ui.setChildIndex(k[0], 2));
-        UI_CHECK_EQ(order(), std::string("bcad"));
-        UI_CHECK(ui.swapNodes(k[1], k[3]));
-        UI_CHECK_EQ(order(), std::string("dcab"));
-        const NodeHandle perm[] = {k[0], k[1], k[2], k[3]};
-        UI_CHECK(ui.reorderChildren(box, perm));
-        UI_CHECK_EQ(order(), std::string("abcd"));
-        const NodeHandle badPerm[] = {k[0], k[0], k[2], k[3]};
-        UI_CHECK(!ui.reorderChildren(box, badPerm));
-        UI_CHECK(!ui.insertBefore(box, k[0])); // a node can't go inside its own subtree
-        ui.sortChildren(box, [&](NodeHandle x, NodeHandle y) { return ui.childIndex(x) > ui.childIndex(y); });
-        UI_CHECK_EQ(order(), std::string("dcba"));
-        ui.destroy(box);
-    }
-    // structural selectors follow reordering
-    {
-        UiContext s({.viewport = {200, 200}});
-        UI_CHECK(s.addStyleSheet("label { width: 1px; } label:first-child { width: 2px; } panel:has(> label.x:last-child) { width: 30px; }").has_value());
-        const NodeHandle b = s.create(panel, s.root());
-        const NodeHandle x = s.create(label, b), y = s.create(label, b);
-        s.addClass(x, "x");
-        s.update(0.f);
-        UI_CHECK(near(s.computed(x).width.value, 2.f) && near(s.computed(y).width.value, 1.f));
-        UI_CHECK(!near(s.computed(b).width.value, 30.f));
-        UI_CHECK(s.swapNodes(x, y));
-        s.update(0.f);
-        UI_CHECK(near(s.computed(y).width.value, 2.f) && near(s.computed(x).width.value, 1.f));
-        UI_CHECK(near(s.computed(b).width.value, 30.f));
-    }
-
-    // ---- transition-behavior: allow-discrete ----
-    {
-        UiContext s({.viewport = {200, 200}});
-        UI_CHECK(s.addStyleSheet(R"css(
-panel { opacity: 1; layout: box; transition: opacity 1s linear, display 1s allow-discrete, layout 1s; }
-panel.gone { display: none; opacity: 0; layout: grid; }
-panel.d2 { transition: all 1s linear allow-discrete; }
-)css").has_value());
-        const NodeHandle n = s.create(panel, s.root());
-        s.update(0.f);
-        s.addClass(n, "gone");
-        s.update(0.f);
-        s.update(0.25f);
-        UI_CHECK(s.computed(n).visible);                 // display stays shown through the transition
-        UI_CHECK(near(s.computed(n).opacity, 0.75f));
-        UI_CHECK(s.computed(n).layout == LayoutKind::Grid); // layout: normal behaviour, no transition
-        s.update(0.5f);
-        UI_CHECK(s.computed(n).visible);
-        s.update(0.5f);
-        UI_CHECK(!s.computed(n).visible);
-        // back to shown: visible immediately
-        s.removeClass(n, "gone");
-        s.update(0.f);
-        s.update(0.1f);
-        UI_CHECK(s.computed(n).visible);
-        // all + allow-discrete: enums flip at the midpoint
-        const NodeHandle m = s.create(panel, s.root());
-        s.addClass(m, "d2");
-        s.update(0.f);
-        s.addClass(m, "gone");
-        s.update(0.f);
-        s.update(0.4f);
-        UI_CHECK(s.computed(m).layout == LayoutKind::Box);
-        s.update(0.2f);
-        UI_CHECK(s.computed(m).layout == LayoutKind::Grid);
-        TransitionSpec t;
-        UI_CHECK(s.computed(m).transitionFor(u8(Prop::Layout), t) && t.allowDiscrete);
-        PropValue v;
-        UI_CHECK(parsePropValue(Prop::TransitionBehavior, "normal, allow-discrete", v));
-        UI_CHECK(!parsePropValue(Prop::TransitionBehavior, "discrete", v));
-    }
-
-    // ---- animation-composition ----
-    {
-        UiContext s({.viewport = {400, 200}});
-        UI_CHECK(s.addStyleSheet(R"css(
-@keyframes w { from { width: 10px; } to { width: 20px; } }
-@keyframes o { from { opacity: 0.25; } to { opacity: 0.25; } }
-panel { width: 100px; opacity: 0.5; }
-.r { animation: w 1s linear; }
-.add { animation: w 1s linear; animation-composition: add; }
-.acc { animation: w 1s linear, o 1s linear; animation-composition: accumulate; }
-.stack { animation: w 1s linear, w 1s linear; animation-composition: replace, add; }
-)css").has_value());
-        PropValue v;
-        UI_CHECK(parsePropValue(Prop::AnimationComposition, "replace, add, accumulate", v));
-        UI_CHECK(!parsePropValue(Prop::AnimationComposition, "multiply", v));
-        auto at = [&](const char* cls, f32 t) {
-            const NodeHandle n = s.create(panel, s.root());
-            s.addClass(n, cls);
-            s.update(0.f);
-            s.update(t);
-            const ComputedStyle c = s.computed(n);
-            s.destroy(n);
-            return c;
-        };
-        UI_CHECK(near(at("r", 0.5f).width.value, 15.f));
-        UI_CHECK(near(at("add", 0.5f).width.value, 115.f));
-        const ComputedStyle a = at("acc", 0.5f);
-        UI_CHECK(near(a.width.value, 115.f) && near(a.opacity, 0.75f));
-        UI_CHECK(near(at("stack", 0.5f).width.value, 30.f)); // second adds onto the first
-    }
+    // attributes
+    std::string_view got;
+    UI_CHECK(!ui.attribute(p, "data-state", got));
+    ui.setAttribute(p, "data-state", "open");
+    ui.update(0.f);
+    UI_CHECK(ui.attribute(p, "data-state", got) && got == "open");
+    UI_CHECK(near(cs(l1).maxHeight.value, 60.f) && near(cs(l2).maxHeight.value, 60.f));
+    ui.setAttribute(p, "data-state", "closed");
+    ui.update(0.f);
+    UI_CHECK(!near(cs(l1).maxHeight.value, 60.f));
+    ui.setAttribute(p, "data-state", "open");
+    ui.removeAttribute(p, "data-state");
+    ui.update(0.f);
+    UI_CHECK(!near(cs(l1).maxHeight.value, 60.f) && !ui.attribute(p, "data-state", got));
+    // structure: first / last child follow insertions, removals and moves
+    UI_CHECK(near(cs(l1).width.value, 2.f) && near(cs(l2).width.value, 30.f));
+    const NodeHandle l3 = ui.create(label, p);
+    ui.update(0.f);
+    UI_CHECK(near(cs(l3).width.value, 30.f) && !near(cs(l2).width.value, 30.f));
+    ui.moveTo(l3, p, l1); // now the first child
+    ui.update(0.f);
+    UI_CHECK(near(cs(l3).width.value, 2.f) && !near(cs(l1).width.value, 2.f) && near(cs(l2).width.value, 30.f));
+    ui.destroy(l2);
+    ui.update(0.f);
+    UI_CHECK(near(cs(l1).width.value, 30.f));
+    // later siblings restyle when an earlier one gets the class
+    UI_CHECK(!near(cs(l1).letterSpacing, 3.f));
+    ui.addClass(l3, "x");
+    ui.update(0.f);
+    UI_CHECK(near(cs(l1).letterSpacing, 3.f) && !near(cs(l3).letterSpacing, 3.f));
     return finish("fuse_ui_css_selectors4");
 }

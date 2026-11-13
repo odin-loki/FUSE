@@ -53,7 +53,8 @@ pushed after those CI runs and re-checked on Linux only.
 - **Android saved state** (`APP_CMD_SAVE_STATE` -> `Application::saveState`, restored by `show()`) is cross-compiled
   only. **`Presenter::vsynced`** is set for a FIFO Vulkan swapchain, which no gate here can create.
 - **GPU output for the new work is untested** (no Vulkan device where this was developed): vector paths, gradients,
-  9-slice, clip-path and layer groups are pre-rasterised on the CPU and packed as images, checked only against a C++
+  9-slice, clip-path, layer, transform, filter and mask groups are pre-rasterised on the CPU and packed as images
+  (translation groups as moved kernel commands), checked only against a C++
   model of the kernel's image op; render scale other than 1 on the GPU path; synthetic bold / italic glyphs.
   `fuse_ui_vk_parity` has not been run with any of these.
 - **Installed-font scanning** ran on Linux only; the macOS, iOS, Android and Windows directory lists are untested,
@@ -232,12 +233,52 @@ pushed after those CI runs and re-checked on Linux only.
 - No SVG / icon cooker, no backdrop-blur GPU pass, no custom shaders, no damage-driven incremental GPU present.
 - The game module rasterises its draw list at scale 1 only.
 
+### Style engine port (selectors, at-rules, positioning, effects, animations)
+
+Ported from `gui-framework` onto this tree's engine as a subset; the branch's own implementation is not in the build.
+
+- Cascade: no `!important` (parsed, reported, applied as a normal declaration); `@scope` proximity is not a cascade
+  criterion; `@supports` is decided when the sheet is parsed; `@import`, `@font-face`, `@property` are skipped with a
+  diagnostic. `background: <colour>` does not reset an earlier `background-image`.
+- Selectors: attribute selectors see explicit attributes, `id` and (`~=`) classes, not widget values or text; no
+  pseudo-elements, `:nth-child(... of S)`, `:nth-of-type`, `:enabled`. `:has()` on a compound that is not the subject
+  (`.a:has(.b) .c`) restyles the whole tree on every relevant change; `:has()` matching walks the anchor's subtree.
+- Queries: `@container` answers size features only (no `style()` queries, no container / viewport units); a container
+  must be an ancestor. `@media` has no `print` output, `update`, `color-gamut` or `forced-colors`.
+- Easing: `cubic-bezier()` and `steps()` are not parsed (the named curves only).
+- Positioning: `z-index` orders siblings under their parent; it does not lift a node over its parent's siblings
+  (every node is a stacking context). An absolute node is still clipped by `overflow` ancestors between it and its
+  containing block, and without insets sits at the start of its parent's content box (not its flow position). A fixed
+  node ignores transformed ancestors and their opacity. `sticky` needs an `overflow: scroll` ancestor. `relative` /
+  `sticky` insets are ignored under `anchor` / `absolute` layouts (the insets place the child there). Subgrid shares
+  columns only (this grid has no row tracks) and one level deep. No flex `order`, `align-content`, row / column gap
+  pair, masonry.
+- Transforms: 2D only (no `perspective`, `rotateX/Y`, `translateZ`, `preserve-3d`, `backface-visibility`). Other than
+  translations they are drawn by resampling a layer: text softens when scaled up, scales well below 1 alias, and each
+  such node costs a layer per repaint. The overlay scrollbars and touch panning of a scroll container inside a rotated
+  or scaled node are hit in untransformed space. `rect()`, the layout dump and accessibility bounds stay the
+  untransformed layout boxes. Individual `translate` / `rotate` / `scale` properties are not parsed.
+- Filters: up to 4 functions and one `drop-shadow` per list; no `url()` (the branch's SVG filter programs,
+  `Core/src/filter_program.cpp`, stay parked); `backdrop-filter` is still blur only. Mismatched lists switch
+  half-way instead of interpolating.
+- Clip paths: basic shapes only (`inset`, `circle`, `ellipse`, `polygon` up to 8 points); no `path()`, `url()`,
+  reference boxes (the branch's `Core/src/css_masking.cpp` stays parked). Masks: one gradient layer over the border
+  box; no images, `mask-size / position / repeat / composite`.
+- Gradients (`background-image`, `mask-image`): up to 4 stops, percentages only; corner keywords use the 45 degree
+  diagonals; radial is always the centred farthest-corner ellipse; no conic, repeating or layered images.
+- Animations: up to 4 CSS animations per node; no `animation-composition`, `animation-timeline` (scroll / view
+  timelines), `iterationStart`, per-animation events other than `AnimationFinished`; a finished scripted animation
+  without a forwards fill releases its handle. Keyframe `var()` reads `:root` tokens only. Documents (`.fuseui`) have
+  no `"animate"` / `"order"` keys yet.
+- GPU: every non-translation effect group is rasterised on the CPU each time it repaints (a large blurred area is
+  slow), and none of it has run on a device (see above).
+
 ### Interaction and widgets
 
 - Touch: one-finger pan only; a pan that starts on a list or table row selects it; a slider inside a scroll area
   always wins the drag. Drag auto-scroll in views is one step per pointer move.
 - Tree views have no drag and drop; a row drag carries only the pressed row, not the multi-selection.
-- Transitions do not follow inherited values into descendants; no `@keyframes` in style sheets.
+- Transitions do not follow inherited values into descendants.
 - RTL does not mirror the inside of self-painting widgets or scroll origins.
 - Docks: no tab groups inside a floating dock; floating docks are panels inside the window unless the host turns on
   OS tool windows (`NativeOptions::osWindows`, X11 / Win32, not Wayland); a destroyed dock area does not destroy its floating docks.

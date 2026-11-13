@@ -38,7 +38,7 @@ No golden image changed. Nothing main had was deleted.
 
 | Path under `U/` | On main at that path | Branch version kept at | Port item |
 |---|---|---|---|
-| `Core/src/path.cpp` | main's `Path` / flatten / stroke / coverage (838 lines, live) | `U/_port/gui-framework/Core/src/path.cpp` (500 lines: the branch's `Path`, `DrawList::path`, gradients, `Gradient::at`) | 3.9 |
+| `Core/src/path.cpp` | main's `Path` / flatten / stroke / coverage (838 lines, live) | deleted 2026-11-13 (was `U/_port/gui-framework/Core/src/path.cpp`): main's path API is the one API; `DrawList::path` and `gradientStopsAt` were added to it | done (3.9) |
 | `Doc/include/fuse/ui/doc/hot_reload.hpp`, `Doc/src/hot_reload.cpp` | main's `HotReload` (live, gates `fuse_ui_hot_reload_identity`, `fuse_ui_hot_reload_file`) | deleted 2026-11-13 (ported: `doc::StyleSheetFileWatcher` in main's files) | 3.14 |
 | `App/android/AndroidManifest.xml` | main's Gradle template manifest (live packaging helper) | `U/_port/gui-framework/App/android/AndroidManifest.xml` (for `org.fuse.ui.FuseActivity`) | 3.4 |
 | `tests/test_app_wayland.cpp` | mb's parked test (311 lines, unbuilt; goes with `native_wayland.cpp`) | `U/_port/gui-framework/tests/test_app_wayland.cpp` (583 lines: in-process Wayland compositor driving the branch's `wayland.cpp`) | 3.2 |
@@ -67,6 +67,8 @@ No golden image changed. Nothing main had was deleted.
 | **Ported 2026-11-13.** Style sheet hot reload as `doc::StyleSheetFileWatcher` on main's file poll (`StyleEngine::replaceSheet` by handle) | `U/Doc/include/fuse/ui/doc/hot_reload.hpp`, `U/Doc/src/hot_reload.cpp`, `U/Core/src/style_sheets.cpp` | `fuse_ui_hot_reload_style` (`U/tests/test_hot_reload.cpp`, rewritten) |
 | **Ported 2026-11-13.** gettext `.po` catalogues as string-table entries: `l10n::parsePo`, `poKey`, `poToTable` (the reader of `extras/i18n.hpp`, folded into `fuse_ui_l10n_lib`) | `U/L10n/include/fuse/ui/l10n/l10n.hpp`, `U/L10n/src/po.cpp` (new) | `fuse_ui_l10n_po` (`U/tests/test_l10n_po.cpp`) |
 | **Ported 2026-11-13.** `<fuse/gui.hpp>` umbrella header and target `fuse::gui`, over the live modules | `U/Public/include/fuse/gui.hpp`, `U/Public/examples/gui_quickstart.cpp` | `fuse_gui_quickstart` |
+| **Ported 2026-11-13 (was 3.8)** Style engine on main's cascade: attribute selectors + `UiContext::setAttribute`, `:nth-child` family, `:empty`, `:not / :is / :where / :has`, `+` / `~`, nesting, selector-driven invalidation; `@media`, `@container`, `@layer`, `@scope`, `@supports`, `@keyframes`; `animation-*`; `UiContext::animate / animateCss` + `AnimationHandle`; `position` relative / absolute / fixed / sticky, `z-index`, `aspect-ratio`, subgrid; cooked style format 4 | `U/Core/include/fuse/ui/{style,ui,handle}.hpp`, `U/Core/src/{style,style_parser,style_values,ui}.cpp`, `style_internal.hpp`, `U/Doc/src/cook.cpp` (written on main; the branch's `style.cpp` / `ui.cpp` deltas were read, not taken) | `fuse_ui_css_selectors4`, `fuse_ui_style_invalidation`, `fuse_ui_css_cascade`, `fuse_ui_css_animations`, `fuse_ui_web_animations`, `fuse_ui_css_position`, `fuse_ui_style_fuzz` (branch gate files rewritten for main's API where the name is the branch's) |
+| **Ported 2026-11-13 (was 3.9)** Drawing core on main's `Path` / `DrawList`: effect groups `pushTransform / pushFilter / pushMask` (CPU reference; GPU through `packDrawList` pre-rasterisation, translation groups in place), CSS `transform` (2D, inverse hit testing, `toLocal`), `filter`, `clip-path` (basic shapes), `mask-image` (gradients), multi-stop `background-image`; `DrawList::path`, `gradientStopsAt`; the Extras adapter `path_compat.hpp` and the parked `_port/gui-framework/Core/src/path.cpp` are deleted | `U/Core/include/fuse/ui/draw_list.hpp`, `U/Core/src/{draw_list,draw_vector}.cpp`, `U/Render/src/gpu_draw_data.cpp`, `U/Extras/src/{charts,datavis3d,pdf}.cpp` | `fuse_ui_draw_fx_groups`, `fuse_ui_transform_affine`, `fuse_ui_css_masking`, `fuse_ui_css_gradient`, `fuse_ui_vector_golden_effects`, `fuse_ui_gpu_pack_vector` (CPU model of the kernel only) |
 
 Standalone UI build on Linux after the merge: 208 ctest gates (the 180 main had + 28). After the theme, widget and
 platform ports were merged and made consistent (2026-11-13; the list is in `PORT_magical_bassi.md` §2: the ported
@@ -97,7 +99,7 @@ Parked files deleted because they are superseded: `U/tests/test_app_xdnd.cpp`, `
 
 | File | Change |
 |---|---|
-| `U/Extras/src/charts.cpp`, `U/Extras/src/datavis3d.cpp` | The branch's path API (`Path::circle / append`, `Path::arcTo(Vec2, degrees, ...)`, `DrawList::path(path, fill, evenOdd, stroke, width)`, `DrawList::gradientPath`, `Gradient::at`) is called through `U/Extras/src/path_compat.hpp` (new), which maps it onto main's `Path::addCircle / addPath / arcTo`, `DrawList::fillPath / strokePath` and `Brush`. About 45 call sites; no logic changed. Strokes use round joins and caps. |
+| `U/Extras/src/charts.cpp`, `U/Extras/src/datavis3d.cpp` | The branch's path API (`Path::circle / append`, `Path::arcTo(Vec2, degrees, ...)`, `DrawList::path(path, fill, evenOdd, stroke, width)`, `DrawList::gradientPath`, `Gradient::at`) was mapped onto main's API by an adapter header at the merge. Since 2026-11-13 the call sites call main directly (`Path::addCircle / addPath`, `DrawList::path(path, fill, evenOdd, stroke, width)`, `gradientStopsAt`) and `U/Extras/src/path_compat.hpp` is deleted. 40 call sites; no logic changed. Strokes use round joins and caps. |
 | `U/Extras/src/pdf.cpp` | `renderDrawList` skips main's `Path`, `NinePatch`, `PushClipPath` and `PushLayer` ops and keeps its clip stack balanced across them (it does not draw them: 3.13). |
 | `U/tests/test_extras.cpp` | The gates of parked modules are inside `#if FUSE_UI_EXTRAS_ALL` (default 0); an unknown `--gate=` now fails with exit code 2 instead of passing; one `dl.path` call became `fillPath`. |
 | `U/tests/test_charts.cpp` | No `extras.hpp` umbrella include and no `registerExtraWidgets` (both belong to parked modules). |
@@ -272,47 +274,49 @@ widget nobody set options on keeps main's code path and pixels. The same pattern
 - **Verify**: the gates in §2; main's `fuse_ui_tier_*`, `fuse_ui_widget_*`, `fuse_ui_mv_*`, `fuse_ui_dock_*` and all
   goldens unchanged.
 
-### 3.8 Style engine: `@keyframes`, Web Animations, selectors, at-rules, positioning (L)
+### 3.8 Style engine: what is left after the 2026-11-13 port (M)
 
-- **What**: CSS animations and a Web-Animations-style API (`UiContext::animate`, `AnimationHandle`, scroll / view
-  timelines, ranges); selectors (attribute, `:nth-*`, sibling combinators, `:not / :is / :where / :has`, `:empty`)
-  with invalidation sets; `@media`, `@supports`, `@container`, `@layer`, `@scope`, nesting, `style()` queries,
-  container / viewport units; `position` + insets, `z-index` stacking contexts, `align-content`, gaps,
-  `aspect-ratio`, grid masonry / subgrid; `"animate"` and `"order"` keys in `.fuseui`.
-- **In the tree, unbuilt**: tests `U/tests/test_css_{animations,cascade,position,selectors4,transitions}.cpp`,
-  `test_web_animations.cpp`, `test_style_invalidation.cpp`, `test_transform_timelines.cpp`, `test_doc_animate.cpp`.
-- **Branch deltas not taken**: `U/Core/src/style.cpp` (+3078 / -120), `style.hpp` (+525), `ui.cpp` (+2507 / -124),
-  `ui.hpp` (+354), `handle.hpp` (`AnimationHandle`), `U/Doc/src/{document,cook}.cpp`, `document.hpp`, `cook.hpp`.
-- **Overlap on main**: transitions, `linear-gradient`, flex-wrap, grid templates in main's `style.cpp`; main's
-  animation members on `UiContext` (the duplicates named in §1). KNOWN_GAPS: "no `@keyframes` in style sheets".
-- **Blocks**: main's and the branch's `style.cpp` both grew from base in the same functions (13 conflict hunks, 583
-  lines). Port by feature in this order: selectors + invalidation, at-rules, `@keyframes`, the scripted animation API
-  (reconcile with main's `animate`), positioning / stacking.
-- **Verify**: the nine gates above (`fuse_ui_css_*`, `fuse_ui_web_animations`, `fuse_ui_style_invalidation`,
-  `fuse_ui_transform_timelines`, `fuse_ui_doc_animate`); main's `fuse_ui_style_cascade`,
-  `fuse_ui_layout_conformance`, `fuse_ui_bench_10k` and all goldens unchanged.
+Ported onto main's engine (see "Live now"): selectors + invalidation, at-rules, `@keyframes` / `animation-*`, the
+scripted animation API, positioning / `z-index` / `aspect-ratio` / subgrid. It is a rewrite against main's cascade,
+not the branch code; `docs/ui/KNOWN_GAPS.md` ("Style engine port") lists the limits of what is live. Not ported:
 
-### 3.9 Drawing core: one path / gradient API, transforms, filters, masks (L, decision)
+- **Easing**: `cubic-bezier()`, `steps()`, the `transition-*` longhands with list cycling, reversing-shortening,
+  `transition-behavior: allow-discrete`, transition events. Gate still parked: `U/tests/test_css_transitions.cpp`.
+- **Animations**: `animation-composition` (add / accumulate), `animation-timeline` (scroll / view timelines,
+  ranges, `timeline-scope`), `iterationStart`, start / iteration events, KeyframeEffect retargeting, auto-removal of
+  replaced animations. Gates still parked: `U/tests/test_transform_timelines.cpp`, the timeline parts of
+  `test_transform_3d.cpp`.
+- **Documents**: the `"animate"` and `"order"` keys of `.fuseui` (`U/Doc/src/{document,cook}.cpp` deltas of the
+  branch). Gate still parked: `U/tests/test_doc_animate.cpp`.
+- **Cascade**: `!important`, `@scope` proximity, `@container style()`, container / viewport units, the node
+  reorder API (`insertBefore`, `swapNodes`, `sortChildren`, ...).
+- **Layout**: stacking contexts across parents (main orders siblings only), `align-content`, row / column gap pair,
+  grid masonry, subgrid rows.
+- **Verify**: the three parked gates above once ported; `fuse_ui_css_*`, `fuse_ui_web_animations`,
+  `fuse_ui_style_invalidation`, `fuse_ui_style_fuzz`, `fuse_ui_bench_10k`, `fuse_ui_zero_alloc_steady` unchanged.
 
-- **What**: the branch's `Path` (edge list), `DrawList::path / gradientPath / pushClipLayers / pushProjective`,
-  `Gradient` with focal point and `toUnit`, `ClipLayer`; 2D affine and 3D transforms (perspective, preserve-3d,
-  backface, BSP splitting) with transformed hit testing; CSS filters and `backdrop-filter` functions, `drop-shadow`,
-  SVG `<filter>` programs (`FilterProgram`, `FeOp`); `clip-path` shapes, `mask-*`, `background-clip`.
-- **In the tree, unbuilt**: `U/Core/include/fuse/ui/css_masking.hpp`, `U/Core/src/css_masking.cpp` (657 lines),
-  `U/Core/src/filter_program.cpp` (1136), `U/_port/gui-framework/Core/src/path.cpp`; tests
-  `U/tests/test_{transform_affine,transform_3d,css_masking,css_gradient,color_path}.cpp`.
-- **Branch deltas not taken**: `U/Core/include/fuse/ui/draw_list.hpp` (+360), `U/Core/src/draw_list.cpp` (+999 / -66),
-  `test_backdrop_blur.cpp` (+330).
-- **Overlap on main**: `fuse/ui/path.hpp` (`Path`, `Affine`, `StrokeStyle`, flatten / stroke / coverage),
-  `DrawList::fillPath / strokePath / pushClipPath / pushLayer`, `Brush`, N-stop linear / radial / conic `Gradient`,
-  `Painter`, `SvgImage`. Same names, different types: `Path`, `Gradient`, `GradientStop`, `GradientKind`.
-- **Blocks**: **decision**: main's path API is the public one (the live Extras already run on it through
-  `path_compat.hpp`). Port onto it what it lacks: focal radial gradients, layered clips / masks, projective
-  transforms, filter programs. `css_masking.cpp` and `filter_program.cpp` then need their `Path` / `ClipLayer` uses
-  rewritten and the style properties from 3.8 (`maskImage`, `maskSize`, interned source text).
-- **Verify**: `fuse_ui_transform_affine`, `fuse_ui_transform_3d`, `fuse_ui_css_masking`, `fuse_ui_css_gradient`,
-  `fuse_ui_color_path`, `fuse_ui_backdrop_blur` with the branch's cases; main's `fuse_ui_vector_*`, `fuse_ui_svg`,
-  `fuse_ui_cpu_raster_golden` and every golden unchanged.
+### 3.9 Drawing core: what is left after the 2026-11-13 port (M)
+
+Decision taken: main's `Path` / `Gradient` / `DrawList` is the one API. On it now (see "Live now"): transform,
+filter and mask groups with a CPU reference, CSS `transform` (2D), `filter`, `clip-path` basic shapes, gradient
+masks, multi-stop background gradients, `DrawList::path`; the adapter and the parked branch `path.cpp` are gone.
+Not ported:
+
+- **3D transforms**: `perspective`, `rotateX / Y / 3d`, `translateZ`, `preserve-3d`, backface culling, BSP
+  splitting, projective paint and hit testing (`DrawList::pushProjective`). Gate still parked:
+  `U/tests/test_transform_3d.cpp`.
+- **Masking beyond gradients**: `clip-path: path() / url()`, reference boxes, polygons past 8 points, image mask
+  layers, `mask-size / position / repeat / composite`, `background-clip`. Code still parked:
+  `U/Core/include/fuse/ui/css_masking.hpp`, `U/Core/src/css_masking.cpp` (written against the branch's `Path` /
+  `ClipLayer`; the shape and gradient parsing it shares with the live code was rewritten in
+  `U/Core/src/style_values.cpp`, so port only the layers on top).
+- **SVG filter programs** (`FilterProgram`, `FeOp`, `filter: url(#id)`) and the `backdrop-filter` function list:
+  `U/Core/src/filter_program.cpp` stays parked. The live filter chain is `FilterOp` in `draw_list.hpp`.
+- **Gradients**: focal radial gradients, conic / repeating CSS gradients, more than 4 stops in style values.
+- **Colour management** helpers and their gate (`U/tests/test_color_path.cpp`): belongs to 3.11.
+- **Native GPU ops** for any of it: 3.10 (the groups are CPU pre-rasterised today).
+- **Verify**: `fuse_ui_transform_3d`, the remaining cases of the branch's `fuse_ui_css_masking`; main's
+  `fuse_ui_vector_*`, `fuse_ui_draw_fx_groups`, `fuse_ui_gpu_pack_vector` and every golden unchanged.
 
 ### 3.10 GPU renderer: paths, gradients, clips, filters, backdrop kernel, incremental pack, mesh pass (L; see §6)
 
@@ -517,7 +521,7 @@ names the two ways out (pass a checkout, or use the default std backend). It is 
   were checked as argv only. Tray: against a private `dbus-daemon`, not a desktop shell.
 - Vulkan: no loader on the merge machine; nothing GPU-side of the branch is built or run.
 - FORGE backend (`-DFUSE_UI_OS_BACKEND=forge`): not configured (no checkout).
-- The live charts and 3D graphs passed the branch's own gates through `path_compat.hpp`; those gates check geometry,
+- The live charts and 3D graphs passed the branch's own gates on main's path API; those gates check geometry,
   hit testing, counts and rendered output with tolerances, not images against the branch's renderer. Stroke joins and anti-aliasing
   differ from the branch's rasteriser, and nobody compared images side by side.
 - `os_std.cpp` is new code with one gate. `runProcess` forks from a possibly multi-threaded process and execs

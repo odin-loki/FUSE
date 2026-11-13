@@ -1,6 +1,5 @@
 // 3D data visualisation: CPU projection + BSP depth ordering (painter's sort for points / lines) onto DrawList paths. See datavis3d.hpp.
 #include "fuse/ui/extras/datavis3d.hpp"
-#include "path_compat.hpp"
 
 #include <cstdlib>
 #include <algorithm>
@@ -48,7 +47,7 @@ Color shade(Color c, f32 k) { return {c.r * k, c.g * k, c.b * k, c.a}; }
 Color colormapAt(const Scene& s, f32 t) {
     static const std::vector<GradientStop> kDefault = {{0.f, Color::rgb(0x2040FF)}, {0.25f, Color::rgb(0x20C0FF)}, {0.5f, Color::rgb(0x30E060)},
                                                        {0.75f, Color::rgb(0xFFE030)}, {1.f, Color::rgb(0xFF3020)}};
-    return extras_compat::stopsAt(s.colormap.empty() ? kDefault : s.colormap, std::clamp(t, 0.f, 1.f));
+    return gradientStopsAt(s.colormap.empty() ? kDefault : s.colormap, std::clamp(t, 0.f, 1.f));
 }
 /// Lambert term of a camera-space face normal against a fixed head light from upper left.
 f32 lambert(Vec3 a, Vec3 b, Vec3 c) {
@@ -382,7 +381,7 @@ void renderImpl(const Scene& s, DrawList& dl, Rect target, Color gridColorIn, st
                             ? u32(std::ceil(std::sqrt(double(s.rows) * double(s.cols) / (double(s.maxGrid) * double(s.maxGrid))))) : 1u;
     auto marker = [&](Vec2 sp, f32 r) {
         Prim p;
-        extras_compat::circle(p.path, sp, r);
+        p.path.addCircle(sp, r);
         p.fill = Color::rgb(0xFFFFFF), p.stroke = Color::rgb(0x000000), p.strokeW = 1.5f, p.depth = 1e9f, p.order = order++;
         prims.push_back(std::move(p));
     };
@@ -448,7 +447,7 @@ void renderImpl(const Scene& s, DrawList& dl, Rect target, Color gridColorIn, st
             Prim p;
             const bool hl = lit(i);
             const f32 r = s.pointSize * f * (hl ? 1.6f : 1.f);
-            extras_compat::circle(p.path, sp, std::max(r, 1.f));
+            p.path.addCircle(sp, std::max(r, 1.f));
             p.fill = col, p.stroke = hl ? Color::rgb(0xFFFFFF) : Color::rgb(0x000000, 0.4f), p.strokeW = 1.f;
             p.depth = q.z, p.order = order++;
             prims.push_back(std::move(p));
@@ -568,13 +567,13 @@ void renderImpl(const Scene& s, DrawList& dl, Rect target, Color gridColorIn, st
     dl.pushClip(target);
     std::size_t ri = 0;
     if (!faces.empty())
-        for (; ri < rest.size() && rest[ri].depth <= -9.f; ++ri) extras_compat::drawPath(dl, rest[ri].path, rest[ri].fill, false, rest[ri].stroke, rest[ri].strokeW);
+        for (; ri < rest.size() && rest[ri].depth <= -9.f; ++ri) dl.path(rest[ri].path, rest[ri].fill, false, rest[ri].stroke, rest[ri].strokeW);
     for (const BspFragment& f : bspOrder(faces, v.persp, v.dist)) {
         const Prim& p = prims[faceOf[f.source]];
         const bool translucent = p.fill.a < 1.f && p.fill.a > 0.f;
         if (!translucent && f.pts.size() == faces[f.source].size() && std::equal(f.pts.begin(), f.pts.end(), faces[f.source].begin(),
                                                                 [](Vec3 a, Vec3 b) { return a.x == b.x && a.y == b.y && a.z == b.z; })) {
-            extras_compat::drawPath(dl, p.path, p.fill, false, p.stroke, p.strokeW); // unsplit: the original path
+            dl.path(p.path, p.fill, false, p.stroke, p.strokeW); // unsplit: the original path
             continue;
         }
         // split part: fill the piece; where its edge is a BSP cut (not a real edge) the neighbouring pieces must meet
@@ -612,7 +611,7 @@ void renderImpl(const Scene& s, DrawList& dl, Rect target, Color gridColorIn, st
             else piece.lineTo(fillPts[j]);
         }
         piece.close();
-        extras_compat::drawPath(dl, piece, p.fill, false, {}, 0.f);
+        dl.path(piece, p.fill, false, {}, 0.f);
         if (p.fill.a >= 1.f)
             for (std::size_t j = 0; j < n; ++j)
                 if (isCut(j)) dl.line(sp[j], sp[(j + 1) % n], p.fill, 1.f);
@@ -620,7 +619,7 @@ void renderImpl(const Scene& s, DrawList& dl, Rect target, Color gridColorIn, st
             for (std::size_t j = 0; j < n; ++j)
                 if (!isCut(j)) dl.line(sp[j], sp[(j + 1) % n], p.stroke, p.strokeW);
     }
-    for (; ri < rest.size(); ++ri) extras_compat::drawPath(dl, rest[ri].path, rest[ri].fill, false, rest[ri].stroke, rest[ri].strokeW);
+    for (; ri < rest.size(); ++ri) dl.path(rest[ri].path, rest[ri].fill, false, rest[ri].stroke, rest[ri].strokeW);
     dl.popClip();
     if (stats) {
         stats->input = s.kind == Kind::Scatter || s.kind == Kind::Line ? s.points.size()
@@ -929,7 +928,7 @@ void renderMeshed(const Scene& s, DrawList& dl, Rect target, Color gridColor, Me
     dl.push(c);
     // selection / highlight markers over the mesh (as the painter path)
     const View v = makeView(s, target);
-    auto marker = [&](Vec3 n) { Path p; extras_compat::circle(p, toScreen(v, toCam(v, n)), 4.f); extras_compat::drawPath(dl, p, Color::rgb(0xFFFFFF), false, Color::rgb(0x000000), 1.5f); };
+    auto marker = [&](Vec3 n) { Path p; p.addCircle(toScreen(v, toCam(v, n)), 4.f); dl.path(p, Color::rgb(0xFFFFFF), false, Color::rgb(0x000000), 1.5f); };
     auto at = [&](u32 i, Vec3& out) {
         if ((s.kind == Kind::Scatter || s.kind == Kind::Line) && i < s.points.size()) { out = norm(v, s.points[i]); return true; }
         if ((s.kind == Kind::Surface || s.kind == Kind::Area) && s.cols && i < s.values.size()) { out = norm(v, {f32(i % s.cols), s.values[i], f32(i / s.cols)}); return true; }

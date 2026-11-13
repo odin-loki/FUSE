@@ -1,7 +1,6 @@
 // FUSE Charts (2D): layout, axes, series painters, decimation, hit testing, widget. See charts.hpp.
 #include "fuse/ui/extras/charts.hpp"
 #include "charts_simd.hpp"
-#include "path_compat.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -483,8 +482,8 @@ struct Ctx {
 
 void marker(DrawList& dl, Vec2 p, f32 r, Color c, Color ring = {}) {
     Path m;
-    extras_compat::circle(m, p, r);
-    extras_compat::drawPath(dl, m, c, false, ring, ring.a > 0 ? 1.5f : 0.f);
+    m.addCircle(p, r);
+    dl.path(m, c, false, ring, ring.a > 0 ? 1.5f : 0.f);
 }
 
 void drawAxes(Ctx& x) {
@@ -496,15 +495,15 @@ void drawAxes(Ctx& x) {
         const Vec2 ctr{p.x + p.w * 0.5f, p.y + p.h * 0.5f};
         const f32 R = p.w * 0.5f;
         Path bg;
-        extras_compat::circle(bg, ctr, R);
-        extras_compat::drawPath(dl, bg, c.theme.plot);
+        bg.addCircle(ctr, R);
+        dl.path(bg, c.theme.plot);
         const Axis& ra = c.axes[1];
         for (f32 t : ticks(ra, x.rg[1].first, x.rg[1].second)) {
             const f32 r = toPixel(ra, x.rg[1].first, x.rg[1].second, t, 0.f, R);
             if (r <= 0.5f) continue;
             Path ring;
-            extras_compat::circle(ring, ctr, r);
-            extras_compat::drawPath(dl, ring, {}, false, c.theme.grid, 1.f);
+            ring.addCircle(ctr, r);
+            dl.path(ring, {}, false, c.theme.grid, 1.f);
             text(x.tf, dl, formatTick(ra, t), {ctr.x + 3.f, ctr.y - r, 80.f, lh}, c.theme.axis, fs, TextAlignment::Start);
         }
         const Axis& aa = c.axes[0];
@@ -517,8 +516,8 @@ void drawAxes(Ctx& x) {
             text(x.tf, dl, s, {ctr.x + std::cos(ang) * (R + fs) - w * 0.5f, ctr.y + std::sin(ang) * (R + fs) - lh * 0.5f, w + 2, lh}, c.theme.axis, fs, TextAlignment::Center);
         }
         Path outline;
-        extras_compat::circle(outline, ctr, R);
-        extras_compat::drawPath(dl, outline, {}, false, c.theme.axis, 1.f);
+        outline.addCircle(ctr, R);
+        dl.path(outline, {}, false, c.theme.axis, 1.f);
         return;
     }
     dl.rect(p, c.theme.plot);
@@ -628,11 +627,11 @@ void drawStackedArea(Ctx& x, u32 si, std::vector<f32>& stackBase) {
     for (std::size_t i = 1; i < top.size(); ++i) p.lineTo(top[i]);
     for (std::size_t i = bot.size(); i-- > 0;) p.lineTo(bot[i]);
     p.close();
-    extras_compat::drawPath(*x.dl, p, col.withAlpha(0.55f * col.a));
+    x.dl->path(p, col.withAlpha(0.55f * col.a));
     Path l;
     l.moveTo(top[0]);
     for (std::size_t i = 1; i < top.size(); ++i) l.lineTo(top[i]);
-    extras_compat::drawPath(*x.dl, l, {}, false, col, s.lineWidth);
+    x.dl->path(l, {}, false, col, s.lineWidth);
 }
 
 void drawLineLike(Ctx& x, u32 si) {
@@ -673,7 +672,7 @@ void drawLineLike(Ctx& x, u32 si) {
             if (c.polar) {
                 f = p;
                 f.close();
-                extras_compat::drawPath(dl, f, col.withAlpha(0.3f * col.a));
+                dl.path(f, col.withAlpha(0.3f * col.a));
             } else {
                 const f32 base = x.ap(s.yAxis, std::max(0.f, x.rg[s.yAxis].first));
                 f.moveTo({pts[0].x, base});
@@ -690,9 +689,9 @@ void drawLineLike(Ctx& x, u32 si) {
                 Path run;
                 run.moveTo(pts[i]);
                 for (std::size_t k = i + 1; k <= std::min(i + 96, pts.size() - 1); ++k) run.lineTo(pts[k]);
-                extras_compat::drawPath(dl, run, {}, false, col, s.lineWidth);
+                dl.path(run, {}, false, col, s.lineWidth);
             }
-        } else extras_compat::drawPath(dl, p, {}, false, col, s.lineWidth);
+        } else dl.path(p, {}, false, col, s.lineWidth);
         if (s.markerSize > 0) for (const Vec2& q : pts) marker(dl, q, s.markerSize, col);
     }
     if (reveal) dl.popClip();
@@ -764,14 +763,14 @@ void drawPie(Ctx& x, u32 si, Rect area) {
         Path p;
         const bool large = da > 3.14159265f;
         if (da >= 6.2831f) { // full circle: two half arcs
-            if (hole > 0) { extras_compat::circle(p, o, R); Path in; extras_compat::circle(in, o, hole); extras_compat::append(p, in); extras_compat::drawPath(dl, p, sliceColor(c, u32(i)), true); }
-            else { extras_compat::circle(p, o, R); extras_compat::drawPath(dl, p, sliceColor(c, u32(i))); }
+            if (hole > 0) { p.addCircle(o, R); Path in; in.addCircle(o, hole); p.addPath(in); dl.path(p, sliceColor(c, u32(i)), true); }
+            else { p.addCircle(o, R); dl.path(p, sliceColor(c, u32(i))); }
         } else {
             if (hole > 0) {
                 p.moveTo(at(a0, hole)).lineTo(at(a0, R)).arcTo(R, R, 0.f, large, true, at(a1, R)).lineTo(at(a1, hole)).arcTo(hole, hole, 0.f, large, false, at(a0, hole));
             } else p.moveTo(o).lineTo(at(a0, R)).arcTo(R, R, 0.f, large, true, at(a1, R));
             p.close();
-            extras_compat::drawPath(dl, p, sliceColor(c, u32(i)), false, c.theme.background, 1.5f);
+            dl.path(p, sliceColor(c, u32(i)), false, c.theme.background, 1.5f);
         }
         if (c.progress >= 1.f && i < s.labels.size() && da > 0.15f) {
             char pct[16];
@@ -909,7 +908,7 @@ void drawRadarWeb(Ctx& x, Rect area) {
     for (int ring = 1; ring <= 5; ++ring) {
         std::vector<Vec2> p;
         for (std::size_t k = 0; k < g.n; ++k) p.push_back(radarAt(g, k, g.R * f32(ring) / 5.f));
-        extras_compat::drawPath(dl, polyPath(p), {}, false, c.theme.grid, 1.f);
+        dl.path(polyPath(p), {}, false, c.theme.grid, 1.f);
     }
     const Series* named = nullptr;
     for (const Series& s : c.series) if (s.visible && s.type == SeriesType::Radar && s.labels.size() >= g.n) { named = &s; break; }
@@ -942,7 +941,7 @@ void radarShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
     }
     const Color col = seriesColor(c, si);
     if (x.dl) {
-        extras_compat::drawPath(*x.dl, polyPath(pts), col.withAlpha(col.a * 0.25f), false, col, s.lineWidth);
+        x.dl->path(polyPath(pts), col.withAlpha(col.a * 0.25f), false, col, s.lineWidth);
         for (std::size_t k = 0; k < g.n && k < v.size(); ++k) marker(*x.dl, pts[k], c.hoverSeries == i32(si) && c.hoverIndex == i32(k) ? 5.f : 3.f, col);
     }
     for (std::size_t k = 0; k < g.n && k < v.size(); ++k) { // hit targets: a diamond around each vertex
@@ -1181,7 +1180,7 @@ void sankeyShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
         if (x.dl) {
             const Color col = sliceColor(c, l.source);
             const bool hov = c.hoverSeries == i32(si) && c.hoverIndex == i32(i);
-            extras_compat::drawPath(*x.dl, polyPath(poly), col.withAlpha(col.a * (hov ? 0.7f : 0.4f)));
+            x.dl->path(polyPath(poly), col.withAlpha(col.a * (hov ? 0.7f : 0.4f)));
         }
     }
     for (u32 j = 0; j < g.nodes.size(); ++j) {
@@ -1219,21 +1218,21 @@ void gaugeShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
     out.push_back({track, 0});
     if (!x.dl) return;
     DrawList& dl = *x.dl;
-    extras_compat::drawPath(dl, polyPath(track), c.theme.grid);
+    dl.path(polyPath(track), c.theme.grid);
     for (std::size_t b = 0; b + 1 < s.colormap.size(); ++b) // bands: thin outer ring segments
-        if (s.colormap[b + 1].offset > s.colormap[b].offset) extras_compat::drawPath(dl, polyPath(ring(s.colormap[b].offset, s.colormap[b + 1].offset, R + 3.f, R + 3.f + th * 0.3f)), s.colormap[b].color);
+        if (s.colormap[b + 1].offset > s.colormap[b].offset) dl.path(polyPath(ring(s.colormap[b].offset, s.colormap[b + 1].offset, R + 3.f, R + 3.f + th * 0.3f)), s.colormap[b].color);
     const Color col = hover(c, si, 0, s.colormap.empty() ? seriesColor(c, si) : sampleMap(s.colormap, f));
-    if (f > 0.f) extras_compat::drawPath(dl, polyPath(ring(0.f, f, R - th, R)), col);
+    if (f > 0.f) dl.path(polyPath(ring(0.f, f, R - th, R)), col);
     for (int t = 0; t <= 10; ++t) { // ticks
         const f32 a = a0 + sweep * f32(t) / 10.f, r0 = R - th - (t % 5 == 0 ? th * 0.6f : th * 0.3f), r1 = R - th - 2.f;
         dl.line({ctr.x + std::cos(a) * r0, ctr.y + std::sin(a) * r0}, {ctr.x + std::cos(a) * r1, ctr.y + std::sin(a) * r1}, c.theme.axis, 1.f);
     }
     const f32 na = a0 + sweep * f, nl = R - th * 1.6f; // needle
     const Vec2 tip{ctr.x + std::cos(na) * nl, ctr.y + std::sin(na) * nl}, side{-std::sin(na) * th * 0.18f, std::cos(na) * th * 0.18f};
-    extras_compat::drawPath(dl, polyPath({{ctr.x + side.x, ctr.y + side.y}, tip, {ctr.x - side.x, ctr.y - side.y}}), c.theme.text);
+    dl.path(polyPath({{ctr.x + side.x, ctr.y + side.y}, tip, {ctr.x - side.x, ctr.y - side.y}}), c.theme.text);
     Path hub;
-    extras_compat::circle(hub, ctr, th * 0.3f);
-    extras_compat::drawPath(dl, hub, c.theme.text);
+    hub.addCircle(ctr, th * 0.3f);
+    dl.path(hub, c.theme.text);
     char b[48];
     std::snprintf(b, sizeof b, "%g", double(s.gaugeMin + (span != 0 ? f * span : 0.f)));
     const f32 vw = measure(x.tf, b, fs * 1.6f);
@@ -1258,7 +1257,7 @@ void funnelShapes(Ctx& x, u32 si, Rect area, std::vector<PanelShape>& out) {
         out.push_back({poly, u32(i)});
         if (!x.dl) continue;
         const Color col = hover(c, si, u32(i), sliceColor(c, u32(i)));
-        extras_compat::drawPath(*x.dl, polyPath(poly), col);
+        x.dl->path(polyPath(poly), col);
         if (c.progress >= 1.f && h > fs * 1.2f) {
             char b[160];
             std::snprintf(b, sizeof b, "%s%s%g (%.0f%%)", i < s.labels.size() ? s.labels[i].c_str() : "", i < s.labels.size() ? ": " : "", double(v[i]), double(v[i] / std::max(1e-30f, v[0]) * 100.f));
@@ -1347,7 +1346,7 @@ void drawContour(Ctx& x, u32 si) {
             }
         if (!any) continue;
         const Color col = s.contourFill ? c.theme.text.withAlpha(0.75f) : sampleMap(s.colormap, f32(L + 1) / f32(levels + 1));
-        extras_compat::drawPath(*x.dl, p, {}, false, col.withAlpha(col.a * c.progress), s.lineWidth * 0.75f);
+        x.dl->path(p, {}, false, col.withAlpha(col.a * c.progress), s.lineWidth * 0.75f);
     }
     if (x.stats) x.stats->inputPoints += n, x.stats->drawnPoints += segs;
 }

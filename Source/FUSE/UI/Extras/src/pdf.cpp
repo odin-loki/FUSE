@@ -244,7 +244,10 @@ void PdfDocument::renderDrawList(const DrawList& dl, Vec2 o, f32 k, const u8* at
             groups.push_back(true);
             break;
         }
-        case DrawOp::PushLayer: groups.push_back(false); break;
+        case DrawOp::PushLayer:
+        case DrawOp::PushTransform: // effect groups are not written: their content is drawn unmodified
+        case DrawOp::PushFilter:
+        case DrawOp::PushMask: groups.push_back(false); break;
         case DrawOp::Path: {
             if (c.data >= dl.paths().size()) break;
             const DrawPath& dp = dl.paths()[c.data];

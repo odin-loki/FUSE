@@ -697,8 +697,8 @@ e.selectAll(); e.setAlign(rich::Align::Center); e.setColor(Color::rgb(0xE0703A))
 std::string html = widgets::richHtml(ui, ed);
 ```
 
-Limits on main: charts and 3D graphs draw through main's `Path` / `fillPath` / `strokePath` (adapter
-`Extras/src/path_compat.hpp`), so on the GPU path they are pre-rasterised on the CPU like every other path. The GPU
+Limits on main: charts and 3D graphs draw through main's `Path` / `DrawList::path` / `fillPath` / `strokePath`
+(directly: the adapter header is gone), so on the GPU path they are pre-rasterised on the CPU like every other path. The GPU
 mesh pass (`ui_vk_mesh`) and the SIMD min-max kernels are not built. `desktop` and the clipboard / file-dialog parts
 of `fuse::ui::os` need helper programs and work on POSIX desktops only; `os::runProcess` returns an error on Windows,
 iOS and Android. `fuse::ui::desktop::openUrl` exists next to `fuse::app::openUrl` (`services.hpp`); prefer the latter
@@ -951,6 +951,31 @@ unflattened and flattened by the rasteriser in device pixels (0.05 px), so `setR
 them sharp. Coverage is exact-area antialiasing; small paths are cached by shape (`pathCacheStats()`), so an icon
 drawn again at a whole-pixel position costs a lookup (~0.005 ms at 24 px, ~0.03 ms from scratch).
 
+`DrawList::path(path, fill, evenOdd, stroke, strokeWidth)` is the one-call "shape with an outline" (fill, then a
+round-joined stroke); `gradientStopsAt(stops, t)` looks a colour up in a stop list (colour maps).
+
+**Effect groups** (what CSS `transform` / `filter` / `mask-image` are painted with; usable directly). Each group
+ends with `popClip()` and composites its content as one layer:
+
+```cpp
+dl.pushTransform(Affine::translation(120, 90) * Affine::rotation(0.5f) * Affine::translation(-50, -30), {0, 0, 100, 60});
+dl.rect({0, 0, 100, 60}, Color::rgb(0xD03030));   // recorded in the group's local space
+dl.popClip();
+const FilterOp ops[2] = {{FilterKind::Blur, 4.f}, {FilterKind::DropShadow, 3.f, {4, 6}, Color::rgb(0x000000, 0.6f)}};
+dl.pushFilter(ops, bounds);                        // blur, brightness, contrast, grayscale, sepia, saturate,
+...                                                // hue-rotate, invert, opacity, drop-shadow - in order
+dl.popClip();
+dl.pushMask(Gradient::linear({0, 0}, {200, 0}, stops), bounds);   // alpha, or MaskMode::Luminance
+```
+
+A pure translation moves its commands by whole device pixels (exact, no layer; the GPU packer emits moved kernel
+commands). Any other matrix renders the group to a layer and resamples it bilinearly: edges are antialiased, glyphs
+soften when scaled up, and a scale far below 1 aliases. Blur is a Gaussian of the given standard deviation (the
+kernel itself below 2 px, three box blurs above: within 2.5 % of the true Gaussian); colour functions are the Filter
+Effects matrices on straight sRGB values. `filterReach(ops)` is how far a chain spreads pixels;
+`DrawList::groupBounds(cmd)` what a group can touch. A scissored render (damage) equals the same region of a full
+render bit for bit; `scale()` / `translate()` carry the groups along. Rendering allocates nothing once warm.
+
 **Painter** (QPainter equivalent) records into a draw list with a state stack:
 
 ```cpp
@@ -994,7 +1019,8 @@ node's `color`), `setIcon(ui, button, Icon::Save)` / `setIcon(ui, button, handle
 `iconButton(ui, parent, Icon::Undo)`.
 
 **GPU.** The compute kernel has no path op. `packDrawList` pre-rasterises every vector op (and every clip-path /
-layer group as a whole) on the CPU into an image and draws it with the kernel's Image op; the reference rasteriser
+layer / transform / filter / mask group as a whole; a translation group is packed in place instead, as moved
+commands) on the CPU into an image and draws it with the kernel's Image op; the reference rasteriser
 composites these ops as 8-bit texels with the same blend, so both paths agree by construction (gate
 `fuse_ui_gpu_pack_vector` checks this with a CPU model of the kernel; a real GPU run is `fuse_ui_vk_parity`).
 `GpuDrawData::bakedOps / bakedPixels / unsupportedOps` report it; ops beyond 16 M baked pixels per frame are dropped
@@ -1064,6 +1090,74 @@ std::string tokens = widgets::themeTokensCss({.variant = widgets::ThemeVariant::
   pairs below 4.5 that are frozen by its goldens: white on `--accent` 3.33 (primary button, check marks, a latched
   on-screen keyboard key), on `--danger` 3.91 and `--warning` 2.27 (message box badges), code editor line numbers
   3.00, and placeholder text (the text colour at half alpha: 4.47 in a field, 3.71 in an editable combo box).
+
+### Selectors, at-rules, positioning, effects, animations
+
+**Selectors.** Attribute selectors `[name]`, `[name=v]`, `~=`, `|=`, `^=`, `$=`, `*=` (with the ` i` flag) match
+what `ui.setAttribute(node, "data-kind", "warning")` set (`ui.attribute` / `removeAttribute`; `id` reads as an
+attribute, `[class~=x]` the class list). Structural: `:first-child`, `:last-child`, `:only-child`,
+`:nth-child(an+b | odd | even)`, `:nth-last-child()`, `:empty` (no children and no text). Logical: `:not()`,
+`:is()`, `:where()`, `:has()` with relative arguments (`:has(> .bad)`, `:has(+ .selected)`). Combinators `+` and
+`~`. Specificity is CSS's (the most specific argument of `:not / :is / :has`; `:where` adds nothing). Rules nest:
+`.card { gap: 4px; &.on { ... } > .title { ... } @media (min-width: 600px) { gap: 8px; } }`. A class, state,
+attribute, text or tree change restyles exactly what the loaded selectors can reach from it (descendants to the depth
+of the combinators, later siblings, `:has()` anchors); sheets without such selectors behave as before.
+
+**At-rules.** `@media` with `width` / `height` ranges (`min-`, `max-`, `400px <= width < 800px`), `orientation`,
+`aspect-ratio`, `prefers-color-scheme`, `prefers-reduced-motion`, `hover`, `pointer`, `resolution`, `not` / `and` /
+`or` and comma lists; it follows `setViewport`, `setRenderScale`, `setReducedMotion` and
+`ui.setMediaPreferences(dark, hover, pointer)`, and only a query that changes its answer restyles anything.
+`@container [name] (min-width: 300px)` asks the content box of the nearest ancestor with
+`container-type: inline-size | size` (`container-name`, shorthand `container: name / type`); when a container's size
+changes its subtree is restyled and laid out again in the same `update()`. `@layer a, b;` / `@layer a { ... }`
+(anonymous and nested `a.b` too): later layers win over earlier ones whatever the specificity, rules outside any
+layer win over all, and layers merge by name across sheets. `@scope (.card) to (.content) { .img { ... } :scope { ... } }`.
+`@supports (prop: value)`, `selector(...)`, `not / and / or` (decided at parse time). `@keyframes`.
+
+**Positioning.** `position: relative` (laid out in flow, then moved by `left / top / right / bottom`), `absolute`
+(out of flow, against the nearest positioned ancestor, else the viewport; opposite insets stretch it), `fixed`
+(against the viewport: over everything, not scrolled or clipped by ancestors), `sticky` (stays at its inset inside
+the scrollport of the nearest `overflow: scroll` ancestor while its parent's content box has room), `inset`
+shorthand. `z-index` orders siblings for painting and hit testing (negative, in-flow, positioned, positive).
+`aspect-ratio: 16 / 9`. `grid-template-columns: subgrid` on a grid child of a grid uses the parent's column tracks it
+spans. Under an `anchor` / `absolute` layout the insets already place the child, so `relative` and `sticky` add
+nothing there.
+
+**Effects.** `transform: translate(10px, -50%) rotate(15deg) scale(1.2) skewX(10deg) matrix(...)` with
+`transform-origin` (default centre); layout is unaffected, hit testing goes through the inverse matrix, and handlers
+get the pointer in the node's own layout space (`ui.toLocal(node, p)` / `fromLocal`). `filter: blur(4px)
+brightness(1.2) contrast() grayscale() sepia() saturate() hue-rotate(90deg) invert() opacity() drop-shadow(2px 4px 6px
+#000)` (up to 4 functions, one drop-shadow). `clip-path: inset(...) | circle(...) | ellipse(...) | polygon(...)`
+cuts the node and its children, also for hit testing. `mask-image: linear-gradient(...) | radial-gradient(...)` with
+`mask-mode: alpha | luminance` (shorthand `mask`); fully masked points are not hit. `background-image:
+linear-gradient(45deg, red, #00f 30%, transparent)` / `radial-gradient(...)` (up to 4 stops) is drawn over the
+background colour; the two-colour `linear-gradient(to right | to bottom, a, b)` stays the plain rect gradient.
+`transform` and `filter` take part in `transition` and in animations (matrices interpolate through their decomposed
+form, filter lists function by function, `none` as each function's identity).
+
+**Animations.** `animation: spin 2s ease-in-out 100ms infinite alternate both` (and the `animation-*` longhands, up
+to 4 comma separated animations per node) runs `@keyframes spin { from { ... } 40% { ...;
+animation-timing-function: linear } to { ... } }` on the node's style: any property (those that do not interpolate
+switch half-way), missing first / last keyframes are the underlying value, `var()` in keyframes reads the `:root`
+tokens. `animation-play-state: paused` holds; removing the name or `display: none` ends it. From code:
+
+```cpp
+const Keyframe keys[] = {{0.f, Prop::Opacity, PropValue::ofNumber(0.f)}, {1.f, Prop::Opacity, PropValue::ofNumber(1.f)}};
+AnimationTiming t;                       // duration, delay, endDelay, iterations, direction, fill, easing, playbackRate
+t.duration = 0.4f;
+t.fill = AnimFill::Forwards;
+AnimationHandle a = ui.animate(node, keys, t);            // or ui.animateCss(node, "from { ... } to { ... }", t)
+ui.pauseAnimation(a); ui.setAnimationTime(a, 0.2f); ui.playAnimation(a); ui.reverseAnimation(a);
+ui.finishAnimation(a); ui.cancelAnimation(a); ui.commitAnimationStyles(a);   // also animationState / animations(node)
+```
+
+`SignalKind::AnimationFinished` fires on the node when one ends. Scripted animations apply over CSS animations,
+which apply over transitions. A finished or paused animation that still holds values asks for no frames
+(`needsUpdate()` is false); animated nodes use the scratch style slots, so nothing is interned or allocated per
+frame. With reduced motion an animation jumps to its end (an endless one stays on its first frame).
+
+Not supported: `!important`, `cubic-bezier()` / `steps()`, 3D transforms, `url()` masks / filters / clip paths,
+scroll and view timelines, `animation-composition`; the rest is listed in [KNOWN_GAPS.md](KNOWN_GAPS.md).
 
 ### Fonts, text styles and i18n
 
@@ -1198,6 +1292,18 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_zero_alloc_steady` | zero heap allocations over 50 interactive frames after warm-up |
 | `fuse_ui_bench_10k` | 10k nodes, one dirty label: ≤ 0.5 ms median (Release; 1.0 ms in FULL) |
 | `fuse_ui_single_thread_parity` | direct vs posted-from-threads mutations give identical layout, draw list and pixels |
+| `fuse_ui_css_selectors4` | a selector matching table (attributes, structural, siblings, `:not / :is / :where / :has`), specificity, forgiving lists, the cascade following tree / class / attribute / text changes |
+| `fuse_ui_style_invalidation` | what a change restyles: descendant depth, later siblings, `:has()` anchors, structure; restyle counts (no over-invalidation) |
+| `fuse_ui_css_cascade` | nesting, `@layer` order (merged across sheets), `@media` on resize / preferences, `@supports`, `@container` settling in one update, `@scope`, cooked round trip and corrupt cooked sheets |
+| `fuse_ui_css_animations` | `@keyframes` + `animation-*`: keyframe timing, easing per keyframe, delay, iterations, direction, fill, play state, restart / retime, several per node, finish signal, idle at rest, zero allocation, reduced motion |
+| `fuse_ui_web_animations` | `UiContext::animate` / `animateCss`: offsets, timing, pause / play / reverse / finish / cancel / time / rate, handle lifetime, `commitAnimationStyles`, stacking over CSS animations and transitions |
+| `fuse_ui_css_position` | relative / absolute / fixed, sticky and fixed under scroll (pixels and hit testing), `z-index` paint and hit order, `aspect-ratio`, subgrid |
+| `fuse_ui_transform_affine` | `transform` parsing, the resolved matrix, interpolation, translated / rotated / scaled paint, nested transforms and clips, hit testing through the inverse, `toLocal`, damage, render scale 2 |
+| `fuse_ui_css_masking` | `clip-path` / `mask-image` / `filter`: parsing, pixels (colour matrices, blur against the Gaussian CDF, drop-shadow), hit testing, transitions, damage |
+| `fuse_ui_css_gradient` | multi-stop `background-image` gradients: parsing and pixels along the gradient line |
+| `fuse_ui_draw_fx_groups` | the draw list's transform / filter / mask groups against references computed in the gate; scissored == full render, `translate` / `scale`, robustness, zero allocation |
+| `fuse_ui_style_fuzz` | the sheet parser and value parsers on truncated, mutated and random input (8000+ inputs, each accepted one cooked, loaded, matched, animated and painted) |
+| `fuse_ui_vector_golden_effects` | golden image of the effect groups and of CSS transform / filter / clip-path / mask / gradients / z-index on a node tree |
 | `fuse_ui_a11y_tree_dump` | roles, names, states, values |
 | `fuse_text_font_styles` | face description, synthetic bold / oblique at pixel level, atlas keys, `FontFamily` matching (real face preferred), the font scanner over a temp directory (collection, corrupt files, no fonts), CSS font / decoration / spacing properties, render scale 2, `tests/golden/text_styles.png` (`text_styles_full.png` in FULL) |
 | `fuse_text_i18n` | CLDR plural categories per rule family, plural patterns, number formatting per locale, pseudo-localisation, `StringTable::trPlural` |

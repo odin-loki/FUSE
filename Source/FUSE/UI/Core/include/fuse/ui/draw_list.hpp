@@ -27,7 +27,36 @@ enum class DrawOp : u8 {
     NinePatch,    ///< sub-rect / 9-slice of image `image` into `rect`: side record patches()[data]; `fill.a` = opacity
     PushClipPath, ///< group: the commands up to the matching PopClip are composited through the path's coverage
     PushLayer,    ///< group: the commands up to the matching PopClip are composited with opacity `fill.a` (`rect` = bounds)
+    // ---- effect groups (appended; CPU reference, GPU through the pre-rasterised path like the groups above) ----
+    PushTransform, ///< group: its commands live in a local space mapped to the list by transforms()[data] (`rect` = mapped bounds)
+    PushFilter,    ///< group: rendered to a layer, then filters()[data .. data + u) are applied in order (`rect` = content bounds)
+    PushMask,      ///< group: composited through the alpha (gradient = 0) or luminance (1) of the gradient paints()[data]
 };
+/// True for the group ops that are rendered to a layer and end at their matching PopClip (not the plain PushClip).
+constexpr bool isLayerGroup(DrawOp op) {
+    return op == DrawOp::PushClipPath || op == DrawOp::PushLayer || op == DrawOp::PushTransform || op == DrawOp::PushFilter ||
+           op == DrawOp::PushMask;
+}
+
+/// CSS filter functions (Filter Effects 1). Colour functions work on straight sRGB-encoded values, as CSS does.
+enum class FilterKind : u8 { Blur, Brightness, Contrast, Grayscale, Sepia, Saturate, HueRotate, Invert, Opacity, DropShadow };
+/// One function of a filter chain. `amount`: Blur / DropShadow = Gaussian standard deviation in list units (the CSS
+/// length); HueRotate = radians; the others = the CSS number (1 = 100%).
+struct FilterOp {
+    FilterKind kind = FilterKind::Blur;
+    f32 amount = 0.f;
+    Vec2 offset; ///< DropShadow
+    Color color; ///< DropShadow
+    friend bool operator==(const FilterOp&, const FilterOp&) = default;
+};
+enum class MaskMode : u8 { Alpha, Luminance };
+/// DrawOp::PushTransform side record: `xf` maps the group's local space to the list; `src` bounds its content there.
+struct DrawTransform {
+    Affine xf;
+    Rect src;
+};
+/// How far (in the units of `ops`) a filter chain can spread a pixel: what a filtered group's bounds grow by.
+f32 filterReach(std::span<const FilterOp> ops);
 
 enum class GradientKind : u8 { Linear, Radial, Conic };
 enum class GradientSpread : u8 { Pad, Repeat, Reflect };
@@ -59,6 +88,9 @@ struct Gradient {
         return {GradientKind::Conic, GradientSpread::Repeat, centre, {startAngle, 0.f}, stops, {}};
     }
 };
+/// Colour of a stop list at `t` (clamped to the first / last stop; straight-alpha interpolation between stops): what
+/// a colour map looks up. For painting use a Gradient, which interpolates premultiplied.
+Color gradientStopsAt(std::span<const GradientStop> stops, f32 t);
 /// What a path is painted with: a solid colour or a gradient (the gradient is copied; its stops stay a view).
 struct Brush {
     Color color;
@@ -143,6 +175,9 @@ public:
     /// Strokes `path`. Under `xf` the stroke width and dashes scale by xf.meanScale(): exact for similarities
     /// (Painter outlines the stroke in user space first when the transform is not one).
     void strokePath(const Path& path, const StrokeStyle& stroke, const Brush& brush, const Affine& xf = {});
+    /// A shape with an outline in one call: fills `path` (non-zero, or even-odd) when `fill` is visible, then strokes
+    /// it `strokeWidth` wide, centred on the outline with round joins and caps, when `stroke` is.
+    void path(const Path& path, Color fill, bool evenOdd = false, Color stroke = {}, f32 strokeWidth = 0.f);
     /// Rounded rect filled with an N-stop linear / radial / conic gradient (gradient geometry in list coordinates).
     void gradientRect(const Rect& r, const Gradient& g, const std::array<f32, 4>& radii = {});
     /// Image `image` cut 3x3 by `srcInsets` (texels) into `dst`; `dstInsets` default to the source insets. `src`
@@ -161,6 +196,24 @@ public:
     /// Opacity group: the commands up to popClip() are rendered to a layer over `bounds` (empty = the current clip)
     /// and composited once with `opacity`, so overlapping children do not show through each other.
     void pushLayer(f32 opacity, const Rect& bounds = {});
+    // ---- effect groups (CSS transform / filter / mask). Each ends with popClip(). ----
+    /// Transform group: the commands up to popClip() are recorded in a local space and drawn mapped by `xf` (local ->
+    /// list). `localBounds` bounds what they draw. A pure translation moves the commands by whole device pixels (exact);
+    /// anything else renders them to a layer that is resampled bilinearly, so edges are antialiased and glyphs soften
+    /// when scaled up (the layer has the group's resolution). A singular `xf` draws nothing.
+    void pushTransform(const Affine& xf, const Rect& localBounds);
+    /// Filter group: the commands up to popClip() are rendered to a layer over `bounds` grown by filterReach(), the
+    /// functions are applied in order and the result is composited. No functions = a plain group.
+    void pushFilter(std::span<const FilterOp> ops, const Rect& bounds);
+    /// Mask group: the commands up to popClip() are multiplied by the gradient's alpha (or luminance x alpha).
+    void pushMask(const Gradient& g, const Rect& bounds, MaskMode mode = MaskMode::Alpha);
+    /// Sets what an already recorded group covers, once its content is known: the bounds of a PushFilter / PushMask /
+    /// PushLayer command, the local bounds of a PushTransform (its mapped rect follows).
+    void setGroupBounds(std::size_t cmdIndex, const Rect& bounds);
+    std::span<const DrawTransform> transforms() const { return m_xforms; }
+    std::span<const FilterOp> filters() const { return m_filters; }
+    /// The list rect a group command (isLayerGroup) can touch: its `rect`, grown by the filter reach for PushFilter.
+    Rect groupBounds(const DrawCmd& c) const;
     std::span<const DrawPath> paths() const { return m_paths; }
     std::span<const PathVerb> pathVerbs() const { return m_verbs; }
     std::span<const Vec2> pathPoints() const { return m_points; }
@@ -199,6 +252,8 @@ private:
     std::vector<DrawPaint> m_paints;
     std::vector<GradientStop> m_stops;
     std::vector<DrawPatch> m_patches;
+    std::vector<DrawTransform> m_xforms;
+    std::vector<FilterOp> m_filters;
     bool m_vector = false; ///< any Path / NinePatch / PushClipPath / PushLayer command was recorded
 };
 
@@ -243,7 +298,7 @@ private:
 };
 
 // ---- Vector ops: contract shared by the CPU rasteriser and the GPU packer -------------------------------------------
-// Path, NinePatch, PushClipPath and PushLayer are specified as "layer ops": each produces premultiplied RGBA8 source
+// Path, NinePatch and the groups (PushClipPath, PushLayer, PushTransform, PushFilter, PushMask) are specified as "layer ops": each produces premultiplied RGBA8 source
 // texels (paint x coverage quantised to 8 bits; for a group, its children rendered on a transparent layer, times the
 // clip path's coverage) which are then composited exactly like an Image texel (times the rounded clip coverage and the
 // group opacity). fuse_ui_render therefore draws them with the kernel's existing Image op from texels produced by
@@ -263,8 +318,7 @@ struct RasterSources {
 /// composites `out`).
 void rasterizeCommands(const DrawList& list, std::size_t first, std::size_t count, const Rect& area, int rootWidth,
                        const RasterSources& src, Image& out, bool groupOpacityOne = false);
-/// Index of the PopClip matching the push command at `i` (PushClip / PushClipPath / PushLayer); size() when
-/// unbalanced.
+/// Index of the PopClip matching the push command at `i` (PushClip or any isLayerGroup op); size() when unbalanced.
 std::size_t matchingPop(const DrawList& list, std::size_t i);
 
 /// Statistics of the path coverage cache (per thread): the coverage masks of small paths are kept by shape, so an

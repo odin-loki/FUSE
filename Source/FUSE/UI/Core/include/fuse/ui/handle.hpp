@@ -20,6 +20,14 @@ struct ConnectionHandle {
     friend bool operator==(const ConnectionHandle&, const ConnectionHandle&) = default;
 };
 
+/// A keyframe animation started by UiContext::animate(node, keyframes, timing) or by the CSS `animation` property.
+struct AnimationHandle {
+    u32 index = 0xFFFFFFFFu;
+    u32 generation = 0;
+    bool valid() const { return index != 0xFFFFFFFFu; }
+    friend bool operator==(const AnimationHandle&, const AnimationHandle&) = default;
+};
+
 struct TimerHandle {
     u32 index = 0xFFFFFFFFu;
     u32 generation = 0;

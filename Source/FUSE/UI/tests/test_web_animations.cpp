@@ -1,221 +1,237 @@
-// Gate fuse_ui_web_animations: UiContext::animate (Element.animate-style scripted animations): keyframe offsets
-// (explicit / computed), per-keyframe easing and composite, timing (delay, endDelay, iterations, iterationStart,
-// direction, fill, easing), play / pause / reverse / finish / cancel / currentTime / playbackRate, finish and cancel
-// signals and callbacks, commitStyles, getAnimations, stacking with CSS animations and transitions, node destroy.
+// Gate fuse_ui_web_animations: UiContext::animate (Element.animate-style scripted animations).
+//   * keyframe offsets (explicit, spread evenly when left out, per property), per-keyframe easing, a single keyframe
+//     (to-animation from the underlying value), animateCss() from keyframe text
+//   * timing: delay, endDelay, iterations, direction, fill, the iteration easing
+//   * control: pause / play / reverse / finish / cancel, currentTime, playbackRate (negative too), play after finish
+//   * AnimationFinished, handle lifetime (cancelled, finished without a fill, node destroyed), animations(node),
+//     commitAnimationStyles
+//   * stacking: scripted animations apply over CSS animations and transitions, later ones over earlier ones
+// (Adapted from the gui-framework gate of the same name: iterationStart, composite modes, timelines and the
+// callback form are not ported.)
 #include "test_util.hpp"
 
 #include <cmath>
+#include <limits>
 #include <string>
-#include <vector>
 
 using namespace fuse::ui;
 using namespace fuse::ui::test;
 
 namespace {
-bool near(f32 a, f32 b, f32 eps = 1e-3f) { return std::fabs(a - b) <= eps; }
-AnimKeyframe kf(f32 off, Prop p, PropValue v) {
-    AnimKeyframe k;
-    k.offset = off;
-    k.values.push_back({p, v});
-    return k;
+bool near(f32 a, f32 b, f32 eps = 2e-3f) { return std::fabs(a - b) <= eps; }
+Keyframe opacityKey(f32 offset, f32 value, Easing e = Easing::Linear) { return {offset, Prop::Opacity, PropValue::ofNumber(value), e}; }
+Keyframe widthKey(f32 offset, f32 px) { return {offset, Prop::Width, PropValue::ofLength(Length::px(px)), Easing::Linear}; }
+AnimationTiming timing(f32 duration, AnimFill fill = AnimFill::None) {
+    AnimationTiming t;
+    t.duration = duration;
+    t.fill = fill;
+    return t;
 }
-PropValue px(f32 v) { PropValue p; (void)parsePropValue(Prop::Width, std::to_string(v) + "px", p); return p; }
-PropValue num(Prop prop, f32 v) { PropValue p; (void)parsePropValue(prop, std::to_string(v), p); return p; }
 } // namespace
 
 int main() {
     UiContext ui({.viewport = {800, 600}});
+    UI_CHECK(ui.addStyleSheet("panel { width: 100px; height: 20px; flex-shrink: 0; opacity: 1; } "
+                              "@keyframes css { from { opacity: 0.2; } to { opacity: 0.2; } } .css { animation: css 10s linear; } "
+                              ".tr { transition: opacity 1s linear; } .dim { opacity: 0.5; }").has_value());
     const u32 panel = ui.registry().find("panel");
-    UI_CHECK(ui.addStyleSheet(R"css(
-@keyframes css { from { width: 0px; } to { width: 100px; } }
-panel { width: 10px; height: 10px; opacity: 1; }
-.css { animation: css 1s linear; }
-.t { transition: width 1s linear; }
-.t.big { width: 200px; }
-)css").has_value());
-    auto w = [&](NodeHandle n) { return ui.computed(n).width.value; };
-    std::vector<std::string> log;
-    auto listen = [&](NodeHandle n) {
-        ui.connect(n, SignalKind::ScriptFinish, [&log](UiContext&, NodeHandle, const SignalArgs& a) { log.push_back("finish:" + std::string(a.text)); });
-        ui.connect(n, SignalKind::ScriptCancel, [&log](UiContext&, NodeHandle, const SignalArgs& a) { log.push_back("cancel:" + std::string(a.text)); });
-    };
+    auto make = [&] { return ui.create(panel, ui.root()); };
+    auto op = [&](NodeHandle n) { return ui.computed(n).opacity; };
+    auto wd = [&](NodeHandle n) { return ui.computed(n).width.value; };
+    ui.update(0.f);
 
-    { // basic: two keyframes, linear, fill none; finish signal + callback; then back to the base value
-        const NodeHandle n = ui.create(panel, ui.root());
-        listen(n);
-        int cb = 0;
-        AnimationOptions o;
-        o.duration = 1.f;
-        o.id = "slide";
-        o.onFinish = [&](UiContext& c, AnimationHandle a) { ++cb; UI_CHECK(c.animPlayState(a) == AnimPlayState::Finished); };
-        const AnimationHandle a = ui.animate(n, {kf(-1, Prop::Width, px(0)), kf(-1, Prop::Width, px(100))}, o);
-        UI_CHECK(a.valid() && ui.animValid(a) && ui.animTarget(a) == n && ui.animId(a) == "slide");
-        UI_CHECK(ui.animPlayState(a) == AnimPlayState::Running);
+    // ---- keyframes ----
+    {
+        const NodeHandle n = make();
         ui.update(0.f);
-        UI_CHECK(near(w(n), 0.f));
-        UI_CHECK(ui.needsUpdate());
-        ui.update(0.25f);
-        UI_CHECK(near(w(n), 25.f) && near(ui.animCurrentTime(a), 0.25f) && near(ui.animProgress(a), 0.25f));
-        UI_CHECK_EQ(ui.animations(n).size(), std::size_t(1));
-        UI_CHECK_EQ(ui.animations(ui.root(), true).size(), std::size_t(1));
-        ui.update(1.f);
-        UI_CHECK(near(w(n), 10.f) && ui.animPlayState(a) == AnimPlayState::Finished);
-        UI_CHECK(log.size() == 1 && log[0] == "finish:slide" && cb == 1);
-        UI_CHECK(ui.animations(n).empty()); // finished without fill
-        log.clear();
-        ui.destroy(n);
-        UI_CHECK(!ui.animValid(a));
-    }
-    { // computed offsets, per-keyframe easing, fill forwards, delay, iterations + alternate
-        const NodeHandle n = ui.create(panel, ui.root());
-        AnimKeyframe a0 = kf(-1, Prop::Width, px(0)), a1 = kf(-1, Prop::Width, px(50)), a2 = kf(-1, Prop::Width, px(100));
-        AnimationOptions o;
-        o.duration = 2.f;
-        o.fill = AnimFill::Forwards;
-        const AnimationHandle a = ui.animate(n, {a0, a1, a2}, o); // offsets 0, 0.5, 1
-        ui.update(0.f);
+        const Keyframe keys[] = {opacityKey(0.f, 0.f), opacityKey(0.25f, 1.f), opacityKey(1.f, 0.5f)};
+        const AnimationHandle a = ui.animate(n, keys, timing(4.f));
+        UI_CHECK(a.valid() && ui.animationState(a) == AnimPlayState::Running);
+        UI_CHECK(near(op(n), 0.f)); // applied at once, before the next update
+        ui.update(0.5f);
+        UI_CHECK(near(op(n), 0.5f));
+        ui.update(0.5f);
+        UI_CHECK(near(op(n), 1.f));
         ui.update(1.5f);
-        UI_CHECK(near(w(n), 75.f));
-        ui.update(5.f);
-        UI_CHECK(near(w(n), 100.f) && ui.animPlayState(a) == AnimPlayState::Finished);
-        UI_CHECK_EQ(ui.animations(n).size(), std::size_t(1)); // still filling
-        ui.animCancel(a);
-        ui.update(0.f);
-        UI_CHECK(near(w(n), 10.f) && std::isnan(ui.animCurrentTime(a)));
-
-        AnimationOptions o2;
-        o2.duration = 1.f;
-        o2.delay = 0.5f;
-        o2.iterations = 2.f;
-        o2.direction = AnimDirection::Alternate;
-        o2.fill = AnimFill::Both;
-        AnimKeyframe s0 = kf(0, Prop::Width, px(0));
-        s0.hasEase = true;
-        s0.ease = Easing{Easing::Kind::Steps, 0, 0, 0, 0, 2, Easing::StepPos::JumpEnd};
-        const AnimationHandle b = ui.animate(n, {s0, kf(1, Prop::Width, px(100))}, o2);
-        ui.update(0.f);
-        UI_CHECK(near(w(n), 0.f)); // backwards fill during the delay
-        ui.update(0.75f);           // t = 0.75, progress 0.25 -> step 0
-        UI_CHECK(near(w(n), 0.f));
-        ui.update(0.5f);            // t = 1.25, progress 0.75 -> step 0.5
-        UI_CHECK(near(w(n), 50.f));
-        ui.update(0.5f);            // t = 1.75: second iteration reversed, directed 0.75 -> 50
-        UI_CHECK(near(w(n), 50.f));
-        ui.update(5.f);
-        UI_CHECK(near(w(n), 0.f) && ui.animPlayState(b) == AnimPlayState::Finished); // ends at the start (alternate)
-        ui.destroy(n);
-    }
-    { // playback control
-        const NodeHandle n = ui.create(panel, ui.root());
-        listen(n);
-        AnimationOptions o;
-        o.duration = 1.f;
-        o.fill = AnimFill::Both;
-        o.id = "ctl";
-        const AnimationHandle a = ui.animate(n, {kf(0, Prop::Width, px(0)), kf(1, Prop::Width, px(100))}, o);
-        ui.update(0.f);
-        ui.update(0.4f);
-        UI_CHECK(ui.animPause(a) && ui.animPlayState(a) == AnimPlayState::Paused);
+        UI_CHECK(near(op(n), 0.75f) && near(ui.animationTime(a), 2.5f));
+        ui.update(2.f);
+        UI_CHECK(near(op(n), 1.f)); // finished, no fill: the underlying value
+        UI_CHECK(ui.animationState(a) == AnimPlayState::Idle && !ui.styleAnimating(n)); // and the handle is released
+        // offsets left out are spread per property; easing per keyframe
+        const Keyframe spread[] = {opacityKey(-1.f, 0.f, Easing::In), opacityKey(-1.f, 0.8f), opacityKey(-1.f, 0.4f), widthKey(-1.f, 200.f), widthKey(-1.f, 400.f)};
+        const AnimationHandle b = ui.animate(n, spread, timing(2.f));
+        ui.update(0.5f);
+        UI_CHECK(near(op(n), 0.8f * 0.125f)); // first segment 0 .. 0.5, ease-in at its middle
+        UI_CHECK(near(wd(n), 250.f, 0.05f));
         ui.update(1.f);
-        UI_CHECK(near(w(n), 40.f));
-        UI_CHECK(ui.animSetCurrentTime(a, 0.8f));
-        ui.update(0.f);
-        UI_CHECK(near(w(n), 80.f));
-        UI_CHECK(ui.animPlay(a));
-        UI_CHECK(ui.animSetPlaybackRate(a, 0.5f) && near(ui.animPlaybackRate(a), 0.5f));
-        ui.update(0.2f);
-        UI_CHECK(near(w(n), 90.f));
-        UI_CHECK(ui.animReverse(a) && near(ui.animPlaybackRate(a), -0.5f));
-        ui.update(0.4f);
-        UI_CHECK(near(w(n), 70.f));
-        ui.update(10.f);
-        UI_CHECK(near(w(n), 0.f) && ui.animPlayState(a) == AnimPlayState::Finished && near(ui.animCurrentTime(a), 0.f));
-        UI_CHECK(log.size() == 1 && log[0] == "finish:ctl");
-        UI_CHECK(ui.animPlay(a)); // reversed play from the start jumps to the end
-        UI_CHECK(near(ui.animCurrentTime(a), 1.f));
-        UI_CHECK(ui.animFinish(a));
-        ui.update(0.f);
-        UI_CHECK(near(w(n), 0.f) && log.size() == 2);
-        UI_CHECK(ui.animCancel(a));
-        ui.update(0.f);
-        UI_CHECK(near(w(n), 10.f) && log.size() == 3 && log[2] == "cancel:ctl");
-        // infinite: finish refused
-        AnimationOptions inf;
-        inf.duration = 1.f;
-        inf.iterations = INFINITY;
-        const AnimationHandle b = ui.animate(n, {kf(1, Prop::Width, px(100))}, inf); // implicit 0% from the base
-        ui.update(0.f);
+        UI_CHECK(near(op(n), 0.6f) && near(wd(n), 350.f, 0.05f));
+        ui.cancelAnimation(b);
+        UI_CHECK(near(op(n), 1.f) && near(wd(n), 100.f) && ui.animationState(b) == AnimPlayState::Idle);
+        // a single keyframe animates from the underlying value
+        const Keyframe to[] = {widthKey(-1.f, 300.f)};
+        ui.animate(n, to, timing(1.f, AnimFill::Forwards));
         ui.update(0.5f);
-        UI_CHECK(near(w(n), 55.f));
-        UI_CHECK(!ui.animFinish(b));
+        UI_CHECK(near(wd(n), 200.f, 0.05f));
         ui.update(1.f);
-        UI_CHECK(near(w(n), 55.f));
-        // autoplay off: idle until played
-        AnimationOptions idle;
-        idle.duration = 1.f;
-        idle.autoplay = false;
-        ui.animCancel(b);
-        const AnimationHandle c = ui.animate(n, {kf(0, Prop::Width, px(0)), kf(1, Prop::Width, px(100))}, idle);
-        ui.update(0.5f);
-        UI_CHECK(ui.animPlayState(c) == AnimPlayState::Idle && near(w(n), 10.f));
-        ui.animPlay(c);
-        ui.update(0.5f);
-        UI_CHECK(near(w(n), 50.f));
-        ui.destroy(n);
-        UI_CHECK(!ui.animValid(c));
-    }
-    { // composite, stacking over CSS animations, transitions on top, commitStyles, CSS keyframes text
-        const NodeHandle n = ui.create(panel, ui.root());
-        ui.addClass(n, "css");
-        AnimationOptions o;
-        o.duration = 1.f;
-        o.composite = AnimComposite::Add;
-        const AnimationHandle a = ui.animate(n, {kf(0, Prop::Width, px(5)), kf(1, Prop::Width, px(5))}, o);
+        UI_CHECK(near(wd(n), 300.f, 0.05f));
+        // from keyframe text
+        const NodeHandle m = make();
         ui.update(0.f);
-        ui.update(0.5f);
-        UI_CHECK(near(w(n), 55.f)); // css 50 + 5
-        ui.animCancel(a);
-        ui.update(0.f);
-        UI_CHECK(near(w(n), 50.f));
-        ui.destroy(n);
-
-        const NodeHandle m = ui.create(panel, ui.root());
-        AnimationOptions o2;
-        o2.duration = 1.f;
-        const AnimationHandle c = ui.animate(m, "from { width: 0px; opacity: 0 } 50% { width: 80px; } to { width: 100px; opacity: 1 }", o2);
+        const AnimationHandle c = ui.animateCss(m, "from { opacity: 0; width: 10px } 50% { opacity: 1 } to { opacity: 0; width: 30px }", timing(2.f));
         UI_CHECK(c.valid());
-        ui.update(0.f);
-        ui.update(0.25f);
-        UI_CHECK(near(w(m), 40.f) && near(ui.computed(m).opacity, 0.25f));
-        UI_CHECK(ui.animPause(c) && ui.animCommitStyles(c));
-        ui.animCancel(c);
-        ui.update(0.f);
-        UI_CHECK(near(w(m), 40.f) && near(ui.computed(m).opacity, 0.25f)); // committed to the inline style
-        ui.destroy(m);
-    }
-    { // invalid input
-        const NodeHandle n = ui.create(panel, ui.root());
-        AnimationOptions o;
-        o.duration = 1.f;
-        UI_CHECK(!ui.animate(n, std::vector<AnimKeyframe>{}, o).valid());
-        UI_CHECK(!ui.animate(n, {kf(0.8f, Prop::Width, px(0)), kf(0.2f, Prop::Width, px(1))}, o).valid());
-        UI_CHECK(!ui.animate(n, {kf(1.5f, Prop::Width, px(0))}, o).valid());
-        o.duration = -1.f;
-        UI_CHECK(!ui.animate(n, {kf(1, Prop::Width, px(0))}, o).valid());
-        UI_CHECK(!ui.animate(NodeHandle{}, {kf(1, Prop::Width, px(0))}, AnimationOptions{}).valid());
-        UI_CHECK(!ui.animPlay(AnimationHandle{}) && !ui.animValid(AnimationHandle{}));
-        // many short animations on one node stay bounded (idle / finished ones are pruned)
-        o.duration = 0.f;
-        AnimationHandle first;
-        for (int i = 0; i < 100; ++i) {
-            const AnimationHandle h = ui.animate(n, {kf(1, Prop::Opacity, num(Prop::Opacity, 0.5f))}, o);
-            if (i == 0) first = h;
-            ui.update(0.01f);
-        }
-        UI_CHECK(!ui.animValid(first));
+        ui.update(0.5f);
+        UI_CHECK(near(op(m), 0.5f) && near(wd(m), 15.f, 0.05f));
+        UI_CHECK(!ui.animateCss(m, "nonsense", timing(1.f)).valid() && !ui.animate(NodeHandle{}, to, timing(1.f)).valid());
+        UI_CHECK(!ui.animate(m, std::span<const Keyframe>{}, timing(1.f)).valid());
         ui.destroy(n);
+        ui.destroy(m);
+        ui.update(0.f);
+    }
+
+    // ---- timing ----
+    {
+        const Keyframe keys[] = {opacityKey(0.f, 0.f), opacityKey(1.f, 1.f)};
+        auto at = [&](AnimationTiming t, f32 time) {
+            const NodeHandle n = make();
+            ui.update(0.f);
+            ui.animate(n, keys, t);
+            ui.update(time);
+            const f32 v = op(n);
+            ui.destroy(n);
+            ui.update(0.f);
+            return v;
+        };
+        AnimationTiming t = timing(1.f);
+        t.delay = 0.5f;
+        UI_CHECK(near(at(t, 0.25f), 1.f) && near(at(t, 1.f), 0.5f));
+        t.fill = AnimFill::Backwards;
+        UI_CHECK(near(at(t, 0.25f), 0.f));
+        t = timing(1.f, AnimFill::Both);
+        t.iterations = 2.5f;
+        t.direction = AnimDirection::Alternate;
+        UI_CHECK(near(at(t, 1.25f), 0.75f) && near(at(t, 2.25f), 0.25f) && near(at(t, 9.f), 0.5f));
+        t = timing(1.f);
+        t.easing = Easing::In;
+        UI_CHECK(near(at(t, 0.5f), 0.125f));
+        t = timing(1.f);
+        t.direction = AnimDirection::Reverse;
+        UI_CHECK(near(at(t, 0.25f), 0.75f));
+        t = timing(1.f);
+        t.iterations = std::numeric_limits<f32>::infinity();
+        UI_CHECK(near(at(t, 100.25f), 0.25f, 0.01f));
+        t = timing(0.f, AnimFill::Forwards); // no duration: the end state at once
+        UI_CHECK(near(at(t, 0.016f), 1.f));
+    }
+
+    // ---- control ----
+    {
+        static int finished = 0;
+        finished = 0;
+        const NodeHandle n = make();
+        ui.connect(n, SignalKind::AnimationFinished, [](UiContext&, NodeHandle, const SignalArgs& a) { finished += a.flag ? 1 : 100; });
+        ui.update(0.f);
+        const Keyframe keys[] = {opacityKey(0.f, 0.f), opacityKey(1.f, 1.f)};
+        AnimationTiming t = timing(2.f, AnimFill::Both);
+        t.endDelay = 1.f;
+        const AnimationHandle a = ui.animate(n, keys, t);
+        ui.update(0.5f);
+        UI_CHECK(near(op(n), 0.25f));
+        ui.pauseAnimation(a);
+        ui.update(1.f);
+        UI_CHECK(near(op(n), 0.25f) && ui.animationState(a) == AnimPlayState::Paused && !ui.animating());
+        ui.setAnimationTime(a, 1.f); // seeking while paused shows the new position at once
+        UI_CHECK(near(op(n), 0.5f));
+        ui.playAnimation(a);
+        ui.setPlaybackRate(a, 2.f);
+        UI_CHECK(near(ui.playbackRate(a), 2.f));
+        ui.update(0.25f);
+        UI_CHECK(near(op(n), 0.75f));
+        ui.reverseAnimation(a); // rate -2
+        ui.update(0.5f);
+        UI_CHECK(near(op(n), 0.25f) && ui.animationState(a) == AnimPlayState::Running);
+        ui.update(0.5f); // reaches the start: finished at time 0
+        UI_CHECK(near(op(n), 0.f) && ui.animationState(a) == AnimPlayState::Finished && near(ui.animationTime(a), 0.f));
+        UI_CHECK_EQ(finished, 1);
+        ui.reverseAnimation(a); // forwards again, from the start
+        ui.setPlaybackRate(a, 1.f);
+        ui.update(2.5f); // past the keyframes, inside the end delay: not finished yet
+        UI_CHECK(near(op(n), 1.f) && ui.animationState(a) == AnimPlayState::Running);
+        UI_CHECK_EQ(finished, 1);
+        ui.update(1.f);
+        UI_CHECK(ui.animationState(a) == AnimPlayState::Finished);
+        UI_CHECK_EQ(finished, 2);
         ui.update(0.f);
         UI_CHECK(!ui.needsUpdate());
+        ui.playAnimation(a); // play after the end restarts
+        ui.update(1.f);
+        UI_CHECK(near(op(n), 0.5f));
+        ui.finishAnimation(a);
+        UI_CHECK(near(op(n), 1.f));
+        ui.update(0.f);
+        UI_CHECK(ui.animationState(a) == AnimPlayState::Finished);
+        UI_CHECK_EQ(finished, 3);
+        // commitStyles + cancel: the value stays as an inline value
+        ui.setAnimationTime(a, 0.5f);
+        ui.pauseAnimation(a);
+        ui.commitAnimationStyles(a);
+        ui.cancelAnimation(a);
+        ui.update(0.f);
+        UI_CHECK(near(op(n), 0.25f) && !ui.styleAnimating(n) && ui.animationState(a) == AnimPlayState::Idle);
+        UI_CHECK_EQ(finished, 3); // cancel does not report a finish
+        // stale handles are inert
+        ui.playAnimation(a);
+        ui.setAnimationTime(a, 1.f);
+        ui.finishAnimation(a);
+        ui.commitAnimationStyles(a);
+        UI_CHECK(near(ui.animationTime(a), 0.f) && near(ui.playbackRate(a), 0.f));
+        // an endless animation cannot be finished; destroying the node drops its animations
+        t = timing(1.f);
+        t.iterations = std::numeric_limits<f32>::infinity();
+        const AnimationHandle e = ui.animate(n, keys, t);
+        ui.finishAnimation(e);
+        ui.update(0.25f);
+        UI_CHECK(ui.animationState(e) == AnimPlayState::Running && ui.animating());
+        ui.destroy(n);
+        UI_CHECK(ui.animationState(e) == AnimPlayState::Idle);
+        ui.update(0.016f);
+        UI_CHECK(!ui.animating());
+    }
+
+    // ---- stacking ----
+    {
+        const NodeHandle n = make();
+        ui.addClass(n, "css");
+        ui.update(0.f);
+        UI_CHECK(near(op(n), 0.2f)); // the CSS animation
+        const Keyframe half[] = {opacityKey(0.f, 0.6f), opacityKey(1.f, 0.6f)};
+        const Keyframe full[] = {opacityKey(0.f, 0.9f), opacityKey(1.f, 0.9f)};
+        const AnimationHandle a = ui.animate(n, half, timing(5.f));
+        UI_CHECK(near(op(n), 0.6f)); // scripted over CSS
+        const AnimationHandle b = ui.animate(n, full, timing(5.f));
+        UI_CHECK(near(op(n), 0.9f)); // later over earlier
+        AnimationHandle all[4];
+        UI_CHECK_EQ(ui.animations(n, all), 3u);
+        UI_CHECK(all[1] == a && all[2] == b);
+        ui.cancelAnimation(b);
+        UI_CHECK(near(op(n), 0.6f));
+        ui.cancelAnimation(a);
+        UI_CHECK(near(op(n), 0.2f));
+        // over a transition: the animation wins while it runs, the transition's result shows afterwards
+        const NodeHandle m = make();
+        ui.addClass(m, "tr");
+        ui.update(0.f);
+        ui.addClass(m, "dim");
+        ui.update(0.f);
+        ui.update(0.5f);
+        UI_CHECK(near(op(m), 0.75f));
+        ui.animate(m, full, timing(0.25f));
+        UI_CHECK(near(op(m), 0.9f));
+        ui.update(0.3f);
+        UI_CHECK(near(op(m), 0.6f)); // 0.8 s into the transition
+        ui.update(0.3f);
+        UI_CHECK(near(op(m), 0.5f) && !ui.styleAnimating(m));
+        ui.destroy(n);
+        ui.destroy(m);
     }
     return finish("fuse_ui_web_animations");
 }

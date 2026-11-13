@@ -21,6 +21,7 @@
 #include <expected>
 #include <initializer_list>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -149,6 +150,28 @@ struct AnimSpec {
 
 /// Clipboard backend of a context (UI1). Default: a context-local buffer; apps install the platform clipboard
 /// (fuse::platform::setClipboardText / clipboardText, see platform_bridge.hpp).
+/// One keyframe of a scripted animation (UiContext::animate): `prop` has `value` at `offset` of the iteration.
+/// Several keyframes may share an offset (one per property). offset < 0: spaced evenly between its neighbours for
+/// that property (the first is 0, the last 1). `ease` shapes the way to the property's next keyframe.
+struct Keyframe {
+    f32 offset = -1.f;
+    Prop prop = Prop::Opacity;
+    PropValue value;
+    Easing ease = Easing::Linear;
+};
+/// Timing of a scripted animation (the Web Animations EffectTiming subset).
+struct AnimationTiming {
+    f32 duration = 0.3f;  ///< s per iteration
+    f32 delay = 0.f;      ///< s before the first iteration (negative: starts part-way in)
+    f32 endDelay = 0.f;   ///< s after the last iteration before it counts as finished
+    f32 iterations = 1.f; ///< may be fractional; infinity = repeats forever
+    AnimDirection direction = AnimDirection::Normal;
+    AnimFill fill = AnimFill::None; ///< Forwards / Both: the end values stay applied after it finishes
+    Easing easing = Easing::Linear; ///< over each whole iteration
+    f32 playbackRate = 1.f;         ///< negative plays backwards
+};
+enum class AnimPlayState : u8 { Idle, Running, Paused, Finished }; ///< Idle: no such animation (never started, cancelled, removed)
+
 struct ClipboardHooks {
     bool (*set)(void* user, std::string_view utf8) = nullptr;
     bool (*get)(void* user, std::string& out) = nullptr;
@@ -174,6 +197,7 @@ enum class SignalKind : u8 {
     EditingFinished, ///< line edits with options, key sequence edits: Enter / focus loss with acceptable text {text}
     Highlighted,     ///< completer on a line edit: a completion is highlighted {value = model row, text}
     Activated,       ///< completer on a line edit: a completion was chosen {value = model row, text}
+    AnimationFinished, ///< a keyframe animation of the node reached its end {value = AnimationHandle::index, value2 = its generation}
 };
 struct SignalArgs {
     f32 value = 0.f;
@@ -454,6 +478,10 @@ public:
     /// the action does not apply (see A11ySnapshotNode::actions). This is the entry point platform adapters and
     /// tests use; it must be called on the context's thread.
     bool performA11yAction(NodeHandle node, A11yAction action, f32 value = 0.f, u32 child = 0, std::string_view text = {});
+    /// Free-form attributes for attribute selectors (`[data-kind=warning]`). `id` is always readable as an attribute.
+    void setAttribute(NodeHandle n, std::string_view name, std::string_view value);
+    void removeAttribute(NodeHandle n, std::string_view name);
+    bool attribute(NodeHandle n, std::string_view name, std::string_view& out) const;
     void setUserData(NodeHandle n, u64 v);
     u64 userData(NodeHandle n) const;
     /// Per-node text edit buffer (created on first use; LineEdit and friends).
@@ -473,6 +501,13 @@ public:
     // frame
     void setViewport(Size s);
     Size viewport() const { return m_viewport; }
+    /// @media inputs that are not derived: prefers-color-scheme, hover, pointer (0 none, 1 coarse, 2 fine). Width /
+    /// height follow setViewport, resolution follows setRenderScale, prefers-reduced-motion follows setReducedMotion.
+    void setMediaPreferences(bool dark, bool hover = true, u8 pointer = 2);
+    /// `p` (context coordinates) in the layout space of `n`: mapped back through the CSS transforms of `n` and its
+    /// ancestors, so it can be compared with rect(n). fromLocal is the inverse. Without transforms both return `p`.
+    Vec2 toLocal(NodeHandle n, Vec2 p) const;
+    Vec2 fromLocal(NodeHandle n, Vec2 p) const;
     void update(f32 dtSeconds = 0.f);
     bool needsUpdate() const; ///< false when an on-demand app can sleep
     /// Seconds until the context needs an update: 0 when dirty / animating / commands pending, the earliest timer
@@ -680,7 +715,30 @@ public:
     enum class AnimProp : u8 { Opacity, OffsetX, OffsetY, Value };
     using Ease = Easing; ///< Linear, InOutCubic, OutBack, In, Out
     void animate(NodeHandle n, AnimProp p, f32 to, f32 seconds, Ease e = Ease::InOutCubic);
-    bool animating() const { return m_animCount > 0 || m_styleAnimCount > 0; }
+    bool animating() const { return m_animCount > 0 || m_styleAnimBusy > 0 || m_propAnimCount > 0 || m_keyAnimRunning > 0; }
+    // Keyframe animations (Web Animations style). CSS: `animation: <@keyframes name> ...` starts / stops them from the
+    // cascade. Script: animate() below. Both run on the style of the node (any property; non-interpolable ones switch
+    // half-way), on top of transitions, in list order (CSS first, then scripted ones in creation order). A missing
+    // first / last keyframe of a property means its underlying value. Time advances in update(dt).
+    /// Starts an animation of `n` over `keys` (copied). The handle stays valid until the animation is cancelled, the
+    /// node is destroyed, or it finishes without a forwards fill.
+    AnimationHandle animate(NodeHandle n, std::span<const Keyframe> keys, const AnimationTiming& timing = {});
+    /// The same from the body of an @keyframes rule: "from { opacity: 0 } 60% { transform: scale(1.1) } to { ... }".
+    AnimationHandle animateCss(NodeHandle n, std::string_view keyframes, const AnimationTiming& timing = {});
+    void playAnimation(AnimationHandle a);    ///< resumes; restarts from the beginning when it had finished
+    void pauseAnimation(AnimationHandle a);
+    void reverseAnimation(AnimationHandle a); ///< negates the playback rate and plays
+    void finishAnimation(AnimationHandle a);  ///< jumps to the end (the start when playing backwards); no-op when infinite
+    void cancelAnimation(AnimationHandle a);  ///< removes it and its effect (no AnimationFinished)
+    void setAnimationTime(AnimationHandle a, f32 seconds); ///< current time, counted from the start of the delay
+    f32 animationTime(AnimationHandle a) const;
+    void setPlaybackRate(AnimationHandle a, f32 rate);
+    f32 playbackRate(AnimationHandle a) const;
+    AnimPlayState animationState(AnimationHandle a) const;
+    /// The animations of `n` (CSS and scripted), oldest first. Returns how many there are; fills at most out.size().
+    u32 animations(NodeHandle n, std::span<AnimationHandle> out) const;
+    /// Writes the animation's current values to the node as inline values (Animation.commitStyles).
+    void commitAnimationStyles(AnimationHandle a);
     /// Style motion (plan §4.6 / §4.10). CSS `transition` fades animatable properties when a node's style changes
     /// (state, class, inline value); `enter-animation` / `exit-animation` play when a node first shows / is hidden.
     /// animateProperty moves one animatable style property from its current value to `to` with a tween or a spring and
@@ -817,6 +875,29 @@ private:
     void tickStyleAnims(f32 dt);
     void applyStyleDiff(u32 i, const ComputedStyle& before, const ComputedStyle& after);
     void startEnter(u32 i, MotionKind kind, f32 seconds);
+    // style engine port (ui.cpp, "Style engine extensions")
+    struct KeyAnim;
+    KeyAnim* keyAnim(AnimationHandle a);
+    const KeyAnim* keyAnim(AnimationHandle a) const;
+    KeyAnim& newKeyAnim(NodeHandle n);
+    void endKeyAnim(KeyAnim& ka);
+    void buildCssKeys(KeyAnim& ka);
+    bool applyKeyAnim(const KeyAnim& ka, ComputedStyle& out) const;
+    void tickKeyAnims(f32 dt);
+    void syncCssAnimations(u32 i, const ComputedStyle& after);
+    void syncStyleFlags(u32 i, const ComputedStyle& s);
+    void invalidateStyleFor(u32 i, const StyleInvalidation& inv);
+    void markStyleSubtree(u32 i, u32 depth);
+    void structureChanged(u32 parent, u32 child);
+    void syncMedia();
+    bool settleContainers();
+    void placeOutOfFlow(u32 parent, u32 k);
+    void placeAllOutOfFlow();
+    Rect stickyRect(u32 parent, u32 k, Rect r, const Rect& parentContent) const;
+    void paintBody(u32 i, f32 opacity, DrawList& dl);
+    void paintEffects(u32 i, f32 opacity, DrawList& dl);
+    u32 sortChildren(u32 i) const; ///< pushes the children of `i` on m_zScratch in paint order; returns the base index
+    bool mapIntoNode(u32 i, Vec2& p) const;
 
     WidgetRegistry m_registry;
     StyleEngine m_styles;
@@ -985,6 +1066,7 @@ private:
         ComputedStyle from;  ///< transition start values
         f32 t = 0.f;         ///< s since the transition (re)started
         bool active = false, transitioning = false, exiting = false;
+        bool busy = false;   ///< a transition, property animation or exit runs (counted in m_styleAnimBusy)
         MotionKind exitKind = MotionKind::None;
         f32 exitT = 0.f, exitDur = 0.f, exitFromOpacity = 1.f;
     };
@@ -1002,6 +1084,44 @@ private:
     std::vector<PropAnim> m_propAnims;
     u32 m_styleAnimCount = 0, m_propAnimCount = 0;
     bool m_reducedMotion = false, m_sheetSwap = false;
+    // keyframe animations (CSS `animation`, animate())
+    struct AnimKey {
+        Prop prop = Prop::Opacity;
+        f32 offset = 0.f;
+        Easing ease = Easing::Linear;
+        bool hasEase = false;
+        PropValue value;
+    };
+    struct KeyAnim {
+        NodeHandle node;
+        u32 gen = 1;
+        bool active = false, css = false;
+        u32 name = 0;         ///< css: animationNameId of the @keyframes rule
+        u32 sheetVersion = 0; ///< css: the sheets `keys` were built from
+        std::vector<AnimKey> keys; ///< sorted by (prop, offset)
+        AnimationTiming timing;
+        Easing keyEase = Easing::Linear; ///< between keyframes that carry none
+        double time = 0.0;               ///< current time, s
+        AnimPlayState state = AnimPlayState::Idle;
+        u64 serial = 0;                  ///< creation order
+    };
+    std::vector<KeyAnim> m_keyAnims;
+    u32 m_keyAnimCount = 0, m_keyAnimRunning = 0, m_styleAnimBusy = 0;
+    u64 m_keyAnimSerial = 0;
+    bool m_keyAnimDirty = false;
+    // effects, positioning, queries
+    u32 m_fxCount = 0;                 ///< nodes whose style has effects (transform / filter / clip-path / mask / fixed)
+    u32 m_fxDepth = 0;                 ///< paint: inside that many effect groups
+    std::vector<std::pair<u32, Rect>> m_fxBounds; ///< what each effect node covered when it was last painted
+    Rect m_fxPendingDamage;
+    std::vector<u32> m_outOfFlow;      ///< position: absolute / fixed nodes
+    std::vector<u32> m_fixedOrder;     ///< fixed nodes in the order they were last painted (hit testing)
+    struct ZEntry { i64 key; u32 node; };
+    mutable std::vector<ZEntry> m_zScratch;
+    struct ContainerEntry { u32 node; Size size; };
+    std::vector<ContainerEntry> m_containers; ///< query containers and the size their subtree was last styled for
+    bool m_mediaDark = false, m_mediaHover = true;
+    u8 m_mediaPointer = 2;
 
     struct Command {
         std::atomic<u64> seq{0};

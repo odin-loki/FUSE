@@ -102,7 +102,7 @@ if(FUSE_UI_TEXT STREQUAL "FULL")
 endif()
 
 # ---- fuse_ui_core ----
-add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/style_sheets.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp
+add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/style_values.cpp Core/src/style_parser.cpp Core/src/style_sheets.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp
     Core/src/interaction.cpp Core/src/actions.cpp
     Core/src/path.cpp Core/src/draw_vector.cpp Core/src/painter.cpp Core/src/svg.cpp Core/src/icons.cpp)
 target_include_directories(fuse_ui_core PUBLIC Core/include)

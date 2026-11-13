@@ -1,162 +1,264 @@
-// Gate fuse_ui_css_position: position relative / absolute / fixed / sticky with insets; z-index stacking contexts
-// (paint order and hit testing, negative z, nested contexts); flex-wrap + align-content; row / column gaps and the
-// two-value gap shorthand; aspect-ratio; grid masonry and subgrid; large mask textures; @scope proximity.
+// Gate fuse_ui_css_position: CSS positioning on the layout engine.
+//   * position: relative (moved by its insets, the flow keeps its slot), absolute (out of flow; against the nearest
+//     positioned ancestor, else the viewport; insets, stretch between opposite insets, percentages), fixed (against
+//     the viewport, painted over everything, unaffected by scrolling and ancestor clips)
+//   * position: sticky under scroll: stays at its inset in the scrollport, inside its parent's content box
+//   * z-index: paint order and hit testing among siblings (negative, auto, positive; positioned over in-flow)
+//   * aspect-ratio (one side given, stretched cross size, absolute boxes), grid-template-columns: subgrid
+//   * the layout stays allocation free in steady state with positioned nodes
+// (Adapted from the gui-framework gate of the same name: its flex-wrap / align-content, row / column gap, grid
+// masonry and mask-texture parts are not ported.)
 #include "test_util.hpp"
-#include "fuse/ui/css_masking.hpp"
 
 #include <cmath>
 #include <cstdio>
-#include <string>
 
 using namespace fuse::ui;
 using namespace fuse::ui::test;
 
 namespace {
-bool near(f32 a, f32 b, f32 eps = 0.5f) { return std::fabs(a - b) < eps; }
-StyleSheet sheet(std::string_view css) {
-    std::vector<StyleDiagnostic> d;
-    auto s = StyleSheet::parse(css, &d);
-    UI_CHECK(s.has_value());
-    for (const auto& x : d) std::fprintf(stderr, "diag line %u: %s\n", x.line, x.message.c_str());
-    UI_CHECK(d.empty());
-    return s ? std::move(*s) : StyleSheet{};
-}
-NodeHandle make(UiContext& ui, NodeHandle p, std::string_view cls) {
-    const NodeHandle n = ui.create(ui.registry().find("panel"), p);
+NodeHandle make(UiContext& ui, NodeHandle p, std::string_view cls, std::string_view id = {}) {
+    const NodeHandle n = ui.create(ui.registry().find("panel"), p, id);
     if (!cls.empty()) ui.addClass(n, cls);
     return n;
 }
-Image render(UiContext& ui, int w, int h) {
+u32 pixel(UiContext& ui, int x, int y, int w, int h) {
     Image img;
     img.resize(w, h, 0xFF000000u);
     CpuRasterizer().render(ui.drawList(), img);
-    return img;
+    return img.at(x, y) & 0xFFFFFFu;
 }
-u32 px(const Image& img, f32 x, f32 y) { return img.at(int(x), int(y)) & 0xFFFFFFu; }
-void dump(const char* what, Rect r) { std::fprintf(stderr, "%s: %g %g %g %g\n", what, r.x, r.y, r.w, r.h); }
 } // namespace
 
 int main() {
-    // ---- relative / absolute / fixed ----
+    // ---- parsing ----
+    {
+        PropValue v;
+        UI_CHECK(parsePropValue(Prop::Position, "sticky", v) && v.e == u8(PositionKind::Sticky));
+        UI_CHECK(!parsePropValue(Prop::Position, "floating", v));
+        UI_CHECK(parsePropValue(Prop::ZIndex, "-3", v) && v.num == -3.f && parsePropValue(Prop::ZIndex, "auto", v) && v.e == 1);
+        UI_CHECK(!parsePropValue(Prop::ZIndex, "1.5", v) && !parsePropValue(Prop::ZIndex, "top", v));
+        UI_CHECK(parsePropValue(Prop::AspectRatio, "16 / 9", v) && std::fabs(v.num - 16.f / 9.f) < 1e-4f);
+        UI_CHECK(parsePropValue(Prop::AspectRatio, "2", v) && v.num == 2.f && parsePropValue(Prop::AspectRatio, "auto", v) && v.num == 0.f);
+        UI_CHECK(!parsePropValue(Prop::AspectRatio, "0", v) && !parsePropValue(Prop::AspectRatio, "1 / 0", v) && !parsePropValue(Prop::AspectRatio, "wide", v));
+        auto s = StyleSheet::parse(".a { inset: 1px 2px 3px 4px; }");
+        UI_CHECK(s && s->rules()[0].decls.size() == 4);
+    }
+
+    // ---- relative / absolute ----
     {
         UiContext ui({.viewport = {400, 300}});
-        ui.styles().addSheet(sheet(".c { position: relative; width: 200px; height: 100px; margin-left: 50px; flex-shrink: 0; } "
-                                   ".r { position: relative; left: 10px; top: 5px; width: 20px; height: 20px; flex-shrink: 0; } "
-                                   ".a { position: absolute; right: 10px; bottom: 10px; width: 30px; height: 30px; } "
-                                   ".s { position: absolute; inset: 10px 20px; } "
-                                   ".f { position: fixed; left: 5px; top: 7px; width: 10px; height: 10px; } "
-                                   ".ar { width: 80px; aspect-ratio: 2 / 1; flex-shrink: 0; }"));
-        const NodeHandle c = make(ui, ui.root(), "c"), r = make(ui, c, "r"), r2 = make(ui, c, "ar");
-        const NodeHandle a = make(ui, c, "a"), s = make(ui, c, "s"), f = make(ui, c, "f");
+        UI_CHECK(ui.addStyleSheet(R"css(
+panel { flex-shrink: 0; }
+.box { width: 200px; height: 100px; padding: 10px; }
+.item { width: 50px; height: 20px; }
+.rel { position: relative; left: 7px; top: -3px; }
+.relb { position: relative; right: 5px; bottom: 4px; }
+.host { position: relative; }
+.abs { position: absolute; width: 30px; height: 10px; }
+.tl { left: 5px; top: 6px; }
+.br { right: 5px; bottom: 6px; }
+.fill { position: absolute; left: 10px; right: 20px; top: 30px; bottom: 40px; }
+.pct { position: absolute; left: 50%; top: 25%; width: 10%; height: 20px; }
+.free { position: absolute; width: 10px; height: 10px; }
+)css").has_value());
+        const NodeHandle box = make(ui, ui.root(), "box");
+        const NodeHandle i1 = make(ui, box, "item"), i2 = make(ui, box, "item"), i3 = make(ui, box, "item");
+        ui.addClass(i2, "rel");
         ui.update(0.f);
-        const Rect rc = ui.rect(c), rr = ui.rect(r), ra = ui.rect(a), rs = ui.rect(s), rf = ui.rect(f), rar = ui.rect(r2);
-        dump("c", rc), dump("r", rr), dump("a", ra), dump("s", rs), dump("f", rf), dump("ar", rar);
-        UI_CHECK(near(rr.x, rc.x + 10) && near(rr.y, rc.y + 5));
-        UI_CHECK(near(rar.y, rc.y + 20) && near(rar.h, 40)); // relative keeps its flow slot; aspect-ratio
-        UI_CHECK(near(ra.x, rc.x + rc.w - 40) && near(ra.y, rc.y + rc.h - 40) && near(ra.w, 30));
-        UI_CHECK(near(rs.x, rc.x + 20) && near(rs.y, rc.y + 10) && near(rs.w, rc.w - 40) && near(rs.h, rc.h - 20));
-        UI_CHECK(near(rf.x, 5) && near(rf.y, 7));
+        UI_CHECK_RECT(ui.rect(box), 0, 0, 200, 100);
+        UI_CHECK_RECT(ui.rect(i1), 10, 10, 50, 20);
+        UI_CHECK_RECT(ui.rect(i2), 17, 27, 50, 20); // moved by left / top
+        UI_CHECK_RECT(ui.rect(i3), 10, 50, 50, 20); // the flow keeps i2's slot
+        ui.removeClass(i2, "rel");
+        ui.addClass(i2, "relb");
+        ui.update(0.f);
+        UI_CHECK_RECT(ui.rect(i2), 5, 26, 50, 20);
+        // absolute: out of flow; without a positioned ancestor the viewport is the containing block
+        const NodeHandle a1 = make(ui, box, "abs");
+        ui.addClass(a1, "br");
+        ui.update(0.f);
+        UI_CHECK_RECT(ui.rect(i3), 10, 50, 50, 20);
+        UI_CHECK_RECT(ui.rect(box), 0, 0, 200, 100);
+        UI_CHECK_RECT(ui.rect(a1), 400 - 5 - 30, 300 - 6 - 10, 30, 10);
+        ui.setViewport({500, 320}); // follows the viewport although nothing in its parent changed
+        ui.update(0.f);
+        UI_CHECK_RECT(ui.rect(a1), 500 - 5 - 30, 320 - 6 - 10, 30, 10);
+        // a positioned ancestor becomes the containing block (its padding box)
+        ui.addClass(box, "host");
+        ui.update(0.f);
+        UI_CHECK_RECT(ui.rect(a1), 200 - 5 - 30, 100 - 6 - 10, 30, 10);
+        const NodeHandle a2 = make(ui, i1, "abs"); // nested deeper: still against `box`
+        ui.addClass(a2, "tl");
+        const NodeHandle fill = make(ui, box, "fill"), pct = make(ui, box, "pct"), free = make(ui, i3, "free");
+        ui.update(0.f);
+        UI_CHECK_RECT(ui.rect(a2), 5, 6, 30, 10);
+        UI_CHECK_RECT(ui.rect(fill), 10, 30, 200 - 10 - 20, 100 - 30 - 40); // stretched between the insets
+        UI_CHECK_RECT(ui.rect(pct), 100, 25, 20, 20);
+        UI_CHECK_RECT(ui.rect(free), 10, 50, 10, 10); // no insets: the start of its parent's content box
+        UI_CHECK_RECT(ui.rect(i1), 10, 10, 50, 20);   // parents are not sized by absolute children
+        // the containing block moves: its absolute descendants follow
+        ui.setCss(box, "margin-left", "40px");
+        ui.update(0.f);
+        UI_CHECK_RECT(ui.rect(a2), 45, 6, 30, 10);
+        UI_CHECK_RECT(ui.rect(fill), 50, 30, 170, 30);
+        ui.update(0.f);
+        UI_CHECK(!ui.needsUpdate());
     }
-    // ---- sticky ----
-    {
-        UiContext ui({.viewport = {400, 300}});
-        ui.styles().addSheet(sheet(".sc { overflow: scroll; height: 100px; width: 200px; flex-shrink: 0; } "
-                                   ".in { height: 400px; flex-shrink: 0; } "
-                                   ".k { position: sticky; top: 0px; height: 20px; flex-shrink: 0; } .gap { height: 50px; flex-shrink: 0; }"));
-        const NodeHandle sc = make(ui, ui.root(), "sc"), in = make(ui, sc, "in");
-        make(ui, in, "gap");
-        const NodeHandle k = make(ui, in, "k");
-        ui.update(0.f);
-        const Rect r0 = ui.rect(k), rsc = ui.rect(sc);
-        dump("k0", r0);
-        UI_CHECK(near(r0.y, rsc.y + 50));
-        ui.scrollTo(sc, {0, 120});
-        ui.update(0.f);
-        dump("k1", ui.rect(k));
-        UI_CHECK(near(ui.rect(k).y, rsc.y)); // stuck at the scrollport top
-    }
-    // ---- z-index painting and hit testing ----
+
+    // ---- fixed and sticky under scroll ----
     {
         UiContext ui({.viewport = {300, 200}});
-        ui.styles().addSheet(sheet(".b { position: absolute; left: 0px; top: 0px; width: 100px; height: 100px; } "
-                                   ".red { background: #f00; z-index: 2; } .grn { background: #0f0; z-index: 1; } "
-                                   ".blu { background: #00f; z-index: -1; left: 50px; } "
-                                   ".ctx { position: absolute; left: 150px; top: 0px; width: 100px; height: 100px; z-index: 1; } "
-                                   ".hi { background: #fff; z-index: 99; } .over { position: absolute; left: 150px; top: 0px; width: 100px; height: 100px; background: #f0f; z-index: 2; }"));
-        const NodeHandle red = make(ui, ui.root(), "b"), grn = make(ui, ui.root(), "b"), blu = make(ui, ui.root(), "b");
-        ui.addClass(red, "red"), ui.addClass(grn, "grn"), ui.addClass(blu, "blu");
-        const NodeHandle ctx = make(ui, ui.root(), "ctx"), hi = make(ui, ctx, "b");
-        ui.addClass(hi, "hi");
-        const NodeHandle over = make(ui, ui.root(), "over");
+        UI_CHECK(ui.addStyleSheet(R"css(
+panel { flex-shrink: 0; }
+.scroll { width: 300px; height: 200px; overflow: scroll; background: #101010; }
+.row { height: 60px; background: #303030; }
+.head { position: sticky; top: 0; height: 30px; background: #ff0000; }
+.group { height: 240px; }
+.ghead { position: sticky; top: 30px; height: 20px; background: #00ff00; }
+.foot { position: sticky; bottom: 0; height: 20px; background: #0000ff; }
+.fab { position: fixed; right: 10px; bottom: 10px; width: 40px; height: 40px; background: #ffff00; z-index: 5; }
+)css").has_value());
+        const NodeHandle sc = make(ui, ui.root(), "scroll");
+        const NodeHandle head = make(ui, sc, "head");
+        const NodeHandle r1 = make(ui, sc, "row");
+        const NodeHandle group = make(ui, sc, "group");
+        const NodeHandle gh = make(ui, group, "ghead");
+        make(ui, group, "row");
+        for (int k = 0; k < 6; ++k) make(ui, sc, "row");
+        const NodeHandle foot = make(ui, sc, "foot");
+        const NodeHandle fab = make(ui, r1, "fab"); // deep inside the scroller
         ui.update(0.f);
-        Image img = render(ui, 300, 200);
-        std::fprintf(stderr, "z px %06x %06x %06x\n", px(img, 20, 20), px(img, 90, 20), px(img, 200, 50));
-        UI_CHECK(px(img, 20, 20) == 0x0000FFu || px(img, 20, 20) == 0xFF0000u); // red (z 2) over green, either byte order
-        UI_CHECK(ui.hitTest({20, 20}) == red && ui.hitTest({90, 20}) == red);
-        UI_CHECK(ui.hitTest({120, 20}) == blu); // negative z: only where nothing else is
-        UI_CHECK(ui.hitTest({200, 50}) == over); // z 99 is trapped in ctx (z 1) under over (z 2)
-        (void)grn, (void)hi;
+        UI_CHECK_RECT(ui.rect(head), 0, 0, 300, 30);
+        UI_CHECK_RECT(ui.rect(r1), 0, 30, 300, 60);
+        UI_CHECK_RECT(ui.rect(gh), 0, 90, 300, 20);
+        UI_CHECK_RECT(ui.rect(fab), 250, 150, 40, 40);
+        UI_CHECK_RECT(ui.rect(foot), 0, 180, 300, 20); // its flow position is below the fold: stuck at the bottom
+        // scrolled: the header stays, rows move under it
+        ui.scrollTo(sc, {0, 100});
+        ui.update(0.f);
+        UI_CHECK_RECT(ui.rect(head), 0, 0, 300, 30);
+        UI_CHECK_RECT(ui.rect(r1), 0, -70, 300, 60);
+        UI_CHECK_RECT(ui.rect(group), 0, -10, 300, 240);
+        UI_CHECK_RECT(ui.rect(gh), 0, 30, 300, 20);  // stuck under the header, at its own inset
+        UI_CHECK_RECT(ui.rect(fab), 250, 150, 40, 40); // fixed: not scrolled
+        UI_CHECK_EQ(pixel(ui, 5, 5, 300, 200), 0x0000FFu);   // the header (red, R in the low byte) over the rows
+        UI_CHECK_EQ(pixel(ui, 5, 35, 300, 200), 0x00FF00u);  // the group header
+        UI_CHECK_EQ(pixel(ui, 270, 170, 300, 200), 0x00FFFFu); // the fixed button, outside its scrolled-away parent
+        UI_CHECK(ui.hitTest({270, 170}) == fab && ui.hitTest({5, 5}) == head && ui.hitTest({5, 35}) == gh);
+        // the group's header leaves with its group: it cannot stick outside its parent's content box
+        ui.scrollTo(sc, {0, 310});
+        ui.update(0.f);
+        UI_CHECK_RECT(ui.rect(group), 0, -220, 300, 240);
+        UI_CHECK_RECT(ui.rect(gh), 0, 0, 300, 20); // the bottom of the group: y = -220 + 240 - 20
+        UI_CHECK_RECT(ui.rect(head), 0, 0, 300, 30);
+        // at the end the footer is in the flow again
+        const f32 maxScroll = ui.scrollExtent(sc).h - 200.f;
+        ui.scrollTo(sc, {0, maxScroll});
+        ui.update(0.f);
+        UI_CHECK_RECT(ui.rect(foot), 0, 180, 300, 20);
+        UI_CHECK(ui.scroll(sc).y == maxScroll && maxScroll > 300.f);
+        // a new viewport moves the fixed node
+        ui.setViewport({320, 240});
+        ui.update(0.f);
+        UI_CHECK_RECT(ui.rect(fab), 270, 190, 40, 40);
+        // steady state with sticky / fixed nodes: scrolling re-arranges, an idle frame does nothing
+        ui.update(0.f);
+        UI_CHECK(!ui.needsUpdate());
+        ui.update(0.016f);
+        UI_CHECK(ui.stats().arranged == 0u && ui.stats().styled == 0u && !ui.stats().repainted);
     }
-    // ---- flex-wrap, align-content, gaps ----
+
+    // ---- z-index ----
     {
-        UiContext ui({.viewport = {400, 300}});
-        ui.styles().addSheet(sheet(".w { flex-direction: row; flex-wrap: wrap; width: 100px; height: 200px; gap: 10px 4px; "
-                                   "align-content: space-between; flex-shrink: 0; } .i { width: 30px; height: 20px; flex-shrink: 0; }"));
-        const NodeHandle w = make(ui, ui.root(), "w");
-        NodeHandle it[5];
-        for (auto& n : it) n = make(ui, w, "i");
+        UiContext ui({.viewport = {200, 200}});
+        UI_CHECK(ui.addStyleSheet(R"css(
+panel { flex-shrink: 0; }
+.stage { layout: stack; width: 200px; height: 200px; background: #000000; }
+.card { width: 100px; height: 100px; }
+.r { background: #ff0000; } .g { background: #00ff00; } .b { background: #0000ff; }
+.up { z-index: 2; } .down { z-index: -1; } .pos { position: relative; }
+.inner { z-index: 99; width: 40px; height: 40px; background: #ffffff; }
+)css").has_value());
+        const NodeHandle stage = make(ui, ui.root(), "stage");
+        const NodeHandle r = make(ui, stage, "card"), g = make(ui, stage, "card"), b = make(ui, stage, "card");
+        ui.addClass(r, "r");
+        ui.addClass(g, "g");
+        ui.addClass(b, "b");
+        auto top = [&] { return pixel(ui, 100, 100, 200, 200); };
         ui.update(0.f);
-        const Rect rw = ui.rect(w);
-        for (auto n : it) dump("i", ui.rect(n));
-        UI_CHECK(near(ui.rect(it[1]).x, rw.x + 34) && near(ui.rect(it[2]).x, rw.x + 68)); // column gap 4
-        UI_CHECK(near(ui.rect(it[3]).x, rw.x) && near(ui.rect(it[3]).y, rw.y + 180));     // 2nd line at the end
-        UI_CHECK(near(ui.rect(it[0]).y, rw.y));
-        UI_CHECK(near(ui.computed(w).rowGap, 10) && near(ui.computed(w).columnGap, 4));
+        UI_CHECK_EQ(top(), 0xFF0000u); // tree order: blue last
+        UI_CHECK(ui.hitTest({100, 100}) == b);
+        ui.addClass(r, "up");
+        ui.update(0.f);
+        UI_CHECK_EQ(top(), 0x0000FFu); // red on top
+        UI_CHECK(ui.hitTest({100, 100}) == r);
+        ui.addClass(b, "down");
+        ui.removeClass(r, "up");
+        ui.update(0.f);
+        UI_CHECK_EQ(top(), 0x00FF00u); // blue went under: green is the last of the rest
+        UI_CHECK(ui.hitTest({100, 100}) == g);
+        ui.addClass(r, "pos"); // positioned, z-index auto: over the in-flow siblings
+        ui.update(0.f);
+        UI_CHECK_EQ(top(), 0x0000FFu);
+        UI_CHECK(ui.hitTest({100, 100}) == r);
+        // z-index orders siblings: a huge z-index inside a lower card does not climb over the card above
+        const NodeHandle inner = make(ui, g, "inner");
+        ui.update(0.f);
+        UI_CHECK(ui.hitTest({60, 60}) == r);
+        UI_CHECK_EQ(pixel(ui, 60, 60, 200, 200), 0x0000FFu);
+        ui.removeClass(r, "pos");
+        ui.update(0.f);
+        UI_CHECK(ui.hitTest({60, 60}) == inner);
+        UI_CHECK_EQ(pixel(ui, 60, 60, 200, 200), 0xFFFFFFu);
+        ui.update(0.f);
+        UI_CHECK(!ui.needsUpdate());
     }
-    // ---- grid: gaps, masonry, subgrid ----
+
+    // ---- aspect-ratio, subgrid ----
     {
         UiContext ui({.viewport = {400, 400}});
-        ui.styles().addSheet(sheet(".g { layout: grid; grid-template-columns: 100px 100px; grid-template-rows: masonry; gap: 10px; width: 210px; flex-shrink: 0; } "
-                                   ".t { height: 50px; } .s { height: 20px; } "
-                                   ".h { layout: grid; grid-template-columns: 60px 140px; width: 200px; flex-shrink: 0; } "
-                                   ".sub { layout: grid; grid-template-columns: subgrid; grid-column-span: 2; }"));
-        const NodeHandle g = make(ui, ui.root(), "g"), a = make(ui, g, "t"), b = make(ui, g, "s"), c = make(ui, g, "s");
+        UI_CHECK(ui.addStyleSheet(R"css(
+panel { flex-shrink: 0; }
+.col { width: 300px; align-items: start; }
+.w { width: 120px; aspect-ratio: 3 / 2; }
+.h { height: 60px; aspect-ratio: 2; }
+.s { aspect-ratio: 4; align-self: stretch; }
+.row { flex-direction: row; height: 50px; width: 300px; }
+.rs { aspect-ratio: 2; }
+.host { position: relative; width: 200px; height: 200px; }
+.abs { position: absolute; left: 10px; top: 10px; width: 50px; aspect-ratio: 0.5; }
+.grid { layout: grid; grid-template-columns: 50px 100px 1fr; gap: 10px; width: 400px; }
+.sub { layout: grid; grid-template-columns: subgrid; grid-column-span: 2; }
+.cell { height: 20px; }
+.tile { aspect-ratio: 2; }
+)css").has_value());
+        const NodeHandle col = make(ui, ui.root(), "col");
+        const NodeHandle w = make(ui, col, "w"), h = make(ui, col, "h"), s = make(ui, col, "s");
+        const NodeHandle row = make(ui, ui.root(), "row"), rs = make(ui, row, "rs");
+        const NodeHandle host = make(ui, ui.root(), "host"), abs = make(ui, host, "abs");
+        const NodeHandle grid = make(ui, ui.root(), "grid");
+        const NodeHandle c0 = make(ui, grid, "cell"), sub = make(ui, grid, "sub");
+        const NodeHandle s0 = make(ui, sub, "cell"), s1 = make(ui, sub, "cell");
+        const NodeHandle tile = make(ui, grid, "tile");
         ui.update(0.f);
-        const Rect rg = ui.rect(g);
-        dump("ma", ui.rect(a)), dump("mb", ui.rect(b)), dump("mc", ui.rect(c));
-        UI_CHECK(near(ui.rect(b).x, rg.x + 110) && near(ui.rect(c).x, rg.x + 110) && near(ui.rect(c).y, ui.rect(b).y + 30));
-        const NodeHandle h = make(ui, ui.root(), "h"), sub = make(ui, h, "sub"), x = make(ui, sub, ""), y = make(ui, sub, "");
+        UI_CHECK_RECT(ui.rect(w), 0, 0, 120, 80);
+        UI_CHECK_RECT(ui.rect(h), 0, 80, 120, 60);
+        UI_CHECK_RECT(ui.rect(s), 0, 140, 300, 75); // stretched across: the height follows
+        UI_CHECK_RECT(ui.rect(rs), 0, ui.rect(row).y, 100, 50); // a row: the stretched height sets the width
+        UI_CHECK_RECT(ui.rect(abs), ui.rect(host).x + 10, ui.rect(host).y + 10, 50, 100);
+        // subgrid: the nested grid's columns are the parent's second and third track
+        const f32 gy = ui.rect(grid).y;
+        UI_CHECK_RECT(ui.rect(c0), 0, gy, 50, 20);
+        UI_CHECK_RECT(ui.rect(sub), 60, gy, 340, 20);
+        UI_CHECK_RECT(ui.rect(s0), 60, gy, 100, 20);
+        UI_CHECK_RECT(ui.rect(s1), 170, gy, 230, 20);
+        UI_CHECK_RECT(ui.rect(tile), 0, gy + 30, 50, 25); // a grid cell with aspect-ratio
+        // the parent's tracks change: the subgrid follows
+        ui.setCss(grid, "grid-template-columns", "80px 60px 1fr");
         ui.update(0.f);
-        dump("sub", ui.rect(sub)), dump("x", ui.rect(x)), dump("y", ui.rect(y));
-        UI_CHECK(near(ui.rect(x).w, 60) && near(ui.rect(y).w, 140) && near(ui.rect(y).x, ui.rect(h).x + 60));
+        UI_CHECK_RECT(ui.rect(s0), 90, gy, 60, 20);
+        UI_CHECK_RECT(ui.rect(s1), 160, gy, 240, 20);
     }
-    // ---- large mask texture ----
-    {
-        UiContext ui({.viewport = {500, 500}});
-        ui.styles().addSheet(sheet(".m { width: 400px; height: 300px; flex-shrink: 0; background: #f00; mask-image: linear-gradient(to right, black, transparent); }"));
-        const NodeHandle m = make(ui, ui.root(), "m");
-        ui.update(0.f);
-        ClipLayer L;
-        UI_CHECK(buildMaskClip(ui.computed(m), ui.rect(m), [](std::string_view) -> const Image* { return nullptr; }, L));
-        std::fprintf(stderr, "tex %d %d\n", L.texW, L.texH);
-        UI_CHECK(L.texW * L.texH <= kMaxMaskTexelArea && L.texW >= 256 && L.texW > L.texH);
-        UI_CHECK(ui.hitTest({ui.rect(m).x + 20, ui.rect(m).y + 20}) == m && !(ui.hitTest({ui.rect(m).x + 380, ui.rect(m).y + 20}) == m));
-    }
-    // ---- @scope proximity ----
-    {
-        UiContext ui({.viewport = {400, 300}});
-        ui.styles().addSheet(sheet("@scope (.light) { .t { opacity: 0.25; } } @scope (.dark) { .t { opacity: 0.5; } } "
-                                   "@scope (#id) { .u { opacity: 0.75; } } .u { opacity: 0.5; } .v.v { opacity: 0.5; } @scope (.x) { .v { opacity: 0.25; } }"));
-        const NodeHandle light = make(ui, ui.root(), "light"), dark = make(ui, light, "dark"), t = make(ui, dark, "t");
-        const NodeHandle dark2 = make(ui, ui.root(), "dark"), light2 = make(ui, dark2, "light"), t2 = make(ui, light2, "t");
-        const NodeHandle x = make(ui, ui.root(), "x"), v = make(ui, x, "v");
-        ui.update(0.f);
-        UI_CHECK(near(ui.computed(t).opacity, 0.5f, 1e-3f) && near(ui.computed(t2).opacity, 0.25f, 1e-3f)); // nearer root wins
-        UI_CHECK(near(ui.computed(v).opacity, 0.25f, 1e-3f)); // proximity beats specificity
-        (void)light, (void)dark2;
-        const StyleSheet& sh = ui.styles().sheet(0);
-        for (const auto& r : sh.rules()) std::fprintf(stderr, "spec %06x\n", r.specificity);
-        UI_CHECK(sh.rules()[0].specificity == 0x100 && sh.rules()[2].specificity == 0x100); // implicit root adds none
-    }
-    return fuse::ui::test::finish("fuse_ui_css_position");
+    return finish("fuse_ui_css_position");
 }

@@ -448,8 +448,8 @@ void gateMergedClasses() {
     w::viewCancelEdit(trimmed, ct);
     // a cooked blob of another format version is refused (the version moves with the property set)
     std::vector<u8> old(cooked->begin(), cooked->end());
-    UI_CHECK(kCookedVersion == 3u && old.size() > 8 && old[4] == 3u);
-    old[4] = 2;
+    UI_CHECK(kCookedVersion == 4u && old.size() > 8 && old[4] == 4u);
+    old[4] = 3;
     UI_CHECK(!Document::loadCooked(trimmed, old, &model).has_value());
 }
 } // namespace

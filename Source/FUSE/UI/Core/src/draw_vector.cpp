@@ -27,6 +27,8 @@ void DrawList::clearSide() {
     m_paints.clear();
     m_stops.clear();
     m_patches.clear();
+    m_xforms.clear();
+    m_filters.clear();
     m_vector = false;
 }
 
@@ -147,6 +149,34 @@ void DrawList::strokePath(const Path& path, const StrokeStyle& stroke, const Bru
     m_cmds.push_back(c);
 }
 
+void DrawList::path(const Path& path, Color fill, bool evenOdd, Color stroke, f32 strokeWidth) {
+    if (path.empty()) return;
+    if (fill.a > 0.f) fillPath(path, Brush(fill), evenOdd ? FillRule::EvenOdd : FillRule::NonZero);
+    if (strokeWidth > 0.f && stroke.a > 0.f) {
+        StrokeStyle s;
+        s.width = strokeWidth;
+        s.join = LineJoin::Round;
+        s.cap = LineCap::Round;
+        strokePath(path, s, Brush(stroke));
+    }
+}
+
+Color gradientStopsAt(std::span<const GradientStop> stops, f32 t) {
+    if (stops.empty()) return {};
+    if (t <= stops.front().offset) return stops.front().color;
+    for (std::size_t i = 1; i < stops.size(); ++i) {
+        if (t <= stops[i].offset) {
+            const GradientStop& a = stops[i - 1];
+            const GradientStop& b = stops[i];
+            const f32 span = b.offset - a.offset;
+            const f32 k = span > 0.f ? (t - a.offset) / span : 1.f;
+            return {a.color.r + (b.color.r - a.color.r) * k, a.color.g + (b.color.g - a.color.g) * k,
+                    a.color.b + (b.color.b - a.color.b) * k, a.color.a + (b.color.a - a.color.a) * k};
+        }
+    }
+    return stops.back().color;
+}
+
 void DrawList::gradientRect(const Rect& r, const Gradient& g, const std::array<f32, 4>& radii) {
     if (r.empty()) return;
     thread_local Path scratch;
@@ -195,6 +225,108 @@ void DrawList::pushLayer(f32 opacity, const Rect& bounds) {
     m_cmds.push_back(c);
 }
 
+namespace {
+/// Box sizes (odd) of the three box blurs that approximate a Gaussian of standard deviation `sigma` (Kovesi).
+void blurBoxes(f32 sigma, int out[3]) {
+    out[0] = out[1] = out[2] = 1;
+    if (!(sigma > 0.05f) || !std::isfinite(sigma)) return;
+    sigma = std::min(sigma, 512.f);
+    const f32 ideal = std::sqrt(4.f * sigma * sigma + 1.f);
+    int wl = int(std::floor(ideal));
+    if (wl % 2 == 0) --wl;
+    wl = std::max(wl, 1);
+    const f32 m = (12.f * sigma * sigma - 3.f * f32(wl) * f32(wl) - 12.f * f32(wl) - 9.f) / (-4.f * f32(wl) - 4.f);
+    const int lower = std::clamp(int(std::lround(m)), 0, 3);
+    for (int k = 0; k < 3; ++k) out[k] = k < lower ? wl : wl + 2;
+}
+/// Below this deviation three box blurs are a poor Gaussian: the kernel itself is used (it is small).
+constexpr f32 kExactBlurBelow = 2.f;
+int blurReachPx(f32 sigma) {
+    if (!(sigma > 0.05f) || !std::isfinite(sigma)) return 0;
+    if (sigma < kExactBlurBelow) return int(std::ceil(sigma * 3.f));
+    int b[3];
+    blurBoxes(sigma, b);
+    return (b[0] + b[1] + b[2] - 3) / 2;
+}
+} // namespace
+
+namespace {
+/// Bounding rect of `r` mapped by `xf`, one unit larger on each side (the antialiased edge); empty stays empty.
+Rect mappedBounds(const Affine& xf, const Rect& r) {
+    if (r.empty()) return {};
+    f32 x0 = 0.f, y0 = 0.f, x1 = 0.f, y1 = 0.f;
+    const Vec2 corners[4] = {{r.x, r.y}, {r.right(), r.y}, {r.right(), r.bottom()}, {r.x, r.bottom()}};
+    for (int k = 0; k < 4; ++k) {
+        const Vec2 p = xf.apply(corners[k]);
+        if (k == 0) { x0 = x1 = p.x; y0 = y1 = p.y; }
+        x0 = std::min(x0, p.x); y0 = std::min(y0, p.y);
+        x1 = std::max(x1, p.x); y1 = std::max(y1, p.y);
+    }
+    return {x0 - 1.f, y0 - 1.f, x1 - x0 + 2.f, y1 - y0 + 2.f};
+}
+} // namespace
+
+f32 filterReach(std::span<const FilterOp> ops) {
+    f32 reach = 0.f;
+    for (const FilterOp& f : ops) {
+        if (f.kind == FilterKind::Blur) reach += f32(blurReachPx(f.amount));
+        else if (f.kind == FilterKind::DropShadow) {
+            const f32 off = std::max(std::abs(f.offset.x), std::abs(f.offset.y));
+            reach += f32(blurReachPx(f.amount)) + (std::isfinite(off) ? std::ceil(std::min(off, 1.0e6f)) : 0.f) + 1.f;
+        }
+    }
+    return reach;
+}
+
+void DrawList::pushTransform(const Affine& xf, const Rect& localBounds) {
+    m_vector = true;
+    DrawCmd c;
+    c.op = DrawOp::PushTransform;
+    c.data = u32(m_xforms.size());
+    m_xforms.push_back({xf, localBounds});
+    c.rect = mappedBounds(xf, localBounds);
+    m_cmds.push_back(c);
+}
+
+void DrawList::pushFilter(std::span<const FilterOp> ops, const Rect& bounds) {
+    m_vector = true;
+    DrawCmd c;
+    c.op = DrawOp::PushFilter;
+    c.data = u32(m_filters.size());
+    c.u = u16(std::min<std::size_t>(ops.size(), 64));
+    m_filters.insert(m_filters.end(), ops.begin(), ops.begin() + c.u);
+    c.rect = bounds;
+    m_cmds.push_back(c);
+}
+
+void DrawList::pushMask(const Gradient& g, const Rect& bounds, MaskMode mode) {
+    m_vector = true;
+    DrawCmd c;
+    c.op = DrawOp::PushMask;
+    const i32 paint = addPaint(Brush(g), {});
+    c.data = paint >= 0 ? u32(paint) : 0xFFFFFFFFu; // no usable gradient: masks everything out
+    c.gradient = u8(mode);
+    c.rect = bounds;
+    m_cmds.push_back(c);
+}
+
+void DrawList::setGroupBounds(std::size_t cmdIndex, const Rect& bounds) {
+    if (cmdIndex >= m_cmds.size()) return;
+    DrawCmd& c = m_cmds[cmdIndex];
+    if (c.op == DrawOp::PushTransform && c.data < m_xforms.size()) {
+        m_xforms[c.data].src = bounds;
+        c.rect = mappedBounds(m_xforms[c.data].xf, bounds);
+    } else if (c.op == DrawOp::PushFilter || c.op == DrawOp::PushMask || c.op == DrawOp::PushLayer) {
+        c.rect = bounds;
+    }
+}
+
+Rect DrawList::groupBounds(const DrawCmd& c) const {
+    if (c.op != DrawOp::PushFilter || std::size_t(c.data) + c.u > m_filters.size()) return c.rect;
+    const f32 e = filterReach(std::span<const FilterOp>(m_filters).subspan(c.data, c.u));
+    return {c.rect.x - e, c.rect.y - e, c.rect.w + 2.f * e, c.rect.h + 2.f * e};
+}
+
 void DrawList::translateSide(Vec2 d) {
     for (Vec2& p : m_points) {
         p.x += d.x;
@@ -202,6 +334,11 @@ void DrawList::translateSide(Vec2 d) {
     }
     const Affine back = Affine::translation(-d.x, -d.y);
     for (DrawPaint& p : m_paints) p.toUnit = p.toUnit * back;
+    for (DrawTransform& t : m_xforms) { // both spaces move: xf' = T(d) xf T(-d)
+        t.xf = Affine::translation(d.x, d.y) * t.xf * back;
+        t.src.x += d.x;
+        t.src.y += d.y;
+    }
 }
 
 void DrawList::scaleSide(f32 s, bool snap) {
@@ -217,6 +354,15 @@ void DrawList::scaleSide(f32 s, bool snap) {
     }
     const Affine back = Affine::scaling(1.f / s, 1.f / s);
     for (DrawPaint& p : m_paints) p.toUnit = p.toUnit * back;
+    for (DrawTransform& t : m_xforms) { // xf' = S xf S^-1: the linear part stays, the translation scales
+        t.xf.tx *= s;
+        t.xf.ty *= s;
+        t.src = {t.src.x * s, t.src.y * s, t.src.w * s, t.src.h * s};
+    }
+    for (FilterOp& f : m_filters) {
+        if (f.kind == FilterKind::Blur || f.kind == FilterKind::DropShadow) f.amount *= s;
+        f.offset = {f.offset.x * s, f.offset.y * s};
+    }
     for (DrawPatch& p : m_patches) {
         for (f32* v : {&p.dstInsets.l, &p.dstInsets.t, &p.dstInsets.r, &p.dstInsets.b}) {
             const f32 scaled = *v * s;
@@ -695,6 +841,317 @@ std::size_t detail::drawGroup(const RasterEnv& env, const DrawList& list, std::s
                 if (clipCov <= 0.f) continue;
             }
             compositeTexel(row[x], s, clipCov * opacity);
+        }
+    }
+    return end;
+}
+
+// ---- Effect groups: transform, filter, mask ------------------------------------------------------------------------
+namespace {
+struct FxScratch {
+    std::vector<std::vector<u32>> layers; // one per nesting level
+    std::vector<u32> tmp;
+    std::vector<u8> alpha, alphaTmp;
+};
+FxScratch& fxScratch() {
+    thread_local FxScratch s;
+    return s;
+}
+u32* fxLayer(int level, std::size_t texels) {
+    FxScratch& S = fxScratch();
+    if (S.layers.size() <= std::size_t(level)) S.layers.resize(std::size_t(level) + 1);
+    S.layers[std::size_t(level)].assign(texels, 0u);
+    return S.layers[std::size_t(level)].data();
+}
+
+// One box blur pass (window `n`, odd) along x or y; texels outside the buffer count as transparent.
+template <class T, int Channels>
+void boxPass(const T* src, T* dst, int w, int h, int n, bool vertical) {
+    const int r = n / 2;
+    const int len = vertical ? h : w, lines = vertical ? w : h;
+    const std::ptrdiff_t step = vertical ? w : 1;
+    for (int line = 0; line < lines; ++line) {
+        const T* s = src + (vertical ? line : std::ptrdiff_t(line) * w);
+        T* d = dst + (vertical ? line : std::ptrdiff_t(line) * w);
+        u32 sum[4] = {0, 0, 0, 0};
+        auto add = [&](int i, bool plus) {
+            if (i < 0 || i >= len) return;
+            const u32 v = u32(s[i * step]);
+            for (int c = 0; c < Channels; ++c) {
+                const u32 ch = (v >> (c * 8)) & 0xFFu;
+                sum[c] = plus ? sum[c] + ch : sum[c] - ch;
+            }
+        };
+        for (int i = 0; i <= r; ++i) add(i, true);
+        for (int i = 0; i < len; ++i) {
+            u32 o = 0;
+            for (int c = 0; c < Channels; ++c) o |= ((sum[c] + u32(n) / 2u) / u32(n)) << (c * 8);
+            d[i * step] = T(o);
+            add(i + r + 1, true);
+            add(i - r, false);
+        }
+    }
+}
+// One pass of the Gaussian kernel itself (16.16 fixed point weights that sum to 1), for small deviations.
+template <class T, int Channels>
+void kernelPass(const T* src, T* dst, int w, int h, const u32* weights, int r, bool vertical) {
+    const int len = vertical ? h : w, lines = vertical ? w : h;
+    const std::ptrdiff_t step = vertical ? w : 1;
+    for (int line = 0; line < lines; ++line) {
+        const T* s = src + (vertical ? line : std::ptrdiff_t(line) * w);
+        T* d = dst + (vertical ? line : std::ptrdiff_t(line) * w);
+        for (int i = 0; i < len; ++i) {
+            u32 sum[4] = {0, 0, 0, 0};
+            for (int k = std::max(-r, -i); k <= r && i + k < len; ++k) {
+                const u32 v = u32(s[(i + k) * step]);
+                if (!v) continue;
+                for (int c = 0; c < Channels; ++c) sum[c] += weights[k + r] * ((v >> (c * 8)) & 0xFFu);
+            }
+            u32 o = 0;
+            for (int c = 0; c < Channels; ++c) o |= std::min(255u, (sum[c] + 32768u) >> 16) << (c * 8);
+            d[i * step] = T(o);
+        }
+    }
+}
+template <class T, int Channels>
+void gaussianBlur(T* buf, T* tmp, int w, int h, f32 sigma) {
+    if (!(sigma > 0.05f) || !std::isfinite(sigma)) return;
+    if (sigma < kExactBlurBelow) {
+        const int r = blurReachPx(sigma);
+        u32 weights[16];
+        f32 real[16], total = 0.f;
+        for (int k = -r; k <= r; ++k) total += real[k + r] = std::exp(-f32(k * k) / (2.f * sigma * sigma));
+        u32 sum = 0;
+        for (int k = 0; k <= 2 * r; ++k) sum += weights[k] = u32(real[k] / total * 65536.f + 0.5f);
+        weights[r] += 65536u - sum; // exactly 1 in total: a flat area stays what it was
+        kernelPass<T, Channels>(buf, tmp, w, h, weights, r, false);
+        kernelPass<T, Channels>(tmp, buf, w, h, weights, r, true);
+        return;
+    }
+    int boxes[3];
+    blurBoxes(sigma, boxes);
+    if (boxes[2] <= 1) return;
+    for (const bool vertical : {false, true}) {
+        boxPass<T, Channels>(buf, tmp, w, h, boxes[0], vertical);
+        boxPass<T, Channels>(tmp, buf, w, h, boxes[1], vertical);
+        boxPass<T, Channels>(buf, tmp, w, h, boxes[2], vertical);
+        std::memcpy(buf, tmp, std::size_t(w) * std::size_t(h) * sizeof(T));
+    }
+}
+
+// Colour functions as rgb' = M rgb + offset on straight colour, alpha' = alpha * alphaScale.
+struct ColorFn {
+    f32 m[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    f32 off = 0.f, alpha = 1.f;
+};
+bool colorFn(const FilterOp& f, ColorFn& o) {
+    const f32 a = f.amount;
+    auto sat = [&](f32 s) { // the feColorMatrix "saturate" matrix
+        const f32 k[9] = {0.213f + 0.787f * s, 0.715f - 0.715f * s, 0.072f - 0.072f * s, 0.213f - 0.213f * s, 0.715f + 0.285f * s,
+                          0.072f - 0.072f * s, 0.213f - 0.213f * s, 0.715f - 0.715f * s, 0.072f + 0.928f * s};
+        std::memcpy(o.m, k, sizeof k);
+    };
+    switch (f.kind) {
+    case FilterKind::Brightness: o.m[0] = o.m[4] = o.m[8] = std::max(a, 0.f); return true;
+    case FilterKind::Contrast: o.m[0] = o.m[4] = o.m[8] = std::max(a, 0.f); o.off = 0.5f - 0.5f * std::max(a, 0.f); return true;
+    case FilterKind::Grayscale: sat(1.f - std::clamp(a, 0.f, 1.f)); return true;
+    case FilterKind::Saturate: sat(std::max(a, 0.f)); return true;
+    case FilterKind::Sepia: {
+        const f32 t = 1.f - std::clamp(a, 0.f, 1.f);
+        const f32 k[9] = {0.393f + 0.607f * t, 0.769f - 0.769f * t, 0.189f - 0.189f * t, 0.349f - 0.349f * t, 0.686f + 0.314f * t,
+                          0.168f - 0.168f * t, 0.272f - 0.272f * t, 0.534f - 0.534f * t, 0.131f + 0.869f * t};
+        std::memcpy(o.m, k, sizeof k);
+        return true;
+    }
+    case FilterKind::HueRotate: {
+        const f32 c = std::cos(a), s = std::sin(a);
+        const f32 k[9] = {0.213f + c * 0.787f - s * 0.213f, 0.715f - c * 0.715f - s * 0.715f, 0.072f - c * 0.072f + s * 0.928f,
+                          0.213f - c * 0.213f + s * 0.143f, 0.715f + c * 0.285f + s * 0.140f, 0.072f - c * 0.072f - s * 0.283f,
+                          0.213f - c * 0.213f - s * 0.787f, 0.715f - c * 0.715f + s * 0.715f, 0.072f + c * 0.928f + s * 0.072f};
+        std::memcpy(o.m, k, sizeof k);
+        return true;
+    }
+    case FilterKind::Invert: {
+        const f32 t = std::clamp(a, 0.f, 1.f);
+        o.m[0] = o.m[4] = o.m[8] = 1.f - 2.f * t;
+        o.off = t;
+        return true;
+    }
+    case FilterKind::Opacity: o.alpha = std::clamp(a, 0.f, 1.f); return true;
+    default: return false;
+    }
+}
+void applyColorFn(u32* px, std::size_t count, const ColorFn& fn) {
+    for (std::size_t i = 0; i < count; ++i) {
+        const u32 t = px[i];
+        const u32 a8 = t >> 24;
+        if (!a8) continue;
+        const f32 a = f32(a8) / 255.f, inv = 1.f / a;
+        const f32 r = f32(t & 0xFF) / 255.f * inv, g = f32((t >> 8) & 0xFF) / 255.f * inv, b = f32((t >> 16) & 0xFF) / 255.f * inv;
+        const f32 na = a * fn.alpha;
+        const f32 nr = std::clamp(fn.m[0] * r + fn.m[1] * g + fn.m[2] * b + fn.off, 0.f, 1.f);
+        const f32 ng = std::clamp(fn.m[3] * r + fn.m[4] * g + fn.m[5] * b + fn.off, 0.f, 1.f);
+        const f32 nb = std::clamp(fn.m[6] * r + fn.m[7] * g + fn.m[8] * b + fn.off, 0.f, 1.f);
+        px[i] = packPx({nr * na, ng * na, nb * na, na});
+    }
+}
+// drop-shadow: the layer's alpha, moved by `offset` (whole pixels), blurred, tinted, composited under the layer.
+void dropShadow(u32* px, int w, int h, const FilterOp& f) {
+    FxScratch& S = fxScratch();
+    const std::size_t count = std::size_t(w) * std::size_t(h);
+    S.alpha.assign(count, 0);
+    S.alphaTmp.resize(count);
+    if (!std::isfinite(f.offset.x) || !std::isfinite(f.offset.y)) return;
+    const int dx = int(std::lround(std::clamp(f.offset.x, -1.0e6f, 1.0e6f))), dy = int(std::lround(std::clamp(f.offset.y, -1.0e6f, 1.0e6f)));
+    for (int y = 0; y < h; ++y) {
+        const int sy = y - dy;
+        if (sy < 0 || sy >= h) continue;
+        for (int x = 0; x < w; ++x) {
+            const int sx = x - dx;
+            if (sx >= 0 && sx < w) S.alpha[std::size_t(y) * w + x] = u8(px[std::size_t(sy) * w + sx] >> 24);
+        }
+    }
+    gaussianBlur<u8, 1>(S.alpha.data(), S.alphaTmp.data(), w, h, f.amount);
+    const Px col = premul(f.color, 1.f);
+    for (std::size_t i = 0; i < count; ++i) {
+        const u32 sa = S.alpha[i];
+        if (!sa) continue;
+        const f32 k = f32(sa) / 255.f;
+        u32 under = packPx({col.r * k, col.g * k, col.b * k, col.a * k});
+        if (px[i]) compositeTexel(under, px[i], 1.f);
+        px[i] = under;
+    }
+}
+inline Rect inflated(const Rect& r, f32 e) { return {r.x - e, r.y - e, r.w + 2.f * e, r.h + 2.f * e}; }
+} // namespace
+
+std::size_t detail::drawFxGroup(const RasterEnv& env, const DrawList& list, std::size_t i, std::size_t last, const Clip& clip,
+                                const Surface& surf, int level) {
+    const DrawCmd& c = list.cmds()[i];
+    const std::size_t end = std::min(matchingPop(list, i), last);
+    if (level >= 16) return end;
+    const Rect bounds = list.groupBounds(c);
+    if (!std::isfinite(bounds.x + bounds.y + bounds.w + bounds.h)) return end;
+    const Rect visR = bounds.intersect(clip.r);
+    if (visR.empty()) return end;
+    const IntArea a = toArea(visR);
+    const std::array<f32, 4> clipRad{clip.radius, clip.radius, clip.radius, clip.radius};
+    auto clipCoverage = [&](int x, int y) {
+        return clip.radius > 0.f ? std::clamp(0.5f - sdRoundRect(f32(x) + 0.5f, f32(y) + 0.5f, clip.r, clipRad), 0.f, 1.f) : 1.f;
+    };
+    if (c.op == DrawOp::PushTransform) {
+        if (c.data >= list.transforms().size()) return end;
+        const DrawTransform& t = list.transforms()[c.data];
+        Affine inv;
+        if (!std::isfinite(t.xf.a + t.xf.b + t.xf.c + t.xf.d + t.xf.tx + t.xf.ty) || !t.xf.invert(inv) || t.src.empty()) return end;
+        if (!std::isfinite(inv.a + inv.b + inv.c + inv.d + inv.tx + inv.ty)) return end;
+        if (t.xf.a == 1.f && t.xf.b == 0.f && t.xf.c == 0.f && t.xf.d == 1.f && clip.radius <= 0.f) {
+            // a translation: the commands are drawn straight onto the target, moved by whole pixels
+            const int dx = int(std::lround(t.xf.tx)), dy = int(std::lround(t.xf.ty));
+            const Surface moved{surf.px, surf.ox - dx, surf.oy - dy, surf.w, surf.h};
+            const Rect sc{clip.r.x - f32(dx), clip.r.y - f32(dy), clip.r.w, clip.r.h};
+            renderRange(env, list, i + 1, end, moved, sc.intersect(moved.rect()), level + 1, false);
+            return end;
+        }
+        // the part of the local space the visible destination pixels read (one texel more for the bilinear taps)
+        f32 x0 = 0.f, y0 = 0.f, x1 = 0.f, y1 = 0.f;
+        const Vec2 corners[4] = {{f32(a.x0), f32(a.y0)}, {f32(a.x1), f32(a.y0)}, {f32(a.x1), f32(a.y1)}, {f32(a.x0), f32(a.y1)}};
+        for (int k = 0; k < 4; ++k) {
+            const Vec2 p = inv.apply(corners[k]);
+            if (k == 0) { x0 = x1 = p.x; y0 = y1 = p.y; }
+            x0 = std::min(x0, p.x); y0 = std::min(y0, p.y);
+            x1 = std::max(x1, p.x); y1 = std::max(y1, p.y);
+        }
+        const Rect need = inflated({x0, y0, x1 - x0, y1 - y0}, 1.5f).intersect(inflated(t.src, 1.f));
+        if (need.empty() || !(need.w * need.h <= 16.0e6f)) return end; // (a layer that large is a degenerate matrix)
+        const IntArea s = toArea(need);
+        const int w = s.x1 - s.x0, h = s.y1 - s.y0;
+        u32* const px = fxLayer(level, std::size_t(w) * std::size_t(h));
+        const Surface layer{px, s.x0, s.y0, w, h};
+        renderRange(env, list, i + 1, end, layer, layer.rect(), level + 1, false);
+        auto texel = [&](int x, int y) -> u32 { return (x < 0 || y < 0 || x >= w || y >= h) ? 0u : px[std::size_t(y) * w + x]; };
+        for (int y = a.y0; y < a.y1; ++y) {
+            u32* row = surf.row(y) - surf.ox;
+            for (int x = a.x0; x < a.x1; ++x) {
+                const Vec2 p = inv.apply({f32(x) + 0.5f, f32(y) + 0.5f});
+                const f32 u = p.x - 0.5f - f32(s.x0), v = p.y - 0.5f - f32(s.y0);
+                const f32 fu = std::floor(u), fv = std::floor(v);
+                if (!(fu >= -1.f && fv >= -1.f && fu < f32(w) && fv < f32(h))) continue;
+                const int ix = int(fu), iy = int(fv);
+                const u32 t00 = texel(ix, iy), t10 = texel(ix + 1, iy), t01 = texel(ix, iy + 1), t11 = texel(ix + 1, iy + 1);
+                if (!(t00 | t10 | t01 | t11)) continue;
+                const f32 fx = u - fu, fy = v - fv;
+                u32 o = 0;
+                if (t00 == t10 && t00 == t01 && t00 == t11) o = t00;
+                else
+                    for (int k = 0; k < 32; k += 8) {
+                        const f32 top = f32((t00 >> k) & 0xFF) * (1.f - fx) + f32((t10 >> k) & 0xFF) * fx;
+                        const f32 bot = f32((t01 >> k) & 0xFF) * (1.f - fx) + f32((t11 >> k) & 0xFF) * fx;
+                        o |= u32(std::clamp(top * (1.f - fy) + bot * fy + 0.5f, 0.f, 255.f)) << k;
+                    }
+                if (!o) continue;
+                const f32 cov = clipCoverage(x, y);
+                if (cov > 0.f) compositeTexel(row[x], o, cov);
+            }
+        }
+        return end;
+    }
+    // filter / mask: the layer covers the visible part, plus what the filter needs around it
+    f32 reach = 0.f;
+    std::span<const FilterOp> ops;
+    if (c.op == DrawOp::PushFilter && std::size_t(c.data) + c.u <= list.filters().size()) {
+        ops = list.filters().subspan(c.data, c.u);
+        reach = filterReach(ops);
+    }
+    const IntArea l = reach > 0.f ? toArea(bounds.intersect(inflated(visR, reach + 1.f))) : a;
+    const int w = l.x1 - l.x0, h = l.y1 - l.y0;
+    if (w <= 0 || h <= 0 || f32(w) * f32(h) > 16.0e6f) return end;
+    u32* const px = fxLayer(level, std::size_t(w) * std::size_t(h));
+    const Surface layer{px, l.x0, l.y0, w, h};
+    renderRange(env, list, i + 1, end, layer, layer.rect(), level + 1, false);
+    if (c.op == DrawOp::PushFilter) {
+        for (const FilterOp& f : ops) {
+            ColorFn fn;
+            if (f.kind == FilterKind::Blur) {
+                FxScratch& S = fxScratch();
+                S.tmp.resize(std::size_t(w) * std::size_t(h));
+                gaussianBlur<u32, 4>(px, S.tmp.data(), w, h, f.amount);
+            } else if (f.kind == FilterKind::DropShadow) {
+                dropShadow(px, w, h, f);
+            } else if (colorFn(f, fn)) {
+                applyColorFn(px, std::size_t(w) * std::size_t(h), fn);
+            }
+        }
+    } else { // mask
+        const bool ok = c.data < list.paints().size() && list.paints()[c.data].stopCount > 0 &&
+                        std::size_t(list.paints()[c.data].firstStop) + list.paints()[c.data].stopCount <= list.stops().size();
+        if (!ok) return end;
+        const DrawPaint& paint = list.paints()[c.data];
+        const GradientStop* stops = list.stops().data() + paint.firstStop;
+        const bool luminance = c.gradient == u8(MaskMode::Luminance);
+        for (int y = a.y0; y < a.y1; ++y) {
+            u32* row = layer.row(y) - l.x0;
+            for (int x = a.x0; x < a.x1; ++x) {
+                u32& t = row[x];
+                if (!t) continue;
+                const Px g = gradientAt(paint, stops, f32(x) + 0.5f, f32(y) + 0.5f);
+                const f32 m = std::clamp(luminance ? 0.2126f * g.r + 0.7152f * g.g + 0.0722f * g.b : g.a, 0.f, 1.f);
+                const u32 k = u32(m * 255.f + 0.5f);
+                if (k == 255u) continue;
+                u32 o = 0;
+                for (int sh = 0; sh < 32; sh += 8) o |= ((((t >> sh) & 0xFFu) * k + 127u) / 255u) << sh;
+                t = o;
+            }
+        }
+    }
+    for (int y = a.y0; y < a.y1; ++y) {
+        u32* row = surf.row(y) - surf.ox;
+        const u32* lrow = layer.row(y) - l.x0;
+        for (int x = a.x0; x < a.x1; ++x) {
+            const u32 s = lrow[x];
+            if (!s) continue;
+            const f32 cov = clipCoverage(x, y);
+            if (cov > 0.f) compositeTexel(row[x], s, cov);
         }
     }
     return end;
