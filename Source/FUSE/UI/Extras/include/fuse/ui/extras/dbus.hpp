@@ -108,6 +108,8 @@ public:
     /// Blocking round trip (pumps only this connection). Error replies are returned as messages (isError()).
     Message callBlocking(Message& m, int timeoutMs = 2000);
     /// Non-blocking dispatch of everything queued (timeoutMs > 0 waits for I/O at most that long).
+    /// Drive a connection from one thread: poll(timeoutMs > 0) holds libdbus's I/O path while it waits and a thread
+    /// polling in a loop takes it back at once, so flush() / callBlocking() from another thread can wait unboundedly.
     void poll(int timeoutMs = 0);
     void flush();
 

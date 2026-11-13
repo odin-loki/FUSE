@@ -1363,9 +1363,25 @@ void gateNotify() {
         }
         return false;
     });
+    // Only the service thread touches `host` from here on: it pumps the connection and sends what emit() queues.
+    // poll(5) holds libdbus's I/O path for up to 5 ms at a time and takes it back right after dispatching, so a
+    // send + flush from the main thread had to win that lock between two polls: it lost for hundreds of ms on a
+    // loaded machine, for seconds on CI (8.8 s run time) and long enough to hit the 120 s ctest timeout once.
+    std::vector<Message> outbox; // guarded by mu
     std::atomic<bool> stop{false};
     std::thread service([&] {
-        while (!stop.load()) host->poll(5);
+        for (;;) {
+            const bool last = stop.load();
+            host->poll(5);
+            std::vector<Message> out;
+            {
+                std::lock_guard<std::mutex> lock(mu);
+                out.swap(outbox);
+            }
+            for (Message& m : out) host->send(m);
+            if (!out.empty()) host->flush();
+            if (last) break;
+        }
     });
 
     Notifier notifier;
@@ -1398,9 +1414,8 @@ void gateNotify() {
         Message sgl = Message::signal("/org/freedesktop/Notifications", "org.freedesktop.Notifications", member);
         if (text) sgl.args().u(a).s(text);
         else sgl.args().u(a).u(b);
-        std::lock_guard<std::mutex> lock(mu); // one sender at a time on the host connection
-        host->send(sgl);
-        host->flush();
+        std::lock_guard<std::mutex> lock(mu);
+        outbox.push_back(std::move(sgl)); // sent by the service thread
     };
     emit("ActionInvoked", 42, "log", 0);
     emit("NotificationClosed", 42, nullptr, 2);
