@@ -219,6 +219,8 @@ void gateEveryClass() {
         // a dock lives in a dock area; everything else stands alone
         const std::string json = name == "dock"
             ? "{\"fuseui\":1,\"root\":{\"class\":\"dockarea\",\"children\":[{\"class\":\"dock\",\"id\":\"it\",\"text\":\"D\"}]}}"
+            : name == "mdiwindow" // an MDI sub-window lives in an MDI area
+            ? "{\"fuseui\":1,\"root\":{\"class\":\"mdiarea\",\"children\":[{\"class\":\"mdiwindow\",\"id\":\"it\",\"text\":\"W\"}]}}"
             : "{\"fuseui\":1,\"root\":{\"class\":\"" + name + "\",\"id\":\"it\"}}";
         auto doc = Document::load(ui, json, &model);
         if (!doc) std::fprintf(stderr, "  %s: %s\n", name.c_str(), doc.error().message.c_str());

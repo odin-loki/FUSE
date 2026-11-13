@@ -276,12 +276,14 @@ struct SpinBox {
         return std::snprintf(buf, std::size_t(cap), "%.*f", dec, double(ui.value(n)));
     }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
+        if (detail::spinBoxHasState(ui, n)) return detail::spinBoxMeasure(ui, n); // setSpinBoxOptions
         char buf[32];
         const int len = fmt(ui, n, buf, 32);
         const Size t = textSize(ui, n, std::string_view(buf, std::size_t(std::max(0, len))));
         return {std::max(48.f, t.w) + 20.f, t.h};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
+        if (detail::spinBoxHasState(pc.ui, pc.node)) { detail::spinBoxPaint(pc, dl); return; }
         char buf[32];
         const int len = fmt(pc.ui, pc.node, buf, 32);
         const Rect c = pc.content;
@@ -296,6 +298,7 @@ struct SpinBox {
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
+        if (detail::spinBoxHasState(ui, ec.node)) return detail::spinBoxEvent(ec, e); // setSpinBoxOptions
         const f32 st = ui.rangeStep(ec.node) > 0.f ? ui.rangeStep(ec.node) : 1.f;
         if (e.type == EventType::PointerDown) {
             if (e.button != MouseButton::Left) return false; // (a context-menu press does not step)
@@ -368,6 +371,7 @@ struct LineEdit {
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) { return {160.f, lineHeight(ui, ui.computed(n).fontSize)}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
+        if (detail::lineEditHasState(pc.ui, pc.node)) { detail::lineEditPaint(pc, dl); return; } // options / completer
         UiContext& ui = pc.ui;
         const Rect c = pc.content;
         auto& eb = ui.editBuffer(pc.node);
@@ -410,6 +414,7 @@ struct LineEdit {
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
+        if (detail::lineEditHasState(ui, ec.node)) return detail::lineEditEvent(ec, e); // options / completer
         auto& eb = ui.editBuffer(ec.node);
         if (e.type == EventType::Text) { eb.insert(e.text); changed(ui, ec.node); return true; }
         if (e.type == EventType::Composition) { ui.setValue(ec.node, ui.value(ec.node) + 1.f); return true; } // repaint
@@ -527,6 +532,8 @@ void install(UiContext& ui) {
     registerTierB3(ui);
     registerSvgWidgets(ui);
     registerPlatformFeel(ui); // kineticscroll
+    registerEditWidgets(ui);  // completer, completeritem, editcombo, combodrop
+    registerExtraWidgets(ui); // lcdnumber, keysequenceedit, mdiarea, mdisubwindow, mdititle, graphicsview, vkeyboard
     (void)ui.setThemeStyleSheet(defaultThemeCss());
 }
 
@@ -541,6 +548,8 @@ u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, boo
         registerTierB3(scratch);
         registerSvgWidgets(scratch);
         registerPlatformFeel(scratch); // kineticscroll (not part of install(): its factory registers it on first use)
+        registerEditWidgets(scratch);
+        registerExtraWidgets(scratch);
         return scratch.registry();
     }();
     u32 unknown = 0;
@@ -686,5 +695,9 @@ bool comboA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32 v
     }
 }
 } // namespace
-void detail::a11yTierA(WidgetRegistry& r) { a11yHook(r, "combobox", A11yRole::ComboBox, &comboA11y, &comboA11yAction); }
+void detail::a11yTierA(WidgetRegistry& r) {
+    a11yHook(r, "combobox", A11yRole::ComboBox, &comboA11y, &comboA11yAction);
+    a11ySpinBox(r); // widgets_spinbox.cpp: the shown text (prefix / suffix / special value) of a spin box with options
+    a11yLineEdit(r); // widgets_lineedit.cpp: SetValue on a field with options (mask, validator, password)
+}
 } // namespace fuse::ui::widgets

@@ -56,6 +56,8 @@ No golden image changed. Nothing main had was deleted.
 | `WebView` on the system engine | `extras/webview.hpp`, `Extras/src/{webview,webview_gtk,webview_none,webview_win32}.cpp`, `webview_internal.hpp` | `fuse_ui_extras_webview` under `U/tests/run_isolated_x.sh` (own Xvfb + session bus). **On the merge machine no WebKitGTK is installed, so the gate printed "no system engine, skipped" and passed without loading a page.** |
 | Charts library `fuse::ui::charts` (line, area, bar, scatter, pie / donut, candlestick, box, waterfall, contour, radar, treemap, sankey, gauge, funnel; axes, legend, tooltips, zoom / pan, model binding, min-max / LTTB decimation, transitions, PNG export, `chartView`, `Chart3D`, `chart3dView`) | `extras/charts.hpp`, `Extras/src/{charts,charts_simd}.cpp`, `charts_simd.hpp`, `charts_simd_kernel.hpp` | `fuse_ui_charts_{series,axes,decimation,ring,hit,widget,model,export,bench,demo,3d,3d_large,demo3d,mesh3d,mesh3d_large,beyond,transition,demo_beyond}` (`U/tests/test_charts.cpp`) |
 | 3D data visualisation (`fuse::ui::dv3d`: surface, scatter, bars, volume slices, BSP ordering, picking) and the CPU mesh rasteriser | `extras/datavis3d.hpp`, `Extras/src/datavis3d.cpp`, `U/Core/include/fuse/ui/mesh3d.hpp` (header only) | `fuse_ui_extras_dataviz3d`, `fuse_ui_extras_dataviz3d_bsp`, the `3d` / `mesh3d` chart gates |
+| **Ported 2026-11-13 (item 3.7, part):** line edit options (echo modes, max length, placeholder, read-only, validators + fixup, input masks, `EditingFinished`), `intValidator` / `doubleValidator` / `regexValidator`, `QCompleter`-style completer, editable combo box, spin box options (typed entry, prefix / suffix, special value, wrapping, adaptive step, correction, auto-repeat), tab bar options (closable, movable, disabled tabs, scroll buttons / shrink to fit, add / remove pages) | `U/Widgets/include/fuse/ui/widgets/edit_options.hpp` (new), `U/Widgets/src/{widgets_lineedit.cpp,widgets_spinbox.cpp,widgets_tabs.cpp}` (new, the branch code moved onto per-node option records), `U/Widgets/src/{line_regex.cpp,completer.cpp}` (the branch's, adapted); hooks in `widgets.cpp` / `widgets_tier_b.cpp`; `SignalKind::EditingFinished / Highlighted / Activated` | `fuse_ui_lineedit`, `fuse_ui_completer`, `fuse_ui_editcombo`, `fuse_ui_spinbox` (the branch's tests, accessibility parts rewritten for main's snapshot), `fuse_ui_tab_options_{closable,movable,scroll,pages}` (new), golden `fuse_ui_port_golden_edit_options` |
+| **Ported 2026-11-13 (item 3.12):** `dialogButtonBox`, `setDialogDefaultButton` / `setDialogRejectButton`, `inputDialog`, `toolBox`, `lcdNumber`, `keySequenceEdit`, `mdiArea` / `mdiSubWindow`, `GraphicsScene` / `graphicsView`, `virtualKeyboard`, `setWizardValidator` (on main's wizard) | `U/Widgets/include/fuse/ui/widgets/extra.hpp`, `U/Widgets/src/{widgets_extra.cpp,widgets_buttonbox.cpp}` (in `fuse_ui_widgets`, not `fuse_ui_extras`: document classes and `installClasses` need them there); document classes in `U/Doc/src/doc_classes.cpp`; theme rules in `U/Widgets/src/theme.cpp` | `fuse_ui_extra_{buttonbox,dialog_keys,input_dialog,toolbox,lcd,keysequence,mdi,graphics,vkeyboard,classes}` (`U/tests/test_widgets_extra.cpp`), golden `fuse_ui_port_golden_extra`, `fuse_ui_doc_every_class` |
 | Key-code / modifier / role tables of the branch's Cocoa backend | `U/App/src/cocoa_map.hpp` (plain header) | `fuse_app_cocoa_map` (`U/tests/test_cocoa_map.cpp`). The backend that uses the table is parked (3.3). |
 | From the branch's Wayland backend (3.2), onto the backend ported from `claude/magical-bassi-815825`: the Vulkan Wayland surface (`SurfaceSource::Wayland`, `VK_KHR_wayland_surface` resolved through `vkGetInstanceProcAddr`, no `vulkan_wayland.h` needed), the `wl_surface.frame` throttle for `wl_shm` presents, and the in-process compositor as a gate that needs no installed compositor | `U/App/src/vk_present.cpp`, `native_internal.hpp`, `native_wayland.cpp` (`frameReady`), `U/tests/test_app_wayland_seat.cpp` (new, written for main's backend; the branch's test stays under `_port/`) | `fuse_app_wayland`, `fuse_app_wayland_seat` |
 | **Ported 2026-11-13.** Rich text: `rich::RichDocument`, `RichTextEditor`, HTML + Markdown import / export, `richtextedit` widget, on main's text stack (real bold / italic faces, font decoration metrics), undo on `UndoStack`, `toRichTextMarkup / fromRichTextMarkup` bridge to main's `richText` view | `extras/richtext.hpp`, `Extras/src/richtext.cpp` | `fuse_ui_extras_richtext_{model,undo,widget,view,golden}` (`U/tests/test_richtext.cpp`) |
@@ -227,32 +229,45 @@ five files when done. The original description follows.
 - **Blocks**: three-way merge of `a11y.hpp` (main, mb, this branch). AccessKit needs a Rust toolchain.
 - **Verify**: `fuse_ui_a11y_bridge` with the branch's cases; `fuse_app_mobile_map`.
 
-### 3.7 Core widgets: line edit, completer, combo, spin box, date / time, calendar, tabs, item views, toolbars (L)
+### 3.7 Core widgets: date / time, calendar, item views, toolbars; what is left of tabs (M-L)
 
-- **What**: line edit echo modes / max length / placeholder / validators (int, double, regex) / input mask / fixup /
-  `editingFinished`; `QCompleter`-style completer; editable combo box (insert policies, item data, icons, model);
-  spin box options; `dateEdit` / time edit with format sections; calendar options; tab bar (closable, movable,
-  scroll buttons, position, elide, icons); tree view drag and drop and scrolling, rubber-band selection, cross-view
-  drops, multi-row drags, header section move / hide / resize modes, list icon mode, splitter sizes, toolbar
-  overflow, movable / floating toolbars; MIME-typed in-app drag and drop.
-- **In the tree, unbuilt**: `U/Widgets/src/{completer.cpp,line_regex.cpp,widgets_dnd.cpp,item_selection.hpp}`; tests
-  `U/tests/test_{lineedit,completer,editcombo,spinbox,datetimeedit,calendar,dnd,item_views,widget_gaps}.cpp`.
-- **Branch deltas not taken**: `U/Widgets/include/fuse/ui/widgets/widgets.hpp` (+564), `widgets.cpp` (+894),
-  `widgets_tier_b.cpp` (+1560), `widgets_tier_b2.cpp` (+1207), `widgets_tier_cd.cpp` (+584), `widgets_tier_d2.cpp`
-  (+540 / -106), `widgets_internal.hpp`, tests `test_ui6.cpp`, `test_tier_d2.cpp`.
-- **Overlap on main**: model / view (`widgets/modelview.hpp`: selection modes, proxies, header view), in-app drag and
-  drop and gestures (`widgets/interaction.hpp`, `ui.hpp`: `DropAction`, `GestureConfig`), tabbed docks, `toolBar`
-  (`widgets_tier_b3.cpp`), `dateTimeEdit`, calendar with locale. **Name collisions** with different signatures:
-  `toolBar`, `toolBarSeparator`, `dockFloat`, `dockRaise`, `dockTabify`, `setTableDragDrop`, `SelectionMode`,
-  `DropAction`, `MenuItem`, `keyName`.
-- **Blocks**: `line_regex.cpp` only needs the `Validation` / `Validator` declarations (S, a good first step:
-  validators on main's line edit). `completer.cpp` needs the branch's line-edit internals (`lineEditText`,
-  `lineEditComplete`, `CompletionMode`, `InsertPolicy`). `widgets_dnd.cpp` is a second drag-and-drop model
-  (`DropPhase`, MIME payloads) next to main's: port its MIME payload idea into main's, do not build both.
-  Port widget by widget against main's tier files; do not re-run the textual merge (16 hunks / 1,380 conflict lines in
-  `widgets_tier_b2.cpp` alone).
-- **Verify**: `fuse_ui_{lineedit,completer,editcombo,spinbox,datetimeedit,calendar,dnd,item_views,widget_gaps}`,
-  `fuse_ui_widget_<class>`; main's `fuse_ui_mv_*`, `fuse_ui_dock_*`, `fuse_ui_tier_*` and all goldens unchanged.
+**Ported 2026-11-13** (see §2): line edit options, validators, completer, editable combo box, spin box options, tab
+bar closable / movable / disabled / scroll buttons / pages. How it was done, for the rest: the branch's behaviour
+lives in new files and is reached through a per-node option record (`detail::lineEditHasState` and friends), so a
+widget nobody set options on keeps main's code path and pixels. The same pattern fits what remains.
+
+- **Still not live** (branch code: `git show 363ecf87d:Source/FUSE/UI/Widgets/src/<file>`):
+  - Tab bar: `TabPosition` (South / West / East, vertical bars), `ElideMode`, per-tab icons (`setTabIcon`) and
+    tooltips (`setTabToolTip`). `widgets_tabs.cpp` has the state struct to extend; vertical bars need `measure` and
+    `tabRect` along the other axis. (`widgets_tier_b.cpp` delta, `TabBarState`.)
+  - `dateEdit` / `timeEdit` / `DateTimeEditOptions` (display-format sections, locale names, min / max, calendar
+    popup): `widgets_tier_d2.cpp` delta (+540 / -106); test `U/tests/test_datetimeedit.cpp` (parked). Main's
+    `dateTimeEdit` has fixed fields and a different signature (`dateTimeEditValue`): add the branch's as
+    `dateTimeEditOptions` on main's widget, do not replace it.
+  - `CalendarOptions` (first day of week, ISO week numbers), `setCalendarRange`, `calendarShownPage`: `widgets_tier_cd.cpp`
+    delta; test `U/tests/test_calendar.cpp` (parked). Main's calendar takes the first day from the locale hooks.
+  - Tree view: scrolling (`treeFirstVisible`), `SelectionMode` on the string tree, `setTreeDragDrop` (internal move,
+    cross-view drops, auto-scroll, auto-expand): `widgets_tier_b.cpp` delta + `U/Widgets/src/item_selection.hpp`
+    (parked). Main's answer for trees is `treeModelView`; the string `treeView` got `treeLineAt` / `treeLineRect`
+    (from magical-bassi) for application-side drops.
+  - Table: `TableDragDrop` (multi-row drags, cross-view drops), `HeaderResizeMode`, header menu, `tableMoveColumn`:
+    `widgets_tier_b2.cpp` delta. Main has `setTableDragDrop(ui, table, flags)` (same name, other signature), frozen /
+    hidden / reorderable columns and resize-to-contents in `modelview.hpp`.
+  - `ListViewMode::Icon`, `setListItemIcon`; `splitterSizes` / `setSplitterSizes` / collapsible panes; tool bar
+    overflow button, `toolBarArea`, movable / floating tool bars: `widgets_tier_b.cpp` / `_b2.cpp` deltas.
+  - MIME-typed in-app drag and drop (`DragPayload`, `DropPhase`, `setDropTarget`, `setDragSource`):
+    `U/Widgets/src/widgets_dnd.cpp` (parked) is a second drag-and-drop model; main's is in `fuse_ui_core`
+    (`DragData`). Port the MIME payload idea into main's, do not build both.
+  - The rubber-band selection of the branch's item views. (The graphics view has rubber-band selection: §3.12.)
+- **Parked tests for these**: `U/tests/test_{datetimeedit,calendar,dnd,item_views,widget_gaps}.cpp`.
+- **Differences from the branch in what was ported**: options are opt-in per node (the branch changed every spin box
+  / line edit); `regexValidator` has no `std::regex` fallback (main builds without exceptions in mind: an
+  unsupported pattern accepts everything and says so through `regexPartialMatch`); accessibility is main's snapshot
+  (no `A11yState::autoComplete / controls / activeDescendant`, no `protectedText`: the node text of a password
+  field is the mask); a press on the completion list or the combo's drop button takes the focus off the field until
+  the release (main moves the focus on every press), which the field treats as "still editing".
+- **Verify**: the gates in §2; main's `fuse_ui_tier_*`, `fuse_ui_widget_*`, `fuse_ui_mv_*`, `fuse_ui_dock_*` and all
+  goldens unchanged.
 
 ### 3.8 Style engine: `@keyframes`, Web Animations, selectors, at-rules, positioning (L)
 
@@ -328,23 +343,22 @@ five files when done. The original description follows.
   (`os_std.cpp` reports "unknown").
 - **Verify**: `fuse_ui_cpu_hdr`, `fuse_ui_vk_hdr`, `fuse_ui_vk_encode`.
 
-### 3.12 Extras widgets: `widgets_extra`, dialog button box (M)
+### 3.12 Extras widgets: done
 
-- **What**: `toolBox`, `inputDialog`, `dialogButtonBox` (platform button orders, default / reject buttons),
-  `lcdNumber`, `keySequenceEdit`, `mdiArea`, `graphicsView` / `GraphicsScene`, `virtualKeyboard`, wizard validators;
-  and the branch's own `groupBox`, `statusBar`, `messageBox`, `wizard`.
-- **In the tree, unbuilt**: `U/Extras/include/fuse/ui/extras/{widgets_extra,extras}.hpp`,
-  `U/Extras/src/{widgets_extra.cpp,buttonbox.cpp}`; `U/tests/test_buttonbox.cpp`; in `test_extras.cpp` the gates
-  `containers dialogs lcd_keyseq mdi completer graphics widget_pdf vkeyboard` (behind `FUSE_UI_EXTRAS_ALL`).
-- **Overlap on main**: `widgets.hpp` already declares `groupBox`, `groupBoxBody`, `statusBar`, `statusBarPermanent`,
-  `statusMessage`, `messageBox`, `MessageIcon`, `wizard`, `wizardPage` in the same namespace with other signatures
-  (`widgets_tier_b3.cpp`). Including `widgets_extra.hpp` on main fails to compile on exactly these.
-- **Blocks**: remove the nine duplicated names from `widgets_extra.hpp / .cpp` and make the rest use main's; add
-  `setDialogDefaultButton` / `setDialogRejectButton` (branch `widgets.hpp` delta) to main's dialogs; resolve the
-  `keyName` overload clash. `extras.hpp` (umbrella) also pulls in `gesture.hpp` and `i18n.hpp` (3.16).
-- **Verify**: `fuse_ui_buttonbox`, `fuse_ui_extras_{containers,dialogs,lcd_keyseq,mdi,graphics,widget_pdf,vkeyboard}`
-  (build `test_extras.cpp` with `-DFUSE_UI_EXTRAS_ALL=1` once everything it includes is live, or move gates out of
-  the guard one by one).
+**Ported 2026-11-13** (see §2). `U/Extras/include/fuse/ui/extras/widgets_extra.hpp`, `U/Extras/src/{widgets_extra.cpp,
+buttonbox.cpp}` and `U/tests/test_buttonbox.cpp` were deleted; the gates `containers dialogs lcd_keyseq mdi completer
+graphics vkeyboard` were removed from `U/tests/test_extras.cpp` (their checks are in `U/tests/test_widgets_extra.cpp`
+and `test_completer.cpp`). `extras/extras.hpp` (umbrella, still parked for `gesture.hpp` / `i18n.hpp` / `richtext.hpp`)
+includes `widgets/widgets.hpp` instead.
+
+- Not taken, because main has its own: the branch's `groupBox`, `stackedWidget`, `statusBar`, `messageBox`,
+  `wizard`, `MessageIcon`, `keyName`, and `attachCompleter` / `completions` (superseded by `setCompleter`, §3.7).
+- Changed while porting: the key sequence edit works on main's `Shortcut` / `shortcutToString` (no second key-name
+  table); the graphics view's double click uses the core's click count instead of an OS clock; MDI sub-windows clamp
+  to their area, report activation and handle a cancelled touch; the on-screen keyboard keeps its own target (main
+  moves the focus on a press); Enter reaches a dialog's default button only when nothing inside consumed it.
+- Left in `U/tests/test_extras.cpp` behind `FUSE_UI_EXTRAS_ALL`: `widget_pdf` (needs `renderDrawList` to draw
+  main's path ops: 3.13).
 
 ### 3.13 Extras documents and media: rich text, SVG documents, system video, audio (M each)
 

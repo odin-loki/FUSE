@@ -432,8 +432,9 @@ if(TARGET fuse_ui_os)
 endif()
 
 # fuse_ui_extras: one ctest per gate of the modules main builds. The gates of the parked modules (gesture i18n
-# containers dialogs lcd_keyseq mdi completer graphics widget_pdf richtext vkeyboard svg charts media) are in
-# test_extras.cpp behind FUSE_UI_EXTRAS_ALL and are not registered.
+# widget_pdf richtext svg charts media) are in test_extras.cpp behind FUSE_UI_EXTRAS_ALL and are not registered.
+# (The widget gates of the branch - containers dialogs lcd_keyseq mdi completer graphics vkeyboard - are live in
+# fuse_ui_widgets: tests/port_widgets.cmake.)
 if(TARGET fuse_ui_extras)
     add_executable(fuse_ui_extras_tests test_extras.cpp)
     find_package(Threads REQUIRED) # the tray gate serves D-Bus from a std::thread
@@ -664,3 +665,5 @@ if(TARGET fuse_ui_game)
 endif()
 add_test(NAME fuse_ui_l10n_po COMMAND fuse_ui_l10n_po)
 set_tests_properties(fuse_ui_l10n_po PROPERTIES LABELS "fuse_ui;gate")
+# Widget port gates (dock splits, tree line geometry, timeline clip drag, Qt-parity widget options, extras widgets)
+include(${CMAKE_CURRENT_SOURCE_DIR}/port_widgets.cmake)

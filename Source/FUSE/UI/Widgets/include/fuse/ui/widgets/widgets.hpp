@@ -132,6 +132,10 @@ bool treeExpanded(const UiContext& ui, NodeHandle tree, u32 line);
 void setTreeExpanded(UiContext& ui, NodeHandle tree, u32 line, bool open);
 /// Number of rows currently shown (collapsed subtrees skipped).
 u32 treeVisibleRows(const UiContext& ui, NodeHandle tree);
+/// The line under `at` (context coordinates; -1 outside the rows) and a shown line's row rectangle (empty when it is
+/// inside a collapsed subtree): what drag-and-drop targets and drop marks need.
+i32 treeLineAt(UiContext& ui, NodeHandle tree, Vec2 at);
+Rect treeLineRect(UiContext& ui, NodeHandle tree, u32 line);
 
 /// Tab bar (titles '\n'-separated; value() = current tab) and a tab widget (tab bar + one page per title; only the
 /// current page is displayed).
@@ -159,6 +163,26 @@ NodeHandle dockWidget(UiContext& ui, NodeHandle area, std::string_view title, Do
 NodeHandle dockBody(const UiContext& ui, NodeHandle dock);
 void dockTo(UiContext& ui, NodeHandle dock, DockSide side);
 void dockClose(UiContext& ui, NodeHandle dock); ///< hides (dockTo re-shows); emits Toggled {flag = false}
+/// Re-shows a closed dock where it is: in its split pane, as a tab of its group (the current tab stays) or floating
+/// (dockTo also moves it to the top level of a side); emits Toggled {flag = true}.
+void dockOpen(UiContext& ui, NodeHandle dock);
+
+/// Dock splits (Qt QMainWindow::splitDockWidget): a side region (and the centre) holds a tree of nested splitters
+/// ("docksplit": rows and columns of panes separated by draggable handles) whose leaves are docks. Left / Right split
+/// `target`'s place into a row, Top / Bottom into a column; a split of the same direction gains a pane next to
+/// target's instead of nesting. A tabbed target is split as a whole group (strip and members stay together). Center
+/// makes `dock` a tab of target's group and raises it (dockTabify + dockRaise). `size` > 0: px of the new pane along
+/// the split axis (0: the panes share). Splits left with one pane collapse; panes and handles hide while their docks
+/// are all closed. `dock` leaves its tab group / floating state first. False when the docks are not in the same
+/// area, dock == target or target floats.
+enum class DockEdge : u8 { Left, Right, Top, Bottom, Center };
+bool dockSplit(UiContext& ui, NodeHandle dock, NodeHandle target, DockEdge edge, f32 size = 0.f);
+/// Takes a dock out of the area (collapsing the split it leaves, dissolving a tab group of two) and destroys it.
+void dockRemove(UiContext& ui, NodeHandle dock);
+/// The side region a dock sits in, however deep in splits (Center when it floats or is not in a dock area).
+DockSide dockSideOf(const UiContext& ui, NodeHandle dock);
+/// The innermost split holding a dock (invalid at the top level of its side).
+NodeHandle dockSplitOf(const UiContext& ui, NodeHandle dock);
 /// Tabbed docks (QMainWindow::tabifyDockWidget): `dock` joins `withDock` in its region as the last tab of its group.
 /// A group shows a tab strip in place of the members' title bars and only the current member's body; clicking a tab
 /// (or Left / Right on the focused strip) raises it, the strip's close box closes the current dock. A closed member
@@ -285,7 +309,11 @@ NodeHandle modelListView(UiContext& ui, NodeHandle parent, const ItemModel* mode
 /// and resizes the regions; docks the blob does not name keep their place, names with no dock are ignored. A malformed
 /// blob changes nothing and returns false. Tab groups ("tab <id> <group> <index> current|back") and floating docks
 /// ("float <id> <x> <y> <w> <h> open|closed") are extra lines written only when present, so a layout without them is
-/// byte-identical to what earlier versions wrote and those blobs restore unchanged.
+/// byte-identical to what earlier versions wrote and those blobs restore unchanged. A layout with dock splits is
+/// written as version 2 ("fusedock 2"): it adds one "tree <side> <node>..." line per side with the split structure
+/// (node: "d:<id>", or "h[" / "v[" then "p <px> <node>..." per pane, then "]"; px 0 = shared). Restoring rebuilds the
+/// splits and places the named docks in them; restoring any blob first flattens the splits the area has. Version 1
+/// blobs still restore.
 std::string dockSaveLayout(const UiContext& ui, NodeHandle area);
 bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view layout);
 
@@ -483,8 +511,11 @@ Vec2 curveKey(const UiContext& ui, NodeHandle curve, u32 index); ///< (t, v)
 f32 curveEvaluate(const UiContext& ui, NodeHandle curve, f32 t);
 
 /// Timeline: named tracks with clips [start, end), a time ruler and a playhead. Dragging the ruler scrubs
-/// (ValueChanged {value = time}); dragging a clip moves it (snapped to `snap` seconds when > 0); wheel zooms.
-/// value() = playhead time in seconds.
+/// (ValueChanged {value = time}); dragging a clip moves it (snapped to `snap` seconds when > 0, free with Shift),
+/// selects it and emits Event {value = 5} on press, {value = 6} per move and {value = 7} on release (timelineClipDrag
+/// tells which clip and where the pointer is). Ctrl+Down / Up select the next / previous clip, Ctrl+Left / Right move
+/// the selected clip by the snap step (a frame without one; Ctrl+Shift: a second) and emit Event {value = 2}
+/// (timelineClipDrag names the clip, inactive); Escape clears the selection; wheel zooms. value() = playhead time.
 NodeHandle timeline(UiContext& ui, NodeHandle parent, f32 duration, std::string_view id = {});
 u32 timelineAddTrack(UiContext& ui, NodeHandle tl, std::string_view name);
 u32 timelineAddClip(UiContext& ui, NodeHandle tl, u32 track, f32 start, f32 end, std::string_view label, Color color);
@@ -494,6 +525,18 @@ void timelineSetSnap(UiContext& ui, NodeHandle tl, f32 seconds);
 void timelineSetView(UiContext& ui, NodeHandle tl, f32 startSec, f32 spanSec);
 Vec2 timelineView(const UiContext& ui, NodeHandle tl); ///< (start, span) seconds
 Vec2 timelineClip(const UiContext& ui, NodeHandle tl, u32 track, u32 clip); ///< (start, end)
+/// The current / last clip drag: track, clip, pointer time (seconds, unsnapped) at press and now, the clip start at
+/// press, and whether the drag is still in progress.
+struct TimelineClipDrag {
+    u32 track = 0, clip = 0;
+    f32 downSec = 0.f, pointerSec = 0.f, fromStart = 0.f;
+    bool active = false;
+};
+TimelineClipDrag timelineClipDrag(const UiContext& ui, NodeHandle tl);
+/// Selects a clip (the one Ctrl+Left / Right move; -1 clears), as a press on it does. Out-of-range indices clear.
+void timelineSelectClip(UiContext& ui, NodeHandle tl, i32 track, i32 clip);
+/// The selected clip; false (outputs untouched) when none is selected.
+bool timelineSelectedClip(const UiContext& ui, NodeHandle tl, u32& track, u32& clip);
 /// Clips under time `t` on every track (sequencer queries).
 u32 timelineActiveClips(const UiContext& ui, NodeHandle tl, f32 t);
 
@@ -731,3 +774,5 @@ void registerSvgWidgets(UiContext& ui);
 // Drag and drop for the item views, action menus (QAction) and the row geometry helpers they use.
 #include "fuse/ui/widgets/interaction.hpp"
 #include "fuse/ui/widgets/modelview.hpp" // model / view: notifications, selection, editing, tree view, async
+#include "fuse/ui/widgets/edit_options.hpp" // Qt-parity options: line edit, completer, editable combo, spin box, tabs
+#include "fuse/ui/widgets/extra.hpp" // tool box, input dialog, dialog button box, LCD, key sequence, MDI, graphics view, keyboard

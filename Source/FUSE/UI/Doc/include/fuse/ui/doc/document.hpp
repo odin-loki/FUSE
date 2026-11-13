@@ -147,8 +147,25 @@ private:
 ///   "links": [[fromNode, outPin, toNode, inPin]];  curveeditor "range": [t0, t1, v0, v1], "keys": [[t, v]...];
 ///   timeline "duration", "tracks": [{ "name", "clips": [{ "start", "end", "text", "color" }] }];
 ///   viewport "image", "imageWidth", "imageHeight";  video "source": "testpattern";  kineticscroll "profile"
+///   lineedit                    "placeholder", "echo": normal|password|noecho|passwordEchoOnEdit, "maxLength", "readOnly",
+///                               "inputMask" (QLineEdit mask syntax)
+///   spinbox / doublespinbox     "prefix", "suffix", "specialValueText", "wrapping", "decimals"
+///   tabwidget / tabbar          also "closable", "movable", "scrollButtons" (tab bar options)
+///   editcombo                   "items": [text...], "insertPolicy": none|top|bottom|alphabetical, "placeholder";
+///                               "value" = current index
+///   lcdnumber                   "digits", "value" or "text", "base": 2|8|10|16
+///   keysequenceedit             "text": a shortcut ("Ctrl+Shift+S")
+///   toolbox                     "pages": [title...]; child k is the content of page k; "value" = the open page
+///   mdiarea / mdiwindow         mdiwindow children ("text" title, "rect": [x, y, w, h]) are sub-windows of the area;
+///                               their children go to the body
+///   graphicsview                "items": [{ "shape": rect|ellipse|line|text|polygon, "rect": [x, y, w, h], "points":
+///                               [[x, y]...], "fill", "stroke", "strokeWidth", "z", "text", "movable", "selectable" }],
+///                               "zoom" (the document owns the scene)
+///   vkeyboard                   the on-screen keyboard
+///   dialogbuttonbox             "buttons": ["ok", "cancel", "apply", "help", ...], "layout": platform|windows|mac|kde|gnome
 /// Any node: "tooltip": text, "contextMenu": [entry...] (Submitted on the node).
-/// Not document nodes (they open at once, from code): messageBox, wizard, popover, toast, popupMenu, fileDialog.
+/// Not document nodes (they open at once, from code): messageBox, inputDialog, wizard, popover, toast, popupMenu,
+/// fileDialog.
 /// Apps and other modules add their own with registerDocumentClass (e.g. the game HUD widgets, whose library the
 /// document module does not link).
 struct DocumentClass {

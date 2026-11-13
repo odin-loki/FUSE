@@ -5,7 +5,6 @@
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <memory>
-#include <regex>
 #include <string>
 #include <vector>
 
@@ -260,7 +259,6 @@ struct Compiled {
     Nfa nfa;
     int start = -1, match = -1;
     bool ok = false;
-    std::shared_ptr<const std::regex> fallback;
 };
 std::shared_ptr<Compiled> compile(std::string_view pattern) {
     auto c = std::make_shared<Compiled>();
@@ -275,13 +273,6 @@ std::shared_ptr<Compiled> compile(std::string_view pattern) {
         c->start = f.start;
         c->ok = !c->nfa.tooBig;
     }
-    if (!c->ok) {
-        try {
-            c->fallback = std::make_shared<const std::regex>(std::string(pattern), std::regex::ECMAScript);
-        } catch (const std::regex_error&) {
-            c->fallback = nullptr;
-        }
-    }
     return c;
 }
 void closure(const Nfa& n, int s, std::vector<int>& set, std::vector<unsigned>& mark, unsigned gen) {
@@ -292,10 +283,7 @@ void closure(const Nfa& n, int s, std::vector<int>& set, std::vector<unsigned>& 
     set.push_back(s);
 }
 Validation run(const Compiled& c, std::string_view text) {
-    if (!c.ok) {
-        if (!c.fallback) return Validation::Invalid;
-        return std::regex_match(text.begin(), text.end(), *c.fallback) ? Validation::Acceptable : Validation::Intermediate;
-    }
+    if (!c.ok) return Validation::Acceptable; // unsupported syntax: no constraint (regexPartialMatch reports it)
     const Nfa& n = c.nfa;
     std::vector<unsigned> mark(n.st.size(), 0);
     unsigned gen = 1;

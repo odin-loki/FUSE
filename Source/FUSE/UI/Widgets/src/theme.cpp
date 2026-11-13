@@ -234,6 +234,42 @@ slider:disabled, scrollbar:disabled, dial:disabled, spinbox:disabled, combobox:d
 .fx { transition: background 0.12s ease-out, border-color 0.12s ease-out, color 0.12s ease-out; }
 .fx-fade { enter-animation: fade; enter-duration: 0.12s; exit-animation: fade; exit-duration: 0.1s; }
 .fx-slide { enter-animation: slide-down; enter-duration: 0.14s; exit-animation: slide-up; exit-duration: 0.1s; }
+completer { background: var(--surface); border: 1px var(--border); border-radius: 6px; padding: 3px; gap: 0px; background-end: var(--accent); }
+completeritem { padding: 3px 8px; border-radius: 4px; color: var(--text); background-end: var(--accent); }
+editcombo {
+  background: var(--surface-hi); color: var(--text); border: 1px var(--border); border-radius: 5px; padding: 0px 6px 0px 0px;
+  gap: 4px; align-items: center;
+}
+editcombo lineedit { border-width: 0px; background: transparent; }
+combodrop { color: var(--text); cursor: pointer; }
+.dialog-buttonbox { flex-direction: row; gap: 8px; }
+.toolbox { gap: 2px; }
+.toolbox-header { border-radius: 3px; padding: 4px 10px; background: var(--surface); }
+.toolbox-header.open { background: var(--surface-hi); color: #ffffff; }
+.toolbox-page { padding: 6px 8px; gap: 6px; }
+lcdnumber { color: #7cfc9a; background: #0b1a10; border: 1px var(--border); border-radius: 4px; padding: 6px; }
+keysequenceedit {
+  background: #15161a; color: var(--text); border: 1px var(--border); border-radius: 5px; padding: 5px 8px;
+}
+keysequenceedit:focus { border-color: var(--accent); }
+mdiarea { background: #121317; border: 1px var(--border); border-radius: 4px; }
+mdisubwindow {
+  background: var(--surface); border: 1px var(--border); border-radius: 6px; gap: 0px;
+  box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.45);
+}
+mdisubwindow.active { border-color: var(--accent); }
+mdititle { flex-direction: row; padding: 2px 4px 2px 8px; background: var(--surface-hi); align-items: center; color: var(--text); }
+mdititle.mdigrip { background: transparent; padding: 0px; width: 14px; height: 14px; align-self: end; cursor: nwse-resize; }
+.mdiclose { padding: 0px 6px; }
+.mdibody { padding: 6px; }
+graphicsview { background: #15181d; color: var(--text); border: 1px var(--border); border-radius: 4px; background-end: var(--accent); }
+graphicsview:focus { border-color: var(--accent); }
+vkeyboard { background: var(--surface); border: 1px var(--border); border-radius: 8px; padding: 6px; gap: 4px; }
+.vkrow { flex-direction: row; gap: 4px; justify-content: center; }
+.vkey { min-width: 22px; padding: 6px 6px; }
+.vkey.vkwide { min-width: 52px; }
+.vkey.vkspace { min-width: 160px; }
+.vkey:checked { background: var(--accent); border-color: var(--accent); color: #ffffff; }
 )css";
 
 // Keyboard focus rings for the focusable classes that had none (borders are painted over the box: no layout change).

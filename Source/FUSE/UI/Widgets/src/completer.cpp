@@ -1,6 +1,8 @@
 // QCompleter parity for line edits: popup / inline / unfiltered-popup completion over an ItemModel column or a
 // '\n' list, case and filter (starts-with / contains / ends-with) modes, keyboard navigation with focus kept in the
-// field, and listbox / combobox a11y (autoComplete, expanded, controls, activeDescendant, selected).
+// field; and the editable combo box built on it (QComboBox::setEditable). Ported from the gui-framework branch.
+// Accessibility: the popup is a List of ListItem nodes (the highlighted one `selected`), the editable combo box a
+// ComboBox with the field text as value, `expanded` while its list shows and Expand / Collapse actions.
 #include "fuse/ui/widgets/widgets.hpp"
 #include "widgets_internal.hpp"
 
@@ -25,13 +27,14 @@ struct CState {
     bool shown = false;
     std::string scratch;
 };
-std::unordered_map<const UiContext*, std::vector<std::unique_ptr<CState>>>& stores() {
-    static std::unordered_map<const UiContext*, std::vector<std::unique_ptr<CState>>> m;
+// Keyed by UiContext::uid() (a destroyed context's records are dropped when the next completer is set).
+std::unordered_map<u64, std::vector<std::unique_ptr<CState>>>& stores() {
+    static std::unordered_map<u64, std::vector<std::unique_ptr<CState>>> m;
     return m;
 }
 CState* stateOf(const UiContext& ui, NodeHandle n) {
     auto& m = stores();
-    const auto it = m.find(&ui);
+    const auto it = m.find(ui.uid());
     if (it == m.end() || n.index >= it->second.size()) return nullptr;
     auto& s = it->second[n.index];
     return s && s->gen == n.generation && ui.alive(n) ? s.get() : nullptr;
@@ -160,22 +163,10 @@ NodeHandle editOf(const UiContext& ui, NodeHandle popup) {
     return NodeHandle{u32(v & 0xFFFFFFFFu), u32(v >> 32)};
 }
 
-void syncA11y(UiContext& ui, NodeHandle edit, CState& s) {
-    A11yState a = ui.a11yState(edit);
-    a.autoComplete = s.o.mode == CompletionMode::Inline ? A11yAutoComplete::Inline : A11yAutoComplete::List;
-    a.expanded = s.o.mode == CompletionMode::Inline ? -1 : s.shown ? 1 : 0;
-    a.controls = s.shown ? s.popup : NodeHandle{};
-    a.activeDescendant = {};
-    if (s.shown && s.cur >= 0)
-        for (NodeHandle it = ui.firstChild(s.popup); ui.alive(it); it = ui.nextSibling(it))
-            if (i32(ui.value(it)) == s.cur) a.activeDescendant = it;
-    ui.setA11yState(edit, a);
-    if (const NodeHandle p = ui.parent(edit); ui.alive(p) && ui.classOf(p) == ui.registry().find("editcombo")) {
-        A11yState c = ui.a11yState(p);
-        c.expanded = s.shown ? 1 : 0;
-        c.controls = a.controls;
-        ui.setA11yState(p, c);
-    }
+/// The a11y tree follows the nodes (popup display, row checked state): a change is a repaint of field and combo.
+void syncA11y(UiContext& ui, NodeHandle edit, CState&) {
+    ui.invalidate(edit);
+    if (const NodeHandle p = ui.parent(edit); ui.alive(p) && ui.classOf(p) == ui.registry().find("editcombo")) ui.invalidate(p);
 }
 
 /// fill the popup rows from s.first (creates / destroys row nodes to the shown count)
@@ -204,9 +195,6 @@ void layoutRows(UiContext& ui, NodeHandle edit, CState& s, bool follow = true) {
         ui.setValue(it, f32(i), false);
         const bool sel = i32(i) == s.cur;
         ui.setChecked(it, sel);
-        A11yState a;
-        a.selected = sel;
-        ui.setA11yState(it, a);
     }
     ui.invalidate(s.popup);
     syncA11y(ui, edit, s);
@@ -227,7 +215,6 @@ void show(UiContext& ui, NodeHandle edit, CState& s) {
         if (!h) return;
         s.popup = *h;
         ui.setUserData(s.popup, (u64(edit.generation) << 32) | u64(edit.index));
-        ui.addClass(s.popup, "card");
         ui.addClass(s.popup, "clamp"); // kept on screen; its own OS window with OS popups
         ui.setA11y(s.popup, A11yRole::List, "Completions");
     } else if (ui.parent(s.popup) != layer) {
@@ -275,9 +262,15 @@ bool CompleterList::onEvent(EventContext& ec, const Event& e) {
     return true;
 }
 bool CompleterItem::onEvent(EventContext& ec, const Event& e) {
-    if (e.type != EventType::Click || ec.phase != Phase::Target) return false;
+    if (ec.phase != Phase::Target || (e.type != EventType::Click && e.type != EventType::PointerUp)) return false;
     const NodeHandle popup = ec.ui.parent(ec.node);
     const NodeHandle edit = editOf(ec.ui, popup);
+    // The press took the keyboard focus off the field (the rows are not focusable); completerFocusOut kept the list
+    // open for it. The release hands the focus back, the click chooses.
+    if (e.type == EventType::PointerUp) {
+        if (ec.ui.alive(edit) && ec.ui.focused() != edit) ec.ui.setFocus(edit, FocusReason::Programmatic);
+        return false;
+    }
     if (CState* s = stateOf(ec.ui, edit)) activate(ec.ui, edit, *s, i32(ec.ui.value(ec.node)));
     return true;
 }
@@ -303,13 +296,16 @@ struct ComboState {
     std::vector<u32> icons; ///< per item (kNoIcon none), parallel to the items / model rows
     std::vector<u64> data;
 };
-std::unordered_map<const UiContext*, std::unordered_map<u32, ComboState>>& comboStores() {
-    static std::unordered_map<const UiContext*, std::unordered_map<u32, ComboState>> m;
+std::unordered_map<u64, std::unordered_map<u32, ComboState>>& comboStores() {
+    static std::unordered_map<u64, std::unordered_map<u32, ComboState>> m;
     return m;
 }
 ComboState& comboState(const UiContext& ui, NodeHandle combo) {
-    ComboState& c = comboStores()[&ui][combo.index];
-    if (c.gen != combo.generation) c = ComboState{combo.generation};
+    ComboState& c = comboStores()[ui.uid()][combo.index];
+    if (c.gen != combo.generation) {
+        c = ComboState{};
+        c.gen = combo.generation;
+    }
     return c;
 }
 InsertPolicy comboPolicy(const UiContext& ui, NodeHandle combo) { return comboState(ui, combo).o.policy; }
@@ -355,9 +351,17 @@ void comboSetItems(UiContext& ui, NodeHandle combo, std::string items) {
         const ComboState& c = comboState(*up, combo);
         return row < c.icons.size() ? c.icons[row] : kNoIcon;
     };
-    if (cs.model) setCompleter(ui, comboEdit(ui, combo), {.model = cs.model, .column = cs.column, .mode = CompletionMode::Inline, .icon = icon});
-    else setCompleter(ui, comboEdit(ui, combo), {.items = std::move(items), .mode = CompletionMode::Inline, .icon = icon});
-    if (itemCount(ui.text(combo)) == 0) setCompleter(ui, comboEdit(ui, combo), {});
+    CompleterOptions co;
+    co.mode = CompletionMode::Inline;
+    co.icon = icon;
+    if (cs.model) {
+        co.model = cs.model;
+        co.column = cs.column;
+    } else {
+        co.items = std::move(items);
+    }
+    const bool none = itemCount(ui.text(combo)) == 0; // (no items: no completer)
+    setCompleter(ui, comboEdit(ui, combo), none ? CompleterOptions{} : std::move(co));
 }
 std::string modelItems(const ItemModel* m, u32 col) {
     std::string out, scratch;
@@ -432,6 +436,9 @@ void comboToggleList(UiContext& ui, NodeHandle combo) {
 struct EditCombo { // text = items, value = current index (-1 none), userData = InsertPolicy
     static constexpr std::string_view kName = "editcombo";
     static constexpr A11yRole kRole = A11yRole::ComboBox;
+    // text() is the item list: neither painted nor measured as text (the core would do both)
+    static void paint(const PaintContext&, DrawList&) {}
+    static Size measure(UiContext& ui, NodeHandle n, Size) { return {180.f, rowH(ui, n) + 4.f}; } // field + drop button
     static ComputedStyle defaults() {
         ComputedStyle s;
         s.direction = Direction::Row;
@@ -474,21 +481,77 @@ struct ComboDrop {
         dl.line({ax, my + 2.f}, {ax + 4.f, my - 2.f}, col, 1.5f);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
-        if (e.type != EventType::Click || ec.phase != Phase::Target) return false;
+        if (ec.phase != Phase::Target || (e.type != EventType::Click && e.type != EventType::PointerUp)) return false;
         const NodeHandle combo = ec.ui.parent(ec.node);
-        ec.ui.setFocus(comboEdit(ec.ui, combo), FocusReason::Pointer);
+        if (e.type == EventType::PointerUp) { // the press parked the field's focus (completerFocusOut): back to it
+            if (ec.ui.focused() != comboEdit(ec.ui, combo)) ec.ui.setFocus(comboEdit(ec.ui, combo), FocusReason::Pointer);
+            return false;
+        }
         comboToggleList(ec.ui, combo);
         return true;
     }
 };
 
+// ---- accessibility ---------------------------------------------------------------------------------------------------
+void completerItemA11y(const UiContext& ui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    self.selectable = true;
+    self.selected = ui.checked(n);
+    self.actions |= detail::a11yBits({A11yAction::Click, A11yAction::Select});
+    const NodeHandle edit = editOf(ui, ui.parent(n));
+    if (const CState* s = stateOf(ui, edit)) {
+        self.posInSet = u32(ui.value(n)) + 1u;
+        self.setSize = u32(s->matches.size());
+    }
+}
+bool completerItemA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    if (child || (a != A11yAction::Click && a != A11yAction::Select)) return false;
+    const NodeHandle edit = editOf(ui, ui.parent(n));
+    CState* s = stateOf(ui, edit);
+    if (!s) return false;
+    activate(ui, edit, *s, i32(ui.value(n)));
+    return true;
+}
+void editComboA11y(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std::vector<A11ySnapshotNode>&) {
+    UiContext& ui = const_cast<UiContext&>(cui);
+    detail::a11yDropTextName(ui, n, self);
+    const NodeHandle edit = comboEdit(ui, n);
+    self.valueText.assign(lineEditText(ui, edit));
+    self.setSize = itemCount(ui.text(n));
+    self.posInSet = ui.value(n) >= 0.f ? u32(ui.value(n)) + 1u : 0u;
+    self.expandable = true;
+    self.expanded = completerPopupVisible(ui, edit);
+    if (!self.disabled && self.setSize)
+        self.actions |= detail::a11yBits({A11yAction::Expand, A11yAction::Collapse, A11yAction::Increment, A11yAction::Decrement});
+}
+bool editComboA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
+    if (child) return false;
+    const NodeHandle edit = comboEdit(ui, n);
+    const i32 count = i32(itemCount(ui.text(n))), cur = i32(ui.value(n));
+    switch (a) {
+    case A11yAction::Expand: // false when it already shows / is already closed
+        if (completerPopupVisible(ui, edit)) return false;
+        comboToggleList(ui, n);
+        return completerPopupVisible(ui, edit);
+    case A11yAction::Collapse:
+        if (!completerPopupVisible(ui, edit)) return false;
+        comboToggleList(ui, n);
+        return true;
+    case A11yAction::Increment: if (count) comboSetCurrent(ui, n, std::min(cur + 1, count - 1), true); return count > 0;
+    case A11yAction::Decrement: if (count) comboSetCurrent(ui, n, std::max(cur - 1, 0), true); return count > 0;
+    default: return false;
+    }
+}
+
 void registerCompleter(UiContext& ui) {
     auto& r = ui.registry();
-    if (r.find("completer") != 0xFFFFFFFFu) return;
-    r.registerWidget<CompleterList>();
-    r.registerWidget<CompleterItem>();
-    r.registerWidget<EditCombo>();
-    r.registerWidget<ComboDrop>();
+    // class by class: a context trimmed to a document's registration list may hold only some of them
+    bool added = detail::registerMissing<CompleterList>(r);
+    added = detail::registerMissing<CompleterItem>(r) || added;
+    added = detail::registerMissing<EditCombo>(r) || added;
+    added = detail::registerMissing<ComboDrop>(r) || added;
+    if (!added) return;
+    detail::a11yHook(r, "completeritem", A11yRole::ListItem, &completerItemA11y, &completerItemA11yAction);
+    detail::a11yHook(r, "editcombo", A11yRole::ComboBox, &editComboA11y, &editComboA11yAction);
 }
 
 } // namespace
@@ -569,21 +632,35 @@ void completerEdited(UiContext& ui, NodeHandle edit, bool deletion) {
     refilter(*s, text, s->o.mode == CompletionMode::UnfilteredPopup);
     show(ui, edit, *s);
 }
-void completerFocusOut(UiContext& ui, NodeHandle edit) {
-    if (CState* s = stateOf(ui, edit); s && s->shown) hide(ui, edit, *s);
+bool completerFocusOut(UiContext& ui, NodeHandle edit) {
+    CState* s = stateOf(ui, edit);
+    if (!s) return false;
+    // A press on the completion list or on the editable combo's drop button takes the focus off the
+    // field only until the release: the list stays as it is and the field does not finish editing.
+    const NodeHandle combo = ui.classOf(ui.parent(edit)) == ui.registry().find("editcombo") ? ui.parent(edit) : NodeHandle{};
+    const NodeHandle pr = ui.pressed();
+    if (combo.valid() && ui.alive(pr) && ui.parent(pr) == combo && ui.classOf(pr) == ui.registry().find("combodrop")) return true;
+    for (NodeHandle n = pr; s->shown && ui.alive(n); n = ui.parent(n))
+        if (n == s->popup) return true;
+    if (s->shown) hide(ui, edit, *s);
+    return false;
 }
 } // namespace detail
 
+void registerEditWidgets(UiContext& ui) { registerCompleter(ui); }
+
 void setCompleter(UiContext& ui, NodeHandle edit, CompleterOptions o) {
-    if (!ui.alive(edit)) return;
+    if (!ui.alive(edit) || ui.classOf(edit) != ui.registry().find("lineedit")) return;
     registerCompleter(ui);
-    auto& v = stores()[&ui];
+    std::erase_if(stores(), [](const auto& kv) { return !UiContext::exists(kv.first); });
+    std::erase_if(comboStores(), [](const auto& kv) { return !UiContext::exists(kv.first); });
+    detail::lineEditEnsureState(ui, edit); // the field's events go through the option path, which calls the hooks
+    auto& v = stores()[ui.uid()];
     if (v.size() <= edit.index) v.resize(edit.index + 1);
     auto& slot = v[edit.index];
     if (slot && slot->gen == edit.generation && ui.alive(slot->popup)) ui.destroy(slot->popup);
     if (!o.model && o.items.empty()) {
         slot.reset();
-        ui.setA11yState(edit, {});
         return;
     }
     slot = std::make_unique<CState>();

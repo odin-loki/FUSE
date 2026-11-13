@@ -2,6 +2,10 @@
 // list (Alt+Down / F4 / drop button), Enter selects or inserts per InsertPolicy, findText, signals, a11y.
 #include "test_util.hpp"
 
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
+
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <cstdio>
@@ -19,6 +23,15 @@ NodeHandle child(const UiContext& ui, NodeHandle n, u32 i) {
     return k;
 }
 std::string items(const UiContext& ui, NodeHandle c) { return std::string(ui.text(c)); }
+/// The node's own entry in the accessibility snapshot (main's a11y: UiContext::snapshotA11y).
+A11ySnapshotNode a11yOf(UiContext& ui, NodeHandle n) {
+    std::vector<A11ySnapshotNode> snap;
+    ui.update();
+    ui.snapshotA11y(snap);
+    for (const auto& s : snap)
+        if (s.node == n && s.child == 0) return s;
+    return {};
+}
 } // namespace
 
 int main() {
@@ -74,12 +87,12 @@ int main() {
     ui.keyDown(Key::Down, kModAlt);
     UI_CHECK(w::completerPopupVisible(ui, edit) && w::completionCount(ui, edit) == 4);
     UI_CHECK(w::completerCurrentRow(ui, edit) == 1); // the current item is highlighted
-    UI_CHECK(ui.a11yState(combo).expanded == 1 && ui.a11yState(combo).controls == w::completerPopup(ui, edit));
+    UI_CHECK(a11yOf(ui, combo).expanded && ui.computed(w::completerPopup(ui, edit)).visible);
     ui.keyDown(Key::Down);
     UI_CHECK(w::completerCurrentRow(ui, edit) == 2 && w::lineEditText(ui, edit) == "Green"); // field unchanged until chosen
     ui.keyDown(Key::Enter);
     UI_CHECK(!w::completerPopupVisible(ui, edit) && w::comboCurrentIndex(ui, combo) == 2 && w::lineEditText(ui, edit) == "Blue");
-    UI_CHECK(ui.a11yState(combo).expanded == 0);
+    UI_CHECK(!a11yOf(ui, combo).expanded);
     ui.keyDown(Key::F4);
     UI_CHECK(w::completerPopupVisible(ui, edit));
     ui.keyDown(Key::F4);
@@ -144,9 +157,9 @@ int main() {
     ui.snapshotA11y(snap);
     bool box = false, field = false, button = false;
     for (u32 i = 0; i < snap.size(); ++i) {
-        if (snap[i].node == combo) box = snap[i].role == A11yRole::ComboBox && snap[i].state.expanded == 0;
-        if (snap[i].node == edit) field = snap[i].role == A11yRole::TextField && snap[snap[i].parent].node == combo &&
-                                          snap[i].state.autoComplete == A11yAutoComplete::Inline;
+        if (snap[i].node == combo) box = snap[i].role == A11yRole::ComboBox && snap[i].expandable && !snap[i].expanded &&
+                                         snap[i].valueText == w::lineEditText(ui, edit) && snap[i].hasAction(A11yAction::Expand);
+        if (snap[i].node == edit) field = snap[i].role == A11yRole::TextField && snap[snap[i].parent].node == combo;
         if (snap[i].node == drop) button = snap[i].role == A11yRole::Button && snap[i].name == "Open list";
     }
     UI_CHECK(box && field && button);
@@ -221,11 +234,11 @@ int main() {
         UI_CHECK(w::comboCurrentIndex(ui, c) == 2 && w::lineEditText(ui, w::comboLineEdit(ui, c)) == "Rome");
         // assistive-tech Expand / Collapse (AccessKit, TalkBack ACTION_EXPAND / COLLAPSE)
         ui.setFocus(other);
-        UI_CHECK(ui.a11yState(c).expanded == 0 && ui.a11yExpand(c, true));
-        UI_CHECK(w::completerPopupVisible(ui, w::comboLineEdit(ui, c)) && ui.a11yState(c).expanded == 1);
-        UI_CHECK(!ui.a11yExpand(c, true) && ui.a11yExpand(c, false));
-        UI_CHECK(!w::completerPopupVisible(ui, w::comboLineEdit(ui, c)) && ui.a11yState(c).expanded == 0);
-        UI_CHECK(!ui.a11yExpand(other, true)); // not expandable
+        UI_CHECK(!a11yOf(ui, c).expanded && ui.performA11yAction(c, A11yAction::Expand));
+        UI_CHECK(w::completerPopupVisible(ui, w::comboLineEdit(ui, c)) && a11yOf(ui, c).expanded);
+        UI_CHECK(!ui.performA11yAction(c, A11yAction::Expand) && ui.performA11yAction(c, A11yAction::Collapse));
+        UI_CHECK(!w::completerPopupVisible(ui, w::comboLineEdit(ui, c)) && !a11yOf(ui, c).expanded);
+        UI_CHECK(!ui.performA11yAction(c, A11yAction::Collapse));
     }
     // ---- round 4: item icons / user data, insert / remove ----
     {

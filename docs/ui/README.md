@@ -174,6 +174,116 @@ The last four pieces of the catalogue (gates `fuse_ui_widget_chart_flame`, `_doc
   the magazine (`setAmmoLowFraction`), `setAmmoReload(ui, node, progress01)` shows a reload bar. A count change emits
   `ValueChanged`.
 
+### Dock splits, tree line geometry, timeline clip drag
+
+Ported from `claude/magical-bassi-815825` onto main's dock model (the FUSE editor shell calls these); gates
+`fuse_ui_dock_split_{split,split_groups,tree_line,timeline_clip}`, golden `fuse_ui_port_golden_dock_split`.
+
+- **Dock splits** (`QMainWindow::splitDockWidget`): `dockSplit(ui, dock, target, DockEdge::Left|Right|Top|Bottom, px)`
+  puts `dock` in a new pane beside `target`. A side region (and the centre) then holds a tree of nested splitters
+  (class `docksplit`) whose leaves are docks; a split of the same direction gains a pane instead of nesting, a split
+  left with one pane collapses, panes and handles hide while their docks are closed. `DockEdge::Center` makes `dock`
+  a tab of `target`'s group (`dockTabify` + `dockRaise`). A tabbed target is split as a whole group. `dockOpen`
+  re-shows a closed dock where it is, `dockRemove` destroys one (collapsing what it leaves), `dockSideOf` /
+  `dockSplitOf` query the place. Splits work with what main already had: `dockTo`, `dockFloat`, `dockTabify` and a
+  title-bar drag take a dock out of its pane, and Escape during a drag puts it back in its pane with its size.
+  The drop zones of a drag are unchanged (Left / Right / Bottom / Center / Tab): a split is made from code, not by
+  dropping on a dock's edge.
+- `dockSaveLayout` writes `fusedock 2` when the layout has splits: one `tree <side> <node>...` line per side
+  (`d:<id>`, or `h[` / `v[` + `p <px> <node>...` per pane + `]`). Layouts without splits are still written as
+  `fusedock 1`, byte for byte as before. `dockRestoreLayout` reads both; it flattens the area's splits first.
+- **Tree line geometry**: `treeLineAt(ui, tree, pos)` (line under a point, -1 outside the rows) and
+  `treeLineRect(ui, tree, line)` (the row of a shown line; empty inside a collapsed subtree): drag-and-drop targets
+  and drop marks on a `treeView`.
+- **Timeline clips**: a press on a clip selects it (white outline) and a clip drag reports itself: `Event {value = 5}`
+  on press, `6` per move, `7` on release, with `timelineClipDrag(ui, tl)` giving track, clip, the pointer time at
+  press / now (unsnapped), the clip start at press and whether the drag is still on. Shift moves a clip without
+  snapping. `timelineSelectClip` / `timelineSelectedClip`; Ctrl+Down / Up select the next / previous clip, Ctrl+Left
+  / Right move the selected clip by the snap step (Ctrl+Shift: a second) and emit `Event {value = 2}`; Escape clears
+  the selection. (The core also offers unconsumed input events to `Event` slots with `value = 0`.)
+
+### Qt-parity options (`widgets/edit_options.hpp`)
+
+Ported from `gui-framework`. Options are per-node records set by a call; a widget no option was set on behaves and
+paints exactly as before (its gates and goldens did not change). Golden: `fuse_ui_port_golden_edit_options`.
+
+```cpp
+NodeHandle pw = widgets::lineEdit(ui, parent);
+widgets::setLineEditOptions(ui, pw, {.echo = widgets::EchoMode::Password, .maxLength = 32, .placeholder = "Password"});
+widgets::setLineEditOptions(ui, port, {.validator = widgets::intValidator(1, 65535), .fixup = widgets::intFixup(1, 65535)});
+widgets::setLineEditOptions(ui, ip, {.inputMask = "000.000.000.000;_"});
+std::string_view secret = widgets::lineEditText(ui, pw);        // ui.text(pw) is the mask, never the secret
+widgets::setCompleter(ui, edit, {.items = "Apple\nApricot\nBanana"});                 // popup; Inline / UnfilteredPopup
+NodeHandle combo = widgets::editableComboBox(ui, parent, "Red\nGreen\nBlue", 0, widgets::InsertPolicy::InsertAtBottom);
+widgets::setSpinBoxOptions(ui, spin, {.prefix = "$ ", .suffix = " ea", .specialValueText = "Free", .wrapping = true});
+widgets::setTabsClosable(ui, widgets::tabWidgetBar(ui, tabs), true);                    // Event "tabCloseRequested"
+widgets::setTabsMovable(ui, bar, true);                                                 // Event "tabMoved"
+```
+
+- **Line edit** (gate `fuse_ui_lineedit`): echo modes (`Normal`, `NoEcho`, `Password`, `PasswordEchoOnEdit`; no copy
+  / cut while masked; the node text, the accessibility value and inspectors only ever see the mask), `maxLength` in
+  code points, `placeholder`, `readOnly`, validators (`intValidator`, `doubleValidator`, `regexValidator`: Invalid
+  edits are rejected, Enter submits only Acceptable text, `fixup` may repair it), input masks (QLineEdit syntax),
+  `EditingFinished` on Enter / focus loss. `regexValidator` runs on a built-in partial matcher (literals, classes,
+  groups, alternation, quantifiers); a pattern with backreferences or lookaround is not supported and then accepts
+  everything (`regexPartialMatch(..., &supported)` tells). Assistive technology setting the value goes through the
+  options too.
+- **Completer** (`fuse_ui_completer`): `setCompleter(ui, edit, {items | model + column, mode, caseSensitive, filter,
+  maxVisibleItems, wrapAround, sorting, icon})`; popup under the field with the focus kept in the field, inline
+  completion, unfiltered popup; `Highlighted` / `Activated` signals; `complete`, `setCompletionPrefix`,
+  `completionCount` / `completionAt`, `completerPopup`.
+- **Editable combo box** (`fuse_ui_editcombo`, class `editcombo`): line edit + inline completer + drop button; insert
+  policies, `maxCount`, duplicates, validator, model column (`setComboModel`), per-item icons and user data,
+  `comboInsertItem` / `comboAddItem` / `comboRemoveItem`, `comboFindText` / `comboFindData`.
+- **Spin box** (`fuse_ui_spinbox`): with options a spin box takes typed entry (focus selects the value; selection,
+  clipboard, Escape reverts, Enter / focus out commits), prefix / suffix, `decimals`, `wrapping`,
+  `specialValueText`, adaptive decimal stepping, `keyboardTracking`, `correction`, accelerated auto-repeat of the
+  arrow buttons, `textFromValue` / `valueFromText`; `spinBoxText`, `spinBoxCleanText`, `spinBoxStepBy`,
+  `spinBoxStepEnabled`, `spinBoxSelection`. A spin box without options still steps once per press and takes no typing.
+- **Tab bar** (`fuse_ui_tab_options_{closable,movable,scroll,pages}`): closable tabs, movable tabs (live reorder; the
+  pages of a tab widget follow), `setTabEnabled`, scroll buttons when the tabs overflow (the current tab is kept in
+  view) or `setTabUsesScrollButtons(false)` to shrink the tabs instead, wheel / Home / End, `tabBarMoveTab`,
+  `tabBarTabRect`, `tabWidgetAddPage` / `tabWidgetRemovePage`. Not ported: tab position (South / West / East),
+  elide modes, per-tab icons and tooltips.
+
+Not ported from the branch's §3.7 (its code stays parked): `dateEdit` / `timeEdit` format sections and
+`DateTimeEditOptions`, `CalendarOptions` (week numbers, date range), tree-view drag and drop / scrolling /
+multi-selection, table multi-row and cross-view drags, header resize modes and the header menu, list icon mode,
+`splitterSizes`, tool bar overflow / movable / floating tool bars, and the MIME-typed drag payloads
+(`widgets_dnd.cpp`: main has its own drag and drop).
+
+### Extra widgets (`widgets/extra.hpp`)
+
+Ported from `gui-framework`'s Extras into `fuse_ui_widgets` (part of `install()` / `installClasses`, the default
+theme, the accessibility tree and `.fuseui` documents). Gates `fuse_ui_extra_{buttonbox,dialog_keys,input_dialog,
+toolbox,lcd,keysequence,mdi,graphics,vkeyboard,classes}`, golden `fuse_ui_port_golden_extra`. The options above and
+these widgets are document classes / properties too (`editcombo`, `lcdnumber`, `keysequenceedit`, `toolbox`, `mdiarea`
++ `mdiwindow`, `graphicsview`, `vkeyboard`, `dialogbuttonbox`; `placeholder` / `echo` / `inputMask` ... on `lineedit`,
+`prefix` / `suffix` ... on `spinbox`, `closable` / `movable` on `tabwidget`; reference in `doc/document.hpp`, gate
+`fuse_ui_port_doc`), they are on the "More" page of the `widget_gallery` sample, and steady frames over all of them
+allocate nothing (`fuse_ui_port_zero_alloc`).
+
+- `dialogButtonBox(ui, parent, StdButton::Ok | StdButton::Cancel, {.layout})`: standard and custom buttons with roles
+  in the Windows / macOS / KDE / GNOME order; `Clicked {role}` then `Submitted {1 | 0}` on the box.
+- Dialog keys: `setDialogDefaultButton` / `setDialogRejectButton` (a button box sets both). Escape presses the reject
+  button; an Enter nothing inside consumed presses the default button (a focused push button presses itself, a line
+  edit keeps Enter for `Submitted`). `messageBox` now answers Escape with its Cancel / No / Close / Abort button when
+  it has one. `setWizardValidator(ui, wizard, fn, user)` blocks Next / Finish per page.
+- `inputDialog(ui, title, prompt, initial)`: `Submitted {text, value = 1}` on OK / Enter, `{value = 0}` on Cancel /
+  Escape; `inputDialogEdit` is its field (set a validator on it).
+- `toolBox(ui, parent, "General\nAdvanced")` + `toolBoxPage` / `setToolBoxIndex` / `toolBoxAddPage`.
+- `lcdNumber(ui, parent, digits)`: seven-segment display of `value()` or `setLcdText`; `setLcdBase` 2 / 8 / 10 / 16.
+- `keySequenceEdit(ui, parent, Shortcut)`: records a key chord (`keySequence`, `setKeySequence`).
+- `mdiArea` + `mdiSubWindow(ui, area, title, rect)` / `mdiBody`: move by the title bar, resize by the corner grip,
+  press to activate, x to close; `mdiTile`, `mdiCascade`, `mdiActivate`, `mdiClose`. Panels inside the area, not OS
+  windows.
+- `GraphicsScene` (rect / ellipse / line / text / polygon items, z order, hit testing, selection, uniform-grid index)
+  and `graphicsView(ui, parent, &scene)`: wheel zoom about the pointer, drag to move the selection, rubber-band
+  selection on empty space (Ctrl adds), Alt / middle drag pans, arrows move, Delete removes; `fitInView`,
+  `viewToScene` / `sceneToView`, `viewRubberBand`. Non-circular ellipses and polygons are drawn as vector paths.
+- `virtualKeyboard(ui, parent)`: QWERTY, one-shot shift / caps lock, a symbols page; the keys type into the text
+  widget that had the focus (`virtualKeyboardAutoShow` per frame shows it only while a text widget is focused).
+
 ### Documents and Lua
 
 `.fuseui` files are JSON trees with `{expr}` and `{=two-way}` bindings (see `Doc/include/fuse/ui/doc/document.hpp` for

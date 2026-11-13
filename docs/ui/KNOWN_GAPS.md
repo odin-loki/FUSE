@@ -237,14 +237,34 @@ pushed after those CI runs and re-checked on Linux only.
   editor commits on Enter / Tab / click-away, not on picking from the popup.
 - The `chart` widget has line, bar, area, scatter and flame kinds; the richer charts are a separate library
   (`fuse::ui::charts` in `fuse_ui_extras`) with its own `chartView` widget, not reachable from `.fuseui` documents.
-- A chart flame graph exists; a dedicated profiler model does not. Message box, wizard, popover, toast and file
-  dialog cannot be created from a `.fuseui` document.
+- A chart flame graph exists; a dedicated profiler model does not. Message box, input dialog, wizard, popover, toast
+  and file dialog cannot be created from a `.fuseui` document.
+- Dock splits (`dockSplit`) are made from code: the dock drag still offers only the Left / Right / Bottom / Center /
+  Tab zones, there is no "drop on a dock's edge to split" zone. Cancelling a drag restores a dock that was alone in
+  a split pane; a tab group inside a pane is restored to its group and pane, not to a pane that collapsed meanwhile.
+- Qt-parity options ported from `gui-framework` (line edit, completer, editable combo, spin box, tab bar): a widget
+  gets the Qt behaviour only once an option is set on it (a plain spin box still takes no typed entry and does not
+  auto-repeat). `regexValidator` has no fallback for backreferences / lookaround: such a pattern accepts everything.
+  Not ported: tab position / elide / per-tab icons and tooltips, date / time edit sections, calendar options, tree
+  drag and drop and multi-selection, table multi-row and cross-view drags, header resize modes and menu, list icon
+  mode, splitter sizes, tool bar overflow / movable tool bars, MIME drag payloads (the branch code stays parked:
+  `docs/ui/archive/PORT_gui_framework.md` §3.7).
+- Extra widgets (`widgets/extra.hpp`): MDI sub-windows are panels inside their area (no maximise / minimise / OS
+  windows, no keyboard window switching); the graphics view has no item rotation / grouping / per-item transforms and
+  repaints the visible items every frame it is dirty (ellipses and polygons as vector paths, which the GPU packer
+  pre-rasterises); the on-screen keyboard has one English QWERTY layout, learns its target while it paints (or
+  from `virtualKeyboardAutoShow` / `setVirtualKeyboardTarget`) and a key press takes the focus off the field until
+  the click puts it back (the field sees a focus-out / focus-in pair); the key sequence edit records one chord, not
+  a sequence of up to four as QKeySequenceEdit does; the editable combo box's inline completion and the completer
+  have no accessibility `autocomplete` / `controls` relations (main's snapshot has no such fields).
+- In a dialog with a default button, Enter on a focused check box / radio / switch presses the default button
+  instead of toggling it (Space still toggles), as in Qt; dialogs without a default button are unchanged.
 - The Designer and the Lua bindings were not extended for the new style properties.
 - Side tables `TreeFold`, `DockDrag` and the game `richBindings` still key on the `UiContext` address (compared,
   never dereferenced): a new context at the same address can match a stale entry.
 - Accessibility: no native adapters; tree item ids above about 32 million fall back to visible-row keys; menu
   shortcuts are not in the snapshot.
-- The interaction golden exists for the MINIMAL text profile only. `widget_gallery` page gates check layout, not
+- The interaction golden and the `fuse_ui_port_golden_*` goldens exist for the MINIMAL text profile only. `widget_gallery` page gates check layout, not
   that each widget paints.
 
 ### Engine integration (plan items untouched)

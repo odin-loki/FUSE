@@ -971,6 +971,11 @@ NodeHandle messageBox(UiContext& ui, std::string_view title, std::string_view te
     for (u32 i = 0, c = count(names); i < c; ++i) {
         const NodeHandle b = button(ui, btns, nth(names, i));
         if (i == 0) ui.addClass(b, "primary");
+        // QMessageBox escape button: Escape answers with the first Cancel / No / Close / Abort button when there is one
+        // (its Submitted is emitted as for a click); without one Escape closes the box with no answer, as before
+        const std::string_view nm = nth(names, i);
+        if (!dialogRejectButton(ui, dlg).valid() && (nm == "Cancel" || nm == "No" || nm == "Close" || nm == "Abort"))
+            setDialogRejectButton(ui, dlg, b);
         ui.connect(b, SignalKind::Clicked, [dlg, i](UiContext& cx, NodeHandle btn, const SignalArgs&) {
             if (!cx.alive(dlg)) return;
             const std::string name(cx.text(btn)); // closing may free nothing, but keep the text stable for the slot
@@ -1009,6 +1014,7 @@ NodeHandle wizard(UiContext& ui, std::string_view title, std::string_view id) {
     ui.connect(next, SignalKind::Clicked, [wiz](UiContext& c, NodeHandle, const SignalArgs&) {
         if (!c.alive(wiz)) return;
         const u32 cur = u32(c.value(wiz)), n = wizardPageCount(c, wiz);
+        if (!detail::wizardCanLeave(c, wiz, cur) || !c.alive(wiz)) return; // setWizardValidator
         if (cur + 1 < n) { wizardSetPage(c, wiz, cur + 1); return; }
         closeDialog(c, wiz);
         c.emit(wiz, SignalKind::Submitted, {.value = f32(cur), .flag = true, .text = "finish"});

@@ -168,6 +168,46 @@ inline void a11yHook(WidgetRegistry& r, std::string_view cls, A11yRole role,
     c.a11y = a11y;
     c.a11yAction = action;
 }
+// widgets_lineedit.cpp: line edits with options (setLineEditOptions) or a completer paint and handle events there.
+/// True when `n` has a line edit record (one empty-table test while no line edit has options).
+bool lineEditHasState(const UiContext& ui, NodeHandle n);
+void lineEditEnsureState(UiContext& ui, NodeHandle n);
+void lineEditPaint(const PaintContext& pc, DrawList& dl);
+bool lineEditEvent(EventContext& ec, const Event& e);
+/// Sets a line edit's text from the completer (TextChanged, no refilter); selects [selFrom, end) unless npos.
+void lineEditComplete(UiContext& ui, NodeHandle edit, std::string_view text, std::size_t selFrom);
+// widgets_spinbox.cpp: spin boxes with options (setSpinBoxOptions) measure, paint and handle events there.
+bool spinBoxHasState(const UiContext& ui, NodeHandle n);
+Size spinBoxMeasure(UiContext& ui, NodeHandle n);
+void spinBoxPaint(const PaintContext& pc, DrawList& dl);
+bool spinBoxEvent(EventContext& ec, const Event& e);
+void a11ySpinBox(WidgetRegistry& r);
+// widgets_tabs.cpp: tab bars with options (closable / movable / disabled tabs, scroll buttons).
+bool tabBarHasState(const UiContext& ui, NodeHandle n);
+Size tabBarMeasure(UiContext& ui, NodeHandle n);
+void tabBarPaint(const PaintContext& pc, DrawList& dl);
+bool tabBarEvent(EventContext& ec, const Event& e);
+Rect tabBarTabBounds(UiContext& ui, NodeHandle n, u32 index);
+bool tabBarTabDisabled(const UiContext& ui, NodeHandle n, u32 index);
+// widgets_extra.cpp: a key in a modal dialog scope: Escape presses its reject button, an unconsumed Enter its default
+// button (setDialogRejectButton / setDialogDefaultButton, the dialog button box). False: not handled here.
+bool dialogKey(UiContext& ui, NodeHandle scope, const Event& e, Phase phase);
+void a11yLineEdit(WidgetRegistry& r); // widgets_lineedit.cpp: SetValue through the field's options
+bool wizardCanLeave(UiContext& ui, NodeHandle wizard, u32 page); // widgets_extra.cpp: setWizardValidator
+// completer.cpp: completer hooks from the line edit: a KeyDown while focused (true = consumed), a user edit, focus loss.
+bool completerKey(UiContext& ui, NodeHandle edit, const Event& e);
+void completerEdited(UiContext& ui, NodeHandle edit, bool deletion);
+/// True when the focus only left for a press on the field's own completion list / combo button (it comes back).
+bool completerFocusOut(UiContext& ui, NodeHandle edit);
+
+/// Registers class W unless the registry has it; true when it was added. (A context trimmed to a document's
+/// registration list - installClasses - may hold only some of a source file's classes.)
+template <class W>
+bool registerMissing(WidgetRegistry& r) {
+    if (r.find(W::kName) != 0xFFFFFFFFu) return false;
+    r.template registerWidget<W>();
+    return true;
+}
 /// Per source file: installs the accessibility roles / hooks of the classes it registers (defined at its end).
 void a11yTierA(WidgetRegistry& r);
 void a11yTierB(WidgetRegistry& r);

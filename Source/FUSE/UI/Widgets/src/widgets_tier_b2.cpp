@@ -317,24 +317,124 @@ NodeHandle nthChild(const UiContext& ui, NodeHandle n, u32 i) {
     while (i-- && ui.alive(c)) c = ui.nextSibling(c);
     return c;
 }
-bool anyShown(const UiContext& ui, NodeHandle region) {
-    for (NodeHandle c = ui.firstChild(region); ui.alive(c); c = ui.nextSibling(c)) {
-        if (ui.hasClass(c, "docktabs")) continue; // a tab strip follows its docks
-        // dock widgets: the closed class is authoritative (computed visibility is stale right after dockTo re-shows one)
-        if (ui.hasClass(c, "dock") ? !ui.hasClass(c, "dock-closed") : ui.computed(c).visible) return true;
-    }
-    return false;
-}
 void showNode(UiContext& ui, NodeHandle n, bool on) { ui.setCss(n, "display", on ? "flex" : "none"); }
-/// Shows a side region (and its handle) only while it holds an open dock widget.
+bool isDock(const UiContext& ui, NodeHandle n) { return ui.hasClass(n, "dock"); }
+bool isSplit(const UiContext& ui, NodeHandle n) { return ui.hasClass(n, "docksplit"); }
+bool isSplitPane(const UiContext& ui, NodeHandle n) { return ui.hasClass(n, "pane") && isSplit(ui, ui.parent(n)); }
+/// True when `n` shows something: a dock that is not closed (the closed class is authoritative; computed visibility
+/// is stale right after dockTo re-shows one), a split with such a dock, any other node by its computed visibility
+/// (a tab strip follows its docks and never counts). Splits are updated on the way: panes without an open dock hide,
+/// and so do the handles that are not between two shown panes.
+bool refreshTree(UiContext& ui, NodeHandle n) {
+    if (ui.hasClass(n, "docktabs")) return false;
+    if (isDock(ui, n)) return !ui.hasClass(n, "dock-closed");
+    if (!isSplit(ui, n)) return ui.computed(n).visible;
+    bool any = false, lastShown = false, flexShown = false;
+    NodeHandle pending, lastPane; // pending: a handle after a shown pane, shown once another shown pane follows
+    for (NodeHandle c = ui.firstChild(n); ui.alive(c); c = ui.nextSibling(c)) {
+        if (ui.hasClass(c, "pane")) {
+            bool on = false;
+            for (NodeHandle d = ui.firstChild(c); ui.alive(d); d = ui.nextSibling(d)) on = refreshTree(ui, d) || on;
+            showNode(ui, c, on);
+            if (on && pending.valid()) { showNode(ui, pending, true); pending = {}; }
+            if (on) { lastPane = c; flexShown = flexShown || !ui.hasClass(c, "fixed"); }
+            if (ui.hasClass(c, "dock-fill")) { ui.removeClass(c, "dock-fill"); ui.setCss(c, "flex-grow", "0"); }
+            any = any || on;
+            lastShown = on;
+        } else {
+            showNode(ui, c, false);
+            if (lastShown) pending = c;
+        }
+    }
+    // only fixed-size panes left shown (the shared ones' docks closed): the last one takes the free space
+    if (any && !flexShown) { ui.addClass(lastPane, "dock-fill"); ui.setCss(lastPane, "flex-grow", "1"); }
+    showNode(ui, n, any);
+    return any;
+}
+/// Shows a side region (and its handle) only while it holds an open dock widget; updates the splits of every region.
 void refreshDock(UiContext& ui, NodeHandle area) {
     const NodeHandle row = nthChild(ui, area, 0);
-    for (DockSide s : {DockSide::Left, DockSide::Right, DockSide::Bottom}) {
+    for (DockSide s : {DockSide::Left, DockSide::Right, DockSide::Bottom, DockSide::Center}) {
         const NodeHandle reg = dockRegion(ui, area, s);
-        const bool on = anyShown(ui, reg);
+        bool on = false;
+        for (NodeHandle c = ui.firstChild(reg); ui.alive(c); c = ui.nextSibling(c)) on = refreshTree(ui, c) || on;
+        if (s == DockSide::Center) continue; // the centre always shows
         showNode(ui, reg, on);
         showNode(ui, s == DockSide::Left ? nthChild(ui, row, 1) : s == DockSide::Right ? nthChild(ui, row, 3) : nthChild(ui, area, 1), on);
     }
+}
+// ---- dock splits: a region holds docks and "docksplit" splitters whose panes hold docks / further splits -------------
+/// A split left with one pane is replaced by that pane's content; an empty one goes, and so does the pane it was in.
+void collapseSplit(UiContext& ui, NodeHandle split);
+bool dockItem(const UiContext& ui, NodeHandle n) { return isDock(ui, n) || isSplit(ui, n); }
+/// Removes `pane` of a split (with a handle next to it) once it holds no dock and no split. What else is in it (a
+/// dissolved tab strip that still holds the pointer press) moves out first.
+void prunePane(UiContext& ui, NodeHandle pane) {
+    if (!ui.alive(pane) || !isSplitPane(ui, pane)) return;
+    for (NodeHandle c = ui.firstChild(pane); ui.alive(c); c = ui.nextSibling(c))
+        if (dockItem(ui, c)) return;
+    const NodeHandle split = ui.parent(pane);
+    for (NodeHandle c = ui.firstChild(pane); ui.alive(c); c = ui.firstChild(pane)) ui.moveTo(c, ui.parent(split), split);
+    NodeHandle h = prevSibling(ui, pane);
+    if (!ui.alive(h)) h = ui.nextSibling(pane);
+    ui.destroy(pane);
+    if (ui.alive(h)) ui.destroy(h);
+    collapseSplit(ui, split);
+}
+void collapseSplit(UiContext& ui, NodeHandle split) {
+    u32 panes = 0;
+    NodeHandle only;
+    for (NodeHandle c = ui.firstChild(split); ui.alive(c); c = ui.nextSibling(c))
+        if (ui.hasClass(c, "pane")) { ++panes; only = c; }
+    if (panes > 1) return;
+    const NodeHandle parent = ui.parent(split);
+    if (panes == 1)
+        for (NodeHandle c = ui.firstChild(only); ui.alive(c); c = ui.firstChild(only)) ui.moveTo(c, parent, split);
+    ui.destroy(split);
+    if (panes == 0) prunePane(ui, parent);
+}
+/// Moves a dock under `parent` (before `before`) and tidies the split it leaves.
+void moveDock(UiContext& ui, NodeHandle dock, NodeHandle parent, NodeHandle before = {}) {
+    const NodeHandle old = ui.parent(dock);
+    ui.moveTo(dock, parent, before);
+    if (old != parent) prunePane(ui, old);
+}
+NodeHandle newSplit(UiContext& ui, NodeHandle parent, NodeHandle before, bool stacked) {
+    const NodeHandle s = splitter(ui, parent, stacked);
+    ui.addClass(s, "docksplit");
+    ui.setCss(s, "flex-grow", "1");
+    if (ui.alive(before)) ui.moveTo(s, parent, before);
+    return s;
+}
+/// A new pane of `split` right before / after its pane `ref` (the handle goes between them).
+NodeHandle insertPane(UiContext& ui, NodeHandle split, NodeHandle ref, bool after, f32 size) {
+    const NodeHandle p = addPane(ui, split, size, {});
+    const NodeHandle h = prevSibling(ui, p);
+    if (after) {
+        const NodeHandle next = ui.nextSibling(ref);
+        if (next != h) {
+            ui.moveTo(h, split, next);
+            ui.moveTo(p, split, next);
+        }
+    } else {
+        ui.moveTo(p, split, ref);
+        ui.moveTo(h, split, ref);
+    }
+    return p;
+}
+/// Docks under `n` in reading (depth-first) order.
+void collectDocks(const UiContext& ui, NodeHandle n, std::vector<NodeHandle>& out) {
+    for (NodeHandle c = ui.firstChild(n); ui.alive(c); c = ui.nextSibling(c)) {
+        if (isDock(ui, c)) out.push_back(c);
+        else if (isSplit(ui, c) || isSplitPane(ui, c)) collectDocks(ui, c, out);
+    }
+}
+/// The side region whose subtree holds `n` (Center when none does).
+DockSide sideOf(const UiContext& ui, NodeHandle area, NodeHandle n) {
+    for (; ui.alive(n) && n != area; n = ui.parent(n))
+        for (DockSide s : {DockSide::Left, DockSide::Right, DockSide::Bottom, DockSide::Center})
+            if (n == dockRegion(ui, area, s)) return s;
+    return DockSide::Center;
 }
 NodeHandle areaOf(const UiContext& ui, NodeHandle dock) {
     if (const DockState* s = dockState(ui, dock); s && ui.alive(s->area)) return s->area;
@@ -419,6 +519,7 @@ void raiseFloat(UiContext& ui, NodeHandle dock) {
 // ---- dock drag and drop ----------------------------------------------------------------------------------------------
 // One drag at a time per process (one pointer): the session names its context and is ignored by any other.
 void joinTabs(UiContext& ui, NodeHandle dock, NodeHandle withDock, bool reopen);
+bool splitBeside(UiContext& ui, NodeHandle dock, NodeHandle item, DockEdge edge, f32 size);
 constexpr f32 kDropBox = 36.f;    ///< drop-zone indicator size
 constexpr f32 kDropMargin = 10.f; ///< indicator distance from the area edge
 struct DockDrag {
@@ -433,6 +534,9 @@ struct DockDrag {
     DockSide oSide = DockSide::Left;
     NodeHandle oBefore, oPeer, oGroupCurrent;
     u32 oTabIndex = 0;
+    NodeHandle oSplitRef; ///< the dock / split in the pane next to the dock's own (it was alone in a split pane)
+    DockEdge oSplitEdge = DockEdge::Right;
+    f32 oSplitSize = 0.f;
     // the zone under the pointer
     DockDropZone zone = DockDropZone::None;
     NodeHandle zoneDock, over;
@@ -461,13 +565,21 @@ Rect dockSlot(const UiContext& ui, NodeHandle dock) {
     }
     return r;
 }
+/// The showing dock under `p` among the docks of `n` and of the splits in it (reading order; never `skip`).
+NodeHandle dockedUnder(const UiContext& ui, NodeHandle n, Vec2 p, NodeHandle skip) {
+    for (NodeHandle c = ui.firstChild(n); ui.alive(c); c = ui.nextSibling(c)) {
+        if (isDock(ui, c)) {
+            if (c != skip && !ui.hasClass(c, "dock-closed") && ui.computed(c).visible && dockSlot(ui, c).contains(p)) return c;
+        } else if (isSplit(ui, c) || isSplitPane(ui, c)) {
+            if (const NodeHandle d = dockedUnder(ui, c, p, skip); d.valid()) return d;
+        }
+    }
+    return {};
+}
 /// The docked, showing dock of `area` under `p` (never `skip`).
 NodeHandle dockedAt(const UiContext& ui, NodeHandle area, Vec2 p, NodeHandle skip) {
     for (DockSide sd : {DockSide::Left, DockSide::Right, DockSide::Bottom, DockSide::Center})
-        for (NodeHandle c = ui.firstChild(dockRegion(ui, area, sd)); ui.alive(c); c = ui.nextSibling(c)) {
-            if (c == skip || !ui.hasClass(c, "dock") || ui.hasClass(c, "dock-closed") || !ui.computed(c).visible) continue;
-            if (dockSlot(ui, c).contains(p)) return c;
-        }
+        if (const NodeHandle d = dockedUnder(ui, dockRegion(ui, area, sd), p, skip); d.valid()) return d;
     return {};
 }
 Rect dropIndicator(const UiContext& ui, NodeHandle area, DockDropZone zone, NodeHandle tabWith) {
@@ -623,9 +735,21 @@ void dragBegin(UiContext& ui, DockDrag& d, DockState& s, Vec2 at) {
     d.oRect = s.floatRect;
     if (!s.floating) {
         const NodeHandle region = ui.parent(dock);
-        for (DockSide sd : {DockSide::Left, DockSide::Right, DockSide::Bottom, DockSide::Center})
-            if (dockRegion(ui, s.area, sd) == region) d.oSide = sd;
+        d.oSide = sideOf(ui, s.area, dock);
         d.oBefore = ui.nextSibling(dock);
+        if (isSplitPane(ui, region) && !tabsState(ui, s.tabs)) { // alone in a split pane: remember the neighbour pane
+            const bool stacked = ui.hasClass(ui.parent(region), "stacked");
+            NodeHandle pane = prevSibling(ui, prevSibling(ui, region));
+            d.oSplitEdge = stacked ? DockEdge::Bottom : DockEdge::Right;
+            if (!ui.alive(pane)) {
+                pane = ui.nextSibling(ui.nextSibling(region));
+                d.oSplitEdge = stacked ? DockEdge::Top : DockEdge::Left;
+            }
+            for (NodeHandle c = ui.firstChild(pane); ui.alive(c) && !d.oSplitRef.valid(); c = ui.nextSibling(c))
+                if (dockItem(ui, c)) d.oSplitRef = c;
+            const Length basis = ui.computed(region).basis;
+            d.oSplitSize = ui.hasClass(region, "fixed") && basis.unit == Unit::Px ? basis.value : 0.f;
+        }
         Rect r = ui.rect(dock);
         if (const DockTabsState* t = tabsState(ui, s.tabs)) {
             for (std::size_t i = 0; i < t->members.size(); ++i) {
@@ -688,8 +812,12 @@ bool dragCancel(UiContext& ui) {
     DockState* s = dockState(ui, dock);
     if (s && d->oFloating) {
         dockFloat(ui, dock, d->oRect);
+    } else if (s && ui.alive(d->oSplitRef) && splitBeside(ui, dock, d->oSplitRef, d->oSplitEdge, d->oSplitSize)) {
+        // back in its own pane of the split
     } else if (s) {
         dockTo(ui, dock, d->oSide);
+        if (ui.alive(d->oPeer) && isSplitPane(ui, ui.parent(d->oPeer)) && sideOf(ui, s->area, d->oPeer) == d->oSide)
+            moveDock(ui, dock, ui.parent(d->oPeer)); // its tab group sits in a split pane
         const NodeHandle region = ui.parent(dock);
         if (const DockState* ps = dockState(ui, d->oPeer); ps && !ps->floating && ui.parent(d->oPeer) == region) {
             joinTabs(ui, dock, d->oPeer, true);
@@ -821,12 +949,101 @@ void dockTo(UiContext& ui, NodeHandle dock, DockSide side) {
     const NodeHandle area = areaOf(ui, dock);
     if (!ui.alive(area)) return;
     detachDock(ui, dock);
-    ui.moveTo(dock, dockRegion(ui, area, side));
+    moveDock(ui, dock, dockRegion(ui, area, side));
     const bool wasClosed = ui.hasClass(dock, "dock-closed");
     ui.removeClass(dock, "dock-closed");
     showNode(ui, dock, true);
     refreshDock(ui, area);
     if (wasClosed) ui.emit(dock, SignalKind::Toggled, {.flag = true});
+}
+void dockOpen(UiContext& ui, NodeHandle dock) {
+    const DockState* s = dockState(ui, dock);
+    if (!s) return;
+    const bool wasClosed = ui.hasClass(dock, "dock-closed");
+    ui.removeClass(dock, "dock-closed");
+    if (tabsState(ui, s->tabs)) applyTabs(ui, s->tabs); // its tab comes back; the current tab stays
+    else showNode(ui, dock, true);
+    refreshDock(ui, areaOf(ui, dock));
+    if (wasClosed) ui.emit(dock, SignalKind::Toggled, {.flag = true});
+}
+namespace {
+/// The nodes that move with a dock or split: itself, or the dock's whole tab group (strip and members, sibling order).
+std::vector<NodeHandle> unitOf(const UiContext& ui, NodeHandle item) {
+    std::vector<NodeHandle> u;
+    const DockState* s = dockState(ui, item);
+    const DockTabsState* t = s ? tabsState(ui, s->tabs) : nullptr;
+    if (!t) { u.push_back(item); return u; }
+    for (NodeHandle c = ui.firstChild(ui.parent(item)); ui.alive(c); c = ui.nextSibling(c))
+        if (c == s->tabs || std::find(t->members.begin(), t->members.end(), c) != t->members.end()) u.push_back(c);
+    return u;
+}
+/// Puts `dock` in a new pane on `edge` of `item` (a docked dock or a dock split of the same area).
+bool splitBeside(UiContext& ui, NodeHandle dock, NodeHandle item, DockEdge edge, f32 size) {
+    DockState* ds = dockState(ui, dock);
+    if (!ds || !ui.alive(item) || item == dock || edge == DockEdge::Center || !dockItem(ui, item)) return false;
+    const NodeHandle area = ds->area;
+    NodeHandle top = item;
+    while (ui.alive(top) && top != area) top = ui.parent(top);
+    if (!ui.alive(area) || top != area) return false; // floating or foreign target
+    detachDock(ui, dock);
+    // out of its old place first (next to the target): the split it leaves may collapse around the target
+    moveDock(ui, dock, ui.parent(item), ui.nextSibling(item));
+    ui.moveTo(dock, area); // parked while the split is built
+    const bool stacked = edge == DockEdge::Top || edge == DockEdge::Bottom;
+    const bool after = edge == DockEdge::Right || edge == DockEdge::Bottom;
+    const NodeHandle tp = ui.parent(item), outer = ui.parent(tp);
+    const std::vector<NodeHandle> unit = unitOf(ui, item);
+    bool alone = true;
+    for (NodeHandle c = ui.firstChild(tp); ui.alive(c); c = ui.nextSibling(c))
+        if (dockItem(ui, c) && std::find(unit.begin(), unit.end(), c) == unit.end()) alone = false;
+    NodeHandle pane;
+    if (isSplitPane(ui, tp) && alone && ui.hasClass(outer, "stacked") == stacked) {
+        pane = insertPane(ui, outer, tp, after, size); // same direction: one more pane beside the target's
+    } else {                                           // nest: a split in the target's place, the target in its first pane
+        const NodeHandle split = newSplit(ui, tp, unit.front(), stacked);
+        const NodeHandle tPane = addPane(ui, split, 0.f, {});
+        for (NodeHandle n : unit) ui.moveTo(n, tPane);
+        pane = insertPane(ui, split, tPane, after, size);
+    }
+    ui.moveTo(dock, pane);
+    dockOpen(ui, dock);
+    refreshDock(ui, area);
+    return true;
+}
+} // namespace
+bool dockSplit(UiContext& ui, NodeHandle dock, NodeHandle target, DockEdge edge, f32 size) {
+    const DockState* ds = dockState(ui, dock);
+    const DockState* ts = dockState(ui, target);
+    if (!ds || !ts || dock == target || ts->floating || !ui.alive(ts->area) || ds->area != ts->area) return false;
+    if (edge == DockEdge::Center) { // the same place: a tab of the target's group, in view
+        if (!ds->tabs.valid() || ds->tabs != ts->tabs) joinTabs(ui, dock, target, true);
+        if (!ds->tabs.valid() || ds->tabs != ts->tabs) return false;
+        dockRaise(ui, dock);
+        return true;
+    }
+    return splitBeside(ui, dock, target, edge, size);
+}
+void dockRemove(UiContext& ui, NodeHandle dock) {
+    if (!dockState(ui, dock)) return;
+    const NodeHandle area = areaOf(ui, dock);
+    if (drag().ui == &ui && drag().dock == dock) { // dragged right now: the drag ends without a drop
+        if (activeDrag(ui)) dragFinish(ui, drag());
+        drag().stage = DockDrag::Stage::Idle;
+        drag().swallow = {};
+    }
+    detachDock(ui, dock);
+    const NodeHandle old = ui.parent(dock);
+    ui.destroy(dock);
+    prunePane(ui, old);
+    if (ui.alive(area)) refreshDock(ui, area);
+}
+DockSide dockSideOf(const UiContext& ui, NodeHandle dock) {
+    const DockState* s = dockState(ui, dock);
+    return s && !s->floating && ui.alive(s->area) ? sideOf(ui, s->area, dock) : DockSide::Center;
+}
+NodeHandle dockSplitOf(const UiContext& ui, NodeHandle dock) {
+    const NodeHandle p = ui.alive(dock) ? ui.parent(dock) : NodeHandle{};
+    return isSplitPane(ui, p) ? ui.parent(p) : NodeHandle{};
 }
 void dockClose(UiContext& ui, NodeHandle dock) {
     if (!ui.alive(dock) || ui.hasClass(dock, "dock-closed")) return;
@@ -866,7 +1083,7 @@ void joinTabs(UiContext& ui, NodeHandle dock, NodeHandle withDock, bool reopen) 
     const NodeHandle after = ui.nextSibling(t.members.back());
     t.members.push_back(dock);
     ds->tabs = ws->tabs;
-    if (after != dock) ui.moveTo(dock, region, after);
+    if (after != dock) moveDock(ui, dock, region, after);
     const bool wasClosed = reopen && ui.hasClass(dock, "dock-closed");
     if (reopen) ui.removeClass(dock, "dock-closed");
     applyTabs(ui, ws->tabs);
@@ -914,7 +1131,7 @@ void dockFloat(UiContext& ui, NodeHandle dock, Rect rect) {
     s->area = area;
     s->floating = true;
     s->floatRect = {0.f, 0.f, std::round(std::max(rect.w, 80.f)), std::round(std::max(rect.h, 60.f))};
-    if (ui.parent(dock) != layer) ui.moveTo(dock, layer);
+    if (ui.parent(dock) != layer) moveDock(ui, dock, layer);
     ui.addClass(dock, "dock-floating");
     ui.addClass(dock, "os-window"); // a tool window of its own when the host enabled them (UiContext::setOsWindows)
     setPx(ui, dock, Prop::Width, s->floatRect.w);
@@ -999,19 +1216,137 @@ f32 paneSize(const UiContext& ui, NodeHandle pane) {
     const Length b = ui.computed(pane).basis;
     return b.unit == Unit::Px ? b.value : 0.f;
 }
+constexpr DockSide kAllSides[] = {DockSide::Left, DockSide::Right, DockSide::Bottom, DockSide::Center};
+bool savableId(std::string_view id) { return !id.empty() && id.find_first_of(" \n") == std::string_view::npos; }
+/// " d:<id>" for a dock; " h[" / " v[" then " p <px>" and the content per pane, then " ]" for a split.
+void saveTree(const UiContext& ui, NodeHandle n, std::string& out) {
+    if (isDock(ui, n)) {
+        const std::string_view id = ui.idOf(n);
+        out += " d:";
+        if (savableId(id)) out += id;
+        return;
+    }
+    out += ui.hasClass(n, "stacked") ? " v[" : " h[";
+    for (NodeHandle p = ui.firstChild(n); ui.alive(p); p = ui.nextSibling(p)) {
+        if (!ui.hasClass(p, "pane")) continue;
+        out += " p " + std::to_string(int(std::lround(ui.hasClass(p, "fixed") ? paneSize(ui, p) : 0.f)));
+        for (NodeHandle c = ui.firstChild(p); ui.alive(c); c = ui.nextSibling(c))
+            if (dockItem(ui, c)) saveTree(ui, c, out);
+    }
+    out += " ]";
+}
+struct TreeNode {
+    std::string_view id; // leaf when !split
+    bool split = false, stacked = false;
+    struct Pane { f32 px = 0.f; std::vector<TreeNode> nodes; };
+    std::vector<Pane> panes;
+};
+/// Parses one node at w[at]; false on malformed input.
+bool parseTree(const std::vector<std::string_view>& w, std::size_t& at, TreeNode& out, u32 depth) {
+    if (at >= w.size() || depth > 32) return false;
+    const std::string_view t = w[at++];
+    if (t.starts_with("d:")) { out.id = t.substr(2); return true; }
+    if (t != "h[" && t != "v[") return false;
+    out.split = true;
+    out.stacked = t == "v[";
+    while (at < w.size() && w[at] != "]") {
+        if (w[at] != "p" || at + 1 >= w.size()) return false;
+        double px;
+        if (!parseNum(w[at + 1], px) || !(px >= 0.0 && px <= 16384.0)) return false;
+        at += 2;
+        TreeNode::Pane& pane = out.panes.emplace_back();
+        pane.px = f32(px);
+        while (at < w.size() && w[at] != "p" && w[at] != "]") {
+            TreeNode& c = pane.nodes.emplace_back();
+            if (!parseTree(w, at, c, depth + 1)) return false;
+        }
+    }
+    if (at >= w.size()) return false; // no "]"
+    ++at;
+    return true;
+}
+/// Moves every dock under the splits of `region` to its top level (in reading order, out of its tab group) and
+/// removes the splits.
+void flattenRegion(UiContext& ui, NodeHandle region) {
+    for (NodeHandle c = ui.firstChild(region); ui.alive(c);) {
+        const NodeHandle next = ui.nextSibling(c);
+        if (isSplit(ui, c)) {
+            std::vector<NodeHandle> docks;
+            collectDocks(ui, c, docks);
+            for (NodeHandle d : docks) {
+                detachDock(ui, d);
+                ui.moveTo(d, region, c);
+            }
+            ui.destroy(c);
+        }
+        c = next;
+    }
+}
+/// Builds a parsed node under `parent`; true when it placed a dock of `area` (empty panes / splits are dropped).
+bool buildTree(UiContext& ui, NodeHandle area, const TreeNode& t, NodeHandle parent, std::vector<NodeHandle>& placed) {
+    if (!t.split) {
+        const NodeHandle d = t.id.empty() ? NodeHandle{} : ui.find(t.id);
+        if (!dockState(ui, d) || areaOf(ui, d) != area) return false;
+        if (std::find(placed.begin(), placed.end(), d) != placed.end()) return false; // named twice: first place wins
+        detachDock(ui, d);
+        ui.moveTo(d, parent);
+        placed.push_back(d);
+        return true;
+    }
+    const NodeHandle s = newSplit(ui, parent, {}, t.stacked);
+    for (const TreeNode::Pane& p : t.panes) {
+        const NodeHandle pane = addPane(ui, s, p.px, {});
+        bool any = false;
+        for (const TreeNode& c : p.nodes) any = buildTree(ui, area, c, pane, placed) || any;
+        if (!any) { // nothing named here: drop the pane (and the handle before it)
+            const NodeHandle h = prevSibling(ui, pane);
+            ui.destroy(pane);
+            if (ui.alive(h)) ui.destroy(h);
+        }
+    }
+    NodeHandle first;
+    for (NodeHandle c = ui.firstChild(s); ui.alive(c) && !first.valid(); c = ui.nextSibling(c))
+        if (ui.hasClass(c, "pane")) first = c;
+    if (!first.valid()) { // nothing placed: the split goes (not collapseSplit: `parent` may be a pane still being built)
+        ui.destroy(s);
+        return false;
+    }
+    if (const NodeHandle h = ui.firstChild(s); h != first) ui.destroy(h); // its first pane was dropped: no leading handle
+    collapseSplit(ui, s); // one pane: its content replaces the split
+    return true;
+}
+/// Tab strips under `n`, depth-first.
+void collectStrips(const UiContext& ui, NodeHandle n, std::vector<NodeHandle>& out) {
+    for (NodeHandle c = ui.firstChild(n); ui.alive(c); c = ui.nextSibling(c)) {
+        if (ui.hasClass(c, "docktabs")) out.push_back(c);
+        else if (isSplit(ui, c) || isSplitPane(ui, c)) collectStrips(ui, c, out);
+    }
+}
 } // namespace
 
 std::string dockSaveLayout(const UiContext& ui, NodeHandle area) {
-    std::string out = "fusedock 1\n";
+    bool splits = false;
+    for (DockSide s : kAllSides)
+        for (NodeHandle c = ui.firstChild(dockRegion(ui, area, s)); ui.alive(c); c = ui.nextSibling(c)) splits = splits || isSplit(ui, c);
+    std::string out = splits ? "fusedock 2\n" : "fusedock 1\n"; // version 2 only when the layout has dock splits
     char b[160];
     for (DockSide s : {DockSide::Left, DockSide::Right, DockSide::Bottom}) {
         std::snprintf(b, sizeof b, "size %s %.0f\n", kSideName[u32(s)].data(), double(paneSize(ui, sidePane(ui, area, s))));
         out += b;
     }
+    if (splits)
+        for (DockSide s : kAllSides) { // the split structure per side
+            std::string line = "tree " + std::string(kSideName[u32(s)]);
+            bool any = false;
+            for (NodeHandle c = ui.firstChild(dockRegion(ui, area, s)); ui.alive(c); c = ui.nextSibling(c))
+                if (dockItem(ui, c)) { saveTree(ui, c, line); any = true; }
+            if (any) out += line + "\n";
+        }
     for (DockSide s : {DockSide::Left, DockSide::Right, DockSide::Bottom, DockSide::Center}) {
         u32 order = 0;
-        for (NodeHandle d = ui.firstChild(dockRegion(ui, area, s)); ui.alive(d); d = ui.nextSibling(d)) {
-            if (!ui.hasClass(d, "dock")) continue;
+        std::vector<NodeHandle> sideDocks;
+        collectDocks(ui, dockRegion(ui, area, s), sideDocks);
+        for (NodeHandle d : sideDocks) {
             const std::string_view id = ui.idOf(d);
             if (id.empty() || id.find_first_of(" \n") != std::string_view::npos) { ++order; continue; }
             out += "dock " + std::string(id) + " " + std::string(kSideName[u32(s)]) + " " + std::to_string(order++) + " " +
@@ -1024,8 +1359,10 @@ std::string dockSaveLayout(const UiContext& ui, NodeHandle area) {
         return !id.empty() && id.find_first_of(" \n") == std::string_view::npos;
     };
     u32 group = 0;
-    for (DockSide s : {DockSide::Left, DockSide::Right, DockSide::Bottom, DockSide::Center})
-        for (NodeHandle t = ui.firstChild(dockRegion(ui, area, s)); ui.alive(t); t = ui.nextSibling(t)) {
+    std::vector<NodeHandle> strips;
+    for (DockSide s : kAllSides) collectStrips(ui, dockRegion(ui, area, s), strips);
+    {
+        for (NodeHandle t : strips) {
             const DockTabsState* ts = tabsState(ui, t);
             if (!ts || ts->members.empty()) continue; // (a dissolved strip lives until its press is released)
             for (std::size_t i = 0; i < ts->members.size(); ++i)
@@ -1034,6 +1371,7 @@ std::string dockSaveLayout(const UiContext& ui, NodeHandle area) {
                            (d == ts->current ? " current\n" : " back\n");
             ++group;
         }
+    }
     // floating docks, back to front (only written when docks float)
     NodeHandle layer;
     for (const auto& slot : dockPool().slots)
@@ -1056,6 +1394,7 @@ bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
     std::vector<Entry> docks;
     std::vector<TabEntry> tabs;
     std::vector<FloatEntry> floats;
+    std::vector<std::pair<DockSide, std::vector<TreeNode>>> trees;
     auto dockNamed = [&](std::string_view id) {
         const NodeHandle d = ui.find(id);
         return ui.alive(d) && ui.hasClass(d, "dock") && areaOf(ui, d) == area ? d : NodeHandle{};
@@ -1066,7 +1405,7 @@ bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
         return false;
     };
     std::size_t at = 0;
-    bool header = false;
+    int version = 0;
     while (at < text.size()) {
         std::size_t nl = text.find('\n', at);
         if (nl == std::string_view::npos) nl = text.size();
@@ -1080,9 +1419,9 @@ bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
             if (q > p) w.push_back(line.substr(p, q - p));
             p = q + 1;
         }
-        if (!header) {
-            if (w.size() != 2 || w[0] != "fusedock" || w[1] != "1") return false;
-            header = true;
+        if (!version) {
+            if (w.size() != 2 || w[0] != "fusedock" || (w[1] != "1" && w[1] != "2")) return false;
+            version = w[1] == "1" ? 1 : 2;
             continue;
         }
         DockSide sd;
@@ -1106,17 +1445,31 @@ bool dockRestoreLayout(UiContext& ui, NodeHandle area, std::string_view text) {
                 if (!parseNum(w[2 + k], v[k]) || !(v[k] >= (k < 2 ? -1e6 : 1.0) && v[k] <= (k < 2 ? 1e6 : 16384.0))) return false;
             if (const NodeHandle d = dockNamed(w[1]); d.valid())
                 floats.push_back({d, {f32(v[0]), f32(v[1]), f32(v[2]), f32(v[3])}, w[6] == "open"});
+        } else if (version == 2 && w[0] == "tree" && w.size() >= 2 && side(w[1], sd)) {
+            auto& t = trees.emplace_back(sd, std::vector<TreeNode>{});
+            for (std::size_t k = 2; k < w.size();)
+                if (!parseTree(w, k, t.second.emplace_back(), 0)) return false;
         } else {
             return false;
         }
     }
-    if (!header) return false;
+    if (!version) return false;
+    // everything parsed: apply. Splits are rebuilt from the trees (version 1 has none)
+    for (DockSide s : kAllSides) flattenRegion(ui, dockRegion(ui, area, s));
+    std::vector<NodeHandle> placed;
+    for (const auto& [s, nodes] : trees)
+        for (const TreeNode& t : nodes) buildTree(ui, area, t, dockRegion(ui, area, s), placed);
     std::stable_sort(docks.begin(), docks.end(), [](const Entry& a, const Entry& b) {
         return a.side != b.side ? u32(a.side) < u32(b.side) : a.order < b.order;
     });
     for (const Entry& e : docks) { // appended in order: each region ends up in saved order (unnamed docks first)
+        if (std::find(placed.begin(), placed.end(), e.dock) != placed.end()) { // already in its split pane
+            if (e.open) dockOpen(ui, e.dock);
+            else dockClose(ui, e.dock);
+            continue;
+        }
         detachDock(ui, e.dock); // a docked entry leaves its tab group / floating state; "tab" lines regroup below
-        ui.moveTo(e.dock, dockRegion(ui, area, e.side));
+        moveDock(ui, e.dock, dockRegion(ui, area, e.side));
         if (e.open) dockTo(ui, e.dock, e.side);
         else dockClose(ui, e.dock);
     }

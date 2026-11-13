@@ -8,4 +8,4 @@
 #include "fuse/ui/extras/tray.hpp"
 #include "fuse/ui/extras/undo.hpp"
 #include "fuse/ui/extras/webview.hpp"
-#include "fuse/ui/extras/widgets_extra.hpp"
+#include "fuse/ui/widgets/widgets.hpp" // (the widgets of the former extras/widgets_extra.hpp are in fuse_ui_widgets: widgets/extra.hpp)

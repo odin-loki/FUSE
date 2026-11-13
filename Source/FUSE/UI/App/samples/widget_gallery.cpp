@@ -35,9 +35,11 @@ using fuse::ui::SignalArgs;
 using fuse::ui::SignalKind;
 using fuse::ui::UiContext;
 
-constexpr const char* kPageIds[] = {"page.basic", "page.containers", "page.views", "page.text", "page.pro", "page.window", "page.game"};
+constexpr const char* kPageIds[] = {"page.basic", "page.containers", "page.views", "page.text", "page.pro", "page.window", "page.game",
+                                    "page.more"};
 /// One widget on each page that must be laid out for the page to count as shown.
-constexpr const char* kPageProbe[] = {"g.button", "g.groupbox", "g.tableview", "g.codeedit", "g.calendar", "dock.outline", "g.game.note"};
+constexpr const char* kPageProbe[] = {"g.button", "g.groupbox", "g.tableview", "g.codeedit", "g.calendar", "dock.outline", "g.game.note",
+                                      "g.lcd"};
 
 /// A checker board with a gradient: stands in for a rendered scene / a picture.
 void checker(fuse::ui::Image& img, int wd, int ht) {
@@ -106,7 +108,7 @@ int FUSE_APP_MAIN(int argc, char** argv) {
     model.set("stackPage", 0.0);
     model.set("dialogOpen", 0.0);
     const int page = int(app.args().number("page", 0));
-    model.set("page", double(page < 0 || page > 6 ? 0 : page));
+    model.set("page", double(page < 0 || page >= int(sizeof kPageIds / sizeof kPageIds[0]) ? 0 : page));
     const std::string path(app.args().get("ui", FUSE_APP_SAMPLE_UI_DIR "/gallery.fuseui"));
     if (auto loaded = window.load(path, &model); !loaded) return app.fail(loaded.error());
 
@@ -181,7 +183,7 @@ int FUSE_APP_MAIN(int argc, char** argv) {
                          double(pr.h), double(pr.x), double(pr.y));
             return 1;
         }
-        for (int i = 0; i < 7; ++i)
+        for (int i = 0; i < int(sizeof kPageIds / sizeof kPageIds[0]); ++i)
             if (i != p && shownOnScreen(ui, ui.find(kPageIds[i]))) return app.fail("another page is shown too");
         if (!window.writePng(std::string(shot))) return app.fail("cannot write screenshot");
         std::printf("widget_gallery: page %d, %u nodes, %zu draw commands, wrote %.*s\n", p, ui.nodeCount(), ui.drawList().size(),

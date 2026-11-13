@@ -2,6 +2,10 @@
 // read-only, validators (int, double, regex), Submitted gated on Acceptable, secrets kept out of text / a11y / clipboard.
 #include "test_util.hpp"
 
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
+
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <string>
@@ -294,18 +298,37 @@ int main() {
     type(ui, "5");
     UI_CHECK(ui.editBuffer(esc).text() == "A5 " && w::lineEditState(ui, esc) == V::Intermediate);
 
-    // ---- protected a11y flag ----
+    // ---- the a11y value of a password field is the mask, never the secret ----
     const NodeHandle pw2 = w::lineEdit(ui, col, "", "pw2");
     w::setLineEditOptions(ui, pw2, {.echo = w::EchoMode::Password});
+    ui.setFocus(pw2);
+    type(ui, "s3cret");
     ui.update();
     ui.snapshotA11y(snap);
-    bool prot = false, plainProt = true;
+    bool masked = false, leaked = false;
     for (const auto& s : snap) {
-        if (s.node == pw2) prot = s.protectedText;
-        if (s.node == plain) plainProt = s.protectedText;
+        if (s.node == pw2) masked = s.valueText == "\u2022\u2022\u2022\u2022\u2022\u2022";
+        leaked = leaked || s.valueText.find("s3cret") != std::string::npos || s.name.find("s3cret") != std::string::npos;
     }
-    UI_CHECK(prot && !plainProt);
+    UI_CHECK(masked && !leaked);
+    // assistive technology setting the value goes through the options: the secret stays out of the node text, a
+    // validator refuses invalid text, a read-only field does not change
+    UI_CHECK(ui.performA11yAction(pw2, A11yAction::SetValue, 0.f, 0, "hunter3"));
+    UI_CHECK(w::lineEditText(ui, pw2) == "hunter3" && ui.text(pw2).find("hunter") == std::string::npos);
+    {
+        const NodeHandle digits = w::lineEdit(ui, col, "", "a11ydigits");
+        w::setLineEditOptions(ui, digits, {.validator = w::intValidator(0, 999)});
+        ui.performA11yAction(digits, A11yAction::SetValue, 0.f, 0, "12x");
+        UI_CHECK(w::lineEditText(ui, digits).empty());
+        ui.performA11yAction(digits, A11yAction::SetValue, 0.f, 0, "123");
+        UI_CHECK(w::lineEditText(ui, digits) == "123");
+        w::setLineEditOptions(ui, digits, {.readOnly = true});
+        ui.performA11yAction(digits, A11yAction::SetValue, 0.f, 0, "7");
+        UI_CHECK(w::lineEditText(ui, digits) == "123");
+    }
+    w::setLineEditText(ui, pw2, "s3cret");
+    // options removed: the text shows again and the field is a plain line edit
     w::setLineEditOptions(ui, pw2, {});
-    UI_CHECK(!ui.a11yProtected(pw2));
+    UI_CHECK(ui.text(pw2) == "s3cret" && w::lineEditOptions(ui, pw2).echo == w::EchoMode::Normal);
     return fuse::ui::test::finish("fuse_ui_lineedit");
 }

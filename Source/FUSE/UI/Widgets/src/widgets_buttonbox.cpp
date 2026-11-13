@@ -1,5 +1,6 @@
-// QDialogButtonBox: standard / custom buttons with roles, laid out in the platform's button order.
-#include "fuse/ui/extras/widgets_extra.hpp"
+// FUSE UI dialog button box (QDialogButtonBox; see widgets/extra.hpp): standard / custom buttons with roles, laid out
+// in the platform's button order. Ported from the gui-framework branch's Extras/src/buttonbox.cpp.
+#include "fuse/ui/widgets/widgets.hpp"
 
 #include <algorithm>
 #include <unordered_map>
@@ -15,12 +16,13 @@ struct BoxState {
     u32 seq = 0;
     NodeHandle def, rej;
 };
-std::unordered_map<const UiContext*, std::unordered_map<u32, BoxState>>& boxes() {
-    static std::unordered_map<const UiContext*, std::unordered_map<u32, BoxState>> m;
+// Keyed by UiContext::uid(), then node index (generation-checked); dead records go when the next box is made.
+std::unordered_map<u64, std::unordered_map<u32, BoxState>>& boxes() {
+    static std::unordered_map<u64, std::unordered_map<u32, BoxState>> m;
     return m;
 }
 BoxState* boxOf(const UiContext& ui, NodeHandle b) {
-    auto it = boxes().find(&ui);
+    auto it = boxes().find(ui.uid());
     if (it == boxes().end()) return nullptr;
     auto j = it->second.find(b.index);
     return j != it->second.end() && j->second.gen == b.generation && ui.alive(b) ? &j->second : nullptr;
@@ -101,7 +103,7 @@ void relayout(UiContext& ui, NodeHandle box, BoxState& st) {
     }
     if (st.o.centerButtons) stretch(ui, box);
     // default button: first Accept, else first Yes (in visual order)
-    if (ui.alive(st.def)) { ui.removeClass(st.def, "default"); ui.removeClass(st.def, "dialog-default"); }
+    if (ui.alive(st.def)) { ui.removeClass(st.def, "primary"); ui.removeClass(st.def, "dialog-default"); }
     if (ui.alive(st.rej)) ui.removeClass(st.rej, "dialog-reject");
     st.def = st.rej = {};
     for (ButtonRole want : {ButtonRole::Accept, ButtonRole::Yes}) {
@@ -109,7 +111,7 @@ void relayout(UiContext& ui, NodeHandle box, BoxState& st) {
             for (const Entry& e : st.items) if (e.btn == c && e.role == want) { st.def = c; break; }
         if (ui.alive(st.def)) break;
     }
-    if (ui.alive(st.def)) { ui.addClass(st.def, "default"); ui.addClass(st.def, "dialog-default"); }
+    if (ui.alive(st.def)) { ui.addClass(st.def, "primary"); ui.addClass(st.def, "dialog-default"); }
     // the enclosing dialog's Escape presses the first Reject, else No, button (QDialog::reject)
     for (ButtonRole want : {ButtonRole::Reject, ButtonRole::No}) {
         for (NodeHandle c = ui.firstChild(box); ui.alive(c) && !ui.alive(st.rej); c = ui.nextSibling(c))
@@ -117,7 +119,8 @@ void relayout(UiContext& ui, NodeHandle box, BoxState& st) {
         if (ui.alive(st.rej)) break;
     }
     if (ui.alive(st.rej)) ui.addClass(st.rej, "dialog-reject");
-    ui.markAllDirty();
+    ui.invalidateLayout(box);
+    ui.invalidate(box);
 }
 
 NodeHandle addEntry(UiContext& ui, NodeHandle box, BoxState& st, std::string_view text, ButtonRole role, u32 stdb) {
@@ -171,14 +174,17 @@ std::string standardButtonText(u32 b, ButtonBoxLayout layout) {
 }
 
 NodeHandle dialogButtonBox(UiContext& ui, NodeHandle parent, u32 standardButtons, const DialogButtonBoxOptions& o, std::string_view id) {
-    registerExtraWidgets(ui);
     const NodeHandle box = panel(ui, parent, id);
     if (!ui.alive(box)) return box;
     ui.addClass(box, "dialog-buttonbox");
-    ui.setCss(box, "gap", "8px");
     ui.setA11y(box, A11yRole::Group, "Dialog buttons");
-    BoxState& st = boxes()[&ui][box.index];
-    st = BoxState{.gen = box.generation, .o = o};
+    std::erase_if(boxes(), [](const auto& kv) { return !UiContext::exists(kv.first); });
+    auto& mine = boxes()[ui.uid()];
+    std::erase_if(mine, [&](const auto& kv) { return !ui.alive(NodeHandle{kv.first, kv.second.gen}); });
+    BoxState& st = mine[box.index];
+    st = BoxState{};
+    st.gen = box.generation;
+    st.o = o;
     setStandard(ui, box, st, standardButtons);
     relayout(ui, box, st);
     return box;

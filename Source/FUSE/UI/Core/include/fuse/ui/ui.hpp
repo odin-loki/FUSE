@@ -171,6 +171,9 @@ enum class SignalKind : u8 {
     RowMoved,      ///< item views with drag reorder: {value = from, value2 = to (index after the move)}
     Dropped,       ///< item views: a drag from another view landed {value = insert index, text = drag text, event = Drop}
     DragEnded,     ///< item views: the drag that started here ended {value = source row, flag = accepted, value2 = DropAction}
+    EditingFinished, ///< line edits with options, key sequence edits: Enter / focus loss with acceptable text {text}
+    Highlighted,     ///< completer on a line edit: a completion is highlighted {value = model row, text}
+    Activated,       ///< completer on a line edit: a completion was chosen {value = model row, text}
 };
 struct SignalArgs {
     f32 value = 0.f;

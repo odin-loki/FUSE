@@ -2,6 +2,10 @@
 // wrapping, specialValueText, adaptive decimal steps, keyboardTracking, custom text <-> value, editingFinished.
 #include "test_util.hpp"
 
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
+
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <cmath>
@@ -231,6 +235,7 @@ int main() {
         ui.pointerUp(p, MouseButton::Left);
     };
     const NodeHandle rp = w::spinBox(ui, col, 0.f, 10000.f, 0.f, 1.f, "rep");
+    w::setSpinBoxOptions(ui, rp, {}); // (auto-repeat belongs to the options path; a plain spin box steps once per press)
     ui.update();
     holdUp(rp, 0.45f);
     UI_CHECK(ui.value(rp) == 1.f);

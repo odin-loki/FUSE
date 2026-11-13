@@ -21,7 +21,7 @@
         { "class": "toolbutton", "id": "tool.files", "text": "File dialog", "on": { "clicked": "filedialog" } }
       ] },
       { "class": "tabwidget", "id": "pages", "style": { "flex-grow": "1" }, "value": "{page}",
-        "tabs": ["Basic", "Containers", "Views", "Text", "Pro", "Window", "Game"],
+        "tabs": ["Basic", "Containers", "Views", "Text", "Pro", "Window", "Game", "More"],
         "children": [
           { "class": "scrollarea", "id": "page.basic", "classes": ["page", "fill"], "children": [
             { "class": "label", "classes": ["h"], "text": "Buttons and toggles" },
@@ -183,6 +183,43 @@
           ] },
           { "class": "scrollarea", "id": "page.game", "classes": ["page", "fill"], "children": [
             { "class": "label", "id": "g.game.note", "text": "Game HUD widgets (fuse_ui_game) are added by the app." }
+          ] },
+          { "class": "scrollarea", "id": "page.more", "classes": ["page", "fill"], "children": [
+            { "classes": ["cols"], "children": [
+              { "classes": ["col"], "children": [
+                { "class": "lineedit", "id": "g.password", "placeholder": "Password", "echo": "password", "maxLength": 16, "classes": ["w240"] },
+                { "class": "lineedit", "id": "g.masked", "inputMask": "000.000.000.000;_", "classes": ["w240"] },
+                { "class": "spinbox", "id": "g.spinopts", "min": 0, "max": 500, "value": 20, "prefix": "$ ", "suffix": " ea", "specialValueText": "Free" },
+                { "class": "editcombo", "id": "g.editcombo", "items": ["Red", "Green", "Blue"], "placeholder": "Colour", "classes": ["w240"] },
+                { "class": "keysequenceedit", "id": "g.keysequence", "text": "Ctrl+Shift+S", "classes": ["w240"] },
+                { "class": "lcdnumber", "id": "g.lcd", "digits": 6, "text": "12:34.5" },
+                { "class": "dialogbuttonbox", "id": "g.buttonbox", "buttons": ["ok", "cancel", "help"] }
+              ] },
+              { "classes": ["col"], "children": [
+                { "class": "toolbox", "id": "g.toolbox", "pages": ["General", "Advanced", "About"], "children": [
+                  { "class": "label", "text": "The open page of a tool box." },
+                  { "class": "label", "text": "Advanced settings" },
+                  { "class": "label", "text": "FUSE UI widget gallery" }
+                ] },
+                { "class": "tabwidget", "id": "g.tabs2", "tabs": ["main.cpp", "widgets.hpp", "README.md", "theme.css"], "closable": true, "movable": true, "children": [
+                  { "class": "label", "text": "Closable, movable tabs: drag one, or press its x." }, {}, {}, {}
+                ] }
+              ] }
+            ] },
+            { "classes": ["cols"], "children": [
+              { "class": "mdiarea", "id": "g.mdiarea", "classes": ["tall", "col"], "children": [
+                { "class": "mdiwindow", "id": "g.mdi1", "text": "Document 1", "rect": [12, 10, 200, 110], "children": [ { "class": "label", "text": "An MDI sub-window" } ] },
+                { "class": "mdiwindow", "id": "g.mdi2", "text": "Document 2", "rect": [110, 50, 210, 110], "children": [ { "class": "label", "text": "Drag the title, resize by the corner" } ] }
+              ] },
+              { "class": "graphicsview", "id": "g.graphicsview", "classes": ["tall", "col"], "items": [
+                { "shape": "rect", "rect": [20, 20, 90, 60], "text": "box" },
+                { "shape": "ellipse", "rect": [140, 30, 70, 70], "fill": "#81C784", "text": "dot" },
+                { "shape": "line", "rect": [30, 120, 190, 30], "strokeWidth": 2 },
+                { "shape": "polygon", "points": [[250, 20], [320, 50], [280, 120]] },
+                { "shape": "text", "rect": [230, 130, 160, 22], "fill": "#FFFFFF", "text": "graphics view" }
+              ] }
+            ] },
+            { "class": "vkeyboard", "id": "g.vkeyboard" }
           ] }
         ] },
       { "class": "dialog", "id": "g.dialog", "text": "A dialog", "visible": "{dialogOpen}", "children": [

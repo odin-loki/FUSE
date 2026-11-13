@@ -115,6 +115,9 @@ if(FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/widgets_tier_b3.cpp Widgets/src/widgets_svg.cpp Widgets/src/widgets_interaction.cpp Widgets/src/widgets_modelview.cpp Widgets/src/widgets_models.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
     target_include_directories(fuse_ui_widgets PUBLIC Widgets/include)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core)
+    # Widget port (docs/ui/archive/PORT_gui_framework.md §3.7 / §3.12): Qt-parity options and the extras widgets
+    target_sources(fuse_ui_widgets PRIVATE Widgets/src/widgets_lineedit.cpp Widgets/src/line_regex.cpp Widgets/src/completer.cpp
+        Widgets/src/widgets_spinbox.cpp Widgets/src/widgets_tabs.cpp Widgets/src/widgets_extra.cpp Widgets/src/widgets_buttonbox.cpp)
 endif()
 
 # ---- fuse_ui_os + fuse_ui_extras (from the gui-framework branch; docs/ui/archive/PORT_gui_framework.md) ----
@@ -127,7 +130,8 @@ endif()
 # fuse_ui_extras builds the modules of the branch's Extras/ that compile against main's core API: undo framework,
 # declarative properties / state machines, PDF writer, desktop integration, D-Bus client, tray icon + global menu,
 # system web view, charts library and 3D data visualisation. The other Extras sources stay in the tree unbuilt
-# (gesture, i18n, widgets_extra, button box, rich text, SVG documents, media, the Objective-C++ backends).
+# (gesture, i18n, rich text, SVG documents, media, the Objective-C++ backends). The branch's extra widgets and dialog
+# button box are part of fuse_ui_widgets now (Widgets/src/widgets_extra.cpp, widgets_buttonbox.cpp).
 # Verified on Linux, Android (NDK) and FreeBSD. Off by default on Windows and Apple platforms: os_std.cpp and the
 # Win32 backends compile with MinGW-w64 but were not built with MSVC, and no Apple build was possible.
 if(WIN32 OR APPLE)
@@ -455,7 +459,7 @@ if(TARGET fuse_app_native AND FUSE_BUILD_APP_SAMPLES)
                 add_test(NAME fuse_app_game_menu_sample COMMAND game_menu --screenshot=${CMAKE_CURRENT_BINARY_DIR}/game_menu.png)
                 set_tests_properties(fuse_app_game_menu_sample PROPERTIES LABELS "fuse_ui;gate")
             else()
-                foreach(p RANGE 0 6)
+                foreach(p RANGE 0 7) # 7 = the "More" page (ported options and extra widgets)
                     add_test(NAME fuse_app_widget_gallery_page${p}
                              COMMAND widget_gallery --page=${p} --screenshot=${CMAKE_CURRENT_BINARY_DIR}/widget_gallery_${p}.png)
                     set_tests_properties(fuse_app_widget_gallery_page${p} PROPERTIES LABELS "fuse_ui;gate")

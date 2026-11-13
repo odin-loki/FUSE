@@ -464,7 +464,9 @@ const std::vector<std::string>& builtClasses(const std::string& name) {
     static const bool installed = (widgets::install(scratch), true);
     (void)installed;
     std::vector<std::string> out;
-    const NodeHandle host = name == "dock" ? widgets::dockArea(scratch, scratch.root()) : widgets::panel(scratch, scratch.root());
+    const NodeHandle host = name == "dock" ? widgets::dockArea(scratch, scratch.root())
+                          : name == "mdiwindow" ? widgets::mdiArea(scratch, scratch.root()) // (a sub-window lives in an MDI area)
+                          : widgets::panel(scratch, scratch.root());
     JsonValue node;
     node.type = JsonValue::Type::Object;
     if (detail::make(scratch, name, host, {}, node).valid()) {

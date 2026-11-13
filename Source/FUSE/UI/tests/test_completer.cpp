@@ -2,6 +2,10 @@
 // modes, model-backed completion, keyboard navigation (focus stays in the field), mouse pick, wheel, a11y state.
 #include "test_util.hpp"
 
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
+
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <cstdio>
@@ -24,6 +28,15 @@ NodeHandle child(const UiContext& ui, NodeHandle n, u32 i) {
     return k;
 }
 void clear(UiContext& ui, NodeHandle e) { w::setLineEditText(ui, e, ""); }
+/// The node's own entry in the accessibility snapshot (main's a11y: UiContext::snapshotA11y).
+A11ySnapshotNode a11yOf(UiContext& ui, NodeHandle n) {
+    std::vector<A11ySnapshotNode> snap;
+    ui.update();
+    ui.snapshotA11y(snap);
+    for (const auto& s : snap)
+        if (s.node == n && s.child == 0) return s;
+    return {};
+}
 } // namespace
 
 int main() {
@@ -43,7 +56,7 @@ int main() {
 
     // ---- popup mode, case-insensitive starts-with ----
     w::setCompleter(ui, fruit, {.items = kItems});
-    UI_CHECK(ui.a11yState(fruit).autoComplete == A11yAutoComplete::List && ui.a11yState(fruit).expanded == 0);
+    UI_CHECK(!w::completerPopupVisible(ui, fruit) && !w::completerPopup(ui, fruit).valid());
     ui.setFocus(fruit);
     ui.textInput("ap");
     ui.update();
@@ -55,7 +68,7 @@ int main() {
     const NodeHandle pop = w::completerPopup(ui, fruit);
     UI_CHECK(ui.alive(pop) && children(ui, pop) == 3);
     UI_CHECK(ui.rect(pop).y >= ui.rect(fruit).bottom() && ui.rect(pop).w >= ui.rect(fruit).w);
-    UI_CHECK(ui.a11yState(fruit).expanded == 1 && ui.a11yState(fruit).controls == pop);
+    UI_CHECK(w::completerPopupVisible(ui, fruit) && ui.computed(pop).visible);
     // a11y snapshot: List "Completions" with three ListItem options
     {
         std::vector<A11ySnapshotNode> snap;
@@ -65,7 +78,6 @@ int main() {
         for (const auto& s : snap) {
             if (s.node == pop) list = s.role == A11yRole::List && s.name == "Completions";
             if (s.role == A11yRole::ListItem && ui.parent(s.node) == pop) ++items;
-            if (s.node == fruit) UI_CHECK(s.state.expanded == 1 && s.state.controls == pop && !s.state.activeDescendant.valid());
         }
         UI_CHECK(list && items == 3);
     }
@@ -84,14 +96,18 @@ int main() {
     ui.keyDown(Key::Down);
     UI_CHECK(w::lineEditText(ui, fruit) == "apple pie" && hiRow == 3); // source model row
     {
-        const A11yState a = ui.a11yState(fruit);
-        UI_CHECK(a.activeDescendant.valid() && ui.parent(a.activeDescendant) == pop);
-        UI_CHECK(ui.text(a.activeDescendant) == "apple pie" && ui.a11yState(a.activeDescendant).selected);
-        UI_CHECK(!ui.a11yState(child(ui, pop, 0)).selected && ui.checked(a.activeDescendant));
+        // the highlighted option is the one `selected` list item of the popup (position 3 of 3)
+        NodeHandle active;
+        for (NodeHandle k = ui.firstChild(pop); ui.alive(k); k = ui.nextSibling(k))
+            if (ui.checked(k)) active = k;
+        UI_CHECK(active.valid() && ui.text(active) == "apple pie");
+        const A11ySnapshotNode sel = a11yOf(ui, active), first = a11yOf(ui, child(ui, pop, 0));
+        UI_CHECK(sel.role == A11yRole::ListItem && sel.selectable && sel.selected && sel.posInSet == 3 && sel.setSize == 3);
+        UI_CHECK(first.role == A11yRole::ListItem && first.selectable && !first.selected && first.hasAction(A11yAction::Click));
     }
     ui.keyDown(Key::Down); // wrap: back to the typed prefix
     UI_CHECK(w::completerCurrentRow(ui, fruit) == -1 && w::lineEditText(ui, fruit) == "ap");
-    UI_CHECK(!ui.a11yState(fruit).activeDescendant.valid());
+    for (NodeHandle k = ui.firstChild(pop); ui.alive(k); k = ui.nextSibling(k)) UI_CHECK(!ui.checked(k) && !a11yOf(ui, k).selected);
     ui.keyDown(Key::Up); // from none: the last row
     UI_CHECK(w::completerCurrentRow(ui, fruit) == 2);
     ui.keyDown(Key::Home, kModCtrl);
@@ -109,7 +125,8 @@ int main() {
     ui.keyDown(Key::Enter);
     UI_CHECK(actText == "Apricot" && actRow == 1 && actCount == 1);
     UI_CHECK(!w::completerPopupVisible(ui, fruit) && subText == "Apricot");
-    UI_CHECK(ui.a11yState(fruit).expanded == 0 && !ui.a11yState(fruit).controls.valid());
+    ui.update();
+    UI_CHECK(!w::completerPopupVisible(ui, fruit) && !ui.computed(pop).visible);
     ui.update();
     UI_CHECK(!ui.computed(pop).visible);
 
@@ -197,7 +214,7 @@ int main() {
 
     // ---- inline completion ----
     w::setCompleter(ui, fruit, {.items = kItems, .mode = w::CompletionMode::Inline});
-    UI_CHECK(ui.a11yState(fruit).autoComplete == A11yAutoComplete::Inline && ui.a11yState(fruit).expanded == -1);
+    UI_CHECK(!w::completerPopupVisible(ui, fruit));
     clear(ui, fruit);
     ui.textInput("Ba");
     UI_CHECK(w::lineEditText(ui, fruit) == "Banana" && !w::completerPopupVisible(ui, fruit));
@@ -252,7 +269,6 @@ int main() {
     clear(ui, fruit);
     ui.textInput("s");
     UI_CHECK(!w::completerPopupVisible(ui, fruit) && w::completionCount(ui, fruit) == 0);
-    UI_CHECK(ui.a11yState(fruit).autoComplete == A11yAutoComplete::None);
     ui.update();
 
     // ---- round 3: binary search on a sorted model, completion prefix ----

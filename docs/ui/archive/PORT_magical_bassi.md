@@ -33,6 +33,7 @@ because the branch vendors `NotoSansThai-Regular.ttf` and `NotoSansCJKsc-Subset.
 | Feature | Files | Gate |
 |---|---|---|
 | `fuse_ui_l10n_lib`: CLDR plurals, ICU-style messages, number / date / time / currency formatting, calendar names, string-table format | `U/L10n/**` (new). Changed for main: `std::from_chars` on doubles goes through `fuse/text/from_chars.hpp` (libc++ on the NDK / FreeBSD lacks it); `detail::toCharsFixed` in `l10n_internal.hpp` replaces `std::to_chars(..., fixed)` and uses printf on Apple (not compiled on Apple here; the printf path passes the gate on Linux with `-DFUSE_TEXT_FROM_CHARS_FALLBACK`) | `fuse_ui_l10n` |
+| **Ported 2026-11-13 (item 3.12, the editor API):** `DockEdge`, `dockSplit`, `dockOpen`, `dockRemove`, `dockSideOf`, `dockSplitOf`, dock layout format 2 (`tree` lines); `treeLineAt`, `treeLineRect`; `TimelineClipDrag`, `timelineClipDrag`, `timelineSelectClip` (+ `timelineSelectedClip`), clip-drag events 5 / 6 / 7, Ctrl-key clip selection and retiming (event 2), Shift = free move | by hand on main's `U/Widgets/src/{widgets_tier_b2.cpp,widgets_tier_b.cpp,widgets_tier_d2.cpp}` and `widgets.hpp`: the splits are built on main's dock model, so they work with its tab groups, floating docks and dock drags | `fuse_ui_dock_split_{split,split_groups,tree_line,timeline_clip}` (`U/tests/test_dock_split.cpp`: the branch's `test_ui6.cpp` split checks plus the interplay with tabs / floating / drags), golden `fuse_ui_port_golden_dock_split`; main's `fuse_ui_dock_layout_roundtrip`, `fuse_ui_widget_dock_*`, `fuse_ui_dock_drag_*` unchanged |
 | `LocaleHooks`, `UiContext::setLocale / locale / localeHooks`; localised calendar (month header, weekday names, first day of week) | ported by hand into main's `U/Core/include/fuse/ui/ui.hpp` and `U/Widgets/src/widgets_tier_cd.cpp` (`CalendarW`) | `fuse_ui_l10n` |
 | `StringTable`: fallback locale, `has`, `tr(key, args)`, `bind(..., args)`, replace-on-re-add, `l10n::parseTable` format. Main's `trPlural` kept | `U/Game/include/fuse/ui/game/game_ui.hpp`, `U/Game/src/game_ui.cpp`; `fuse_ui_game` now links `fuse_ui_l10n_lib` | `fuse_ui_l10n`, `fuse_text_i18n`, `fuse_ui_pause_time_domain` |
 | `doc::Translator`: load-time translation, `Document::retranslate`, `setTranslator`, `translatableCount` (JSON and cooked loads) | `U/Doc/include/fuse/ui/doc/document.hpp`, `U/Doc/src/document.cpp`, `U/Doc/src/cook.cpp` (the branch's `"icon"` document key was left out: §3.3) | `fuse_ui_l10n` |
@@ -368,23 +369,38 @@ The backend is live: see §2. `native_wayland.cpp`, `wayland_internal.hpp` and `
 - **Remains**: run `fuse_project_schema2` with Vulkan (the hybrid viewport renders on the game side's device) and
   `--native` on a display; the Android `fuse_ui_bench_hud_mobile` / APK side of the branch is 3.10.
 
-### 3.12 Widgets: dock splits, tree line geometry, timeline clip drag, per-class gates (M) **editor**
+### 3.12 Widgets: per-class gates; what is left (S-M)
 
-- **What**: `DockEdge`, `dockSplit`, `dockSplitOf`, `dockSideOf`, `dockOpen`, `dockRemove` (nested splitters, dock
-  layout format 2); `treeLineAt`, `treeLineRect`; `TimelineClipDrag`, `timelineSelectClip`; `setListRowFont`;
-  `setIcon(ui, node, name)`; per-widget-class gates and goldens.
-- **Branch deltas not taken**: `U/Widgets/include/fuse/ui/widgets/widgets.hpp` (+75),
-  `U/Widgets/src/{widgets,widgets_tier_b,widgets_tier_b2,widgets_tier_cd,widgets_tier_d2}.cpp`,
-  `widgets_internal.hpp`, tests `test_tier_d2.cpp` (+47), `test_ui6.cpp` (+109).
-- **In the tree, unbuilt**: `U/tests/test_widget_gates.cpp` (924 lines), `U/tests/golden/widgets/*.png` (36 images).
-- **Overlap on main**: tabbed / floating docks with drag and drop and drop zones (commits `1d72473de`, `d73a3472a`;
-  `dockFloat`, `dockRaise`, `dockTabify`; gates `fuse_ui_dock_drag_*`, `fuse_ui_dock_layout_roundtrip`); main's
-  timeline and tree view.
-- **Blocks**: `dockSplit` has to be built on main's dock model (the branch's lives in its own `widgets_tier_b2.cpp`,
-  9 conflict hunks); the saved layout format needs a version bump that still reads main's. The per-class goldens
-  were rendered with the branch's theme and text, so they must be re-rendered and reviewed, not reused.
-- **Verify**: `fuse_ui_widget_<class>` gates and `fuse_ui_widget_catalogue` (`FUSE_UI_WIDGET_GATES` list in the
-  branch's tests CMake), `fuse_ui_dock_layout_roundtrip` with format 2, main's `fuse_ui_dock_drag_*`.
+**Ported 2026-11-13** (see §2): dock splits and layout format 2, tree line geometry, timeline clip drag and selection.
+Signatures are the branch's (the editor shell's call sites in `Source/FUSE/EditorShell/Fuse/src/editor_shell*.cpp`
+were read against them). Semantics that differ from the branch, because main's dock model is richer:
+
+- `DockEdge::Center` makes the dock a **tab** of the target's group and raises it (`dockTabify` + `dockRaise`); the
+  branch stacked the two docks in one pane. The editor shell does not call `dockSplit` with `Center` (it keeps its own
+  tab stacks), and its `dropEdge() == Center` is its own enum use.
+- A split beside a tabbed dock moves the whole tab group (strip and members) into the pane.
+- `dockSaveLayout` writes `fusedock 2` only when the layout has splits; a layout without splits is still
+  `fusedock 1`, byte-identical to before (main's layout gates depend on that). `tab` and `float` lines are valid in
+  both versions. `dockRestoreLayout` flattens existing splits before applying either version.
+- `dockOpen` on a tabbed dock brings its tab back without changing the current tab.
+- Main's dock drag (title-bar tear-off, drop zones) still applies to docks in splits. The editor shell implements
+  its own panel drag; whether both should be active on its stacks is a shell decision (not built here).
+
+- **Still not live**:
+  - `setListRowFont` (`widgets_internal.hpp` delta; per-row fonts of the font picker): belongs with 3.1 (font
+    catalogue).
+  - `setIcon(ui, node, name)` / `icon(...)` by `IconSet` name: 3.3.
+  - Per-widget-class gates and goldens: `U/tests/test_widget_gates.cpp` (924 lines), `U/tests/golden/widgets/*.png`
+    (36 images) stay parked. The images were rendered with the branch's theme and text stack and cannot be reused;
+    the gate file needs the branch's RTL helpers and icon API (3.2, 3.3) to compile.
+  - The RTL parts of the branch's widget deltas (mirrored hit testing in tree / tab bar / dock title): 3.2.
+  - Keyboard additions in the branch's deltas that main lacks: F10 focuses the menu bar; tooltips on keyboard focus;
+    node-graph and curve-editor keys (PageUp / PageDown / arrows); timeline PageUp / PageDown scrub by a second.
+  - The editor shell itself (`-DFUSE_EDITOR_SHELL=fuse`) was not built: it also needs 3.3, 3.5 and 3.9 (§5).
+    `g++ -fsyntax-only` over `EditorShell/Fuse/src/editor_shell.cpp` and `editor_shell_panels.cpp` against the
+    ported headers (2026-11-13) reports no error for the dock, tree-line or timeline API any more; what is left there
+    is `fuse::ui::IconSet`, `UiContext::setIcons`, `setIcon(ui, node, name)` (3.3) and `UiContext::osWindows` (3.5).
+- **Verify**: the gates in §2; `fuse_editor_ui_*` once the shell builds.
 
 ### 3.13 Themes: light, high contrast, token-only colours, focus rings (M)
 
@@ -481,7 +497,7 @@ files is a branch delta assigned to the item in the last column.
 
 | Target | Enabled by | State | Needs |
 |---|---|---|---|
-| `fuse_editor_fuse`, `fuse_editor_fuse_app`, gates `fuse_editor_ui_*` (`Source/FUSE/EditorShell/Fuse`, `EditorShell/tests/test_editor_ui_*.cpp`) | `-DFUSE_EDITOR_SHELL=fuse` (default `qt`) | **Does not compile.** Not part of the default build, so nothing was gated off. | 3.12 (`DockEdge`, `dockSplit`, `dockSplitOf`, `dockSideOf`, `dockOpen`, `dockRemove`, `treeLineAt`, `treeLineRect`, `TimelineClipDrag`, `timelineSelectClip`), 3.3 (`IconSet`, `UiContext::setIcons`, `setIcon` by name), 3.5 (`fuse/app/platform.hpp` without the `DisplayInfo` / `openUrl` clash, `NativeOptions::osWindows`, `NativePlatform::toolWindow / toolWindowCount / toolWindowScreenRect / captureToolWindow / postPointerMove / postPointerButton`, `UiContext::osWindows / windowSurfaces`), 3.9 (`fuse/app/accessibility.hpp`) |
+| `fuse_editor_fuse`, `fuse_editor_fuse_app`, gates `fuse_editor_ui_*` (`Source/FUSE/EditorShell/Fuse`, `EditorShell/tests/test_editor_ui_*.cpp`) | `-DFUSE_EDITOR_SHELL=fuse` (default `qt`) | **Does not compile.** Not part of the default build, so nothing was gated off. | ~~3.12 (`DockEdge`, `dockSplit`, `dockSplitOf`, `dockSideOf`, `dockOpen`, `dockRemove`, `treeLineAt`, `treeLineRect`, `TimelineClipDrag`, `timelineSelectClip`)~~ (live since 2026-11-13), 3.3 (`IconSet`, `UiContext::setIcons`, `setIcon` by name), 3.5 (`fuse/app/platform.hpp` without the `DisplayInfo` / `openUrl` clash, `NativeOptions::osWindows`, `NativePlatform::toolWindow / toolWindowCount / toolWindowScreenRect / captureToolWindow / postPointerMove / postPointerButton`, `UiContext::osWindows / windowSurfaces`), 3.9 (`fuse/app/accessibility.hpp`) |
 | `fuse_editor_controller`, `fuse_editor_scene_host`, `fuse_editor_controller_api`, `fuse_editor_panel_models` | `FUSE_BUILD_EDITOR_API` / `FUSE_BUILD_EDITOR` | Qt-free, no UI dependency; taken from the branch | nothing |
 | `fuse_runtime_android` (`Source/FUSE/Renderer/android`) | Android + command `fuse_app_add_android_app` | Off (the command is not defined) | 3.10 |
 | `demo_hybrid_hud` with `hud_ui.cpp` | `fuse_ui_game` + `fuse_ui_vk` + Vulkan | Compiles against main's UI (syntax check) | nothing; gate `fuse_demo_hybrid_hud_ui` not run |
