@@ -24,6 +24,39 @@ namespace fuse::ui::widgets {
 void registerTierA(UiContext& ui);
 /// The default dark theme (theme tokens in :root). Style sheet text, lives for the program.
 std::string_view defaultThemeCss();
+// ---- theme variants (theme.cpp) --------------------------------------------------------------------------------------
+/// The three token sets of the widget theme. The rules are the same; only the `:root` tokens differ (high contrast
+/// adds outline rules). Every colour of the rules and of the widget paint code is a token.
+enum class ThemeVariant : u8 { Dark, Light, HighContrast };
+/// High-contrast system colours (Win32 GetSysColor of the active scheme; CSS system colours).
+struct HighContrastPalette {
+    Color window = Color::rgb(0x000000), windowText = Color::rgb(0xFFFFFF);
+    Color highlight = Color::rgb(0x1AEBFF), highlightText = Color::rgb(0x000000);
+    Color buttonFace = Color::rgb(0x000000), buttonText = Color::rgb(0xFFFFFF);
+    Color grayText = Color::rgb(0x3FF23F), hotlight = Color::rgb(0xFFFF00);
+    friend bool operator==(const HighContrastPalette&, const HighContrastPalette&) = default;
+};
+struct ThemeDesc {
+    ThemeVariant variant = ThemeVariant::Dark;
+    bool hasAccent = false;       ///< Dark / Light: `accent` replaces --accent (and a shade of it --accent-hi)
+    Color accent{};
+    HighContrastPalette contrast{}; ///< HighContrast only
+};
+/// The whole theme sheet of a variant (tokens + rules; HighContrast with the default palette). Lives for the program.
+std::string_view themeCss(ThemeVariant v);
+std::string_view lightThemeCss();
+std::string highContrastThemeCss(const HighContrastPalette& p = {});
+std::string themeCss(const ThemeDesc& d);
+/// Only the `:root` tokens of `d` (plus the outline rules for HighContrast): a sheet that re-colours the widget theme
+/// when added after it (fuse::app::AppWindow::applyTheme keeps one such sheet and replaces it in place).
+std::string themeTokensCss(const ThemeDesc& d);
+/// Puts the theme of `d` into the context's theme slot (UiContext::setThemeStyleSheet) and restyles.
+std::expected<void, UiError> setTheme(UiContext& ui, const ThemeDesc& d);
+inline std::expected<void, UiError> setTheme(UiContext& ui, ThemeVariant v) { return setTheme(ui, ThemeDesc{.variant = v}); }
+/// The token table: names ("--accent") by index, and the colour a token has under `d` (false: unknown / not a colour).
+u32 themeTokenCount();
+std::string_view themeTokenName(u32 index);
+bool themeTokenColor(const ThemeDesc& d, std::string_view name, Color& out);
 /// Registers the Tier B classes (popup, menu, menuitem, menubar, menubutton, listview, treeview, tabbar, tooltip).
 void registerTierB(UiContext& ui);
 /// registerTierA + registerTierB + default theme. (With Tier B registered, combo boxes open a popup list on click.)

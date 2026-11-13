@@ -696,7 +696,8 @@ void UiContext::stylePass() {
     if (m_styles.sheetVersion() != m_seenSheetVersion) {
         m_seenSheetVersion = m_styles.sheetVersion();
         for (auto& n : m_nodes)
-            if (n.alive) n.dirty |= kDirtyStyle;
+            if (n.alive) n.dirty |= kDirtyStyle | kDirtyPaint; // paint too: widget paint code reads theme tokens (themeColor)
+        m_anyPaintDirty = true;
         m_sheetSwap = true; // a theme swap is not a state change: nothing transitions
     }
     styleRec(m_root.index, false);

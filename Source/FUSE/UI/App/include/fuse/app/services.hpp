@@ -23,6 +23,10 @@ struct SystemTheme {
     ColorScheme scheme = ColorScheme::Unknown;
     bool hasAccent = false;
     fuse::ui::Color accent{};
+    /// The desktop asks for a high-contrast theme: AppWindow::applyTheme uses the widget library's high-contrast
+    /// token set (widgets::ThemeVariant::HighContrast, default palette). No backend query sets it yet (hosts and
+    /// tests may, through Application::setSystemTheme).
+    bool highContrast = false;
     friend bool operator==(const SystemTheme&, const SystemTheme&) = default;
 };
 

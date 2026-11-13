@@ -210,7 +210,8 @@ public:
     bool tryClose();
     /// Follow the system light / dark preference and accent: applyTheme() now (when known) and on every change.
     void setFollowSystemTheme(bool on);
-    /// Re-colours the default widget theme (themeTokensCss) by adding a token override sheet; restyles the window.
+    /// Re-colours the default widget theme with one token override sheet (themeTokensCss; light / dark / high
+    /// contrast from widgets::themeTokensCss), replaced in place on every call; restyles the window.
     void applyTheme(const SystemTheme& t);
 
     // ---- client-side chrome (chrome.hpp) and saved state
@@ -281,6 +282,7 @@ private:
     fuse::ui::Vec2 m_position, m_wantPosition;
     WindowMode m_mode = WindowMode::Normal, m_wantMode = WindowMode::Normal, m_restoreMode = WindowMode::Normal;
     bool m_visible = true, m_wantVisible = true, m_active = false, m_followTheme = false, m_nativeMenu = false;
+    fuse::ui::u32 m_themeOverride = 0; ///< applyTheme's token override sheet (UiContext::addStyleSheetTracked handle)
     MenuDesc m_menu;
     MenuHandler m_menuHandler;
     fuse::ui::NodeHandle m_menuBar, m_menuParent;

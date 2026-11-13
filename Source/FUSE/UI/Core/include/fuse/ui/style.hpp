@@ -275,6 +275,7 @@ private:
     friend class StyleEngine;
     std::vector<StyleRule> m_rules;
     std::vector<std::pair<u32, std::string>> m_tokens;
+    u32 m_handle = 0; ///< StyleEngine::addSheetTracked identity (0: added with addSheet)
 };
 
 /// Parses one value for `p` (also used by inline setters and markup). False on a bad value.
@@ -302,7 +303,30 @@ public:
     u32 tableSize() const { return u32(m_table.size()); }
     bool matches(const StyleSubject& subject, u32 node, const StyleRule& rule) const;
 
+    // ---- sheets by handle + theme token colours (Core/src/style_sheets.cpp) ----------------------------------------
+    /// addSheet that returns a handle (never 0) for replaceSheet / removeSheet. Handles die with clearSheets.
+    u32 addSheetTracked(StyleSheet sheet);
+    /// Swaps the sheet `handle` names for `sheet`, keeping its place in the cascade order. False: unknown handle.
+    bool replaceSheet(u32 handle, StyleSheet sheet);
+    /// Drops the sheet `handle` names. False: unknown handle.
+    bool removeSheet(u32 handle);
+    bool hasSheet(u32 handle) const;
+    u32 sheetCount() const { return u32(m_sheets.size()); }
+    const StyleSheet& sheet(u32 index) const { return m_sheets[index]; }
+    /// The `:root` token `nameHash` (hashId("--name")) as a colour: the last sheet that defines it wins, `var(--other)`
+    /// chains are followed. False when no sheet defines it or it is not a colour. Cached per sheetVersion() (no
+    /// allocation), so widget paint code may call it every frame.
+    bool tokenColor(u32 nameHash, Color& out) const;
+
 private:
+    struct TokenColorSlot {
+        u32 hash = 0;
+        u8 state = 0; ///< 0 empty, 1 colour, 2 not a colour / undefined
+        Color color;
+    };
+    mutable std::array<TokenColorSlot, 128> m_tokenColors{};
+    mutable u32 m_tokenColorVersion = 0xFFFFFFFFu;
+    u32 m_nextSheetHandle = 0;
     bool matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel) const;
     bool resolveVar(std::string_view raw, Prop p, PropValue& out, int depth) const;
     u32 intern(const ComputedStyle& cs);

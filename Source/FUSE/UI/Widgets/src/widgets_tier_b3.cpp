@@ -34,7 +34,7 @@ std::string_view nth(std::string_view s, u32 index) {
         at = nl + 1;
     }
 }
-Color accentOf(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)); }
+Color accentOf(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD)); }
 void destroyCmd(UiContext& ui, NodeHandle n, u64, u64) {
     if (ui.alive(n)) ui.destroy(n);
 }
@@ -98,7 +98,7 @@ struct HeaderW {
         const HeaderState* s = headerPool().get(pc.ui, pc.node);
         if (!s) return;
         const Rect c = pc.content;
-        const Color line = pc.tint(pc.style.borderColor.a > 0.f ? pc.style.borderColor : Color::rgb(0x474955));
+        const Color line = pc.tint(pc.style.borderColor.a > 0.f ? pc.style.borderColor : themed(pc, tok::border, 0x474955));
         const Color text = pc.tint(pc.style.color);
         dl.pushClip(c);
         f32 x = c.x;
@@ -682,8 +682,8 @@ struct RichTextW {
         const Rect c = pc.content;
         for (const auto& p : s->pieces) {
             const RichRun& run = s->runs[p.run];
-            Color col = run.color.a > 0.f ? run.color : run.link >= 0 ? Color::rgb(0x5A9DFF) : pc.style.color;
-            if (run.link >= 0 && run.link == s->hoverLink) col = Color::rgb(0x8FBCFF);
+            Color col = run.color.a > 0.f ? run.color : run.link >= 0 ? themed(pc, tok::accent_hi, 0x5A9DFF) : pc.style.color;
+            if (run.link >= 0 && run.link == s->hoverLink) col = themed(pc, tok::link_hover, 0x8FBCFF);
             col = pc.tint(col);
             const std::string_view word = std::string_view(run.text).substr(p.start, p.len);
             const Rect box{c.x + p.x, c.y + p.y, p.w + 2.f, p.h};

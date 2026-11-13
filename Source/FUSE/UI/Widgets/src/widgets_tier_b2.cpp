@@ -46,7 +46,7 @@ struct SplitHandle { // between two panes; value() = 1 when the splitter is stac
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect r = pc.rect;
         const bool hot = pc.states & (kStateHover | kStatePressed | kStateFocus);
-        const Color c = pc.tint(hot ? Color::rgb(0x3D8BFD) : Color::rgb(0x5A5A66));
+        const Color c = pc.tint(hot ? themed(pc, tok::accent, 0x3D8BFD) : themed(pc, tok::track, 0x5A5A66));
         if (stacked(pc.ui, pc.node)) dl.rect({r.x + r.w * 0.5f - 12.f, r.y + r.h * 0.5f - 1.f, 24.f, 2.f}, c, 1.f);
         else dl.rect({r.x + r.w * 0.5f - 1.f, r.y + r.h * 0.5f - 12.f, 2.f, 24.f}, c, 1.f);
     }
@@ -169,11 +169,11 @@ struct DockTitle { // the title strip of a dock widget; text = title. Close box 
     static Rect closeBox(const Rect& r) { return {r.right() - r.h, r.y, r.h, r.h}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect r = pc.rect;
-        dl.rect(r, pc.tint(Color::rgb(0x2A2A33)), 3.f);
+        dl.rect(r, pc.tint(themed(pc, tok::raised, 0x2A2A33)), 3.f);
         pc.ui.paintString(dl, pc.ui.text(pc.node), {pc.content.x, r.y, pc.content.w - r.h, r.h}, pc.tint(pc.style.color), pc.style.fontSize,
                           TextAlignment::Start, pc.node.index);
         const Rect x = closeBox(r);
-        const Color c = pc.tint(pc.ui.hovered() == pc.node && x.contains(pc.ui.pointer()) ? Color::rgb(0xFF6B6B) : Color::rgb(0x9A9AA6));
+        const Color c = pc.tint(pc.ui.hovered() == pc.node && x.contains(pc.ui.pointer()) ? themed(pc, tok::hot, 0xFF6B6B) : themed(pc, tok::glyph_dim, 0x9A9AA6));
         const f32 m = x.h * 0.32f;
         dl.line({x.x + m, x.y + m}, {x.right() - m, x.bottom() - m}, c, 1.5f);
         dl.line({x.right() - m, x.y + m}, {x.x + m, x.bottom() - m}, c, 1.5f);
@@ -249,13 +249,13 @@ struct DockTabs {
         const DockTabsState* s = tabsState(ui, pc.node);
         if (!s) return;
         const Rect r = pc.rect;
-        const Color acc = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD));
-        dl.rect(r, pc.tint(Color::rgb(0x22222A)), 3.f);
+        const Color acc = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD));
+        dl.rect(r, pc.tint(themed(pc, tok::strip, 0x22222A)), 3.f);
         for (NodeHandle m : s->members) {
             const Rect t = tabRect(ui, pc.node, *s, m);
             if (t.empty()) continue;
             const bool cur = m == s->current, hot = ui.hovered() == pc.node && t.contains(ui.pointer());
-            if (cur || hot) dl.rect(t, pc.tint(Color::rgb(cur ? 0x34353E : 0x2A2A33)), 3.f);
+            if (cur || hot) dl.rect(t, pc.tint(cur ? themed(pc, tok::surface_hi, 0x34353E) : themed(pc, tok::raised, 0x2A2A33)), 3.f);
             if (cur) dl.rect({t.x + 2.f, t.bottom() - 2.f, t.w - 4.f, 2.f}, acc, 1.f);
             dl.pushClip(t);
             ui.paintString(dl, title(ui, m), {t.x + kTabPad * 0.5f, t.y, t.w - kTabPad * 0.5f, t.h},
@@ -264,7 +264,7 @@ struct DockTabs {
             dl.popClip();
         }
         const Rect x = closeBox(r);
-        const Color c = pc.tint(ui.hovered() == pc.node && x.contains(ui.pointer()) ? Color::rgb(0xFF6B6B) : Color::rgb(0x9A9AA6));
+        const Color c = pc.tint(ui.hovered() == pc.node && x.contains(ui.pointer()) ? themed(pc, tok::hot, 0xFF6B6B) : themed(pc, tok::glyph_dim, 0x9A9AA6));
         const f32 mg = x.h * 0.32f;
         dl.line({x.x + mg, x.y + mg}, {x.right() - mg, x.bottom() - mg}, c, 1.5f);
         dl.line({x.right() - mg, x.y + mg}, {x.x + mg, x.bottom() - mg}, c, 1.5f);
@@ -572,7 +572,7 @@ struct DockDrop {
         if (!d || d->overlay != pc.node) return;
         const DockState* s = dockState(pc.ui, d->dock);
         if (!s || !pc.ui.alive(s->area)) return;
-        const Color acc = pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD);
+        const Color acc = pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD);
         if (!d->preview.empty()) {
             dl.rect(d->preview, pc.tint(acc.withAlpha(0.28f)), 4.f);
             dl.roundedRect(d->preview, {}, {4.f, 4.f, 4.f, 4.f}, pc.tint(acc.withAlpha(0.85f)), 1.5f);
@@ -582,9 +582,9 @@ struct DockDrop {
             const Rect r = dropIndicator(pc.ui, s->area, z, with);
             if (r.empty()) return;
             const bool hot = d->zone == z;
-            dl.rect(r, pc.tint(hot ? acc : Color::rgb(0x22232B).withAlpha(0.92f)), 5.f);
-            dl.roundedRect(r, {}, {5.f, 5.f, 5.f, 5.f}, pc.tint(hot ? Color::rgb(0xFFFFFF).withAlpha(0.9f) : acc.withAlpha(0.8f)), 1.f);
-            glyph(dl, r, z, pc.tint(hot ? Color::rgb(0xFFFFFF) : Color::rgb(0xC8CAD4)));
+            dl.rect(r, pc.tint(hot ? acc : themed(pc, tok::dropzone, 0x22232B).withAlpha(0.92f)), 5.f);
+            dl.roundedRect(r, {}, {5.f, 5.f, 5.f, 5.f}, pc.tint(hot ? themed(pc, tok::on_accent, 0xFFFFFF).withAlpha(0.9f) : acc.withAlpha(0.8f)), 1.f);
+            glyph(dl, r, z, pc.tint(hot ? themed(pc, tok::on_accent, 0xFFFFFF) : themed(pc, tok::dropzone_glyph, 0xC8CAD4)));
         };
         for (DockDropZone z : kAreaZones)
             if (zoneOffered(pc.ui, s->area, z, d->over)) box(z, {});

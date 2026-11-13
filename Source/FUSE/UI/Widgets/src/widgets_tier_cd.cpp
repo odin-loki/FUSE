@@ -24,7 +24,7 @@ f32 lineH(const UiContext& ui, NodeHandle n) {
     const f32 px = ui.computed(n).fontSize;
     return std::ceil(ui.font() ? ui.font()->metrics(px).lineHeight() : px * 1.25f);
 }
-Color accentOf(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)); }
+Color accentOf(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD)); }
 NodeHandle nthChild(const UiContext& ui, NodeHandle n, u32 i) {
     NodeHandle c = ui.firstChild(n);
     while (i-- && ui.alive(c)) c = ui.nextSibling(c);
@@ -147,8 +147,8 @@ struct GridView {
         if (rt > vis) {
             const Rect tr{c.right() - kBar, c.y, kBar, c.h};
             const f32 tl = std::max(16.f, tr.h * f32(vis) / f32(rt));
-            dl.rect(tr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
-            dl.rect({tr.x, tr.y + (tr.h - tl) * f32(s->first) / f32(rt - vis), kBar, tl}, pc.tint(Color::rgb(0x8A8A96, 0.85f)), kBar * 0.5f);
+            dl.rect(tr, pc.tint(themed(pc, tok::view_scroll_track, 0x000000, 0.15f)), kBar * 0.5f);
+            dl.rect({tr.x, tr.y + (tr.h - tl) * f32(s->first) / f32(rt - vis), kBar, tl}, pc.tint(themedA(pc, tok::scroll_thumb, 0x8A8A96, 0.85f)), kBar * 0.5f);
         }
         dl.popClip();
     }
@@ -285,7 +285,7 @@ struct ColorPickerW {
         }
         const Color rgb = hsvToRgb(h.h, h.s, h.v);
         for (int i = 0; i < int(g.alpha.w / 7.f); ++i) // checker under the alpha ramp
-            dl.rect({g.alpha.x + f32(i) * 7.f, g.alpha.y + ((i & 1) ? 0.f : 7.f), 7.f, 7.f}, pc.tint(Color::rgb(0x55555F)));
+            dl.rect({g.alpha.x + f32(i) * 7.f, g.alpha.y + ((i & 1) ? 0.f : 7.f), 7.f, 7.f}, pc.tint(themed(pc, tok::grid_line, 0x55555F)));
         dl.gradientRect(g.alpha, pc.tint(rgb.withAlpha(0.f)), pc.tint(rgb), false, {3.f, 3.f, 3.f, 3.f});
         dl.rect(g.swatch, pc.tint(hsvToRgb(h.h, h.s, h.v, h.a)), 3.f);
         auto ring = [&](Vec2 p) {
@@ -424,7 +424,7 @@ struct CalendarW {
             const bool inMonth = y * 12 + m - 1 == ym;
             if (z == sel) dl.rect({cell.x + 2.f, cell.y + 1.f, cell.w - 4.f, cell.h - 2.f}, acc, 4.f);
             std::snprintf(b, sizeof b, "%d", d);
-            ui.paintString(dl, b, cell, z == sel ? pc.tint(Color::rgb(0xFFFFFF)) : inMonth ? text : dim, fs * 0.9f, TextAlignment::Center,
+            ui.paintString(dl, b, cell, z == sel ? pc.tint(themed(pc, tok::on_accent, 0xFFFFFF)) : inMonth ? text : dim, fs * 0.9f, TextAlignment::Center,
                            pc.node.index);
         }
         if (pc.states & kStateFocus) dl.roundedRect(pc.rect, {}, {5.f, 5.f, 5.f, 5.f}, acc.withAlpha(acc.a * 0.6f), 1.f);
@@ -555,7 +555,7 @@ struct ChartW {
             const Rect r = flameRect(ui, pc.node, s, i);
             const Rect bar{r.x, r.y, std::max(1.f, r.w - 1.f), std::max(1.f, r.h - 1.f)};
             const Color col = flameColor(s.flame[i]);
-            dl.roundedRect(bar, pc.tint(col), {2.f, 2.f, 2.f, 2.f}, i32(i) == hov ? pc.tint(Color::rgb(0xFFFFFF)) : Color{}, i32(i) == hov ? 1.f : 0.f);
+            dl.roundedRect(bar, pc.tint(col), {2.f, 2.f, 2.f, 2.f}, i32(i) == hov ? pc.tint(themed(pc, tok::chart_line, 0xFFFFFF)) : Color{}, i32(i) == hov ? 1.f : 0.f);
             if (bar.w < 14.f) continue; // too narrow for a label
             // dark text on the (warm, light) bars; the label never leaves its bar
             const f32 lum = 0.299f * col.r + 0.587f * col.g + 0.114f * col.b;
@@ -590,7 +590,7 @@ struct ChartW {
         char b[32];
         for (int i = 0; i <= 4; ++i) {
             const f32 v = lo + (hi - lo) * f32(i) / 4.f, y = std::round(yOf(v));
-            dl.rect({p.x, y, p.w, 1.f}, pc.tint(Color::rgb(0xFFFFFF, i == 0 ? 0.25f : 0.07f)));
+            dl.rect({p.x, y, p.w, 1.f}, pc.tint(themedA(pc, tok::chart_line, 0xFFFFFF, i == 0 ? 0.25f : 0.07f)));
             std::snprintf(b, sizeof b, "%.4g", double(v));
             ui.paintString(dl, b, {c.x, y - 8.f, 36.f, 16.f}, dim, fs, TextAlignment::End, pc.node.index);
         }
@@ -642,7 +642,7 @@ struct ChartW {
         const i32 hov = i32(ui.value(pc.node));
         if (hov >= 0 && u32(hov) < n) {
             const f32 x = std::round(xAt(p, u32(hov), n, bars));
-            dl.rect({x, p.y, 1.f, p.h}, pc.tint(Color::rgb(0xFFFFFF, 0.3f)));
+            dl.rect({x, p.y, 1.f, p.h}, pc.tint(themedA(pc, tok::chart_line, 0xFFFFFF, 0.3f)));
             std::string r = "#" + std::to_string(hov);
             for (const Series& se : s->series)
                 if (u32(hov) < se.v.size()) { std::snprintf(b, sizeof b, "  %s %.4g", se.name.c_str(), double(se.v[hov])); r += b; }

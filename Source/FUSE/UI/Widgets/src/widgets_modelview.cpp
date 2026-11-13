@@ -904,15 +904,15 @@ struct ItemView {
         const f32 rh = g.rh, hh = g.hh, fs = pc.style.fontSize;
         const ItemModel& m = *s->model;
         const Color text = pc.tint(pc.style.color), dim = pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.65f));
-        const Color acc = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD));
+        const Color acc = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD));
         const bool cells = s->sel && s->unit == SelectionUnit::Cells;
         dl.pushClip(c);
         if (s->header) {
-            dl.rect({c.x, c.y, c.w, hh}, pc.tint(Color::rgb(0x2A2A33)));
+            dl.rect({c.x, c.y, c.w, hh}, pc.tint(themed(pc, tok::raised, 0x2A2A33)));
             eachCol(*s, g, [&](u32 k, u32 v, f32 x, f32 w, bool frozen) {
                 const Rect clip = clipCol(g, frozen, {x, c.y, w, hh});
                 if (clip.empty()) return true;
-                if (frozen && g.hbar) dl.rect(clip, pc.tint(Color::rgb(0x2A2A33)));
+                if (frozen && g.hbar) dl.rect(clip, pc.tint(themed(pc, tok::raised, 0x2A2A33)));
                 if (s->moving == i32(v)) dl.rect(clip, acc.withAlpha(acc.a * 0.3f));
                 const std::string_view h = m.header ? m.header(m.user, k) : std::string_view{};
                 dl.pushClip(clip);
@@ -924,7 +924,7 @@ struct ItemView {
                 }
                 dl.popClip();
                 if (const Rect sep = clipCol(g, frozen, {x + w - 1.f, c.y + 4.f, 1.f, hh - 8.f}); !sep.empty())
-                    dl.rect(sep, pc.tint(Color::rgb(0x55555F)));
+                    dl.rect(sep, pc.tint(themed(pc, tok::grid_line, 0x55555F)));
                 return true;
             });
             if (s->moving >= 0) { // drop marker: where the dragged column would land
@@ -949,15 +949,15 @@ struct ItemView {
             const bool selRow = s->sel ? (!cells && s->sel->isSelected(row, 0)) : i64(row) == selLegacy;
             const bool stripe = !selRow && (row & 1u) && s->alternating;
             if (selRow) dl.rect({c.x, y, c.w, rh}, acc.withAlpha(acc.a * 0.55f));
-            else if (stripe) dl.rect({c.x, y, c.w, rh}, pc.tint(Color::rgb(0xFFFFFF, 0.035f)));
+            else if (stripe) dl.rect({c.x, y, c.w, rh}, pc.tint(themed(pc, tok::stripe, 0xFFFFFF, 0.035f)));
             const RowRef ref = s->tree ? locate(*s, row) : RowRef{.id = row};
             eachCol(*s, g, [&](u32 k, u32, f32 x, f32 w, bool frozen) {
                 Rect clip = clipCol(g, frozen, {x, y, w - 2.f, rh});
                 if (clip.empty()) return true;
                 if (frozen && g.hbar) { // frozen cells cover what scrolls under them
-                    dl.rect({x, y, w, rh}, pc.tint(pc.style.background.a > 0.f ? pc.style.background : Color::rgb(0x1E1F24)));
+                    dl.rect({x, y, w, rh}, pc.tint(pc.style.background.a > 0.f ? pc.style.background : themed(pc, tok::bg, 0x1E1F24)));
                     if (selRow) dl.rect({x, y, w, rh}, acc.withAlpha(acc.a * 0.55f));
-                    else if (stripe) dl.rect({x, y, w, rh}, pc.tint(Color::rgb(0xFFFFFF, 0.035f)));
+                    else if (stripe) dl.rect({x, y, w, rh}, pc.tint(themed(pc, tok::stripe, 0xFFFFFF, 0.035f)));
                 }
                 const bool selCell = cells ? s->sel->isSelected(row, k) : selRow;
                 if (cells && selCell) dl.rect(clipCol(g, frozen, {x, y, w, rh}), acc.withAlpha(acc.a * 0.55f));
@@ -983,10 +983,10 @@ struct ItemView {
                         const Rect box{cell.x, y + (rh - 12.f) * 0.5f, 12.f, 12.f};
                         dl.roundedRect(box, v.integer ? acc : Color{}, {2.f, 2.f, 2.f, 2.f}, text.withAlpha(text.a * 0.7f), 1.f);
                         if (v.integer == 1) {
-                            dl.line({box.x + 2.5f, box.y + 6.f}, {box.x + 5.f, box.y + 9.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f);
-                            dl.line({box.x + 5.f, box.y + 9.f}, {box.x + 9.5f, box.y + 3.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f);
+                            dl.line({box.x + 2.5f, box.y + 6.f}, {box.x + 5.f, box.y + 9.f}, pc.tint(themed(pc, tok::on_accent, 0xFFFFFF)), 1.5f);
+                            dl.line({box.x + 5.f, box.y + 9.f}, {box.x + 9.5f, box.y + 3.f}, pc.tint(themed(pc, tok::on_accent, 0xFFFFFF)), 1.5f);
                         } else if (v.integer == 2) {
-                            dl.line({box.x + 3.f, box.y + 6.f}, {box.x + 9.f, box.y + 6.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f);
+                            dl.line({box.x + 3.f, box.y + 6.f}, {box.x + 9.f, box.y + 6.f}, pc.tint(themed(pc, tok::on_accent, 0xFFFFFF)), 1.5f);
                         }
                         cell.x += 18.f;
                         cell.w -= 18.f;
@@ -1018,12 +1018,12 @@ struct ItemView {
         if (g.hbar) dl.popClip();
         Rect tr, th;
         if (vbarGeom(g, *s, tr, th)) {
-            dl.rect(tr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
-            dl.rect(th, pc.tint(Color::rgb(s->dragScroll == 1 ? 0xB4B4C0 : 0x8A8A96, 0.85f)), kBar * 0.5f);
+            dl.rect(tr, pc.tint(themed(pc, tok::view_scroll_track, 0x000000, 0.15f)), kBar * 0.5f);
+            dl.rect(th, pc.tint(s->dragScroll == 1 ? themedA(pc, tok::scroll_thumb_active, 0xB4B4C0, 0.85f) : themedA(pc, tok::scroll_thumb, 0x8A8A96, 0.85f)), kBar * 0.5f);
         }
         if (hbarGeom(g, *s, tr, th)) {
-            dl.rect(tr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
-            dl.rect(th, pc.tint(Color::rgb(s->dragScroll == 2 ? 0xB4B4C0 : 0x8A8A96, 0.85f)), kBar * 0.5f);
+            dl.rect(tr, pc.tint(themed(pc, tok::view_scroll_track, 0x000000, 0.15f)), kBar * 0.5f);
+            dl.rect(th, pc.tint(s->dragScroll == 2 ? themedA(pc, tok::scroll_thumb_active, 0xB4B4C0, 0.85f) : themedA(pc, tok::scroll_thumb, 0x8A8A96, 0.85f)), kBar * 0.5f);
         }
         if (pc.states & kStateFocus) dl.roundedRect(pc.rect, {}, {}, acc.withAlpha(acc.a * 0.6f), 1.f);
         dl.popClip();

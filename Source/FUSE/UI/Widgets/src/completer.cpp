@@ -134,7 +134,7 @@ struct CompleterItem { // value = index into matches
         return {std::ceil(ui.measureString(ui.text(n), ui.computed(n).fontSize)), rowH(ui, n) - 6.f};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
-        const Color acc = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD));
+        const Color acc = pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD));
         if (pc.ui.checked(pc.node)) dl.rect(pc.rect, acc.withAlpha(0.35f * pc.opacity));
         else if (pc.states & kStateHover) dl.rect(pc.rect, acc.withAlpha(0.15f * pc.opacity));
         Rect tr = pc.content;

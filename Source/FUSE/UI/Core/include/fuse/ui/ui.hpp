@@ -375,6 +375,22 @@ public:
     std::expected<void, UiError> addStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags = nullptr);
     void addStyleSheet(StyleSheet sheet); ///< an already parsed (or cooked) sheet
     void clearStyleSheets();
+    // ---- style sheets by handle, the theme slot, theme token colours (Core/src/style_sheets.cpp) ----
+    /// addStyleSheet that returns a handle (never 0) for replaceStyleSheet / removeStyleSheet (theme overrides, hot
+    /// reload of one sheet). Handles die with clearStyleSheets.
+    u32 addStyleSheetTracked(StyleSheet sheet);
+    /// Swaps a tracked sheet in place (same cascade position) / drops it; every node is restyled. False: unknown handle.
+    bool replaceStyleSheet(u32 handle, StyleSheet sheet);
+    bool removeStyleSheet(u32 handle);
+    /// The theme slot: the first call adds the sheet (widgets::install puts the default theme here), every later call
+    /// replaces it in place, so switching dark / light / high contrast neither stacks sheets nor reorders app sheets.
+    std::expected<void, UiError> setThemeStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags = nullptr);
+    u32 themeStyleSheet() const { return m_themeSheet; } ///< handle of the theme slot (0: never set)
+    /// `:root` token `tokenHash` (hashId("--name")) as a colour, `fallback` when no sheet defines it. Cached; paint-safe.
+    Color themeColor(u32 tokenHash, Color fallback) const {
+        Color c;
+        return m_styles.tokenColor(tokenHash, c) ? c : fallback;
+    }
 
     // tree
     NodeHandle root() const { return m_root; }
@@ -801,6 +817,7 @@ private:
 
     WidgetRegistry m_registry;
     StyleEngine m_styles;
+    u32 m_themeSheet = 0; ///< setThemeStyleSheet slot (StyleEngine handle)
     const fuse::text::Font* m_font = nullptr;
     fuse::text::GlyphAtlas m_atlas;
     std::vector<Node> m_nodes;
