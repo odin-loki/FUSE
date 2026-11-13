@@ -155,14 +155,6 @@ bool layerAvailable(const char* name) {
     return false;
 }
 
-BufferUsage bufferUsage(std::initializer_list<BufferUsage> bits) {
-    u32 u = 0;
-    for (const BufferUsage b : bits) {
-        u |= static_cast<u32>(b);
-    }
-    return static_cast<BufferUsage>(u);
-}
-
 struct Context {
     std::unique_ptr<VulkanInstance> instance;
     std::unique_ptr<VulkanDevice> device;
@@ -532,8 +524,10 @@ int runParity(Context& ctx) {
                 for (u32 v = 0; v < n; ++v) {
                     in.rest_positions[v] = {sm.positions[v * 3u], sm.positions[v * 3u + 1u], sm.positions[v * 3u + 2u], 0.f};
                     in.rest_normals[v] = {sm.normals[v * 3u], sm.normals[v * 3u + 1u], sm.normals[v * 3u + 2u], 0.f};
-                    static_assert(sizeof(anim::SkinningWeights) == sizeof(SkinVertexWeights), "weights layout");
-                    std::memcpy(&in.weights[v], &sm.weights[v], sizeof(SkinVertexWeights));
+                    for (u32 k = 0; k < 4u; ++k) {
+                        in.weights[v].bone_indices[k] = sm.weights[v].bone[k];
+                        in.weights[v].bone_weights[k] = sm.weights[v].weight[k];
+                    }
                 }
                 auto runCpu = [&](const f32* pal, anim::SkinningOutput& out) {
                     in.bone_transforms.resize(bones);
