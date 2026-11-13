@@ -646,8 +646,9 @@ public:
     void undo() override { apply(m_before); }
     int id() const override { return m_run ? kRunId : -1; }
     bool mergeWith(const UndoCommand& next) override {
-        const auto* n = dynamic_cast<const RichEditCommand*>(&next);
-        if (!n || !n->m_continues || n->m_ed != m_ed || n->m_epoch != m_epoch) return false;
+        if (next.id() != kRunId) return false; // kRunId is this class's alone: no RTTI needed
+        const auto* n = static_cast<const RichEditCommand*>(&next);
+        if (!n->m_continues || n->m_ed != m_ed || n->m_epoch != m_epoch) return false;
         m_after = n->m_after;
         return true;
     }

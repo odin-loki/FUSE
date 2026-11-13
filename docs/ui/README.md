@@ -224,6 +224,31 @@ Without a native platform the app runs headless (tests, `--screenshot=`). `Prese
 `VkDrawMode::CpuUpload`; `Software` blits). `NativePlatform::capture` reads back what the OS shows (used by `fuse_app_native_window`).
 Under Xvfb set `VK_ICD_FILENAMES` to lavapipe; under Wine the Win32 path and the Vulkan presenter both run.
 
+### Project files: `kind: app` (in tree)
+
+`project.json` schema 2 describes a UI application (`fuse/project/manifest.hpp`; schema 1 files load unchanged):
+
+```json
+{ "schemaVersion": 2, "name": "my_tool", "kind": "app",
+  "dimensions": { "enable3D": false, "enable2D": false, "enableUI": true },
+  "ui": { "root": "ui/main.fuseui", "styles": ["ui/theme.css"], "theme": "system", "redraw": "onDemand" } }
+```
+
+`fuse::app::ProjectHost` (`fuse/app/project_host.hpp`, target `fuse_app_project`; needs `fuse_project` and
+`fuse_core`, so it exists only in the engine tree) loads the manifest, brings up only what the plan asks for (the
+shell and `AppPresent`; no worlds, renderer or physics), opens the declared windows (one titled after the project
+when none is listed) with `ui.root`, adds `ui.styles`, applies `ui.theme` (`system` follows the OS through
+`setFollowSystemTheme`, `dark` / `light` pin the widget theme) and `ui.redraw`, and presents the first frame.
+`fuse_app_host <project dir | project.json> [--headless] [--first-frame] [--screenshot=out.png]` is the runner.
+A `kind: hybrid` project needs the engine game side (`fuse_app_project_hybrid`, `hybridGameSide()`, runner
+`fuse_hybrid_host`); an app-only host refuses it with a message.
+
+```cpp
+auto host = fuse::app::ProjectHost::start({.projectPath = "MyTool"});
+if (!host) return std::fprintf(stderr, "%s\n", host.error().c_str()), 1;
+return (*host)->run();
+```
+
 ### Platforms: Android, macOS, iOS, FreeBSD
 
 `fuse_app_native` has one window backend per platform; `NativePlatform` is the same API on all of them.
@@ -359,8 +384,8 @@ fuse::app::openUrl("https://example.org");
   appearance + accent, with notification; iOS: trait collection; Android: night mode (the activity needs
   `android:configChanges="uiMode"`); X11: XSETTINGS (`Net/ThemeName`, `Gtk/ApplicationPreferDarkTheme`, with change
   notification while the settings manager that ran at start keeps running; it also sets the cursor theme and size,
-  `NativePlatform::cursorThemeSize()`), else `$GTK_THEME`, else `gsettings` once, else Unknown. `AppWindow::applyTheme` / `setFollowSystemTheme` re-colour the default theme by adding a token sheet
-  (`themeTokensCss`). `NativePlatform::displays()` lists bounds, work area, scale and refresh rate where known.
+  `NativePlatform::cursorThemeSize()`), else `$GTK_THEME`, else `gsettings` once, else Unknown. `AppWindow::applyTheme` / `setFollowSystemTheme` re-colour the default theme with one token sheet
+  (`themeTokensCss`, replaced in place on every call; see "Themes"). `NativePlatform::displays()` lists bounds, work area, scale and refresh rate where known.
 - **File dialogs.** `NativePlatform::fileDialog` is the modal native one: Win32 `GetOpenFileNameW` /
   `GetSaveFileNameW` / `SHBrowseForFolderW`, macOS `NSOpenPanel` / `NSSavePanel`, Linux / BSD `zenity` or `kdialog`
   when installed; otherwise `Unavailable`. `openFileDialog` tries it and falls back to `widgets::fileDialog`.
@@ -518,9 +543,12 @@ not built at all).
 |---|---|---|
 | `undo.hpp` | `fuse::ui` | `UndoCommand`, `UndoStack` (merge, macros, clean state, limit), `UndoGroup` |
 | `declarative.hpp` | `fuse::ui::decl` | `Property<T>` with tracked bindings, `bindText / bindValue / bindCss / bindVisible`, `Effect`, hierarchical `StateMachine` |
-| `pdf.hpp` | `fuse::ui::pdf` | `PdfDocument` (PDF 1.4: vector shapes, standard fonts, images), `renderDrawList` (a draw list as a vector page) |
 | `desktop.hpp` | `fuse::ui::desktop` | notifications, `openUrl`, printers and print jobs through helper programs (`notify-send`, `xdg-open`, `lp`); each call has a `*Command()` twin returning the argv. `Notifier`: the native `org.freedesktop.Notifications` service over D-Bus (action buttons, `onAction` / `onClosed`, replace, close); `notify()` uses it first and the helper program otherwise |
 | `tray.hpp`, `dbus.hpp` | `fuse::ui`, `fuse::ui::dbus` | `TrayIcon` (with `showMessage` / `onMessageClicked`), `GlobalMenuBar`: StatusNotifierItem + dbusmenu over a runtime-loaded libdbus on Linux / BSD, `Shell_NotifyIcon` on Windows (compiled, not run) |
+| `pdf.hpp` | `fuse::ui::pdf` | `PdfDocument` (PDF 1.4: vector shapes, standard fonts, images), `renderDrawList` (a draw list as a vector page: rectangles, lines, glyphs, images, vector paths as `m / l / c / h` with fill, even-odd fill, stroke width / cap / join / dashes, path clips; a gradient is written as the mean of its stops; nine-patches and layer effects are not written) |
+| `richtext.hpp` | `fuse::ui::rich`, `fuse::ui::widgets` | `RichDocument` (character formats per byte, block formats per paragraph), `RichTextEditor` (headless editing), HTML and Markdown import / export, the `richtextedit` widget (see below) |
+| `audio_meter.hpp` | `fuse::ui::widgets` | `audioLevelMeter`: per-channel peak / RMS bars in dBFS with release ballistics, peak hold and a latched clip lamp, fed interleaved float samples (`audioLevelMeterPush`); no audio device needed |
+| `gesture.hpp` | `fuse::ui::gesture` | stand-alone `GestureRecognizer` over raw touch points (tap, double tap, long press, pan with offset and velocity, swipe with a direction, pinch with scale and rotation) for input that does not go through `UiContext::touch` |
 | `webview.hpp` | `fuse::ui::web` | `WebView` on the system engine loaded at run time (WebKitGTK; WebView2 with `FUSE_UI_WEBVIEW2_DIR`, untested); `available()` is false without one |
 | `charts.hpp` | `fuse::ui::charts` | `Chart` data model, `render` to a `DrawList`, `chartView` widget: line, area, bar, scatter, pie / donut, candlestick, box, waterfall, contour, radar, treemap, sankey, gauge, funnel; axes, legend, tooltips, zoom / pan, model binding, decimation (min-max, LTTB), transitions, PNG export; `Chart3D` / `chart3dView` |
 | `datavis3d.hpp`, `fuse/ui/mesh3d.hpp` | `fuse::ui::dv3d`, `fuse::ui` | 3D surface / scatter / bars / volume slices projected on the CPU into draw-list paths (BSP ordering, picking); `Mesh3D` + `rasterMesh` CPU mesh rasteriser |
@@ -538,12 +566,39 @@ c.series.push_back(std::move(s));
 ch::chartChanged(ui, view);
 ```
 
+**Rich text editor.** One rich-text model: `rich::RichDocument`. `richTextEdit(ui, parent)` edits it (Ctrl+B / I / U,
+Tab / Shift+Tab indent, Ctrl+Z / Y, clipboard as plain text, Ctrl+click on a link emits `Submitted`), and the
+read-only `richText` view of the widget library renders it: `doc.toRichTextMarkup(px)` writes the view's markup
+(`setRichText(ui, view, widgets::richTextMarkup(ui, editor))`), `fromRichTextMarkup` reads it. The editor paints with
+the same text stack as the view: the node's font family with the real bold / italic face when the family has one
+(`UiContext::fontFor`), the font's underline and strike-through metrics, and it measures every fragment in its own
+face. Block formats (alignment incl. justify, bullet / ordered lists with nesting, headings, indent) live in the
+document and the editor only: view markup flattens them (list markers become text, headings a size + bold, alignment
+is dropped). Undo goes through `UndoStack`: the editor's own, or the application's with
+`richEditor(ui, n)->setUndoStack(&appStack)`, so one Edit > Undo covers the document window; commands are named
+(Typing, Delete, Format, Paragraph) and a typing run merges into one.
+
+```cpp
+#include "fuse/ui/extras/richtext.hpp"
+NodeHandle ed = widgets::richTextEdit(ui, parent);
+widgets::setRichMarkdown(ui, ed, "# Title\n\nSome **bold** text.");
+rich::RichTextEditor& e = *widgets::richEditor(ui, ed);
+e.selectAll(); e.setAlign(rich::Align::Center); e.setColor(Color::rgb(0xE0703A));
+std::string html = widgets::richHtml(ui, ed);
+```
+
 Limits on main: charts and 3D graphs draw through main's `Path` / `fillPath` / `strokePath` (adapter
 `Extras/src/path_compat.hpp`), so on the GPU path they are pre-rasterised on the CPU like every other path. The GPU
 mesh pass (`ui_vk_mesh`) and the SIMD min-max kernels are not built. `desktop` and the clipboard / file-dialog parts
 of `fuse::ui::os` need helper programs and work on POSIX desktops only; `os::runProcess` returns an error on Windows,
 iOS and Android. `fuse::ui::desktop::openUrl` exists next to `fuse::app::openUrl` (`services.hpp`); prefer the latter
-in applications. `test_extras.cpp` runs the web view gate without WebKitGTK as a skip.
+in applications. `test_extras.cpp` runs the web view gate without WebKitGTK as a skip. Still parked: the branch's
+`widgets_extra`, SVG documents (`extras/svg.hpp`; main's `SvgImage` is the SVG reader), system video and audio output
+(`extras/media.hpp`), and `extras/i18n.hpp` (`.po` catalogues).
+
+`<fuse/gui.hpp>` (`Source/FUSE/UI/Public/include`, target `fuse::gui` inside this build) is one umbrella header over
+the core, widgets, documents, the application shell and, when built, the Extras (`FUSE_GUI_HAS_EXTRAS`), with the
+namespace `fuse::gui`; `Public/examples/gui_quickstart.cpp` is the smallest program on it.
 
 ## Game UI (UI7)
 
@@ -831,6 +886,41 @@ are deferred). Inline (`setCss`) beats everything; later sheets win ties. Layout
 `exit-animation`, `enter-duration`, `exit-duration`, `direction`, `padding-start`, `padding-end`) are described under
 "Interaction" below. `cursor` (see Platform services) is the mouse cursor a node asks for.
 
+### Themes: dark, light, high contrast
+
+The widget theme (`Widgets/src/theme.cpp`) is one rule body over `:root` colour tokens with three token sets:
+
+```cpp
+widgets::install(ui);                                   // the dark theme, in the context's theme slot
+widgets::setTheme(ui, widgets::ThemeVariant::Light);    // replaces the slot in place (no sheet is stacked)
+widgets::setTheme(ui, {.variant = widgets::ThemeVariant::Dark, .hasAccent = true, .accent = Color::rgb(0xCC3366)});
+widgets::setTheme(ui, {.variant = widgets::ThemeVariant::HighContrast, .contrast = palette}); // HighContrastPalette
+std::string_view css = widgets::themeCss(widgets::ThemeVariant::Light);   // the sheet text; lightThemeCss(), highContrastThemeCss(p)
+std::string tokens = widgets::themeTokensCss({.variant = widgets::ThemeVariant::Light}); // only :root: an override sheet
+```
+
+- **Tokens only.** Every colour of the theme rules and of the widget paint code is a token (`--bg`, `--surface`,
+  `--text`, `--accent`, ... and paint tokens such as `--track`, `--knob`, `--canvas`, `--gutter-text`, `--selection`,
+  `--code-keyword`; the table with its dark / light / high-contrast values is `kTokens` in `theme.cpp`,
+  `widgets::themeTokenCount / themeTokenName / themeTokenColor` read it). Paint functions call
+  `themed(pc, tok::name, 0xDARK)` (`widgets_internal.hpp`), which is `UiContext::themeColor(hashId("--name"),
+  fallback)`: the last sheet that defines the token wins, cached per sheet version, no allocation. An application
+  re-colours any widget part with a later `:root { --track: #...; }` sheet. Not themed on purpose: data colours (the
+  colour picker's gradients and markers, flame / pin / clip palettes and the text over them, images).
+- **Sheets by handle.** `ui.addStyleSheetTracked(sheet)` returns a handle for `ui.replaceStyleSheet(handle, sheet)`
+  (same cascade position) and `ui.removeStyleSheet(handle)`; `ui.setThemeStyleSheet(css)` is the theme slot
+  (`StyleEngine::addSheetTracked / replaceSheet / removeSheet / hasSheet / sheetCount / tokenColor`, in
+  `Core/src/style_sheets.cpp`). `AppWindow::applyTheme` keeps one override sheet and replaces it, and takes its tokens
+  from `widgets::themeTokensCss` (`SystemTheme::highContrast` selects the high-contrast set; no backend query sets it
+  yet).
+- **Focus rings.** Every focusable class shows keyboard focus (`:focus-visible`): a 1px accent border (painted over
+  the box, no layout change) for the classes that had none, the heading colour on an accent (primary) button
+  (`--primary-ring`), 2px in the hot-light colour in high contrast.
+- **Contrast.** Light and dark: text against its background is at least 4.5:1, high contrast at least 7:1
+  (`fuse_ui_theme_contrast`, from computed styles and the paint-code token pairs). The dark theme has five known
+  pairs below 4.5 that are frozen by its goldens: white on `--accent` 3.33 (primary button, check marks), on
+  `--danger` 3.91 and `--warning` 2.27 (message box badges), and code editor line numbers 3.00.
+
 ### Fonts, text styles and i18n
 
 Text properties: `font-weight` (`normal` / `bold` / 1..1000), `font-style` (`normal` / `italic`), `font-family` (comma
@@ -942,7 +1032,9 @@ Widgets that paint their own content (lists, sliders, check marks) are not mirro
 
 **Hot reload.** `doc::DocumentFileWatcher watch(path);` then `watch.poll(document)` each frame (one `stat`) reloads a
 `.fuseui` file when it changes; nodes with an id keep their handle, focus, scroll, value and edit text
-(`Document::reload`).
+(`Document::reload`). Style sheets reload the same way: `doc::StyleSheetFileWatcher theme(path); theme.poll(ui);` adds
+the sheet at the first poll and replaces it in place when the file changes (same cascade position, the sheet list does
+not grow); a sheet that does not parse keeps the last good one and reports `file:line: message`.
 
 ## Immediate mode
 
@@ -973,6 +1065,17 @@ checks it against the overlay under one scripted event stream.
 | `fuse_ui_style_motion` | `transition` parsing, fades in context time, idle afterwards, zero allocation / no style-table growth, tween / spring / keyframes, popup enter / exit, reduced motion, static default theme |
 | `fuse_ui_rtl_layout` | layout dumps of one tree in `ltr` and `rtl`, logical padding, text alignment, popups unmoved |
 | `fuse_ui_hot_reload_file` | file-time poll reloads a `.fuseui` file keeping handles, focus, edit text, value and scroll; broken / missing file |
+| `fuse_ui_hot_reload_style` | a style sheet file reloads in place (no growth, same cascade position, theme tokens follow), a broken edit keeps the last good sheet, deleted file |
+| `fuse_ui_theme_sheet_handles` | sheets by handle: replace keeps the cascade position, remove, dead handles, the theme slot never stacks sheets, token colours follow the newest sheet, accent / custom high-contrast palette |
+| `fuse_ui_theme_token_only` | every variant defines every token as a colour, no literal colour in the theme rules, dark and light share the rule text, paint code follows a token override, fallback literals without the theme |
+| `fuse_ui_theme_contrast` | WCAG contrast of text vs background per widget (computed styles of a gallery + paint-code token pairs): ≥ 4.5 light / dark, ≥ 7 high contrast (also with a white custom palette); the known dark exceptions are pinned |
+| `fuse_ui_theme_focus_ring` | each of the 32 focusable classes renders differently with `:focus-visible`, in all three variants |
+| `fuse_ui_theme_golden_{light,contrast}_<scene>` | the widget golden scenes (containers, text, dialogs, wizard, mainwindow, spinmenu, hud, controls, editors) in the light and high-contrast themes; MINIMAL text profile only |
+| `fuse_ui_widget_golden_{controls,editors}` | Tier A controls in their states with one keyboard-focused, and the token-painted editors (code edit, node graph, timeline, curve editor, calendar, markdown); MINIMAL only |
+| `fuse_app_theme_sheets` | `applyTheme` keeps one override sheet over 25 system theme changes, uses the widget library's tokens, high contrast outlines controls and gives a 2px hot-light focus ring |
+| `fuse_ui_bench_hud` (`perf`) | a 293-node game HUD animated as in play: UI CPU per frame median ≤ 0.5 ms (measures ~0.10 ms) |
+| `fuse_app_binary_size` (`perf`) | stripped `hello_app` within baseline + 10 % (Linux x86-64 GCC Release MINIMAL standalone: 2,130,000 B; other toolchains report and skip until `-DFUSE_APP_BINARY_BUDGET` is set) |
+| `fuse_project_schema2`, `fuse_project_schema2_native` (in tree) | schema 1 files unchanged, schema 2 round trip and validation, the Application template, an app project through `ProjectHost` (only `AppPresent` comes up, first frame ≤ 150 ms headless), `ui.theme`; with the engine game side also the deferred hybrid game side |
 | `fuse_ui_interaction_golden` | action menu with shortcut texts and a list row drag (ghost, insertion line) against `tests/golden/interaction.png` (MINIMAL profile only) |
 | `fuse_ui_mv_notify`, `_selection`, `_tree`, `_editing`, `_view`, `_proxy`, `_async`, `_dir_model` | model / view: notifications, selection modes, tree view, in-place editing, column features, proxies, async model, a lazy `std::filesystem` model |
 | `fuse_ui_mv_selection_1m`, `fuse_ui_mv_tree_1m` | range selection over 1M rows allocates nothing per row; a lazy tree with > 1M nodes scrolls with a constant node count and bounded model reads |
@@ -1008,7 +1111,9 @@ From the `gui-framework` branch (label `gate`): `fuse_ui_os_seam` (the std OS ba
 library, helper process, pipes), `fuse_ui_extras_{undo,desktop,pdf,tray,declarative,dataviz3d,dataviz3d_bsp}`,
 `fuse_ui_extras_webview` (Xvfb; skips inside the test when no WebKitGTK is installed), `fuse_ui_charts_{series,axes,
 decimation,ring,hit,widget,model,export,bench,demo,3d,3d_large,demo3d,mesh3d,mesh3d_large,beyond,transition,
-demo_beyond}`, `fuse_app_cocoa_map` (key table of the parked Cocoa backend). `fuse_ui_extras_tray` starts its own
+demo_beyond}`, `fuse_app_cocoa_map` (key table of the parked Cocoa backend), `fuse_ui_extras_richtext_{model,undo,
+widget,view,golden}` (rich text editor on main's text stack), `fuse_ui_extras_pdf_paths`, `fuse_ui_extras_audio_meter`,
+`fuse_ui_extras_gesture`, `fuse_gui_quickstart` (`<fuse/gui.hpp>`). `fuse_ui_extras_tray` starts its own
 `dbus-daemon` and needs `busctl` for one of its checks.
 
 Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`, `fuse_ui_tier_b`, `fuse_ui_tier_b2`,

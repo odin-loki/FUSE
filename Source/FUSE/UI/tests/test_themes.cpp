@@ -16,6 +16,7 @@
 #include "fuse/ui/color_space.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <string>
 #include <vector>

@@ -170,7 +170,28 @@ pushed after those CI runs and re-checked on Linux only.
   `StateHooks`. `restoreWindowState` after `show()` does not resize the OS window (restore before showing).
 - Clipboard: formats beyond text on X11, Wayland and Win32. Win32 has no delayed rendering (lazy items are made when the clipboard is set); images on macOS / iOS /
   Android are not supported.
-- `applyTheme` adds a style sheet per call (the style engine has no sheet removal).
+- Themes: the dark theme has five text / background pairs below WCAG 4.5:1, frozen by its goldens and pinned in
+  `fuse_ui_theme_contrast` (white on `--accent` 3.33: primary buttons, check marks, the selected calendar day; on
+  `--danger` 3.91 and `--warning` 2.27: message box badges; code editor line numbers 3.00). Light and high contrast
+  have none. No backend sets `SystemTheme::highContrast` (Win32 `SPI_GETHIGHCONTRAST` and the scheme colours, GTK
+  `gtk-theme-name` HighContrast, macOS increase-contrast are not queried): hosts set it through
+  `Application::setSystemTheme`, and the palette is the default one unless the app calls `widgets::setTheme` with its
+  own. High contrast does not strip shadows / blur / gradients of application sheets (the branch's
+  `StyleEngine::setForcedColors` is not ported); it only clears the theme's own. The light and high-contrast goldens
+  exist for the MINIMAL text profile only. Data colours are not themed (colour picker, flame / pin / clip palettes).
+  The existing dark dialogs / wizard goldens are captured with the focus parked, because they predate focus rings
+  and their FULL-profile twins cannot be re-rendered without the fetched text stack; the light / high-contrast
+  goldens and `fuse_ui_widget_golden_controls` show the rings.
+- Rich text: one model (`rich::RichDocument`), two widgets: the Extras `richtextedit` edits it, the widgets `richText`
+  view shows it through markup that flattens block formats (no alignment, lists as text, headings as size + bold).
+  The editor has no images, tables, per-run font family, line spacing or BiDi caret movement; the clipboard carries
+  plain text; undo keeps whole-document snapshots per command (fine for pages, not for books).
+- Extras still parked: SVG documents (`extras/svg.hpp`: `<text>`, `clipPath`, `mask`, patterns, focal radial gradients,
+  filters; to be folded into main's `SvgImage`), system video and audio output (`extras/media.hpp`), `extras/i18n.hpp`
+  (`.po` catalogues), the Designer additions of both branches. `PdfDocument::renderDrawList` writes a gradient as the
+  mean of its stops and skips nine-patches and layer effects.
+- `fuse_app_binary_size` has a budget only for Linux x86-64 GCC Release MINIMAL in the standalone tree; the HUD binary
+  size gate of the branch needs the COOKED text profile and is not registered.
 - In-window menus built from `MenuDesc` show `[x]` text for checkable items and do not grey disabled ones.
 - These are native backends, not the SDL3 route decision D1 recommended for macOS / iOS / Android.
 

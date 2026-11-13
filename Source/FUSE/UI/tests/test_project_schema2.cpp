@@ -307,12 +307,8 @@ int minimalInit(bool native) {
         CHECK(t.firstFrame <= 150.0);
     } else {
         Image shown;
-        // async Vulkan start-up: the first frame was software; wait for the switch, then compare the Vulkan frame
-        const bool softwareFirst = host.native()->kind(*w) == fuse::app::PresenterKind::Software;
-        const auto ts = std::chrono::steady_clock::now();
-        for (int i = 0; i < 4000 && host.native()->presenterPending(*w); ++i) host.app().step(0.005f);
-        std::printf("  native: first frame via %s, Vulkan presenter after %.0f ms more\n", softwareFirst ? "software" : "vulkan",
-                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - ts).count());
+        // main's presenter is installed by show() (no asynchronous Vulkan start-up to wait for)
+        std::printf("  native: presenter %s\n", host.native()->kind(*w) == fuse::app::PresenterKind::Vulkan ? "vulkan" : "software");
         for (int i = 0; i < 20; ++i) host.app().step(0.005f);
         w->requestRedraw();
         const u64 f0 = w->framesPresented();

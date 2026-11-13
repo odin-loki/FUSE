@@ -40,8 +40,11 @@ because the branch vendors `NotoSansThai-Regular.ttf` and `NotoSansCJKsc-Subset.
 | Lua handler lifetime (`LuaUi::handlerCount`, sweep on `update` / `ui.on` / `ui.destroy`) | `U/Script/include/fuse/ui/script/lua_ui.hpp`, `U/Script/src/lua_ui.cpp` | `fuse_ui_script_bind` (new, `U/tests/test_script_bind.cpp`), `fuse_ui_lua_bindings` |
 | `JsonValue` out-of-line special members (Clang < 19 with libstdc++ 14) | `U/Doc/include/fuse/ui/doc/json.hpp`, `U/Doc/src/json.cpp` | every `fuse_ui_doc_*` gate |
 | `FUSE_INSTRUMENTED_RUN` switch for wall-clock budgets (`timingBudgetsEnforced`) | `U/tests/test_env.hpp` (new), used by `test_app.cpp`, `test_bench_10k.cpp` | `fuse_app_hello_startup`, `fuse_ui_bench_10k` |
-| HUD benchmark executable | `U/tests/test_bench_hud.cpp`, `U/Game/samples/hud_bench_scene.hpp` (new). Built always; the ctest gate is registered only with `-DFUSE_UI_PORTING_BENCH_HUD=ON` (§3.12) | (not registered by default) |
 | Wayland backend of `fuse_app_native` (was 3.6): xdg-shell toplevels, `wl_shm` and Vulkan present, pointer / keyboard / touch, integer and fractional scale, cursor shapes, text clipboard, drops, text-input-v3, xdg-decoration, `osPopups` as xdg_popups, icons. Backend choice: `NativeOptions::backend`, `$FUSE_UI_BACKEND` (the branch's `$FUSE_APP_BACKEND` is gone), then `$WAYLAND_DISPLAY` | `U/App/src/native_wayland.cpp` + `wayland_internal.hpp` (the branch's protocol layer, adapted: main's `Cursor`, `WindowBackend` / `AppWindow::notify*` instead of the branch's chrome hooks and `platform.hpp`; added `wl_touch`, wheel steps / smooth axis, the frame-callback throttle, hide / show, size limits, restore size, `FreeBSD` shm file, connection loss); `U/App/src/native_wayland_platform.{hpp,cpp}` (new: the `NativePlatform` side); dispatch seam in `U/App/src/native.cpp` (`FUSE_APP_WL`), `native_services.inl` (2 lines); `SurfaceSource::Wayland` in `native_internal.hpp` / `vk_present.cpp`; `NativeBackend` in `native.hpp` | `fuse_app_wayland` (`U/tests/test_app_wayland.cpp`, rewritten for main: headless weston started by the gate), `fuse_app_wayland_seat` (`U/tests/test_app_wayland_seat.cpp`, new: in-process compositor) |
+| HUD benchmark executable | `U/tests/test_bench_hud.cpp`, `U/Game/samples/hud_bench_scene.hpp` (new) | `fuse_ui_bench_hud` (registered since 2026-11-13, see 3.14) |
+| **Ported 2026-11-13.** Themes (3.13): `ThemeVariant { Dark, Light, HighContrast }`, `ThemeDesc`, `themeCss`, `lightThemeCss`, `highContrastThemeCss(HighContrastPalette)`, `themeTokensCss`, `setTheme`; every colour of the theme rules and of the widget paint code is a `:root` token; focus rings; `UiContext::setThemeStyleSheet` (the theme slot) on sheets by handle | `U/Widgets/src/theme.cpp` (rewritten on main: token table with dark / light / high-contrast values), `widgets_internal.hpp` (`tok::`, `themed`), the paint functions of `U/Widgets/src/*.cpp`, `U/Core/src/style_sheets.cpp` (new), `U/App/src/services.cpp` (`applyTheme` on one replaced sheet) | `fuse_ui_theme_{sheet_handles,token_only,contrast,focus_ring}`, `fuse_ui_theme_golden_{light,contrast}_<scene>`, `fuse_ui_widget_golden_{controls,editors}`, `fuse_app_theme_sheets` |
+| **Ported 2026-11-13.** ProjectHost (3.11): `fuse::app::ProjectHost`, targets `fuse_app_project`, `fuse_app_host`, and with `fuse_hybrid` also `fuse_app_project_hybrid`, `fuse_hybrid_host` (in tree only) | `U/App/include/fuse/app/project_host*.hpp`, `U/App/src/project_host*.cpp`, `U/App/samples/app_host.cpp`, `U/App/CMakeLists.txt` | `fuse_project_schema2`, `fuse_project_schema2_native` (see 3.11 for what was run) |
+| **Ported 2026-11-13.** Performance gates (3.14): `fuse_ui_bench_hud` registered (label `perf`) after the style-hash fix in `StyleEngine` (0.72 -> 0.105 ms); `fuse_app_binary_size` with main's own baseline | `U/Core/src/style.cpp` (`hashStyle`), `U/tests/CMakeLists.txt`, `U/tests/test_app_binary_size.cpp` | `fuse_ui_bench_hud`, `fuse_app_binary_size` |
 
 Standalone UI build on Linux after the merge: 180 ctest gates (the 178 main had, `fuse_ui_l10n`, `fuse_ui_script_bind`).
 With the Wayland port: +2 (`fuse_app_wayland`, `fuse_app_wayland_seat`).
@@ -343,15 +346,27 @@ The backend is live: see §2. `native_wayland.cpp`, `wayland_internal.hpp` and `
 
 ### 3.11 ProjectHost and `project.json` schema 2 (M)
 
-- **What**: `fuse::app::ProjectHost` (`fuse_app_host`): run an app / hybrid project from `project.json` schema 2
-  (`AppPresent`), hybrid game side on a UI context.
-- **In the tree, unbuilt**: `U/App/include/fuse/app/{project_host,project_host_hybrid}.hpp`,
-  `U/App/src/{project_host,project_host_hybrid}.cpp`, `U/App/samples/app_host.cpp`, `U/tests/test_project_schema2.cpp`.
-  The non-UI half is live: `Source/FUSE/Project` (manifest schema 2), `Source/FUSE/Core/include/fuse/core/track_b.hpp`,
-  `Templates/FuseUIApp`.
-- **Blocks**: in tree only (`fuse/project/manifest.hpp`). Needs the `U/App/CMakeLists.txt` delta (targets
-  `fuse_app_host`, `fuse_app_host_hybrid`) and whatever of 3.5 `project_host.cpp` uses from the branch's `app.hpp`.
-- **Verify**: `fuse_project_schema2`, `fuse_project_schema2_native` (in-tree build with Vulkan).
+**Ported 2026-11-13** (listed in §2). What was done and what was not:
+
+- `project_host.cpp` needed one change for main: the branch's `Application::setFollowSystemTheme` does not exist, so
+  `ui.theme: "system"` calls `AppWindow::setFollowSystemTheme(true)` per window, and `dark` / `light` go through
+  `widgets::setTheme` (the theme slot from 3.13). `AppWindow::followsSystemTheme()` was added for the gate.
+- `U/App/CMakeLists.txt`: `fuse_app_project` + `fuse_app_host` when `fuse_project` and `fuse_core` exist;
+  `fuse_app_project_hybrid` + `fuse_hybrid_host` when `fuse_hybrid` exists.
+- `U/tests/test_project_schema2.cpp`: the hybrid game-side parts are inside `#if FUSE_PROJECT_SCHEMA2_HYBRID` (set when
+  `fuse_app_project_hybrid` is linked); without it the gate checks that an app-only host refuses a hybrid project.
+  The system-theme check now also changes the system theme and expects the window to restyle.
+- The native part of the gate waited for the branch's asynchronous Vulkan start-up
+  (`NativePlatform::presenterPending`); main installs the presenter in `show()`, so that wait is gone.
+- **Verified 2026-11-13** in the engine tree configured with `-DFUSE_BUILD_VULKAN=OFF` (no Vulkan loader on the port
+  machine): `fuse_app_host`, `fuse_app_project_hybrid` and `fuse_project_schema2` build and link (GCC 13.3);
+  `fuse_project_schema2` passes: 7 schema 1 sample projects unchanged, 24 invalid manifests rejected, themes, an app
+  project up with only `AppPresent` (first frame 1.3 ms headless), the hybrid game side deferred until the viewport
+  shows (software frames). It printed "hybrid GPU (headless): no Vulkan device, software viewport (pixel checks
+  skipped)", and `--native` skipped (no display). `fuse_app_host Templates/FuseUIApp --headless --first-frame`
+  runs. The rest of the engine tree was not built.
+- **Remains**: run `fuse_project_schema2` with Vulkan (the hybrid viewport renders on the game side's device) and
+  `--native` on a display; the Android `fuse_ui_bench_hud_mobile` / APK side of the branch is 3.10.
 
 ### 3.12 Widgets: dock splits, tree line geometry, timeline clip drag, per-class gates (M) **editor**
 
@@ -373,25 +388,44 @@ The backend is live: see §2. `native_wayland.cpp`, `wayland_internal.hpp` and `
 
 ### 3.13 Themes: light, high contrast, token-only colours, focus rings (M)
 
-- **What**: `ThemeVariant`, `themeCss`, `lightThemeCss`, `highContrastThemeCss(HighContrastPalette)`; every literal
-  colour of the default theme moved to `:root` tokens; `:focus-visible` rings and `:disabled` opacity for more classes.
-- **Branch delta not taken**: `U/Widgets/src/theme.cpp` (+112), the declarations in `widgets.hpp`.
-- **Overlap on main**: `defaultThemeCss`, system theme restyle (gate `fuse_app_theme_restyle`).
-- **Blocks**: nothing structural. The focus-ring and disabled rules change most widget goldens: port the token
-  refactor first (no pixel change expected), then the new rules with a reviewed golden update.
-- **Verify**: `fuse_platform_high_contrast`, `fuse_platform_system_theme`, all goldens.
+**Ported 2026-11-13** (listed in §2), on main's theme rather than as the branch delta:
+
+- The branch moved the theme rules' literals into tokens; on main the widget paint code is tokenised too (106
+  `Color::rgb(0x...)` sites in `U/Widgets/src/*.cpp` now read `tok::` tokens through `UiContext::themeColor`), so the
+  light and high-contrast sets restyle sliders, scroll bars, code editor, node graph, timeline and the rest.
+- `UiContext::setThemeStyleSheet` exists as the branch had it, built on `StyleEngine::replaceSheet` by handle. The
+  first call adds the sheet where it stands (as `install` always did), later calls replace it in place.
+- The dark rendering did not change: all existing goldens compare with 0 differing pixels. The focus-ring rules do
+  change a focused widget, so the dark dialogs / wizard scenes are captured with the focus parked (their FULL-profile
+  goldens cannot be re-rendered without the fetched text stack); the rings are covered by the new goldens.
+- **Not ported**: `StyleEngine::setForcedColors` (drop blur / shadows / gradients of application sheets in high
+  contrast): the high-contrast token set only clears the theme's own shadows. `SystemTheme` has `highContrast` but no
+  backend sets it and it carries no palette (the branch's `SystemTheme::contrast`, `reducedMotion`, `textScale` are
+  3.5). The branch gates `fuse_platform_high_contrast` / `fuse_platform_system_theme` (`test_platform_desktop.cpp`)
+  stay parked with 3.5; `fuse_app_theme_sheets` covers the headless part.
 
 ### 3.14 Performance gates and baselines (S)
 
-- **What**: `fuse_ui_bench_hud` (293-node HUD, UI CPU per frame median <= 0.5 ms), `fuse_app_binary_size`,
-  `fuse_ui_hud_binary_size`, `scripts/ui_baselines.py`, `docs/ui/BASELINES.md`.
-- **State**: `fuse_ui_bench_hud` builds; on the merge machine (4 cores, load average 3.5) main's core measured
-  0.57 to 0.68 ms, so the gate is registered only with `-DFUSE_UI_PORTING_BENCH_HUD=ON`. Not measured on a quiet
-  machine. `test_app_binary_size.cpp` is unbuilt: its budgets are byte counts of the branch's `hello_app`.
-- **Blocks**: 3.2 (paint-time text cache) for the HUD budget; new baselines measured on main for the size gates.
-- **Verify**: `ctest -R fuse_ui_bench_hud` alone on a quiet machine; re-measure and set `FUSE_APP_BINARY_BUDGET`.
+**Ported 2026-11-13** (listed in §2).
+
+- `fuse_ui_bench_hud`: main really was slower than the branch on this scene, and not because of the missing
+  paint-time text cache. `StyleEngine::intern` hashed a handful of style fields; the styles a HUD animates differ in
+  fields that were not hashed (anchored / absolute offsets, the other colour channels), so they shared one probe
+  chain and every lookup compared `ComputedStyle`s along it (callgrind: 80.7 % of the bench in `intern`). With
+  placement, margins and all colour channels in the hash: 0.65-0.77 ms -> 0.104-0.109 ms on the port machine (4
+  cores, load average 16 to 36, six runs each). The gate is registered with labels `gate;perf`;
+  `FUSE_UI_PORTING_BENCH_HUD` is gone. Numbers: `docs/ui/BASELINES.md`.
+- `fuse_app_binary_size`: registered with main's own baseline (stripped `hello_app`, Linux x86-64 GCC 13.3 Release
+  MINIMAL standalone: 1,936,432 B, budget 2,130,000). Other toolchains report and skip (77) until
+  `-DFUSE_APP_BINARY_BUDGET` is set. The branch's byte counts were not reused.
+- **Remains**: `fuse_ui_hud_binary_size` (needs the COOKED text profile, 3.1); `scripts/ui_baselines.py` was not run
+  against main; the baselines of the other toolchains (MSVC, Clang) are not measured.
 
 ### 3.15 Designer additions (S, after 3.3 and 3.4)
+
+*Still parked (checked 2026-11-13): the icon picker needs the `IconSet` / `icon` style property of 3.3 and the effect
+picker the custom effects of 3.4; neither was live when this item was looked at. The registry-driven property grid
+has no such prerequisite and can be ported alone.*
 
 - **What**: icon picker, effect picker, registry-driven property grid.
 - **Branch deltas not taken**: `U/Designer/include/fuse/ui/designer/designer.hpp` (+25), `U/Designer/src/designer.cpp`

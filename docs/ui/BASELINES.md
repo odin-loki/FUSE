@@ -13,6 +13,25 @@ Updated 2026-11-05 for the CPU rasteriser / software presenter / Vulkan start-up
 machine was at 80–100 % CPU load the whole day (other agents' builds, VMs, OneDrive sync), so before / after pairs were
 measured interleaved (old and new binary alternately, same minutes) and are given as min / median.
 
+**Measured on main, 2026-11-13** (Linux x86-64, GCC 13.3, Release, MINIMAL text, standalone UI tree; a 4-core VM
+with a load average of 16 to 36 from other builds the whole time, so timings are upper bounds):
+
+| Measure | main before | main now | Budget |
+|---|---|---|---|
+| `fuse_ui_bench_hud`: 293-node HUD, UI CPU per frame, median of 300 frames, best of 3 rounds (6 runs) | 0.65–0.77 ms (p95 1.1–4.6 ms) | 0.104–0.109 ms (p95 0.13–0.14 ms) | ≤ 0.5 ms |
+| `hello_app`, stripped | 1,936,432 B | (same) | `fuse_app_binary_size`: 2,130,000 B (+10 %) |
+
+Why main was slower than the branch on the HUD scene: `StyleEngine::intern` hashed only a few fields of a computed
+style (two background channels, one colour channel, size, padding, gap, font size, opacity, border width, one radius,
+grow). A HUD moves anchored / absolute nodes and fades colours every frame, and every one of those styles differs
+only in fields that were not hashed (`left / top / right / bottom`, the other colour channels), so they all landed in
+one probe chain of the open-addressed index and each lookup compared whole `ComputedStyle`s along it. Callgrind on the
+bench: 80.7 % of all instructions in `StyleEngine::intern` (6.65 of 8.25 billion). The hash now also covers placement,
+margins, the remaining colour channels, min / max sizes, basis, shadow blur and letter spacing; the same run is 7x
+faster and the gate is registered (label `perf`). The branch's paint-time text cache was not needed for the budget.
+The binary size baseline is main's own (the branch's 889,344 B was measured with `--gc-sections` and its smaller
+widget library); re-measure and move the budget when the widget library grows on purpose.
+
 Reproduce with [`scripts/ui_baselines.py`](../../scripts/ui_baselines.py) (it prints these tables):
 
 ```

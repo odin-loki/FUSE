@@ -39,7 +39,7 @@ No golden image changed. Nothing main had was deleted.
 | Path under `U/` | On main at that path | Branch version kept at | Port item |
 |---|---|---|---|
 | `Core/src/path.cpp` | main's `Path` / flatten / stroke / coverage (838 lines, live) | `U/_port/gui-framework/Core/src/path.cpp` (500 lines: the branch's `Path`, `DrawList::path`, gradients, `Gradient::at`) | 3.9 |
-| `Doc/include/fuse/ui/doc/hot_reload.hpp`, `Doc/src/hot_reload.cpp` | main's `HotReload` (live, gates `fuse_ui_hot_reload_identity`, `fuse_ui_hot_reload_file`) | `U/_port/gui-framework/Doc/...` (`HotReload` on `os::FileWatcher`, style-sheet reload) | 3.14 |
+| `Doc/include/fuse/ui/doc/hot_reload.hpp`, `Doc/src/hot_reload.cpp` | main's `HotReload` (live, gates `fuse_ui_hot_reload_identity`, `fuse_ui_hot_reload_file`) | deleted 2026-11-13 (ported: `doc::StyleSheetFileWatcher` in main's files) | 3.14 |
 | `App/android/AndroidManifest.xml` | main's Gradle template manifest (live packaging helper) | `U/_port/gui-framework/App/android/AndroidManifest.xml` (for `org.fuse.ui.FuseActivity`) | 3.4 |
 | `tests/test_app_wayland.cpp` | mb's parked test (311 lines, unbuilt; goes with `native_wayland.cpp`) | `U/_port/gui-framework/tests/test_app_wayland.cpp` (583 lines: in-process Wayland compositor driving the branch's `wayland.cpp`) | 3.2 |
 
@@ -58,6 +58,12 @@ No golden image changed. Nothing main had was deleted.
 | 3D data visualisation (`fuse::ui::dv3d`: surface, scatter, bars, volume slices, BSP ordering, picking) and the CPU mesh rasteriser | `extras/datavis3d.hpp`, `Extras/src/datavis3d.cpp`, `U/Core/include/fuse/ui/mesh3d.hpp` (header only) | `fuse_ui_extras_dataviz3d`, `fuse_ui_extras_dataviz3d_bsp`, the `3d` / `mesh3d` chart gates |
 | Key-code / modifier / role tables of the branch's Cocoa backend | `U/App/src/cocoa_map.hpp` (plain header) | `fuse_app_cocoa_map` (`U/tests/test_cocoa_map.cpp`). The backend that uses the table is parked (3.3). |
 | From the branch's Wayland backend (3.2), onto the backend ported from `claude/magical-bassi-815825`: the Vulkan Wayland surface (`SurfaceSource::Wayland`, `VK_KHR_wayland_surface` resolved through `vkGetInstanceProcAddr`, no `vulkan_wayland.h` needed), the `wl_surface.frame` throttle for `wl_shm` presents, and the in-process compositor as a gate that needs no installed compositor | `U/App/src/vk_present.cpp`, `native_internal.hpp`, `native_wayland.cpp` (`frameReady`), `U/tests/test_app_wayland_seat.cpp` (new, written for main's backend; the branch's test stays under `_port/`) | `fuse_app_wayland`, `fuse_app_wayland_seat` |
+| **Ported 2026-11-13.** Rich text: `rich::RichDocument`, `RichTextEditor`, HTML + Markdown import / export, `richtextedit` widget, on main's text stack (real bold / italic faces, font decoration metrics), undo on `UndoStack`, `toRichTextMarkup / fromRichTextMarkup` bridge to main's `richText` view | `extras/richtext.hpp`, `Extras/src/richtext.cpp` | `fuse_ui_extras_richtext_{model,undo,widget,view,golden}` (`U/tests/test_richtext.cpp`) |
+| **Ported 2026-11-13.** `PdfDocument::renderDrawList` writes main's `Path` commands (fill, even-odd, stroke, dashes) and path clips | `Extras/src/pdf.cpp` | `fuse_ui_extras_pdf_paths` (`U/tests/test_pdf_paths.cpp`) |
+| **Ported 2026-11-13.** Audio level meter widget, split out of the media module | `extras/audio_meter.hpp`, `Extras/src/audio_meter.cpp` | `fuse_ui_extras_audio_meter` (`U/tests/test_extras_small.cpp`) |
+| **Ported 2026-11-13.** Gesture recogniser as `fuse::ui::gesture::GestureRecognizer` (recogniser helpers next to the core's gestures) | `extras/gesture.hpp`, `Extras/src/gesture.cpp` | `fuse_ui_extras_gesture` |
+| **Ported 2026-11-13.** Style sheet hot reload as `doc::StyleSheetFileWatcher` on main's file poll (`StyleEngine::replaceSheet` by handle) | `U/Doc/include/fuse/ui/doc/hot_reload.hpp`, `U/Doc/src/hot_reload.cpp`, `U/Core/src/style_sheets.cpp` | `fuse_ui_hot_reload_style` (`U/tests/test_hot_reload.cpp`, rewritten) |
+| **Ported 2026-11-13.** `<fuse/gui.hpp>` umbrella header and target `fuse::gui`, over the live modules | `U/Public/include/fuse/gui.hpp`, `U/Public/examples/gui_quickstart.cpp` | `fuse_gui_quickstart` |
 
 Standalone UI build on Linux after the merge: 208 ctest gates (the 180 main had + 28). `fuse_ui_os` and
 `fuse_ui_extras` are in the FuseUI install set (`U/cmake/fuse_ui_install.cmake`; `fuse_ui_install_consumer` passes).
@@ -341,25 +347,33 @@ five files when done. The original description follows.
 
 ### 3.13 Extras documents and media: rich text, SVG documents, system video, audio (M each)
 
-- **Rich text** (`fuse::ui::rich`): `RichDocument`, `RichTextEditor`, HTML + Markdown import / export.
-  `U/Extras/include/fuse/ui/extras/richtext.hpp`, `U/Extras/src/richtext.cpp` (1135 lines). **Blocks**: only its
-  include of `widgets_extra.hpp` (3.12). Gate `fuse_ui_extras_richtext`.
-- **SVG documents** (`fuse::ui::svg`, `svgWidget`): `<text>`, `clipPath`, `mask`, patterns, focal radial gradients,
-  filters. `extras/svg.hpp`, `Extras/src/svg.cpp` (993 lines). **Overlap**: main's `SvgImage` (`fuse/ui/svg.hpp`,
-  gate `fuse_ui_svg`), which KNOWN_GAPS says lacks exactly these; mb's nanosvg icon cooker. **Blocks**: 70 errors, all
-  from the branch's path / gradient / `ClipLayer` API and `text::Font::glyphOutline` (branch delta in `U/Text`,
-  +12 in `text.hpp`, +36 in `text.cpp`). After 3.9, port its features **into main's `SvgImage`** instead of keeping
-  two SVG readers. Gate `fuse_ui_extras_svg`.
-- **Media** (`fuse::ui::media`): `SystemVideo` decode on GStreamer / Media Foundation / AVFoundation, audio output,
-  audio level meter widget. `extras/media.hpp`, `Extras/src/{media.cpp,media_gst.cpp,media_mf.cpp,media_none.cpp,media_avf.mm,media_internal.hpp}`,
-  `U/Os/src/audio_out.cpp` (PulseAudio / ALSA / winmm through `os::loadLibrary`; compiles on main, unbuilt because
-  only media uses it), `U/tests/data/media_clip.avi`. **Blocks**: `media.cpp` needs `VideoSource::playback` and
-  `::clock` (branch delta in `widgets.hpp` / the video widget). Gate `fuse_ui_extras_media`.
-- **PDF of vector content**: `PdfDocument::renderDrawList` does not write main's `Path`, `NinePatch`, clip-path or
-  layer ops (it skips them). Add path output (PDF has the operators) (S). Gate `fuse_ui_extras_widget_pdf`.
-- **Charts through the widgets API**: `widgets::ChartKind::Pie / Donut`, `chartSetAxis`, `chartSetLegend`,
-  `chartSetSliceColors` (branch delta in `widgets.hpp`, gate `fuse_ui_extras_charts`): main's `chart` widget has
-  `Line, Bar, Area, Scatter, Flame`. Decide whether main's widget forwards to `fuse::ui::charts` (S-M).
+- **Rich text**: **ported 2026-11-13** (§2). How the two rich-text implementations were reconciled: there is one
+  model, `rich::RichDocument`. The Extras `richtextedit` widget edits it; main's read-only `richText` view
+  (`widgets_tier_b3.cpp`) is its renderer through the view's own markup (`RichDocument::toRichTextMarkup /
+  fromRichTextMarkup`, `widgets::richTextMarkup(ui, editor)`). Both resolve a run's face the same way
+  (`UiContext::fontFor(family, bold ? 700 : weight, italic)`) and draw underline / strike-through from the font's
+  decoration metrics, and the gate checks that a line lays out to the same width in both. The branch's
+  double-strike bold and sheared oblique (`rich::obliqueGlyphs`) are gone; `rich::layout` takes a `Measure(text, px,
+  format)` because a real bold face has its own advances. Undo is the Extras `UndoStack` (own, or shared through
+  `setUndoStack`). What the view cannot show: block formats (alignment, lists, headings, indent) are flattened in
+  view markup. The view was not rebuilt on `RichDocument` because `fuse_ui_widgets` cannot depend on `fuse_ui_extras`;
+  moving `RichDocument` into the widget library would remove that limit.
+- **SVG documents** (`fuse::ui::svg`, `svgWidget`): **still parked.** `extras/svg.hpp`, `Extras/src/svg.cpp` (993
+  lines) were not ported and not deleted. Target: main's `SvgImage` (`U/Core/src/svg.cpp`), which stores a flat list of
+  shapes. To take `clipPath`, `mask`, group `opacity` and filters it needs a group record in that list (begin / end
+  with a clip path or a layer: `Painter::pushClipPath / pushLayer` exist); `<use>` needs elements kept by id;
+  `<text>` needs a font at render time (`SvgImage::render` takes only a `Painter`) or `Font::glyphOutline`, a branch
+  delta in `U/Text` that is not on main; patterns need a tiled paint the draw list does not have; a focal radial
+  gradient needs `Gradient` to carry the focal point. Gate to bring along: `fuse_ui_extras_svg`.
+- **Media**: the audio level meter is **ported** (§2, `extras/audio_meter.hpp`). `SystemVideo` (GStreamer / Media
+  Foundation / AVFoundation) and the audio output (`U/Os/src/audio_out.cpp`) are **still parked**: `media.cpp` needs
+  `VideoSource::playback` and `::clock` (branch delta in the video widget), and no portable part is left once the
+  meter is out. `media.hpp` now includes `audio_meter.hpp`.
+- **PDF of vector content**: **ported** (§2). Paths, even-odd fills, strokes with dashes and path clips are written;
+  a gradient paint is written as the mean colour of its stops (no PDF shading), `NinePatch` and `PushLayer` effects
+  are still skipped. The branch gate `fuse_ui_extras_widget_pdf` (in `test_extras.cpp`, needs `widgets_extra`) is
+  still parked.
+- **Charts through the widgets API** (`ChartKind::Pie / Donut`, `chartSetAxis`, ...): not looked at in this round.
 
 ### 3.14 FORGE script bindings, hot reload on the seam, Designer pass, public header (S-M each)
 
@@ -367,16 +381,17 @@ five files when done. The original description follows.
   `U/tests/test_script.cpp`: the `ui::` functions for FORGE script. Needs FORGE (§5). Main keeps Lua. Port only if
   FORGE script becomes a supported language; the binding surface (`ui::find`, charts calls) can be read as a list of
   what the Lua binding lacks.
-- **Hot reload**: `U/_port/gui-framework/Doc/...` + `U/tests/test_hot_reload.cpp`: watches files with
-  `os::FileWatcher` and reloads style sheets (`StyleEngine::sheetCount / sheet`, branch delta). Main's `HotReload`
-  polls documents. `os_std.cpp` has a polling watcher now; the style-sheet replace API is the missing part (also the
-  KNOWN_GAPS item "`applyTheme` adds a style sheet per call"). Gate `fuse_ui_hot_reload`.
+- **Hot reload**: **ported 2026-11-13** as `doc::StyleSheetFileWatcher` (§2). Main keeps its poll design
+  (`DocumentFileWatcher`); the style-sheet part of the branch's `HotReload` was the missing piece and is built on
+  `UiContext::replaceStyleSheet`. `os::FileWatcher` is not used: on main it is itself a polling watcher
+  (`os_std.cpp`) and `fuse_ui_doc` does not depend on `fuse_ui_os`. The `_port/gui-framework/Doc` copies are deleted
+  and `U/tests/test_hot_reload.cpp` is rewritten for the watcher.
 - **Designer product pass** (clipboard, shortcuts, validation, preview, device frames): branch deltas
   `U/Designer/include/fuse/ui/designer/designer.hpp` (+53), `U/Designer/src/designer.cpp` (+297),
   `designer_main.cpp`, `U/tests/{test_designer.cpp (+123),test_ui8.cpp (+59)}`. mb changed the same files (mb 3.15).
-- **`<fuse/gui.hpp>`**: `U/Public/include/fuse/gui.hpp`, `U/Public/examples/gui_quickstart.cpp`: one umbrella header
-  and a `fuse::gui` target. Main has the FuseUI CMake package instead. The header includes parked modules. Gate
-  `fuse_gui_quickstart`.
+- **`<fuse/gui.hpp>`**: **ported 2026-11-13** (§2). The header includes the live modules only (the Extras when
+  the tree was built with them: `FUSE_GUI_HAS_EXTRAS`); `fuse::gui` is an interface target inside the UI build, it
+  is not exported by the FuseUI package.
 
 ### 3.15 SIMD: box blur and chart kernels (S, FORGE or rewrite)
 
@@ -388,11 +403,13 @@ five files when done. The original description follows.
 
 ### 3.16 Remaining Extras modules and platforms (S each)
 
-- `U/Extras/include/fuse/ui/extras/gesture.hpp`, `U/Extras/src/gesture.cpp` (tap / pan / pinch recognisers):
-  redefines `fuse::ui::GestureConfig`, which main's `ui.hpp` already has with main's gesture support. Compare, port
-  what main lacks (KNOWN_GAPS: pinch / rotate are not fed by backends), then delete or keep as recogniser helpers
-  under another name. Gate `fuse_ui_extras_gesture`.
-- `extras/i18n.hpp`, `Extras/src/i18n.cpp` (`.po` catalogues, plurals, `%1` formatting): compiles on main; unbuilt
+- Gesture recogniser: **ported 2026-11-13** (§2) as `fuse::ui::gesture` (its `GestureConfig` / `TouchPhase` no longer
+  collide with main's). Compared with main's core gestures it adds pan with offset and release velocity, swipe
+  with a direction and a finger count, for raw points that do not go through `UiContext::touch`. Backends still do
+  not feed pinch / rotate from OS gesture events (KNOWN_GAPS); that is platform work, not this module.
+- *(still parked, checked 2026-11-13: main's `l10n::parseTable` reads `key=value` tables, not gettext `.po`; the
+  fold is a `.po` -> table reader in `fuse_ui_l10n_lib` that maps `msgstr[n]` onto CLDR plural categories)*
+  `extras/i18n.hpp`, `Extras/src/i18n.cpp` (`.po` catalogues, plurals, `%1` formatting): compiles on main; unbuilt
   because it would be the third i18n library (`fuse/text/i18n.hpp`, `fuse_ui_l10n_lib`; mb 3.16). Fold its `.po`
   reader into one of those if it reads more than main's. Gate `fuse_ui_extras_i18n`.
 - Windows: turn `FUSE_BUILD_UI_EXTRAS` on in `fuse-windows-native.yml`, fix what MSVC reports, run
