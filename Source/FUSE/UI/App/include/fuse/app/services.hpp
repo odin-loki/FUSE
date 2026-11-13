@@ -24,8 +24,9 @@ struct SystemTheme {
     bool hasAccent = false;
     fuse::ui::Color accent{};
     /// The desktop asks for a high-contrast theme: AppWindow::applyTheme uses the widget library's high-contrast
-    /// token set (widgets::ThemeVariant::HighContrast, default palette). No backend query sets it yet (hosts and
-    /// tests may, through Application::setSystemTheme).
+    /// token set (widgets::ThemeVariant::HighContrast, default palette). X11 sets it from the desktop's theme name
+    /// (XSETTINGS Net/ThemeName, live; $GTK_THEME at start: "HighContrast", "HighContrastInverse"); the other
+    /// backends do not query it (hosts and tests may set it through Application::setSystemTheme).
     bool highContrast = false;
     friend bool operator==(const SystemTheme&, const SystemTheme&) = default;
 };
@@ -230,6 +231,8 @@ std::string themeTokensCss(const SystemTheme& t);
 /// GTK_THEME ("Adwaita:dark") / `gsettings get org.gnome.desktop.interface color-scheme` output ("'prefer-dark'") ->
 /// scheme; Unknown when the text says nothing.
 ColorScheme schemeFromGtkTheme(std::string_view gtkTheme);
+/// True when a GTK theme name asks for high contrast ("HighContrast", "HighContrastInverse", "...-high-contrast").
+bool highContrastFromGtkTheme(std::string_view gtkTheme);
 ColorScheme schemeFromGsettings(std::string_view output);
 
 // ---- XSETTINGS (X11 desktop settings) --------------------------------------------------------------------------------

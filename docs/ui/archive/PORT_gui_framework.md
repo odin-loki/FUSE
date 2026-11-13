@@ -68,7 +68,10 @@ No golden image changed. Nothing main had was deleted.
 | **Ported 2026-11-13.** gettext `.po` catalogues as string-table entries: `l10n::parsePo`, `poKey`, `poToTable` (the reader of `extras/i18n.hpp`, folded into `fuse_ui_l10n_lib`) | `U/L10n/include/fuse/ui/l10n/l10n.hpp`, `U/L10n/src/po.cpp` (new) | `fuse_ui_l10n_po` (`U/tests/test_l10n_po.cpp`) |
 | **Ported 2026-11-13.** `<fuse/gui.hpp>` umbrella header and target `fuse::gui`, over the live modules | `U/Public/include/fuse/gui.hpp`, `U/Public/examples/gui_quickstart.cpp` | `fuse_gui_quickstart` |
 
-Standalone UI build on Linux after the merge: 208 ctest gates (the 180 main had + 28). `fuse_ui_os` and
+Standalone UI build on Linux after the merge: 208 ctest gates (the 180 main had + 28). After the theme, widget and
+platform ports were merged and made consistent (2026-11-13; the list is in `PORT_magical_bassi.md` §2: the ported
+widgets of 3.7 / 3.12 read theme tokens, have light / high-contrast goldens and focus rings, and are in the theme
+gates): 292 ctest entries. `fuse_ui_os` and
 `fuse_ui_extras` are in the FuseUI install set (`U/cmake/fuse_ui_install.cmake`; `fuse_ui_install_consumer` passes).
 
 Option: `FUSE_BUILD_UI_EXTRAS` (builds both targets). Default ON on Linux, FreeBSD and Android (all three built here;

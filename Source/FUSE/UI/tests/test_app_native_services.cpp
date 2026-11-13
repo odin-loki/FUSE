@@ -659,6 +659,26 @@ void toolWindows(const std::string& out) {
         for (int i = 0; i < 10; ++i) a.step(0.005f);
         CHECK(native.toolWindowCount(win) == 1);
         CHECK(native.toolWindowScreenRect(win, 0).w == 200.f);
+        // dock splits next to tool windows: a tool window docks into a split beside a docked panel (its OS window
+        // goes), a panel floated out of the split is a tool window again and the split collapses
+        const NodeHandle dock3 = w::dockWidget(ui, area, "Notes", w::DockSide::Right, "notes");
+        for (int i = 0; i < 4; ++i) a.step(0.005f);
+        CHECK(w::dockSplit(ui, dock2, dock, w::DockEdge::Bottom) && w::dockSplit(ui, dock3, dock2, w::DockEdge::Center));
+        for (int i = 0; i < 10; ++i) a.step(0.005f);
+        CHECK(native.toolWindowCount(win) == 0 && !ui.hasClass(dock2, "os-window"));
+        CHECK(w::dockSplitOf(ui, dock2).valid() && w::dockSplitOf(ui, dock2) == w::dockSplitOf(ui, dock));
+        CHECK(w::dockSaveLayout(ui, area).rfind("fusedock 2\n", 0) == 0);
+        w::dockFloat(ui, dock, {420.f, 30.f, 210.f, 150.f});
+        for (int i = 0; i < 10; ++i) a.step(0.005f);
+        CHECK(native.toolWindowCount(win) == 1 && native.toolWindowScreenRect(win, 0).w == 210.f);
+        CHECK(!w::dockSplitOf(ui, dock2).valid() && w::dockTabBar(ui, dock2).valid()); // the tab group stays, unsplit
+        const std::string layout = w::dockSaveLayout(ui, area);
+        w::dockTo(ui, dock, w::DockSide::Left);
+        for (int i = 0; i < 10; ++i) a.step(0.005f);
+        CHECK(native.toolWindowCount(win) == 0);
+        CHECK(w::dockRestoreLayout(ui, area, layout)); // the saved layout brings the tool window back
+        for (int i = 0; i < 10; ++i) a.step(0.005f);
+        CHECK(native.toolWindowCount(win) == 1 && native.toolWindowScreenRect(win, 0).w == 210.f);
         win.requestClose();
         a.step(0.f);
         CHECK(a.windowCount() == 0u);
@@ -827,6 +847,26 @@ void xsettings() {
     manager.publish({{"Xft/DPI", 0, 96 * 1024, {}}, {"Net/ThemeName", 1, 0, "Adwaita"}}, 4);
     CHECK(pumpUntil(a, [&] { return native.scale(win) == 1.f && native.scale(second) == 1.f; }));
     CHECK(a.systemTheme().scheme == app::ColorScheme::Light && win.pixelSize().w == 300.f);
+    // a window that follows the system theme, with the client-side title bar: the desktop's theme restyles the bar
+    // (its sheet names theme tokens only), and a high-contrast theme name selects the high-contrast token set
+    second.setFollowSystemTheme(true);
+    const NodeHandle bar = app::titleBar(second, second.ui().root(), "second");
+    auto barIs = [&](w::ThemeVariant v) {
+        Color surface;
+        for (int i = 0; i < 40; ++i) a.step(0.016f); // style transitions run out
+        return w::themeTokenColor({.variant = v}, "--surface", surface) && second.ui().computed(bar).background == surface;
+    };
+    CHECK(barIs(w::ThemeVariant::Light));
+    manager.publish({{"Xft/DPI", 0, 96 * 1024, {}}, {"Net/ThemeName", 1, 0, "Adwaita-dark"}}, 5);
+    CHECK(pumpUntil(a, [&] { return a.systemTheme().scheme == app::ColorScheme::Dark; }));
+    CHECK(!a.systemTheme().highContrast && barIs(w::ThemeVariant::Dark));
+    manager.publish({{"Xft/DPI", 0, 96 * 1024, {}}, {"Net/ThemeName", 1, 0, "HighContrast"}}, 6);
+    CHECK(pumpUntil(a, [&] { return a.systemTheme().highContrast; }));
+    CHECK(a.systemTheme().scheme == app::ColorScheme::Light && barIs(w::ThemeVariant::HighContrast));
+    CHECK(second.ui().computed(second.chrome().close).color == w::HighContrastPalette{}.windowText);
+    manager.publish({{"Xft/DPI", 0, 96 * 1024, {}}, {"Net/ThemeName", 1, 0, "Adwaita"}}, 7);
+    CHECK(pumpUntil(a, [&] { return !a.systemTheme().highContrast; }));
+    CHECK(barIs(w::ThemeVariant::Light));
 }
 
 // ---- saved state on real windows: the next process's window comes back where and how it was ---------------------------

@@ -560,7 +560,7 @@ struct ChartW {
             // dark text on the (warm, light) bars; the label never leaves its bar
             const f32 lum = 0.299f * col.r + 0.587f * col.g + 0.114f * col.b;
             dl.pushClip(bar);
-            ui.paintString(dl, s.flame[i].name, {bar.x + 4.f, bar.y, bar.w - 6.f, bar.h}, pc.tint(Color::rgb(lum > 0.5f ? 0x14141A : 0xFFFFFF)), fs,
+            ui.paintString(dl, s.flame[i].name, {bar.x + 4.f, bar.y, bar.w - 6.f, bar.h}, pc.tint(Color::rgb(lum > 0.5f ? 0x14141A : 0xFFFFFF)), fs, // theme-exempt: text over a flame bar's data colour
                            TextAlignment::Start, pc.node.index);
             dl.popClip();
         }

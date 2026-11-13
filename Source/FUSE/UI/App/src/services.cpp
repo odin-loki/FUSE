@@ -65,7 +65,10 @@ Vec2 toLogical(Vec2 px, f32 scale) { return scale > 0.f ? Vec2{px.x / scale, px.
 ColorScheme schemeFromGtkTheme(std::string_view t) {
     t = trimmed(t);
     if (t.empty()) return ColorScheme::Unknown;
-    return containsNoCase(t, "dark") ? ColorScheme::Dark : ColorScheme::Light;
+    return containsNoCase(t, "dark") || containsNoCase(t, "inverse") ? ColorScheme::Dark : ColorScheme::Light;
+}
+bool highContrastFromGtkTheme(std::string_view t) {
+    return containsNoCase(t, "highcontrast") || containsNoCase(t, "high-contrast") || containsNoCase(t, "high_contrast");
 }
 ColorScheme schemeFromGsettings(std::string_view out) {
     out = trimmed(out);

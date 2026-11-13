@@ -2,7 +2,9 @@
 // (docs/ui/archive/PORT_*.md): line edit / spin box / editable combo / tab bar options, the extras widgets, dock splits.
 // One scene per ctest gate (`--scene=<name>`, ctest fuse_ui_port_golden_<name>) against tests/golden/port_<name>.png
 // (MINIMAL text profile; FULL would read port_<name>_full.png, which was not rendered), with the tolerance of
-// fuse_ui_widget_golden. FUSE_UI_UPDATE_GOLDEN=1 rewrites the PNG, `--out=<dir>` also writes the rendered scenes
+// fuse_ui_widget_golden. `--theme=light` / `--theme=contrast` renders the scenes with the light / high-contrast token
+// sets (ctest fuse_ui_theme_golden_<light|contrast>_port_<scene>, goldens port_<scene>_<light|contrast>.png).
+// FUSE_UI_UPDATE_GOLDEN=1 rewrites the PNG, `--out=<dir>` also writes the rendered scenes
 // there. Run from the tests directory.
 #include "test_util.hpp"
 
@@ -30,6 +32,13 @@ void settle(UiContext& ui) {
     for (int i = 0; i < 30; ++i) ui.update(1.f / 60.f);
     ui.update(0.f);
 }
+/// `--theme=light|contrast`: the scenes in the light / high-contrast token sets (goldens port_<scene>_<theme>.png).
+w::ThemeVariant gTheme = w::ThemeVariant::Dark;
+/// w::install plus the theme under test.
+void install(UiContext& ui) {
+    w::install(ui);
+    if (gTheme != w::ThemeVariant::Dark) UI_CHECK(w::setTheme(ui, gTheme).has_value());
+}
 NodeHandle row(UiContext& ui, NodeHandle parent) {
     const NodeHandle r = w::panel(ui, parent);
     ui.addClass(r, "row");
@@ -39,7 +48,7 @@ NodeHandle row(UiContext& ui, NodeHandle parent) {
 // ---- line edit, spin box, editable combo and tab bar options ---------------------------------------------------------
 void sceneEditOptions(Image& img) {
     UiContext ui({.viewport = {640, 420}, .font = &font()});
-    w::install(ui);
+    install(ui);
     ui.setCss(ui.root(), "padding", "12px");
     ui.setCss(ui.root(), "gap", "10px");
     NodeHandle r = row(ui, ui.root());
@@ -95,7 +104,7 @@ void sceneEditOptions(Image& img) {
 // ---- the extras widgets ------------------------------------------------------------------------------------------------
 void sceneExtra(Image& img) {
     UiContext ui({.viewport = {900, 640}, .font = &font()});
-    w::install(ui);
+    install(ui);
     ui.setCss(ui.root(), "padding", "10px");
     ui.setCss(ui.root(), "flex-direction", "row");
     ui.setCss(ui.root(), "gap", "12px");
@@ -132,6 +141,12 @@ void sceneExtra(Image& img) {
     scene.add({.shape = w::GraphicsShape::Line, .rect = {40, 130, 200, 40}, .strokeWidth = 2.f});
     scene.add({.shape = w::GraphicsShape::Polygon, .points = {{380, 30}, {460, 60}, {410, 140}}});
     scene.add({.shape = w::GraphicsShape::Text, .rect = {260, 150, 200, 24}, .fill = Color::rgb(0xFFFFFF), .text = "graphics view"});
+    if (gTheme != w::ThemeVariant::Dark) { // item colours are the application's data: a themed app picks them from tokens
+        Color text;
+        UI_CHECK(w::themeTokenColor({.variant = gTheme}, "--text", text));
+        scene.item(3)->stroke = text;
+        scene.item(5)->fill = text;
+    }
     scene.select(0, true);
     const NodeHandle view = w::graphicsView(ui, right, &scene);
     ui.setCss(view, "flex-grow", "1");
@@ -157,7 +172,7 @@ void sceneExtra(Image& img) {
 // ---- dock splits ---------------------------------------------------------------------------------------------------------
 void sceneDockSplit(Image& img) {
     UiContext ui({.viewport = {900, 520}, .font = &font()});
-    w::install(ui);
+    install(ui);
     ui.setCss(ui.root(), "padding", "0px");
     const NodeHandle area = w::dockArea(ui, ui.root(), "area");
     const char* names[] = {"Outline", "Assets", "History", "Log", "Console", "Problems", "Properties", "Materials"};
@@ -189,14 +204,15 @@ struct Scene { const char* name; void (*fn)(Image&); };
 const Scene kScenes[] = {{"edit_options", &sceneEditOptions}, {"extra", &sceneExtra}, {"dock_split", &sceneDockSplit}};
 
 void compare(const Scene& s, const char* outDir) {
+    const char* theme = gTheme == w::ThemeVariant::Light ? "_light" : gTheme == w::ThemeVariant::HighContrast ? "_contrast" : "";
 #if FUSE_UI_TEST_TEXT_FULL
-    const std::string golden = std::string("golden/port_") + s.name + "_full.png"; // FreeType coverage differs from stb_truetype
+    const std::string golden = std::string("golden/port_") + s.name + theme + "_full.png"; // FreeType coverage differs from stb_truetype
 #else
-    const std::string golden = std::string("golden/port_") + s.name + ".png";
+    const std::string golden = std::string("golden/port_") + s.name + theme + ".png";
 #endif
     Image img;
     s.fn(img);
-    if (outDir) stbi_write_png((std::string(outDir) + "/port_" + s.name + ".png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
+    if (outDir) stbi_write_png((std::string(outDir) + "/port_" + s.name + theme + ".png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
     if (std::getenv("FUSE_UI_UPDATE_GOLDEN")) {
         stbi_write_png(golden.c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
         std::printf("golden written: %s\n", golden.c_str());
@@ -232,6 +248,8 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (std::strncmp(argv[i], "--scene=", 8) == 0) only = argv[i] + 8;
         else if (std::strncmp(argv[i], "--out=", 6) == 0) outDir = argv[i] + 6;
+        else if (std::strcmp(argv[i], "--theme=light") == 0) gTheme = w::ThemeVariant::Light;
+        else if (std::strcmp(argv[i], "--theme=contrast") == 0) gTheme = w::ThemeVariant::HighContrast;
     }
     bool ran = false;
     for (const Scene& s : kScenes)

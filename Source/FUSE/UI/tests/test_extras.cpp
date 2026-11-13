@@ -12,8 +12,10 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 // main after the gui-framework merge builds part of fuse_ui_extras (undo, desktop, pdf, tray, web view, declarative,
-// 3D data visualisation, charts). The gates of the parked modules (gesture, i18n, widgets_extra, rich text, SVG,
-// media, the widgets chart kinds) compile only with -DFUSE_UI_EXTRAS_ALL=1; see docs/ui/archive/PORT_gui_framework.md.
+// 3D data visualisation, charts). The gates of the parked modules (i18n, the widget PDF export, SVG, media, the
+// widgets chart kinds) compile only with -DFUSE_UI_EXTRAS_ALL=1; see docs/ui/archive/PORT_gui_framework.md. (Rich text,
+// gesture and the audio meter are live: test_richtext.cpp, test_extras_small.cpp; the extra widgets are in
+// fuse_ui_widgets: test_widgets_extra.cpp, test_completer.cpp.)
 #ifndef FUSE_UI_EXTRAS_ALL
 #define FUSE_UI_EXTRAS_ALL 0
 #endif

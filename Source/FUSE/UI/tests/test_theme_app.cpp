@@ -2,6 +2,7 @@
 // (it used to add a sheet per call), takes its token sets from the widget library (light, dark, high contrast), and
 // the paint-code tokens follow (a slider track pixel changes with the theme).
 #include "fuse/app/app.hpp"
+#include "fuse/app/chrome.hpp"
 #include "test_util.hpp"
 
 #include <cmath>
@@ -76,6 +77,44 @@ int main() {
     for (int i = 0; i < 30; ++i) a.step(0.016f);
     UI_CHECK(ui.computed(b).borderWidth < 2.f); // the outline rules left with the high-contrast sheet
     UI_CHECK_EQ(ui.styles().sheetCount(), before + 1);
+
+    // The client-side title bar (fuse::app::titleBar, also the Wayland client-side decoration) is styled from theme
+    // tokens only: every theme switch restyles the bar and its buttons, and the close button's hover face is a token.
+    {
+        app::AppWindow& cw = a.createWindow({.title = "chrome", .width = 320, .height = 200, .frame = app::WindowFrame::Custom});
+        UiContext& cu = cw.ui();
+        const NodeHandle bar = app::titleBar(cw, cu.root(), "Chrome");
+        const NodeHandle close = cw.chrome().close, mini = cw.chrome().minimize;
+        cw.setFollowSystemTheme(true);
+        const u32 sheets = cu.styles().sheetCount();
+        struct Case { app::SystemTheme sys; w::ThemeDesc desc; };
+        const Case cases[] = {{dark, {.variant = w::ThemeVariant::Dark, .hasAccent = true, .accent = Color::rgb(0xCC3366)}},
+                              {light, {.variant = w::ThemeVariant::Light}},
+                              {contrast, {.variant = w::ThemeVariant::HighContrast}},
+                              {light, {.variant = w::ThemeVariant::Light}}};
+        for (const Case& c : cases) {
+            a.setSystemTheme(c.sys);
+            cu.pointerMove({-10.f, -10.f});
+            for (int i = 0; i < 40; ++i) a.step(0.016f);
+            Color surface, text, hi, closeBg, onAccent;
+            UI_CHECK(w::themeTokenColor(c.desc, "--surface", surface) && w::themeTokenColor(c.desc, "--text", text));
+            UI_CHECK(w::themeTokenColor(c.desc, "--surface-hi", hi) && w::themeTokenColor(c.desc, "--window-close", closeBg));
+            UI_CHECK(w::themeTokenColor(c.desc, "--on-accent", onAccent));
+            UI_CHECK(cu.computed(bar).background == surface);
+            UI_CHECK(cu.computed(cu.firstChild(bar)).color == text); // the title
+            UI_CHECK(cu.computed(close).color == text && cu.computed(close).background.a == 0.f);
+            const Rect rc = cu.rect(close), rm = cu.rect(mini);
+            cu.pointerMove({rc.x + rc.w * 0.5f, rc.y + rc.h * 0.5f});
+            for (int i = 0; i < 40; ++i) a.step(0.016f);
+            UI_CHECK(cu.computed(close).background == closeBg && cu.computed(close).color == onAccent);
+            if (c.desc.variant != w::ThemeVariant::HighContrast) { // (high contrast: every hovered tool button is the highlight)
+                cu.pointerMove({rm.x + rm.w * 0.5f, rm.y + rm.h * 0.5f});
+                for (int i = 0; i < 40; ++i) a.step(0.016f);
+                UI_CHECK(cu.computed(mini).background == hi);
+            }
+        }
+        UI_CHECK_EQ(cu.styles().sheetCount(), sheets); // the one override sheet, replaced in place
+    }
 
     const int f = fuse::ui::test::failures();
     std::printf("fuse_app_theme_sheets: %s\n", f ? "FAILED" : "OK");

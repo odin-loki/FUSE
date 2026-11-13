@@ -4,7 +4,8 @@
 # Editor-facing widget API from claude/magical-bassi-815825 on main's dock model: dock splits (+ layout format 2) next
 # to tab groups / floating docks / dock drags, tree line geometry, timeline clip selection and clip-drag reporting
 fuse_ui_test(fuse_ui_dock_split test_dock_split.cpp)
-foreach(g split split_groups tree_line timeline_clip)
+# (tool_windows: splits, tab groups and dock drags with floating docks as OS tool windows, UiContext::setOsWindows)
+foreach(g split split_groups tool_windows tree_line timeline_clip)
     add_test(NAME fuse_ui_dock_split_${g} COMMAND fuse_ui_dock_split --gate=${g})
     set_tests_properties(fuse_ui_dock_split_${g} PROPERTIES LABELS "fuse_ui;gate")
 endforeach()
@@ -46,6 +47,11 @@ else()
     foreach(g edit_options extra dock_split)
         add_test(NAME fuse_ui_port_golden_${g} COMMAND fuse_ui_port_golden --scene=${g})
         set_tests_properties(fuse_ui_port_golden_${g} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        # the same scenes in the light and high-contrast themes (as fuse_ui_theme_golden_<theme>_<scene> for the gallery)
+        foreach(t light contrast)
+            add_test(NAME fuse_ui_theme_golden_${t}_port_${g} COMMAND fuse_ui_port_golden --scene=${g} --theme=${t})
+            set_tests_properties(fuse_ui_theme_golden_${t}_port_${g} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        endforeach()
     endforeach()
 endif()
 

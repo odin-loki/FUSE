@@ -257,7 +257,7 @@ std::string_view leText(UiContext& ui, NodeHandle n) {
 }
 bool isLineEdit(const UiContext& ui, NodeHandle n) { return ui.alive(n) && ui.classOf(n) == ui.registry().find("lineedit"); }
 
-Color accent(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)); }
+Color accent(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD)); }
 Color textCol(const PaintContext& pc) { return pc.tint(pc.style.color); }
 void labelAt(const PaintContext& pc, DrawList& dl, std::string_view s, Rect box) {
     pc.ui.paintString(dl, s, box, textCol(pc), pc.style.fontSize, TextAlignment::Start, pc.node.index);
@@ -410,7 +410,7 @@ void lineEditPaint(const PaintContext& pc, DrawList& dl) {
         dl.rect({c.x + x0 - scrollX, c.y, x1 - x0, c.h}, accent(pc).withAlpha(0.45f * pc.opacity));
     }
     if (eb.text().empty() && pre.empty() && !o.placeholder.empty()) {
-        const Color pcol = pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.5f));
+        const Color pcol = pc.tint(placeholderColor(pc));
         ui.paintString(dl, o.placeholder, {c.x, c.y, c.w + 1000.f, c.h}, pcol, px, TextAlignment::Start, pc.node.index);
     } else if (pre.empty()) {
         labelAt(pc, dl, t, {c.x - scrollX, c.y, c.w + scrollX + 1000.f, c.h});

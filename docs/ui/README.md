@@ -1037,20 +1037,33 @@ std::string tokens = widgets::themeTokensCss({.variant = widgets::ThemeVariant::
   re-colours any widget part with a later `:root { --track: #...; }` sheet. New widget paint code follows the same rule
   (`fuse_ui_theme_paint_literals` scans the sources): add a token to `kTokens` with its three values and the
   `tok::` hash, or mark a data-colour line `// theme-exempt: why`. Not themed on purpose: data colours (the
-  colour picker's gradients and markers, flame / pin / clip palettes and the text over them, images).
+  colour picker's gradients and markers, flame / pin / clip palettes and the text over them, images, the items of a
+  `GraphicsScene`: `GraphicsItem::fill / stroke` are the application's). The ported widgets (`widgets/extra.hpp`,
+  `widgets/edit_options.hpp`, dock splits) follow the rule: `--lcd-text` / `--lcd-bg` (LCD number), `--workspace`
+  (MDI area), `--scene-bg` and `--item-focus` (graphics view and its selection outline), `--placeholder`
+  (placeholder text of a line edit, "None" of a key sequence edit), `--text-disabled` (a disabled tab),
+  `--focus-ring` (rings drawn by paint code: the editable combo box around its field).
 - **Sheets by handle.** `ui.addStyleSheetTracked(sheet)` returns a handle for `ui.replaceStyleSheet(handle, sheet)`
   (same cascade position) and `ui.removeStyleSheet(handle)`; `ui.setThemeStyleSheet(css)` is the theme slot
   (`StyleEngine::addSheetTracked / replaceSheet / removeSheet / hasSheet / sheetCount / tokenColor`, in
   `Core/src/style_sheets.cpp`). `AppWindow::applyTheme` keeps one override sheet and replaces it, and takes its tokens
-  from `widgets::themeTokensCss` (`SystemTheme::highContrast` selects the high-contrast set; no backend query sets it
-  yet).
+  from `widgets::themeTokensCss` (`SystemTheme::highContrast` selects the high-contrast set; X11 sets it from the
+  desktop's theme name - XSETTINGS `Net/ThemeName` live, `$GTK_THEME` at start, e.g. "HighContrast" - the other
+  backends do not query it). The client-side title bar (`fuse::app::titleBar`, also the Wayland client-side
+  decoration) is styled from tokens only (`--surface`, `--surface-hi`, `--window-close`, `--on-accent`), so a theme
+  switch restyles it; `fuse_ui_theme_paint_literals` also scans `App/src` for colour literals in code and style
+  strings.
 - **Focus rings.** Every focusable class shows keyboard focus (`:focus-visible`): a 1px accent border (painted over
   the box, no layout change) for the classes that had none, the heading colour on an accent (primary) button
-  (`--primary-ring`), 2px in the hot-light colour in high contrast.
+  (`--primary-ring`), 2px in the hot-light colour in high contrast. `fuse_ui_theme_focus_ring` renders every
+  focusable class of the registry with and without focus, and separately the composites and option-driven paint
+  paths the class loop cannot reach (editable combo box, line edit with options / a completer, spin box and tab bar
+  with options, key sequence edit, graphics view, tool box header, dialog button box, the handle of a dock split).
 - **Contrast.** Light and dark: text against its background is at least 4.5:1, high contrast at least 7:1
   (`fuse_ui_theme_contrast`, from computed styles and the paint-code token pairs). The dark theme has five known
-  pairs below 4.5 that are frozen by its goldens: white on `--accent` 3.33 (primary button, check marks), on
-  `--danger` 3.91 and `--warning` 2.27 (message box badges), and code editor line numbers 3.00.
+  pairs below 4.5 that are frozen by its goldens: white on `--accent` 3.33 (primary button, check marks, a latched
+  on-screen keyboard key), on `--danger` 3.91 and `--warning` 2.27 (message box badges), code editor line numbers
+  3.00, and placeholder text (the text colour at half alpha: 4.47 in a field, 3.71 in an editable combo box).
 
 ### Fonts, text styles and i18n
 

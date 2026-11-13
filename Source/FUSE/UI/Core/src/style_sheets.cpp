@@ -55,6 +55,16 @@ bool StyleEngine::removeSheet(u32 handle) {
     return true;
 }
 
+bool StyleEngine::tokenColorCached(u32 nameHash) const {
+    if (m_tokenColorVersion != m_version) return false;
+    const std::size_t mask = m_tokenColors.size() - 1;
+    std::size_t slot = std::size_t((nameHash * 2654435761u) >> 16) & mask;
+    for (std::size_t probe = 0; probe < 8; ++probe, slot = (slot + 1) & mask) {
+        if (m_tokenColors[slot].state == 0) return false;
+        if (m_tokenColors[slot].hash == nameHash) return true;
+    }
+    return false;
+}
 bool StyleEngine::tokenColor(u32 nameHash, Color& out) const {
     if (m_tokenColorVersion != m_version) {
         m_tokenColors.fill({});

@@ -520,7 +520,7 @@ struct TimelineW {
                 const Rect r{xOf(c, *s, cl.start), y + 3.f, (cl.end - cl.start) * s->pxPerSec, kTlRow - 6.f};
                 dl.rect(r, pc.tint(cl.color), 4.f);
                 if (i32(k) == s->selTrack && i32(j) == s->selClip) // the selected clip
-                    dl.roundedRect({r.x - 1.f, r.y - 1.f, r.w + 2.f, r.h + 2.f}, {}, {5.f, 5.f, 5.f, 5.f}, pc.tint(Color::rgb(0xFFFFFF)), 2.f);
+                    dl.roundedRect({r.x - 1.f, r.y - 1.f, r.w + 2.f, r.h + 2.f}, {}, {5.f, 5.f, 5.f, 5.f}, pc.tint(themed(pc, tok::primary_ring, 0xFFFFFF)), 2.f);
                 ui.paintString(dl, cl.label, {r.x + 6.f, r.y, std::max(0.f, r.w - 8.f), r.h}, pc.tint(themed(pc, tok::on_clip, 0x101014)), fs,
                                TextAlignment::Start, pc.node.index);
             }

@@ -57,6 +57,29 @@ window the compositor does not decorate gets the chrome as client-side decoratio
 `NativeOptions::clientDecorations`); OS tool windows, drag out of the app and XSETTINGS do not exist there and answer
 "nothing". Details in 3.6 / 3.7 and `docs/ui/KNOWN_GAPS.md`.
 
+The theme port (3.13), the widget port (3.12 here, 3.7 / 3.12 of `PORT_gui_framework.md`) and the platform layer were
+ported side by side and then made consistent (2026-11-13):
+- Every colour of the ported widgets is a theme token: their rules in `theme.cpp` use `var(--token)` only and their
+  paint code reads `tok::` tokens with the dark value it had (the dark goldens `port_*.png` did not change). New
+  tokens: `--lcd-text`, `--lcd-bg`, `--workspace`, `--scene-bg`, `--item-focus`, `--placeholder`,
+  `--text-disabled`, `--focus-ring`, `--window-close` (the table `kTokens` has 90 entries). High contrast outlines them;
+  the editable combo box draws a focus ring around its field.
+- `fuse_ui_theme_contrast` measures them (gallery + token pairs), `fuse_ui_theme_focus_ring` probes the composites
+  and option-driven paint paths, `fuse_ui_theme_paint_literals` also catches `Color::rgb(cond ? 0x.. : 0x..)`,
+  scans `App/src` and checks the `tok::` list against the theme table; the three port scenes have light and
+  high-contrast goldens (`fuse_ui_theme_golden_<light|contrast>_port_<scene>`, MINIMAL).
+- The client-side title bar (`App/src/chrome.cpp`, also the Wayland client-side decoration) is styled from tokens
+  only, so `AppWindow::applyTheme` restyles it; X11 sets `SystemTheme::highContrast` from the theme name (XSETTINGS
+  live, `$GTK_THEME` at start), gated in `fuse_app_native_services` and `fuse_app_theme_sheets`.
+- Dock splits and OS tool windows (`NativeOptions::osWindows`, class `os-window`): `fuse_ui_dock_split_tool_windows`
+  and the tool-window part of `fuse_app_native_services` float docks out of splits and tab groups, dock tool windows
+  into splits, tear off / Escape / drop on a zone, and round-trip layout format 2 with floating docks.
+- `StyleEngine`'s token colour cache has 512 slots (was 128): with the 90 tokens of the table four found no slot
+  within its 8 probes and were resolved from the sheet text on every paint. `fuse_ui_theme_token_only` asks for
+  every token and checks it is cached (`StyleEngine::tokenColorCached`).
+- `fuse_app_binary_size` re-measured: 2,683,504 B, budget 2,951,000 (3.14, `docs/ui/BASELINES.md`).
+Standalone UI build on Linux after this: 292 ctest entries.
+
 Non-UI code that includes UI headers and compiles against main's UI (syntax-checked, not linked: the full engine does
 not build on the merge machine): `Source/FUSE/Apps/HybridHud/hud_ui.cpp`, `Source/FUSE/Renderer/tests/test_scene_renderer_vk.cpp`
 (its `--mode fuse_ui` part uses only `UiFrameSource` and `DrawList`).
@@ -415,8 +438,9 @@ were read against them). Semantics that differ from the branch, because main's d
   change a focused widget, so the dark dialogs / wizard scenes are captured with the focus parked (their FULL-profile
   goldens cannot be re-rendered without the fetched text stack); the rings are covered by the new goldens.
 - **Not ported**: `StyleEngine::setForcedColors` (drop blur / shadows / gradients of application sheets in high
-  contrast): the high-contrast token set only clears the theme's own shadows. `SystemTheme` has `highContrast` but no
-  backend sets it and it carries no palette (the branch's `SystemTheme::contrast`, `reducedMotion`, `textScale` are
+  contrast): the high-contrast token set only clears the theme's own shadows. `SystemTheme` has `highContrast`; only
+  X11 sets it (from the theme name in XSETTINGS / `$GTK_THEME`, since the merge with the platform layer) and it
+  carries no palette (the branch's `SystemTheme::contrast`, `reducedMotion`, `textScale` are
   3.5). The branch gates `fuse_platform_high_contrast` / `fuse_platform_system_theme` (`test_platform_desktop.cpp`)
   stay parked with 3.5; `fuse_app_theme_sheets` covers the headless part.
 
@@ -433,7 +457,9 @@ were read against them). Semantics that differ from the branch, because main's d
   `FUSE_UI_PORTING_BENCH_HUD` is gone. Numbers: `docs/ui/BASELINES.md`.
 - `fuse_app_binary_size`: registered with main's own baseline (stripped `hello_app`, Linux x86-64 GCC 13.3 Release
   MINIMAL standalone: 1,936,432 B, budget 2,130,000). Other toolchains report and skip (77) until
-  `-DFUSE_APP_BINARY_BUDGET` is set. The branch's byte counts were not reused.
+  `-DFUSE_APP_BINARY_BUDGET` is set. The branch's byte counts were not reused. Re-measured when the theme, widget
+  and platform ports met (2026-11-13): 2,683,504 B (platform layer + Wayland +345,632, widget port +393,248, their
+  theme tokens +8,192), budget 2,951,000; the steps are in `docs/ui/BASELINES.md`.
 - **Remains**: `fuse_ui_hud_binary_size` (needs the COOKED text profile, 3.1); `scripts/ui_baselines.py` was not run
   against main; the baselines of the other toolchains (MSVC, Clang) are not measured.
 

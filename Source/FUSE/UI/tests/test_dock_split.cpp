@@ -336,6 +336,116 @@ void gateSplitGroups() {
     UI_CHECK(ui.computed(ui.firstChild(c.docks[Console])).visible); // its title strip is back
 }
 
+// ---- splits next to OS tool windows (UiContext::setOsWindows: a floating dock is an "os-window" surface) --------------
+void gateSplitToolWindows() {
+    Fixture f;
+    UiContext& ui = f.ui;
+    using PopupSurface = UiContext::PopupSurface;
+    ui.setOsWindows(true);
+    DockApp c = buildDocks(ui, host(ui), "C");
+    ui.update();
+    auto surfaceOf = [&](NodeHandle dock) -> const PopupSurface* {
+        for (const PopupSurface& ws : ui.windowSurfaces())
+            if (ws.node == dock) return &ws;
+        return nullptr;
+    };
+    UI_CHECK(w::dockSplit(ui, c.docks[Assets], c.docks[Outline], w::DockEdge::Bottom));
+    UI_CHECK(w::dockSplit(ui, c.docks[History], c.docks[Assets], w::DockEdge::Center));
+    UI_CHECK(w::dockSplit(ui, c.docks[Console], c.docks[Log], w::DockEdge::Right, 240.f));
+    ui.update();
+    UI_CHECK(ui.windowSurfaces().empty() && countClass(ui, c.area, "docksplit") == 2u);
+    for (int i = 0; i < 6; ++i) UI_CHECK(!ui.hasClass(c.docks[i], "os-window"));
+
+    // a dock floated out of a split becomes a tool window, outside the viewport if asked; the split collapses
+    const Size vp = ui.viewport();
+    w::dockFloat(ui, c.docks[Console], {vp.w + 40.f, -20.f, 240.f, 180.f});
+    ui.update();
+    UI_CHECK(w::dockFloating(ui, c.docks[Console]) && ui.hasClass(c.docks[Console], "os-window"));
+    UI_CHECK(!w::dockSplitOf(ui, c.docks[Log]).valid() && countClass(ui, c.area, "docksplit") == 1u);
+    const PopupSurface* ws = surfaceOf(c.docks[Console]);
+    UI_CHECK(ws && ui.windowSurfaces().size() == 1);
+    if (ws) {
+        UI_CHECK_RECT(ws->rect, vp.w + 40.f, -20.f, 240.f, 180.f); // not clamped into the main window
+        UI_CHECK(ws->draw.size() > 0);
+    }
+    // a tab-group member floated: the group in the split pane dissolves, the pane and the split stay
+    w::dockFloat(ui, c.docks[History], {vp.w + 40.f, 200.f, 220.f, 160.f});
+    ui.update();
+    UI_CHECK(ui.windowSurfaces().size() == 2 && surfaceOf(c.docks[History]) && !w::dockTabBar(ui, c.docks[Assets]).valid());
+    UI_CHECK(w::dockSplitOf(ui, c.docks[Assets]).valid() && w::dockSplitOf(ui, c.docks[Assets]) == w::dockSplitOf(ui, c.docks[Outline]));
+
+    // layout format 2 carries splits and floating docks together; restoring it elsewhere makes tool windows again
+    const std::string saved = w::dockSaveLayout(ui, c.area);
+    UI_CHECK(saved.rfind("fusedock 2\n", 0) == 0 && saved.find("tree left v[") != std::string::npos);
+    DockApp d = buildDocks(ui, host(ui), "D");
+    ui.update();
+    const std::string savedD = renamed(saved, "C.", "D.");
+    UI_CHECK(w::dockRestoreLayout(ui, d.area, savedD));
+    ui.update();
+    UI_CHECK_EQ(w::dockSaveLayout(ui, d.area), savedD);
+    UI_CHECK(w::dockFloating(ui, d.docks[Console]) && ui.hasClass(d.docks[Console], "os-window") && surfaceOf(d.docks[Console]));
+    UI_CHECK(w::dockFloating(ui, d.docks[History]) && surfaceOf(d.docks[History]) && ui.windowSurfaces().size() == 4);
+    if (const PopupSurface* dw = surfaceOf(d.docks[Console])) UI_CHECK_RECT(dw->rect, vp.w + 40.f, -20.f, 240.f, 180.f);
+    UI_CHECK(w::dockSplitOf(ui, d.docks[Assets]).valid());
+
+    // a tool window docks straight into a split (dockSplit), as a tab (Center) or to a side: its surface goes
+    UI_CHECK(w::dockSplit(ui, c.docks[Console], c.docks[Log], w::DockEdge::Left, 200.f));
+    ui.update();
+    UI_CHECK(!w::dockFloating(ui, c.docks[Console]) && !ui.hasClass(c.docks[Console], "os-window") && !surfaceOf(c.docks[Console]));
+    UI_CHECK(w::dockSplitOf(ui, c.docks[Console]).valid() && near(ui.rect(c.docks[Console]).w, 200.f, 2.f));
+    UI_CHECK(w::dockSplit(ui, c.docks[History], c.docks[Assets], w::DockEdge::Center));
+    ui.update();
+    UI_CHECK(!ui.hasClass(c.docks[History], "os-window") && !surfaceOf(c.docks[History]) && ui.windowSurfaces().size() == 2);
+    UI_CHECK(w::dockTabBar(ui, c.docks[History]).valid() && w::dockSplitOf(ui, c.docks[History]) == w::dockSplitOf(ui, c.docks[Outline]));
+
+    // tearing a split dock off by its title makes a tool window under the pointer; Escape puts it back in its pane
+    const std::string before = w::dockSaveLayout(ui, c.area);
+    const Rect title = ui.rect(ui.firstChild(c.docks[Console]));
+    const Vec2 grab{title.x + 30.f, title.y + title.h * 0.5f};
+    ui.pointerMove(grab);
+    ui.pointerDown(grab);
+    ui.pointerMove({grab.x + 80.f, grab.y - 220.f});
+    ui.update(1.f / 60.f);
+    UI_CHECK(w::dockDragged(ui) == c.docks[Console] && w::dockFloating(ui, c.docks[Console]));
+    UI_CHECK(ui.hasClass(c.docks[Console], "os-window") && surfaceOf(c.docks[Console]));
+    UI_CHECK(ui.keyDown(Key::Escape));
+    ui.keyUp(Key::Escape);
+    ui.pointerUp({grab.x + 80.f, grab.y - 220.f});
+    ui.update(1.f / 60.f);
+    UI_CHECK(!w::dockFloating(ui, c.docks[Console]) && !ui.hasClass(c.docks[Console], "os-window") && !surfaceOf(c.docks[Console]));
+    UI_CHECK_EQ(w::dockSaveLayout(ui, c.area), before);
+    // the same drag released over an area zone docks it there (out of the split), again without a surface
+    ui.pointerMove(grab);
+    ui.pointerDown(grab);
+    ui.pointerMove({grab.x + 80.f, grab.y - 220.f});
+    ui.update(1.f / 60.f);
+    UI_CHECK(surfaceOf(c.docks[Console]) != nullptr);
+    const Rect zone = w::dockDropIndicator(ui, c.area, w::DockDropZone::Right);
+    const Vec2 zp{zone.x + zone.w * 0.5f, zone.y + zone.h * 0.5f};
+    ui.pointerMove(zp);
+    ui.update(1.f / 60.f);
+    UI_CHECK(w::dockDropZone(ui) == w::DockDropZone::Right);
+    ui.pointerUp(zp);
+    ui.update(1.f / 60.f);
+    UI_CHECK(w::dockSideOf(ui, c.docks[Console]) == w::DockSide::Right && !surfaceOf(c.docks[Console]));
+    UI_CHECK(!ui.hasClass(c.docks[Console], "os-window") && ui.windowSurfaces().size() == 2);
+
+    // removing / closing a floating dock of the other area takes its tool window away
+    w::dockRemove(ui, d.docks[Console]);
+    ui.update();
+    UI_CHECK(!ui.alive(d.docks[Console]) && ui.windowSurfaces().size() == 1);
+    w::dockClose(ui, d.docks[History]);
+    ui.update();
+    UI_CHECK(ui.windowSurfaces().empty());
+    w::dockOpen(ui, d.docks[History]); // reopens where it was: floating, a tool window again
+    ui.update();
+    UI_CHECK(w::dockFloating(ui, d.docks[History]) && surfaceOf(d.docks[History]) && ui.windowSurfaces().size() == 1);
+    // tool windows off again: the floating dock is an in-window panel
+    ui.setOsWindows(false);
+    ui.update();
+    UI_CHECK(ui.windowSurfaces().empty() && w::dockFloating(ui, d.docks[History]));
+}
+
 // ---- tree line geometry ------------------------------------------------------------------------------------------------
 void gateTreeLine() {
     UiContext ui({.viewport = {400, 400}, .font = &font()});
@@ -498,8 +608,8 @@ int demo(const char* path) {
 
 int main(int argc, char** argv) {
     struct Gate { const char* name; void (*fn)(); };
-    static const Gate kGates[] = {{"split", &gateSplit}, {"split_groups", &gateSplitGroups}, {"tree_line", &gateTreeLine},
-                                  {"timeline_clip", &gateTimelineClip}};
+    static const Gate kGates[] = {{"split", &gateSplit}, {"split_groups", &gateSplitGroups}, {"tool_windows", &gateSplitToolWindows},
+                                  {"tree_line", &gateTreeLine}, {"timeline_clip", &gateTimelineClip}};
     const char* only = nullptr;
     for (int i = 1; i < argc; ++i) {
         if (std::strncmp(argv[i], "--gate=", 7) == 0) only = argv[i] + 7;

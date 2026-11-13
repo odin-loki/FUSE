@@ -129,9 +129,10 @@ endif()
 #   custom your own translation unit(s) in FUSE_UI_OS_SOURCES.
 # fuse_ui_extras builds the modules of the branch's Extras/ that compile against main's core API: undo framework,
 # declarative properties / state machines, PDF writer, desktop integration, D-Bus client, tray icon + global menu,
-# system web view, charts library and 3D data visualisation. The other Extras sources stay in the tree unbuilt
-# (gesture, i18n, rich text, SVG documents, media, the Objective-C++ backends). The branch's extra widgets and dialog
-# button box are part of fuse_ui_widgets now (Widgets/src/widgets_extra.cpp, widgets_buttonbox.cpp).
+# system web view, charts library and 3D data visualisation, and (ported since) the rich text editor, the audio level
+# meter and the gesture recogniser. The other Extras sources stay in the tree unbuilt (i18n, SVG documents, media,
+# the Objective-C++ backends). The branch's extra widgets and dialog button box are part of fuse_ui_widgets now
+# (Widgets/src/widgets_extra.cpp, widgets_buttonbox.cpp).
 # Verified on Linux, Android (NDK) and FreeBSD. Off by default on Windows and Apple platforms: os_std.cpp and the
 # Win32 backends compile with MinGW-w64 but were not built with MSVC, and no Apple build was possible.
 if(WIN32 OR APPLE)

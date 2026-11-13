@@ -1353,7 +1353,7 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
             m->resourceDpi = rm ? rm : "";
             m->detectedScale = dpi::x11Scale(m->resourceDpi, gdk ? gdk : "", own ? own : "");
             if (const char* gtk = std::getenv("GTK_THEME")) // cheap hint; systemTheme() asks gsettings
-                if (const ColorScheme cs = schemeFromGtkTheme(gtk); cs != ColorScheme::Unknown) app.setSystemTheme({.scheme = cs});
+                if (const ColorScheme cs = schemeFromGtkTheme(gtk); cs != ColorScheme::Unknown) app.setSystemTheme({.scheme = cs, .highContrast = highContrastFromGtkTheme(gtk)});
             m->readXSettings(true); // a settings manager's DPI / theme / cursor theme win over the above
         } else {
             m->error = "cannot open X display";

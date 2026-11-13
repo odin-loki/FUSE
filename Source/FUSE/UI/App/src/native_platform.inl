@@ -177,6 +177,7 @@ void NativePlatform::Impl::readXSettings(bool initial) {
     if (cs != ColorScheme::Unknown) {
         SystemTheme t = app.systemTheme();
         t.scheme = cs;
+        if (!themeName.empty()) t.highContrast = highContrastFromGtkTheme(themeName); // AppWindow::applyTheme: the high-contrast tokens
         app.setSystemTheme(t); // windows get ThemeChanged when it differs
     }
     // cursor theme / size: cursors made so far are stale

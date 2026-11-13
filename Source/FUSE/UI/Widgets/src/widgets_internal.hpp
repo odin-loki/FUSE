@@ -123,11 +123,25 @@ inline constexpr u32 meter_warn = hashId("--meter-warn");
 inline constexpr u32 meter_danger = hashId("--meter-danger");
 inline constexpr u32 meter_hold = hashId("--meter-hold");
 inline constexpr u32 meter_lamp_off = hashId("--meter-lamp-off");
+inline constexpr u32 lcd_text = hashId("--lcd-text");
+inline constexpr u32 lcd_bg = hashId("--lcd-bg");
+inline constexpr u32 workspace = hashId("--workspace");
+inline constexpr u32 scene_bg = hashId("--scene-bg");
+inline constexpr u32 item_focus = hashId("--item-focus");
+inline constexpr u32 placeholder = hashId("--placeholder");
+inline constexpr u32 window_close = hashId("--window-close");
+inline constexpr u32 focus_ring = hashId("--focus-ring");
+inline constexpr u32 text_disabled = hashId("--text-disabled");
 // @tok-end
 } // namespace tok
 /// Token colour (fallback: the dark literal `rgb` with `alpha`). Not multiplied by the node opacity: wrap in pc.tint().
 inline Color themed(const PaintContext& pc, u32 token, u32 rgb, f32 alpha = 1.f) {
     return pc.ui.themeColor(token, Color::rgb(rgb, alpha));
+}
+/// Placeholder / "nothing set" text of a field: the theme's --placeholder; without the widget theme the node's text
+/// colour at half alpha (what the dark token is over the dark text colour).
+inline Color placeholderColor(const PaintContext& pc) {
+    return pc.ui.themeColor(tok::placeholder, pc.style.color.withAlpha(pc.style.color.a * 0.5f));
 }
 /// Token colour with its alpha scaled by `alpha` (washes, translucent thumbs).
 inline Color themedA(const PaintContext& pc, u32 token, u32 rgb, f32 alpha) {
@@ -223,4 +237,5 @@ namespace fuse::ui::widgets {
 namespace tok = detail::tok; // the widget sources name the tokens and helpers without `detail::`
 using detail::themed;
 using detail::themedA;
+using detail::placeholderColor;
 } // namespace fuse::ui::widgets

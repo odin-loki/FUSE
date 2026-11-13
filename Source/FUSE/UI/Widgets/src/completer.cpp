@@ -437,7 +437,12 @@ struct EditCombo { // text = items, value = current index (-1 none), userData = 
     static constexpr std::string_view kName = "editcombo";
     static constexpr A11yRole kRole = A11yRole::ComboBox;
     // text() is the item list: neither painted nor measured as text (the core would do both)
-    static void paint(const PaintContext&, DrawList&) {}
+    // The focus ring of the whole combo while its field has the focus (the field inside has no border of its own).
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        const NodeHandle edit = comboEdit(pc.ui, pc.node);
+        if (!edit.valid() || pc.ui.focused() != edit) return;
+        dl.roundedRect(pc.rect, {}, pc.style.radius, pc.tint(themed(pc, tok::focus_ring, 0x3D8BFD)), std::max(1.f, pc.style.borderWidth));
+    }
     static Size measure(UiContext& ui, NodeHandle n, Size) { return {180.f, rowH(ui, n) + 4.f}; } // field + drop button
     static ComputedStyle defaults() {
         ComputedStyle s;

@@ -173,13 +173,22 @@ pushed after those CI runs and re-checked on Linux only.
 - Themes: the dark theme has five text / background pairs below WCAG 4.5:1, frozen by its goldens and pinned in
   `fuse_ui_theme_contrast` (white on `--accent` 3.33: primary buttons, check marks, the selected calendar day; on
   `--danger` 3.91 and `--warning` 2.27: message box badges; code editor line numbers 3.00). Light and high contrast
-  have none. No backend sets `SystemTheme::highContrast` (Win32 `SPI_GETHIGHCONTRAST` and the scheme colours, GTK
-  `gtk-theme-name` HighContrast, macOS increase-contrast are not queried): hosts set it through
+  have none (the ported widgets add two more dark pairs: placeholder text, the text colour at half alpha, is 4.47 in
+  a field and 3.71 in an editable combo box). `SystemTheme::highContrast` is set on X11 only, from the theme's name
+  (XSETTINGS `Net/ThemeName` live, `$GTK_THEME` at start: a name containing "HighContrast" / "high-contrast"; not
+  from the `gsettings` query, and nothing on Wayland beyond `$GTK_THEME`); Win32 `SPI_GETHIGHCONTRAST` and the scheme
+  colours and macOS increase-contrast are not queried: hosts set it through
   `Application::setSystemTheme`, and the palette is the default one unless the app calls `widgets::setTheme` with its
   own. High contrast does not strip shadows / blur / gradients of application sheets (the branch's
   `StyleEngine::setForcedColors` is not ported); it only clears the theme's own. The light and high-contrast goldens
-  exist for the MINIMAL text profile only. Data colours are not themed (colour picker, flame / pin / clip palettes), and neither are the game HUD widgets of
-  `fuse_ui_game` (they draw over a game frame in their own colours).
+  exist for the MINIMAL text profile only (also those of the ported widgets, `port_<scene>_<light|contrast>.png`).
+  Data colours are not themed (colour picker, flame / pin / clip palettes, the items of a `GraphicsScene`: the
+  defaults of `GraphicsItem::fill / stroke` are a blue fill and a white outline, made for the dark theme), and neither
+  are the game HUD widgets of `fuse_ui_game` (they draw over a game frame in their own colours). In high contrast
+  docked docks have no outline (only floating ones and the dock tab underline), and a floating dock's title strip
+  covers its top border; the resize grip and close glyph of an MDI sub-window stay the text colour at 45 % / 90 %.
+  The editable combo box draws its focus ring 1px wide in every theme (high contrast: in the hot-light colour).
+  `widget_gallery` has no theme switch (it starts in the dark theme; `AppWindow::setFollowSystemTheme` is not on).
   The existing dark dialogs / wizard goldens are captured with the focus parked, because they predate focus rings
   and their FULL-profile twins cannot be re-rendered without the fetched text stack; the light / high-contrast
   goldens and `fuse_ui_widget_golden_controls` show the rings.

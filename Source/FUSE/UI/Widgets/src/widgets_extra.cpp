@@ -164,7 +164,7 @@ struct KeySeqW {
     static void paint(const PaintContext& pc, DrawList& dl) {
         const std::string_view t = pc.ui.text(pc.node);
         const bool focus = pc.states & kStateFocus;
-        const Color col = pc.tint(pc.style.color.withAlpha(pc.style.color.a * (t.empty() ? 0.5f : 1.f)));
+        const Color col = pc.tint(t.empty() ? placeholderColor(pc) : pc.style.color);
         pc.ui.paintString(dl, t.empty() ? std::string_view(focus ? "Press shortcut" : "None") : t, pc.content, col, pc.style.fontSize,
                           TextAlignment::Start, pc.node.index);
     }
@@ -415,18 +415,18 @@ struct GraphicsViewW {
             }
             if (it.selected) {
                 const Rect b = TR(bb);
-                dl.roundedRect({b.x - 3, b.y - 3, b.w + 6, b.h + 6}, {}, {0, 0, 0, 0}, pc.tint(Color::rgb(0xFFD54F)), 1.5f);
+                dl.roundedRect({b.x - 3, b.y - 3, b.w + 6, b.h + 6}, {}, {0, 0, 0, 0}, pc.tint(themed(pc, tok::item_focus, 0xFFD54F)), 1.5f);
             }
         }
         if (v->mode == 3) {
             const Vec2 a = v->bandA, b = v->bandB;
             const Rect band{std::min(a.x, b.x), std::min(a.y, b.y), std::abs(a.x - b.x), std::abs(a.y - b.y)};
-            const Color acc = pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD);
+            const Color acc = pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD);
             dl.roundedRect(band, pc.tint(acc.withAlpha(0.2f)), {0, 0, 0, 0}, pc.tint(acc), 1.f);
         }
         dl.popClip();
         if ((pc.states & kStateFocus) && pc.ui.focusVisible()) {
-            const Color acc = pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD);
+            const Color acc = pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD);
             dl.roundedRect(pc.rect, {}, {2.f, 2.f, 2.f, 2.f}, pc.tint(acc), 1.f);
         }
     }

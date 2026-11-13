@@ -20,6 +20,15 @@ with a load average of 16 to 36 from other builds the whole time, so timings are
 |---|---|---|---|
 | `fuse_ui_bench_hud`: 293-node HUD, UI CPU per frame, median of 300 frames, best of 3 rounds (6 runs) | 0.65–0.77 ms (p95 1.1–4.6 ms) | 0.104–0.109 ms (p95 0.13–0.14 ms) | ≤ 0.5 ms |
 | `hello_app`, stripped | 1,936,432 B | (same) | `fuse_app_binary_size`: 2,130,000 B (+10 %) |
+| `hello_app`, stripped, after the platform layer + Wayland backend, the theme port and the widget port were merged (2026-11-13) | 1,936,432 B | 2,683,504 B | `fuse_app_binary_size`: 2,951,000 B (+10 %) |
+
+Where the 747,072 B went (same machine and toolchain, each step measured): app platform layer and Wayland backend
++345,632 B (2,282,064; both the X11 and the Wayland backend are linked into every `fuse_app_native` program); widget
+port +393,248 B (2,675,312; `widgets::install` registers the ported widgets and options, so line edit options /
+validators / masks, the completer, editable combo box, spin box and tab options, the extras widgets and dock splits
+are linked into every app that calls it; an app that wants less uses `installClasses`); theme tokens of those
+widgets, the title bar's tokens and X11 high-contrast detection +8,192 B. The budget was moved to the new size + 10 %
+because the growth is the ported feature set, not a regression in existing code.
 
 Why main was slower than the branch on the HUD scene: `StyleEngine::intern` hashed only a few fields of a computed
 style (two background channels, one colour channel, size, padding, gap, font size, opacity, border width, one radius,

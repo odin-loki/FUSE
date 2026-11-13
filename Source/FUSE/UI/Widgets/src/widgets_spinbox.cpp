@@ -21,7 +21,7 @@ Size textSize(UiContext& ui, NodeHandle n, std::string_view s) {
     const f32 px = ui.computed(n).fontSize;
     return {std::ceil(ui.measureString(s, px)), lineHeight(ui, px)};
 }
-Color accent(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)); }
+Color accent(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD)); }
 Color textCol(const PaintContext& pc) { return pc.tint(pc.style.color); }
 void labelAt(const PaintContext& pc, DrawList& dl, std::string_view s, Rect box) {
     pc.ui.paintString(dl, s, box, textCol(pc), pc.style.fontSize, TextAlignment::Start, pc.node.index);

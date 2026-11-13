@@ -334,7 +334,7 @@ std::unique_ptr<WaylandPlatform> WaylandPlatform::open(Application& app, const N
     }, st.get());
     wl::setDropHandler(b, &State::dropped, st.get());
     if (const char* gtk = std::getenv("GTK_THEME")) // cheap hint; NativePlatform::systemTheme() asks gsettings
-        if (const ColorScheme cs = schemeFromGtkTheme(gtk); cs != ColorScheme::Unknown) app.setSystemTheme({.scheme = cs});
+        if (const ColorScheme cs = schemeFromGtkTheme(gtk); cs != ColorScheme::Unknown) app.setSystemTheme({.scheme = cs, .highContrast = highContrastFromGtkTheme(gtk)});
     app.setEventSource({st.get(), &State::pump});
     return std::unique_ptr<WaylandPlatform>(new WaylandPlatform(std::move(st)));
 }

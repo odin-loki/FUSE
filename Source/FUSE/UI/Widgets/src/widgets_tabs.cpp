@@ -214,7 +214,7 @@ void moveTab(UiContext& ui, NodeHandle n, TabBarState* s, u32 from, u32 to) {
     ui.invalidate(n);
 }
 
-Color accent(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)); }
+Color accent(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD)); }
 void dots(DrawList& dl, f32 x, f32 cy, Color col) { // three-dot ellipsis (no glyph metrics needed)
     for (int k = 0; k < 3; ++k) dl.rect({x + 1.f + f32(k) * 4.f, cy - 1.f, 2.f, 2.f}, col, 1.f);
 }
@@ -254,11 +254,12 @@ void tabBarPaint(const PaintContext& pc, DrawList& dl) {
         const Rect r = tabRect(ui, pc.node, s, i);
         if (r.right() < c.x || r.x > c.x + vw) return true;
         if (i == sel) {
-            dl.rect(r, pc.tint(Color::rgb(s.dragging && i32(i) == s.drag ? 0x40414C : 0x34353E)), 4.f);
+            dl.rect(r, pc.tint(s.dragging && i32(i) == s.drag ? themed(pc, tok::hover, 0x40414C) : themed(pc, tok::surface_hi, 0x34353E)), 4.f);
             dl.rect({r.x + 4.f, c.bottom() - 2.f, r.w - 8.f, 2.f}, accent(pc));
         }
         const bool dim = off(s, i);
-        const Color col = pc.tint(dim ? pc.style.color.withAlpha(pc.style.color.a * 0.4f) : pc.style.color);
+        // (a disabled tab: the theme's --text-disabled; without the widget theme the text colour at 40 %)
+        const Color col = pc.tint(dim ? pc.ui.themeColor(tok::text_disabled, pc.style.color.withAlpha(pc.style.color.a * 0.4f)) : pc.style.color);
         const Rect tr{r.x + kPad, r.y, r.w - 2.f * kPad - (s.closable ? kClose : 0.f), r.h};
         const f32 tw = std::ceil(ui.measureString(t, pc.style.fontSize));
         if (tw <= tr.w + 0.5f) {
@@ -273,7 +274,7 @@ void tabBarPaint(const PaintContext& pc, DrawList& dl) {
         if (s.closable) {
             const Rect x = closeBox(r);
             const bool hot = ui.hovered() == pc.node && x.contains(ui.pointer()) && !dim;
-            const Color xc = pc.tint(hot ? Color::rgb(0xFF6B6B) : Color::rgb(0x9A9AA6));
+            const Color xc = pc.tint(hot ? themed(pc, tok::hot, 0xFF6B6B) : themed(pc, tok::glyph_dim, 0x9A9AA6));
             const f32 m = 4.f;
             dl.line({x.x + m, x.y + m}, {x.right() - m, x.bottom() - m}, xc, 1.5f);
             dl.line({x.right() - m, x.y + m}, {x.x + m, x.bottom() - m}, xc, 1.5f);
@@ -285,14 +286,14 @@ void tabBarPaint(const PaintContext& pc, DrawList& dl) {
         const f32 mx = std::max(0.f, natTotal(ui, pc.node, s) - vw);
         for (int k = 0; k < 2; ++k) {
             const bool can = k ? s.scroll < mx - 0.5f : s.scroll > 0.5f;
-            const Color col = pc.tint(Color::rgb(0x9A9AA6).withAlpha(can ? 1.f : 0.35f));
+            const Color col = pc.tint(themedA(pc, tok::glyph_dim, 0x9A9AA6, can ? 1.f : 0.35f));
             const Rect b{c.x + vw + f32(k) * kArrow, c.y, kArrow, c.h};
             const f32 cx = b.x + b.w * 0.5f, cy = b.y + b.h * 0.5f, d = k ? 3.f : -3.f;
             dl.line({cx - d, cy - 5.f}, {cx + d, cy}, col, 1.5f);
             dl.line({cx + d, cy}, {cx - d, cy + 5.f}, col, 1.5f);
         }
     }
-    dl.rect({c.x, c.bottom() - 1.f, c.w, 1.f}, pc.tint(Color::rgb(0x474955)));
+    dl.rect({c.x, c.bottom() - 1.f, c.w, 1.f}, pc.tint(themed(pc, tok::border, 0x474955)));
 }
 
 bool tabBarEvent(EventContext& ec, const Event& e) {

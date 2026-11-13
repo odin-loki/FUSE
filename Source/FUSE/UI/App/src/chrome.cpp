@@ -74,11 +74,12 @@ NodeHandle titleBar(AppWindow& w, NodeHandle parent, std::string_view title, f32
         const WindowCommand cmd = b.cmd;
         ui.connect(n, SignalKind::Clicked, [win, cmd](UiContext&, NodeHandle, const SignalArgs&) { win->command(cmd); });
     }
+    // Colours are theme tokens only (widgets/theme.cpp): AppWindow::applyTheme / widgets::setTheme restyle the bar.
     (void)ui.addStyleSheet(".fuse-titlebar { align-items: center; padding: 0px 0px 0px 10px; gap: 0px; border-width: 0px;"
                            " border-radius: 0px; background: var(--surface); }"
-                           " .fuse-titlebar-btn, .fuse-titlebar-close { background: #00000000; border-width: 0px; border-radius: 0px; }"
+                           " .fuse-titlebar-btn, .fuse-titlebar-close { background: transparent; border-width: 0px; border-radius: 0px; }"
                            " .fuse-titlebar-btn:hover { background: var(--surface-hi); }"
-                           " .fuse-titlebar-close:hover { background: #C42B1C; }");
+                           " .fuse-titlebar-close:hover { background: var(--window-close); color: var(--on-accent); }");
     return bar;
 }
 

@@ -431,10 +431,11 @@ if(TARGET fuse_ui_os)
     set_tests_properties(fuse_ui_os_seam PROPERTIES LABELS "fuse_ui;gate")
 endif()
 
-# fuse_ui_extras: one ctest per gate of the modules main builds. The gates of the parked modules (gesture i18n
-# widget_pdf richtext svg charts media) are in test_extras.cpp behind FUSE_UI_EXTRAS_ALL and are not registered.
-# (The widget gates of the branch - containers dialogs lcd_keyseq mdi completer graphics vkeyboard - are live in
-# fuse_ui_widgets: tests/port_widgets.cmake.)
+# fuse_ui_extras: one ctest per gate of the modules main builds. The gates of the parked modules (i18n widget_pdf svg
+# charts media) are in test_extras.cpp behind FUSE_UI_EXTRAS_ALL and are not registered. (The widget gates of the
+# branch - containers dialogs lcd_keyseq mdi completer graphics vkeyboard - are live in fuse_ui_widgets:
+# tests/port_widgets.cmake; rich text, gesture and the audio meter have their own gates below: test_richtext.cpp,
+# test_extras_small.cpp.)
 if(TARGET fuse_ui_extras)
     add_executable(fuse_ui_extras_tests test_extras.cpp)
     find_package(Threads REQUIRED) # the tray gate serves D-Bus from a std::thread
@@ -544,6 +545,7 @@ add_executable(fuse_ui_themes test_themes.cpp)
 target_link_libraries(fuse_ui_themes PRIVATE fuse_ui_widgets)
 target_include_directories(fuse_ui_themes PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
 target_compile_definitions(fuse_ui_themes PRIVATE FUSE_UI_WIDGETS_SRC="${CMAKE_CURRENT_SOURCE_DIR}/../Widgets/src")
+target_compile_definitions(fuse_ui_themes PRIVATE FUSE_UI_APP_SRC="${CMAKE_CURRENT_SOURCE_DIR}/../App/src")
 foreach(g sheet_handles token_only contrast focus_ring paint_literals)
     add_test(NAME fuse_ui_theme_${g} COMMAND fuse_ui_themes --gate=${g})
     set_tests_properties(fuse_ui_theme_${g} PROPERTIES LABELS "fuse_ui;gate")
@@ -591,15 +593,22 @@ endif()
 
 # ---- binary size (plan section 6: measure, then hold within +10 %) -----------------------------------------------
 # fuse_app_binary_size: the stripped hello_app. The budget is per toolchain: baseline + 10 %. Linux x86-64, GCC 13.3,
-# Release, MINIMAL text, standalone UI tree, measured 2026-11-13 on main: 1,936,432 bytes -> 2,130,000. Other
-# toolchains / build types report the size and skip (77) until -DFUSE_APP_BINARY_BUDGET=<bytes> is set. Re-measure
-# when the widget library grows on purpose (docs/ui/BASELINES.md).
+# Release, MINIMAL text, standalone UI tree. Other toolchains / build types report the size and skip (77) until
+# -DFUSE_APP_BINARY_BUDGET=<bytes> is set. Re-measure when the widget library grows on purpose (docs/ui/BASELINES.md).
+# Measured 2026-11-13:
+#   1,936,432 B  main before the platform layer (first baseline, budget 2,130,000)
+#   2,282,064 B  + app platform layer and Wayland backend (+345,632: both backends are linked into every app)
+#   2,675,312 B  + widget port (+393,248: widgets::install registers the ported widgets and options - line edit
+#                options / validators / masks, completer, editable combo, spin box and tab options, the extras widgets,
+#                dock splits - so they are linked into every app that calls install)
+#   2,683,504 B  + theme tokens for those widgets, title bar tokens, X11 high-contrast detection (+8,192)
+# Budget = 2,683,504 + 10 % = 2,951,854 -> 2,951,000.
 if(TARGET hello_app AND NOT CMAKE_CROSSCOMPILING)
     set(_fuse_app_budget 0)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64" AND FUSE_UI_TEXT STREQUAL "MINIMAL"
        AND CMAKE_BUILD_TYPE STREQUAL "Release" AND CMAKE_STRIP AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
        AND CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR) # the standalone UI tree
-        set(_fuse_app_budget 2130000)
+        set(_fuse_app_budget 2951000)
     endif()
     if(FUSE_APP_BINARY_BUDGET)
         set(_fuse_app_budget ${FUSE_APP_BINARY_BUDGET})

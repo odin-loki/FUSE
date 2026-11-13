@@ -317,6 +317,9 @@ public:
     /// chains are followed. False when no sheet defines it or it is not a colour. Cached per sheetVersion() (no
     /// allocation), so widget paint code may call it every frame.
     bool tokenColor(u32 nameHash, Color& out) const;
+    /// True when tokenColor(nameHash) is answered from the cache (it was asked for since the last sheet change and
+    /// found a slot). For gates: a theme whose tokens do not all fit would resolve the rest on every paint.
+    bool tokenColorCached(u32 nameHash) const;
 
 private:
     struct TokenColorSlot {
@@ -324,7 +327,9 @@ private:
         u8 state = 0; ///< 0 empty, 1 colour, 2 not a colour / undefined
         Color color;
     };
-    mutable std::array<TokenColorSlot, 128> m_tokenColors{};
+    /// Open addressing, at most 8 probes: a token that finds no slot is resolved on every call. Sized for the widget
+    /// theme's token table (90 names; with 128 slots four of them never found a slot) plus an application's own.
+    mutable std::array<TokenColorSlot, 512> m_tokenColors{};
     mutable u32 m_tokenColorVersion = 0xFFFFFFFFu;
     u32 m_nextSheetHandle = 0;
     bool matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel) const;
