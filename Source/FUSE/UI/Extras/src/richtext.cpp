@@ -1,6 +1,7 @@
 // Rich text document, editor, layout and the richtextedit widget (see richtext.hpp).
 #include "fuse/ui/extras/richtext.hpp"
-#include "fuse/ui/extras/widgets_extra.hpp"
+
+#include "fuse/ui/widgets/widgets.hpp"
 
 #include "fuse/text/text.hpp"
 #include "fuse/ui/style.hpp"
@@ -517,15 +518,188 @@ void RichDocument::fromMarkdown(std::string_view md) {
     }
 }
 
-// ---- editor -------------------------------------------------------------------------------------------------------------
-void RichTextEditor::snapshot(bool coalescable) {
-    if (coalescable && m_coalesce) return;
-    m_undo.push_back({doc, cursor, anchor});
-    if (m_undo.size() > 256) m_undo.erase(m_undo.begin());
-    m_redo.clear();
-    m_coalesce = coalescable;
+// ---- `richText` view markup ---------------------------------------------------------------------------------------------
+namespace {
+std::string viewEscape(std::string_view s) {
+    std::string o;
+    for (char c : s) {
+        if (c == '&') o += "&amp;";
+        else if (c == '<') o += "&lt;";
+        else if (c == '>') o += "&gt;";
+        else o += c;
+    }
+    return o;
 }
-void RichTextEditor::changed() { if (onChanged) onChanged(); }
+} // namespace
+std::string RichDocument::toRichTextMarkup(f32 basePx) const {
+    std::string o;
+    char buf[48];
+    for (std::size_t b = 0; b < blockCount(); ++b) {
+        if (b) o += '\n';
+        const BlockFormat& bf = blockFormat(b);
+        o.append(std::size_t(bf.indent) * 2, ' ');
+        if (bf.list == ListKind::Bullet) o += "\xE2\x80\xA2 ";
+        else if (bf.list == ListKind::Ordered) o += std::to_string(listNumber(b)) + ". ";
+        if (bf.heading) {
+            std::snprintf(buf, sizeof buf, "<size=%d><b>", int(std::lround(basePx * headingScale(bf.heading))));
+            o += buf;
+        }
+        for (const Run& r : runs(b)) {
+            const CharFormat& f = r.fmt;
+            std::string close;
+            if (!f.link.empty()) { o += "<a href=\"" + f.link + "\">"; close = "</a>" + close; }
+            if (f.bold && !bf.heading) { o += "<b>"; close = "</b>" + close; }
+            if (f.italic) { o += "<i>"; close = "</i>" + close; }
+            if (f.underline && f.link.empty()) { o += "<u>"; close = "</u>" + close; }
+            if (f.strike) { o += "<s>"; close = "</s>" + close; }
+            if (f.hasColor) {
+                const auto ch = [](f32 v) { return unsigned(std::lround(std::clamp(v, 0.f, 1.f) * 255.f)); };
+                std::snprintf(buf, sizeof buf, "<color=#%02x%02x%02x>", ch(f.color.r), ch(f.color.g), ch(f.color.b));
+                o += buf;
+                close = "</color>" + close;
+            }
+            if (f.size > 0.f) {
+                std::snprintf(buf, sizeof buf, "<size=%d>", int(std::lround(f.size)));
+                o += buf;
+                close = "</size>" + close;
+            }
+            o += viewEscape(r.text);
+            o += close;
+        }
+        if (bf.heading) o += "</b></size>";
+    }
+    return o;
+}
+void RichDocument::fromRichTextMarkup(std::string_view src) {
+    clear();
+    CharFormat cur;
+    std::vector<CharFormat> stack;
+    std::vector<std::string> names;
+    std::string pending;
+    auto flush = [&] {
+        if (!pending.empty()) insert(m_text.size(), pending, cur);
+        pending.clear();
+    };
+    for (std::size_t i = 0; i < src.size();) {
+        const char ch = src[i];
+        if (ch == '&') {
+            static constexpr std::pair<std::string_view, char> kEnt[] = {{"&lt;", '<'}, {"&gt;", '>'}, {"&amp;", '&'}, {"&quot;", '"'}};
+            bool hit = false;
+            for (const auto& [name, c] : kEnt)
+                if (src.substr(i, name.size()) == name) { pending += c; i += name.size(); hit = true; break; }
+            if (hit) continue;
+        }
+        const std::size_t close = ch == '<' ? src.find('>', i) : std::string_view::npos;
+        if (close == std::string_view::npos) { pending += ch; ++i; continue; } // '\n' included: a paragraph break
+        std::string_view tag = src.substr(i + 1, close - i - 1);
+        i = close + 1;
+        if (!tag.empty() && tag[0] == '/') {
+            tag.remove_prefix(1);
+            for (std::size_t k = names.size(); k-- > 0;)
+                if (names[k] == tag) {
+                    flush();
+                    cur = stack[k];
+                    stack.resize(k);
+                    names.resize(k);
+                    break;
+                }
+            continue;
+        }
+        const std::size_t sep = tag.find_first_of(" =");
+        const std::string_view name = tag.substr(0, sep);
+        std::string_view arg = sep == std::string_view::npos ? std::string_view{} : tag.substr(sep + 1);
+        if (const std::size_t eq = arg.find('='); name == "a" && eq != std::string_view::npos) arg = arg.substr(eq + 1);
+        while (!arg.empty() && (arg.front() == '"' || arg.front() == '\'' || arg.front() == ' ')) arg.remove_prefix(1);
+        while (!arg.empty() && (arg.back() == '"' || arg.back() == '\'' || arg.back() == ' ' || arg.back() == '/')) arg.remove_suffix(1);
+        if (name == "br" || name == "br/") { pending += '\n'; continue; }
+        const bool known = name == "b" || name == "i" || name == "u" || name == "s" || name == "color" || name == "size" || name == "a";
+        if (!known) continue;
+        flush();
+        stack.push_back(cur);
+        names.emplace_back(name);
+        if (name == "b") cur.bold = true;
+        else if (name == "i") cur.italic = true;
+        else if (name == "u") cur.underline = true;
+        else if (name == "s") cur.strike = true;
+        else if (name == "color") cur.hasColor = parseColor(arg.starts_with('#') ? std::string("#") + std::string(arg.substr(1)) : "#" + std::string(arg), cur.color);
+        else if (name == "size") cur.size = std::clamp(f32(std::atof(std::string(arg).c_str())), 6.f, 96.f);
+        else if (name == "a") cur.link.assign(arg);
+    }
+    flush();
+}
+
+// ---- editor -------------------------------------------------------------------------------------------------------------
+namespace {
+/// One edit: the document before and after. UndoStack::push runs redo() once on a state that is already `after`.
+/// Commands of a typing run carry id kRunId and merge (the first of a run refuses to merge into what came before).
+constexpr int kRunId = 0x52544558; // "RTEX"
+class RichEditCommand final : public UndoCommand {
+public:
+    RichEditCommand(std::string text, std::shared_ptr<RichTextEditor*> ed, u32 epoch, const u32* liveEpoch, RichTextEditor::Snap before,
+                    RichTextEditor::Snap after, bool run, bool continuesRun)
+        : UndoCommand(std::move(text)), m_ed(std::move(ed)), m_epoch(epoch), m_liveEpoch(liveEpoch), m_before(std::move(before)),
+          m_after(std::move(after)), m_run(run), m_continues(continuesRun) {}
+    void redo() override {
+        if (m_first) { m_first = false; return; }
+        apply(m_after);
+    }
+    void undo() override { apply(m_before); }
+    int id() const override { return m_run ? kRunId : -1; }
+    bool mergeWith(const UndoCommand& next) override {
+        const auto* n = dynamic_cast<const RichEditCommand*>(&next);
+        if (!n || !n->m_continues || n->m_ed != m_ed || n->m_epoch != m_epoch) return false;
+        m_after = n->m_after;
+        return true;
+    }
+
+private:
+    void apply(const RichTextEditor::Snap& s) {
+        if (!*m_ed || *m_liveEpochOf() != m_epoch) return; // editor gone, or its document was replaced since
+        (*m_ed)->restore(s);
+    }
+    const u32* m_liveEpochOf() const { return m_liveEpoch; }
+    std::shared_ptr<RichTextEditor*> m_ed;
+    u32 m_epoch;
+    const u32* m_liveEpoch; ///< only read while *m_ed is non-null
+    RichTextEditor::Snap m_before, m_after;
+    bool m_run, m_continues, m_first = true;
+};
+} // namespace
+RichTextEditor::RichTextEditor() : m_self(std::make_shared<RichTextEditor*>(this)) {}
+RichTextEditor::~RichTextEditor() { *m_self = nullptr; }
+void RichTextEditor::setUndoStack(UndoStack* shared) {
+    m_stack = shared ? shared : &m_own;
+    m_coalesce = false;
+}
+void RichTextEditor::resetHistory() {
+    m_own.clear();
+    ++m_epoch;
+    m_coalesce = false;
+    m_before.reset();
+}
+void RichTextEditor::restore(const Snap& s) {
+    doc = s.doc;
+    cursor = s.cursor;
+    anchor = s.anchor;
+    m_coalesce = false;
+    typing = doc.formatAt(cursor);
+    if (onChanged) onChanged();
+}
+void RichTextEditor::snapshot(bool coalescable, const char* what) {
+    m_before = std::make_unique<Snap>(Snap{doc, cursor, anchor});
+    m_what = what;
+    m_pendingCoalesce = coalescable;
+}
+void RichTextEditor::changed() {
+    if (m_before) {
+        const bool run = m_pendingCoalesce, continues = run && m_coalesce;
+        Snap before = std::move(*m_before);
+        m_before.reset();
+        m_coalesce = run;
+        m_stack->push(std::make_unique<RichEditCommand>(m_what, m_self, m_epoch, &m_epoch, std::move(before), Snap{doc, cursor, anchor}, run, continues));
+    }
+    if (onChanged) onChanged();
+}
 void RichTextEditor::setCursor(std::size_t pos, bool select) {
     cursor = std::min(pos, doc.size());
     if (!select) anchor = cursor;
@@ -540,7 +714,7 @@ void RichTextEditor::eraseSelection() {
 }
 void RichTextEditor::insertText(std::string_view s) {
     if (s.empty()) return;
-    snapshot(!hasSelection() && s.find('\n') == std::string_view::npos && s.find(' ') == std::string_view::npos);
+    snapshot(!hasSelection() && s.find('\n') == std::string_view::npos && s.find(' ') == std::string_view::npos, "Typing");
     eraseSelection();
     doc.insert(cursor, s, typing);
     cursor = anchor = cursor + s.size();
@@ -568,7 +742,7 @@ void RichTextEditor::newParagraph() {
     changed();
 }
 void RichTextEditor::backspace() {
-    if (hasSelection()) { snapshot(); eraseSelection(); changed(); return; }
+    if (hasSelection()) { snapshot(false, "Delete"); eraseSelection(); changed(); return; }
     if (cursor == 0 && doc.blockFormat(0).list == ListKind::None && doc.blockFormat(0).indent == 0) return;
     const std::size_t b = doc.blockAt(cursor);
     if (cursor == doc.blockStart(b)) {
@@ -583,16 +757,16 @@ void RichTextEditor::backspace() {
         }
     }
     if (cursor == 0) return;
-    snapshot(true);
+    snapshot(true, "Delete");
     const std::size_t p = prevCp(doc.plainText(), cursor);
     doc.erase(p, cursor - p);
     cursor = anchor = p;
     changed();
 }
 void RichTextEditor::del() {
-    if (hasSelection()) { snapshot(); eraseSelection(); changed(); return; }
+    if (hasSelection()) { snapshot(false, "Delete"); eraseSelection(); changed(); return; }
     if (cursor >= doc.size()) return;
-    snapshot(true);
+    snapshot(true, "Delete");
     doc.erase(cursor, nextCp(doc.plainText(), cursor) - cursor);
     changed();
 }
@@ -622,7 +796,7 @@ void RichTextEditor::home(bool select) { setCursor(doc.blockStart(doc.blockAt(cu
 void RichTextEditor::end(bool select) { setCursor(doc.blockEnd(doc.blockAt(cursor)), select); }
 void RichTextEditor::applyFormat(const std::function<void(CharFormat&)>& fn) {
     if (!hasSelection()) { fn(typing); return; }
-    snapshot();
+    snapshot(false, "Format");
     doc.modifyFormat(selStart(), selEnd(), fn);
     changed();
 }
@@ -647,7 +821,7 @@ void RichTextEditor::setColor(Color c) { applyFormat([c](CharFormat& f) { f.hasC
 void RichTextEditor::setSize(f32 px) { applyFormat([px](CharFormat& f) { f.size = px; }); }
 void RichTextEditor::setLink(std::string_view href) { applyFormat([h = std::string(href)](CharFormat& f) { f.link = h; }); }
 void RichTextEditor::modifyBlocks(const std::function<void(BlockFormat&)>& fn) {
-    snapshot();
+    snapshot(false, "Paragraph");
     for (std::size_t b = doc.blockAt(selStart()), e = doc.blockAt(selEnd()); b <= e; ++b) {
         BlockFormat f = doc.blockFormat(b);
         fn(f);
@@ -664,27 +838,15 @@ void RichTextEditor::setList(ListKind k) {
 void RichTextEditor::setHeading(u8 level) { modifyBlocks([level](BlockFormat& f) { f.heading = std::min<u8>(level, 6); }); }
 void RichTextEditor::indent(int delta) { modifyBlocks([delta](BlockFormat& f) { f.indent = u8(std::clamp(int(f.indent) + delta, 0, 8)); }); }
 bool RichTextEditor::undo() {
-    if (m_undo.empty()) return false;
-    m_redo.push_back({doc, cursor, anchor});
-    doc = std::move(m_undo.back().doc);
-    cursor = m_undo.back().cursor;
-    anchor = m_undo.back().anchor;
-    m_undo.pop_back();
+    if (!m_stack->canUndo()) return false;
+    m_stack->undo(); // RichEditCommand::undo -> restore()
     m_coalesce = false;
-    typing = doc.formatAt(cursor);
-    changed();
     return true;
 }
 bool RichTextEditor::redo() {
-    if (m_redo.empty()) return false;
-    m_undo.push_back({doc, cursor, anchor});
-    doc = std::move(m_redo.back().doc);
-    cursor = m_redo.back().cursor;
-    anchor = m_redo.back().anchor;
-    m_redo.pop_back();
+    if (!m_stack->canRedo()) return false;
+    m_stack->redo();
     m_coalesce = false;
-    typing = doc.formatAt(cursor);
-    changed();
     return true;
 }
 
@@ -697,8 +859,7 @@ namespace {
 constexpr f32 kIndent = 24.f;
 f32 fragSize(const CharFormat& f, f32 blockPx) { return f.size > 0.f ? f.size : blockPx; }
 } // namespace
-RichLayout layout(const RichDocument& d, f32 width, f32 basePx, const std::function<f32(std::string_view, f32)>& measure,
-                  const std::function<f32(f32)>& lineHeight) {
+RichLayout layout(const RichDocument& d, f32 width, f32 basePx, const Measure& measure, const std::function<f32(f32)>& lineHeight) {
     RichLayout L;
     const std::string& t = d.plainText();
     f32 y = 0.f;
@@ -708,12 +869,17 @@ RichLayout layout(const RichDocument& d, f32 width, f32 basePx, const std::funct
         const f32 x0 = f32(bf.indent) * kIndent + (bf.list != ListKind::None ? kIndent : 0.f);
         const f32 avail = width > 0.f ? std::max(8.f, width - x0) : 1e9f;
         const std::size_t a = d.blockStart(b), e = d.blockEnd(b);
+        auto fmtOf = [&](std::size_t i) { // headings are bold: the face the fragment is measured and painted in
+            CharFormat f = d.formatOfByte(i);
+            if (bf.heading) f.bold = true;
+            return f;
+        };
         auto widthOf = [&](std::size_t s0, std::size_t s1) {
             f32 w = 0.f;
             for (std::size_t i = s0; i < s1;) {
                 std::size_t j = i;
                 while (j < s1 && d.formatOfByte(j) == d.formatOfByte(i)) ++j;
-                w += measure(std::string_view(t).substr(i, j - i), fragSize(d.formatOfByte(i), px));
+                w += measure(std::string_view(t).substr(i, j - i), fragSize(d.formatOfByte(i), px), fmtOf(i));
                 i = j;
             }
             return w;
@@ -756,7 +922,7 @@ RichLayout layout(const RichDocument& d, f32 width, f32 basePx, const std::funct
                 while (j < rb && d.formatOfByte(j) == d.formatOfByte(k)) ++j;
                 CharFormat f = d.formatOfByte(k);
                 if (bf.heading) f.bold = true;
-                const f32 s = fragSize(f, px), w = measure(std::string_view(t).substr(k, j - k), s);
+                const f32 s = fragSize(f, px), w = measure(std::string_view(t).substr(k, j - k), s, f);
                 ln.frags.push_back({k, j, x, w, s, f});
                 h = std::max(h, lineHeight(s));
                 x += w;
@@ -766,7 +932,7 @@ RichLayout layout(const RichDocument& d, f32 width, f32 basePx, const std::funct
             ln.h = h;
             ln.baseline = h;
             f32 off = 0.f;
-            const f32 trailing = rb > ra && t[rb - 1] == ' ' ? measure(" ", px) : 0.f;
+            const f32 trailing = rb > ra && t[rb - 1] == ' ' ? measure(" ", px, fmtOf(rb - 1)) : 0.f;
             // Justify: every line but a paragraph's last spreads the slack over its inner spaces. Fragments are split
             // after each space run so each word starts at its stretched position (caret / hit testing follow).
             if (width > 0.f && bf.align == Align::Justify && ri + 1 < ranges.size()) {
@@ -777,7 +943,7 @@ RichLayout layout(const RichDocument& d, f32 width, f32 basePx, const std::funct
                 f32 natural = 0.f;
                 for (const auto& fr : ln.frags) natural += fr.w;
                 f32 endW = natural;
-                if (end < rb) endW -= measure(std::string_view(t).substr(end, rb - end), px);
+                if (end < rb) endW -= measure(std::string_view(t).substr(end, rb - end), px, fmtOf(end));
                 const f32 slack = avail - endW;
                 if (spaces > 0 && slack > 0.f) {
                     const f32 gap = slack / f32(spaces);
@@ -790,7 +956,7 @@ RichLayout layout(const RichDocument& d, f32 width, f32 basePx, const std::funct
                             const bool cut = k == fr.b || (k > fr.a && t[k - 1] == ' ' && t[k] != ' ');
                             if (!cut) continue;
                             if (k > s0) {
-                                const f32 w = measure(std::string_view(t).substr(s0, k - s0), fr.size);
+                                const f32 w = measure(std::string_view(t).substr(s0, k - s0), fr.size, fr.fmt);
                                 out.push_back({s0, k, nx + gap * f32(seen), w, fr.size, fr.fmt});
                                 nx += w;
                                 for (std::size_t q = s0; q < k && q < end; ++q) seen += t[q] == ' ';
@@ -824,18 +990,18 @@ std::size_t RichLayout::lineOf(std::size_t pos) const {
     return r;
 }
 namespace {
-f32 caretX(const RichLine& ln, std::size_t pos, const RichDocument& d, const std::function<f32(std::string_view, f32)>& measure) {
+f32 caretX(const RichLine& ln, std::size_t pos, const RichDocument& d, const Measure& measure) {
     for (const RichFragment& f : ln.frags)
-        if (pos >= f.a && pos <= f.b) return f.x + measure(std::string_view(d.plainText()).substr(f.a, pos - f.a), f.size);
+        if (pos >= f.a && pos <= f.b) return f.x + measure(std::string_view(d.plainText()).substr(f.a, pos - f.a), f.size, f.fmt);
     return ln.frags.empty() ? ln.x : ln.frags.back().x + ln.frags.back().w;
 }
 } // namespace
-Rect RichLayout::caretRect(std::size_t pos, const RichDocument& d, const std::function<f32(std::string_view, f32)>& measure) const {
+Rect RichLayout::caretRect(std::size_t pos, const RichDocument& d, const Measure& measure) const {
     if (lines.empty()) return {};
     const RichLine& ln = lines[lineOf(pos)];
     return {caretX(ln, pos, d, measure), ln.y, 1.5f, ln.h};
 }
-std::size_t RichLayout::hitTest(Vec2 p, const RichDocument& d, const std::function<f32(std::string_view, f32)>& measure) const {
+std::size_t RichLayout::hitTest(Vec2 p, const RichDocument& d, const Measure& measure) const {
     if (lines.empty()) return 0;
     std::size_t li = lines.size() - 1;
     for (std::size_t i = 0; i < lines.size(); ++i) if (p.y < lines[i].y + lines[i].h) { li = i; break; }
@@ -851,36 +1017,6 @@ std::size_t RichLayout::hitTest(Vec2 p, const RichDocument& d, const std::functi
     return best;
 }
 
-} // namespace fuse::ui::rich
-
-namespace fuse::ui::rich {
-// Synthetic oblique (what FreeType / CoreText do without an italic face): glyph quads are axis aligned atlas copies,
-// so each one is cut into horizontal strips of its texel rows and every strip moves right by slope x its height above
-// the baseline. One-row strips are an exact pixel-level shear (two rows for very large glyphs).
-void obliqueGlyphs(DrawList& dl, std::size_t first, f32 baseline, f32 slope) {
-    std::vector<DrawCmd>& cmds = dl.cmds();
-    std::vector<DrawCmd> out;
-    out.reserve(cmds.size() - first);
-    for (std::size_t i = first; i < cmds.size(); ++i) {
-        const DrawCmd& c = cmds[i];
-        if (c.op != DrawOp::Glyph || c.th == 0 || c.rect.h <= 0.f) { out.push_back(c); continue; }
-        const u16 step = c.th > 64 ? 2 : 1;
-        const f32 sy = c.rect.h / f32(c.th);
-        for (u16 r = 0; r < c.th; r += step) {
-            const u16 rows = u16(std::min<int>(step, c.th - r));
-            DrawCmd s = c;
-            s.v = u16(c.v + r);
-            s.th = rows;
-            s.rect.y = c.rect.y + f32(r) * sy;
-            s.rect.h = f32(rows) * sy;
-            const f32 mid = s.rect.y + s.rect.h * 0.5f;
-            s.rect.x = c.rect.x + std::round((baseline - mid) * slope);
-            out.push_back(s);
-        }
-    }
-    cmds.resize(first);
-    cmds.insert(cmds.end(), out.begin(), out.end());
-}
 } // namespace fuse::ui::rich
 
 // ---- widget ---------------------------------------------------------------------------------------------------------------
@@ -914,7 +1050,19 @@ struct RichPool {
     }
 };
 RichPool& richPool() { static RichPool p; return p; }
-std::function<f32(std::string_view, f32)> measurer(UiContext& ui) { return [&ui](std::string_view s, f32 px) { return ui.measureString(s, px); }; }
+/// The face of a fragment, resolved like the `richText` view resolves a run: the node's family, bold as weight 700
+/// (or the node's weight when heavier), italic as the italic face; real faces when the family has them.
+const fuse::text::Font* faceOf(UiContext& ui, const ComputedStyle& st, const CharFormat& f) {
+    return ui.fontFor(std::span<const u32>(st.fontFamily), f.bold ? std::max<int>(st.fontWeight, 700) : int(st.fontWeight),
+                      f.italic || st.fontItalic);
+}
+rich::Measure measurer(UiContext& ui, NodeHandle n) {
+    return [&ui, n](std::string_view s, f32 px, const CharFormat& f) {
+        const fuse::text::Font* font = faceOf(ui, ui.computed(n), f);
+        return font ? ui.measureString(*font, s, px) : 0.f;
+    };
+}
+constexpr u32 kTokAccent = hashId("--accent"), kTokLink = hashId("--accent-hi");
 std::function<f32(f32)> lineHeighter(UiContext& ui) {
     return [&ui](f32 px) { return std::ceil(ui.font() ? ui.font()->metrics(px).lineHeight() : px * 1.25f); };
 }
@@ -922,14 +1070,14 @@ void ensureLayout(UiContext& ui, NodeHandle n, RichState& s) {
     const Rect c = ui.contentRect(n);
     const f32 px = ui.computed(n).fontSize;
     if (!s.dirty && s.layWidth == c.w && s.layPx == px) return;
-    s.lay = rich::layout(s.ed.doc, c.w, px, measurer(ui), lineHeighter(ui));
+    s.lay = rich::layout(s.ed.doc, c.w, px, measurer(ui, n), lineHeighter(ui));
     s.layWidth = c.w;
     s.layPx = px;
     s.dirty = false;
 }
 void scrollToCaret(UiContext& ui, NodeHandle n, RichState& s) {
     ensureLayout(ui, n, s);
-    const Rect cr = s.lay.caretRect(s.ed.cursor, s.ed.doc, measurer(ui));
+    const Rect cr = s.lay.caretRect(s.ed.cursor, s.ed.doc, measurer(ui, n));
     const f32 h = ui.contentRect(n).h;
     if (cr.y < s.scroll) s.scroll = cr.y;
     if (cr.y + cr.h > s.scroll + h) s.scroll = cr.y + cr.h - h;
@@ -946,8 +1094,10 @@ struct RichW {
         if (!s) return;
         ensureLayout(pc.ui, pc.node, *s);
         const Rect c = pc.content;
-        const auto meas = measurer(pc.ui);
-        const Color text = pc.tint(pc.style.color), linkCol = pc.tint(Color::rgb(0x3D8BFD)), selCol = pc.tint(Color::rgb(0x3D8BFD, 0.35f));
+        const auto meas = measurer(pc.ui, pc.node);
+        const Color accent = pc.ui.themeColor(kTokAccent, Color::rgb(0x3D8BFD));
+        const Color text = pc.tint(pc.style.color), linkCol = pc.tint(pc.ui.themeColor(kTokLink, Color::rgb(0x5A9DFF))),
+                    selCol = pc.tint(accent.withAlpha(accent.a * 0.35f));
         const std::string& t = s->ed.doc.plainText();
         const std::size_t sa = s->ed.selStart(), sb = s->ed.selEnd();
         dl.pushClip(c);
@@ -965,17 +1115,20 @@ struct RichW {
                 pc.ui.paintString(dl, ln.marker, {c.x + ln.x - mw - 6.f, y, mw + 2.f, ln.h}, text, pc.style.fontSize * headingScale(s->ed.doc.blockFormat(ln.block).heading), TextAlignment::Start, pc.node.index);
             }
             for (const RichFragment& f : ln.frags) {
-                const f32 lh = std::ceil(pc.ui.font() ? pc.ui.font()->metrics(f.size).lineHeight() : f.size * 1.25f);
+                const fuse::text::Font* rf = faceOf(pc.ui, pc.style, f.fmt);
+                if (!rf) continue;
+                const f32 lh = std::ceil(rf->metrics(f.size).lineHeight());
                 const Rect box{c.x + f.x, y + ln.h - lh, f.w + 2.f, lh};
                 const Color col = f.fmt.hasColor ? pc.tint(f.fmt.color) : !f.fmt.link.empty() ? linkCol : text;
                 const std::string_view str = std::string_view(t).substr(f.a, f.b - f.a);
-                const std::size_t first = dl.size();
-                pc.ui.paintString(dl, str, box, col, f.size, TextAlignment::Start, pc.node.index);
-                if (f.fmt.bold) pc.ui.paintString(dl, str, {box.x + std::max(0.6f, f.size / 24.f), box.y, box.w, box.h}, col, f.size, TextAlignment::Start, pc.node.index);
-                if (f.fmt.italic) rich::obliqueGlyphs(dl, first, box.y + lh * 0.78f);
-                const f32 th = std::max(1.f, f.size / 14.f);
-                if (f.fmt.underline || !f.fmt.link.empty()) dl.line({box.x, box.y + lh * 0.86f}, {box.x + f.w, box.y + lh * 0.86f}, col, th);
-                if (f.fmt.strike) dl.line({box.x, box.y + lh * 0.55f}, {box.x + f.w, box.y + lh * 0.55f}, col, th);
+                pc.ui.paintString(dl, *rf, str, box, col, f.size, TextAlignment::Start, pc.node.index);
+                if (f.fmt.underline || f.fmt.strike || !f.fmt.link.empty()) { // rules at the font's own positions
+                    const auto dm = rf->decorationMetrics(f.size);
+                    const f32 baseline = std::round(box.y) + std::ceil(rf->metrics(f.size).ascent);
+                    const f32 x0 = std::round(box.x), x1 = std::round(box.x + f.w);
+                    if (f.fmt.underline || !f.fmt.link.empty()) dl.rect({x0, baseline + dm.underlineOffset, x1 - x0, dm.underlineThickness}, col);
+                    if (f.fmt.strike) dl.rect({x0, baseline + dm.strikeOffset, x1 - x0, dm.strikeThickness}, col);
+                }
             }
         }
         if (pc.ui.focused() == pc.node && !s->readOnly) {
@@ -987,7 +1140,7 @@ struct RichW {
     static std::size_t hit(UiContext& ui, NodeHandle n, RichState& s, Vec2 p) {
         ensureLayout(ui, n, s);
         const Rect c = ui.contentRect(n);
-        return s.lay.hitTest({p.x - c.x, p.y - c.y + s.scroll}, s.ed.doc, measurer(ui));
+        return s.lay.hitTest({p.x - c.x, p.y - c.y + s.scroll}, s.ed.doc, measurer(ui, n));
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
@@ -1035,7 +1188,7 @@ struct RichW {
             case Key::End: ctrl ? ed.setCursor(ed.doc.size(), shift) : ed.end(shift); break;
             case Key::Up: case Key::Down: case Key::PageUp: case Key::PageDown: {
                 ensureLayout(ui, ec.node, s);
-                const auto m = measurer(ui);
+                const auto m = measurer(ui, ec.node);
                 const Rect cr = s.lay.caretRect(ed.cursor, ed.doc, m);
                 const f32 page = ui.contentRect(ec.node).h;
                 const f32 dy = e.key == Key::Up ? -1.f : e.key == Key::Down ? cr.h + 1.f : e.key == Key::PageUp ? -page : page + cr.h;
@@ -1082,8 +1235,10 @@ void ensureRegistered(UiContext& ui) {
     WidgetRegistry& r = ui.registry();
     if (r.find("richtextedit") != 0xFFFFFFFFu) return;
     r.registerWidget<RichW>();
-    ui.addStyleSheet("richtextedit { border-width: 1px; border-color: rgba(255,255,255,0.25); border-radius: 4px; padding: 6px; }\n"
-                     "richtextedit:focus { border-color: #3D8BFD; }\n");
+    // theme tokens with the dark values as fallbacks (a context without the widget theme)
+    (void)ui.addStyleSheet("richtextedit { background: var(--field, #15161a); color: var(--text, #e6e6eb); border-width: 1px;\n"
+                           "  border-color: var(--border, #474955); border-radius: 5px; padding: 6px; cursor: text; }\n"
+                           "richtextedit:focus { border-color: var(--accent, #3d8bfd); }\n");
 }
 } // namespace
 
@@ -1128,6 +1283,10 @@ void setRichMarkdown(UiContext& ui, NodeHandle n, std::string_view md) {
 std::string richMarkdown(UiContext& ui, NodeHandle n) {
     RichState* s = richPool().get(ui, n);
     return s ? s->ed.doc.toMarkdown() : std::string{};
+}
+std::string richTextMarkup(UiContext& ui, NodeHandle n) {
+    RichState* s = richPool().get(ui, n);
+    return s ? s->ed.doc.toRichTextMarkup(ui.computed(n).fontSize) : std::string{};
 }
 void setRichReadOnly(UiContext& ui, NodeHandle n, bool ro) {
     if (RichState* s = richPool().get(ui, n)) { s->readOnly = ro; ui.invalidate(n); }

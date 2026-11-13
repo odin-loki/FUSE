@@ -570,3 +570,18 @@ if(TARGET fuse_app)
     add_test(NAME fuse_app_theme_sheets COMMAND fuse_app_theme_sheets)
     set_tests_properties(fuse_app_theme_sheets PROPERTIES LABELS "fuse_ui;gate")
 endif()
+
+# ---- Extras rich text editor on main's text stack (Extras/src/richtext.cpp) ---------------------------------------
+if(TARGET fuse_ui_extras)
+    add_executable(fuse_ui_richtext_tests test_richtext.cpp)
+    target_link_libraries(fuse_ui_richtext_tests PRIVATE fuse_ui_extras)
+    target_include_directories(fuse_ui_richtext_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+    foreach(g model undo widget view)
+        add_test(NAME fuse_ui_extras_richtext_${g} COMMAND fuse_ui_richtext_tests --gate=${g})
+        set_tests_properties(fuse_ui_extras_richtext_${g} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+    if(NOT FUSE_UI_TEXT STREQUAL "FULL") # the golden is rendered with the MINIMAL text profile
+        add_test(NAME fuse_ui_extras_richtext_golden COMMAND fuse_ui_richtext_tests --gate=golden)
+        set_tests_properties(fuse_ui_extras_richtext_golden PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endif()
+endif()
