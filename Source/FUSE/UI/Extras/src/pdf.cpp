@@ -181,9 +181,44 @@ void PdfDocument::renderDrawList(const DrawList& dl, Vec2 o, f32 k, const u8* at
     int atlasId = -1;
     auto R = [&](const Rect& r) { return Rect{o.x + r.x * k, o.y + r.y * k, r.w * k, r.h * k}; };
     int depth = 0;
-    // main's vector ops (Path, NinePatch, PushClipPath, PushLayer) are not written to the PDF yet. Their groups still
-    // end with PopClip, so the group kinds are tracked to keep rectangle clips balanced.
-    std::vector<bool> groups; // true: a PushClip this function turned into a PDF clip
+    // Vector paths are written as PDF path operators (m / l / c / h): filled (f, f* for even-odd), stroked (S with
+    // width, cap, join, miter limit, dashes) or used as a clip (W n / W* n). A gradient paint is written as the mean
+    // colour of its stops (no PDF shading yet). NinePatch and PushLayer (opacity / filter groups) are still skipped:
+    // the content of a layer is drawn without the layer's effect. Groups end with PopClip, so their kinds are tracked.
+    std::vector<bool> groups; // true: the group opened a PDF clip (q ... Q)
+    const auto pathOps = [&](const DrawPath& dp) {
+        std::string& s = cur().content;
+        const auto verbs = dl.pathVerbs().subspan(dp.firstVerb, dp.verbCount);
+        const Vec2* pt = dl.pathPoints().data() + dp.firstPoint;
+        auto P = [&](Vec2 v) { return num(o.x + v.x * k) + " " + num(o.y + v.y * k) + " "; };
+        Vec2 last{};
+        for (PathVerb v : verbs) {
+            switch (v) {
+            case PathVerb::Move: s += P(pt[0]) + "m\n"; last = pt[0]; pt += 1; break;
+            case PathVerb::Line: s += P(pt[0]) + "l\n"; last = pt[0]; pt += 1; break;
+            case PathVerb::Quad: { // PDF has cubics only: the exact degree elevation
+                const Vec2 c1{last.x + (pt[0].x - last.x) * (2.f / 3.f), last.y + (pt[0].y - last.y) * (2.f / 3.f)};
+                const Vec2 c2{pt[1].x + (pt[0].x - pt[1].x) * (2.f / 3.f), pt[1].y + (pt[0].y - pt[1].y) * (2.f / 3.f)};
+                s += P(c1) + P(c2) + P(pt[1]) + "c\n";
+                last = pt[1];
+                pt += 2;
+                break;
+            }
+            case PathVerb::Cubic: s += P(pt[0]) + P(pt[1]) + P(pt[2]) + "c\n"; last = pt[2]; pt += 3; break;
+            case PathVerb::Close: s += "h\n"; break;
+            }
+        }
+    };
+    const auto paintColor = [&](const DrawCmd& c, const DrawPath& dp) {
+        if (dp.paint < 0 || std::size_t(dp.paint) >= dl.paints().size()) return c.fill;
+        const DrawPaint& dpaint = dl.paints()[std::size_t(dp.paint)];
+        Color sum{0.f, 0.f, 0.f, 0.f};
+        const auto stops = dl.stops().subspan(dpaint.firstStop, dpaint.stopCount);
+        for (const GradientStop& st : stops) { sum.r += st.color.r; sum.g += st.color.g; sum.b += st.color.b; sum.a += st.color.a; }
+        if (stops.empty()) return c.fill;
+        const f32 n = f32(stops.size());
+        return Color{sum.r / n, sum.g / n, sum.b / n, sum.a / n * dpaint.opacity};
+    };
     for (const DrawCmd& c : dl.cmds()) {
         switch (c.op) {
         case DrawOp::Rect: {
@@ -198,9 +233,44 @@ void PdfDocument::renderDrawList(const DrawList& dl, Vec2 o, f32 k, const u8* at
             line({o.x + c.rect.x * k, o.y + c.rect.y * k}, {o.x + c.rect.w * k, o.y + c.rect.h * k}, c.fill, std::max(0.1f, c.borderWidth * k));
             break;
         case DrawOp::PushClip: pushClip(R(c.rect)); ++depth; groups.push_back(true); break;
-        case DrawOp::PushClipPath:
+        case DrawOp::PushClipPath: {
+            if (c.data >= dl.paths().size()) { groups.push_back(false); break; }
+            const DrawPath& dp = dl.paths()[c.data];
+            cur().content += "q\n";
+            pathOps(dp);
+            cur().content += dp.rule == FillRule::EvenOdd ? "W* n\n" : "W n\n";
+            ++cur().clipDepth;
+            ++depth;
+            groups.push_back(true);
+            break;
+        }
         case DrawOp::PushLayer: groups.push_back(false); break;
-        case DrawOp::Path:
+        case DrawOp::Path: {
+            if (c.data >= dl.paths().size()) break;
+            const DrawPath& dp = dl.paths()[c.data];
+            const Color col = paintColor(c, dp);
+            if (col.a <= 0.f || dp.verbCount == 0) break;
+            std::string& s = cur().content;
+            s += "q\n" + alphaGs(col.a, dp.stroked);
+            if (dp.stroked) {
+                const StrokeStyle& st = dp.stroke;
+                s += num(std::max(0.05f, st.width * k)) + " w " + std::to_string(int(st.cap)) + " J " + std::to_string(int(st.join)) + " j " +
+                     num(std::max(1.f, st.miterLimit)) + " M\n";
+                if (st.dashCount > 0) {
+                    s += "[";
+                    for (u8 i = 0; i < st.dashCount; ++i) s += (i ? " " : "") + num(st.dashes[i] * k);
+                    s += "] " + num(st.dashOffset * k) + " d\n";
+                }
+                color(col, true);
+                pathOps(dp);
+                cur().content += "S\nQ\n";
+            } else {
+                color(col, false);
+                pathOps(dp);
+                cur().content += dp.rule == FillRule::EvenOdd ? "f*\nQ\n" : "f\nQ\n";
+            }
+            break;
+        }
         case DrawOp::NinePatch: break;
         case DrawOp::PopClip:
             if (groups.empty()) break;

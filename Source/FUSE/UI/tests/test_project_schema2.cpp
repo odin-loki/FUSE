@@ -9,13 +9,22 @@
 //   * a hybrid viewport shows the game side's GPU scene (a red cube probe): its pixels equal the GPU readback
 //   --native: the same on a real OS window (Win32 / X11), presented pixels match the CPU raster; the hybrid viewport
 //     is sampled in place on a GPU drawn window (zero-copy) and matches the readback; exit 77 without a display
+#ifndef FUSE_PROJECT_SCHEMA2_HYBRID
+#define FUSE_PROJECT_SCHEMA2_HYBRID 0 // 1: fuse_app_project_hybrid is linked (the engine game side)
+#endif
+#if FUSE_PROJECT_SCHEMA2_HYBRID
 #include "fuse/app/project_host_hybrid.hpp"
+#else
+#include "fuse/app/project_host.hpp"
+#endif
 #include "fuse/ui/doc/document.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <fuse/core/init.hpp>
+#if FUSE_PROJECT_SCHEMA2_HYBRID
 #include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/world3d/world_3d.hpp>
+#endif
 #include <fuse/core/track_b.hpp>
 #include <fuse/project/loader.hpp>
 
@@ -389,7 +398,7 @@ void themes() {
         CHECK(host.has_value());
         if (!host) continue;
         fuse::app::AppWindow* w = (*host)->window("main");
-        CHECK(!(*host)->app().followSystemTheme());
+        CHECK(!w->followsSystemTheme());
         const Rect b = w->ui().rect(w->ui().find("action"));
         shade[i] = brightness(w->rasterize({}), int(b.x + 4), int(b.y + 4), int(b.w - 8), int(b.h - 8));
     }
@@ -400,7 +409,15 @@ void themes() {
     CHECK(project::createAppProject(dir.string(), "T").ok); // template theme: "system"
     {
         auto host = fuse::app::ProjectHost::start({.projectPath = dir.string(), .showWindows = false});
-        CHECK(host && (*host)->app().followSystemTheme());
+        CHECK(host && (*host)->window("main") && (*host)->window("main")->followsSystemTheme());
+        // following: a system theme change restyles the project's window
+        if (host) {
+            fuse::app::AppWindow* w = (*host)->window("main");
+            const Color before = w->ui().computed(w->ui().root()).background;
+            (*host)->app().setSystemTheme({.scheme = fuse::app::ColorScheme::Light});
+            (*host)->app().step(0.016f);
+            CHECK(!(w->ui().computed(w->ui().root()).background == before));
+        }
     }
     project::ProjectManifest bad = project::appTemplateManifest("T");
     bad.ui.theme = "neon";
@@ -409,6 +426,7 @@ void themes() {
     CHECK(!refused && refused.error().find("ui.theme") != std::string::npos);
 }
 
+#if FUSE_PROJECT_SCHEMA2_HYBRID
 void hybridViewport() {
     // a hybrid project starts like an app; its game side (frame, 3D world, physics, job scheduler) comes up only
     // when a viewport widget becomes visible, then feeds the viewport every frame
@@ -635,6 +653,22 @@ int hybridScenePixels(bool native) {
     CHECK(!fuse::core::isInitialized());
     return 0;
 }
+#else
+/// An app-only host (no engine game side linked) refuses a hybrid project with a message that says why.
+void hybridViewport() {
+    const fs::path dir = fs::temp_directory_path() / "fuse_project_schema2" / "HybridRefused";
+    wipe(dir);
+    CHECK(project::createAppProject(dir.string(), "H").ok);
+    project::ProjectManifest m = project::appTemplateManifest("H");
+    m.kind = project::ProjectKind::Hybrid;
+    m.dimensions.enable3D = true;
+    CHECK(project::saveToDirectory(m, dir.string()).ok);
+    auto noBackend = fuse::app::ProjectHost::start({.projectPath = dir.string(), .showWindows = false});
+    CHECK(!noBackend && noBackend.error().find("hybrid") != std::string::npos);
+    std::printf("  hybrid game side not linked (fuse_app_project_hybrid): deferred bring-up and GPU viewport not run\n");
+}
+int hybridScenePixels(bool) { return 0; }
+#endif
 
 } // namespace
 

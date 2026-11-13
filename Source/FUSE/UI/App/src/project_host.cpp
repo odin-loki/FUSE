@@ -34,11 +34,14 @@ std::expected<std::string, std::string> readText(const std::filesystem::path& pa
 
 bool knownTheme(std::string_view t) { return t == "system" || t == "dark" || t == "light"; }
 
-/// ui.theme: "system" follows the OS colour scheme (live); "dark" / "light" pin the widget theme.
-void applyProjectTheme(Application& app, AppWindow& w, std::string_view theme) {
-    if (theme == "system") return; // Application::setFollowSystemTheme does it for every window
-    (void)w.ui().setThemeStyleSheet(fuse::ui::widgets::themeCss(theme == "light" ? fuse::ui::widgets::ThemeVariant::Light : fuse::ui::widgets::ThemeVariant::Dark));
-    (void)app;
+/// ui.theme: "system" follows the OS colour scheme (live: AppWindow::setFollowSystemTheme); "dark" / "light" pin the
+/// widget theme in the context's theme slot.
+void applyProjectTheme(AppWindow& w, std::string_view theme) {
+    if (theme == "system") {
+        w.setFollowSystemTheme(true);
+        return;
+    }
+    (void)fuse::ui::widgets::setTheme(w.ui(), theme == "light" ? fuse::ui::widgets::ThemeVariant::Light : fuse::ui::widgets::ThemeVariant::Dark);
     w.requestRedraw();
 }
 } // namespace
@@ -118,7 +121,6 @@ std::expected<std::unique_ptr<ProjectHost>, std::string> ProjectHost::start(cons
         host->m_native = std::make_unique<NativePlatform>(*host->m_app, native);
         if (!host->m_native->available()) host->m_native.reset(); // no display: headless presenters
     }
-    host->m_app->setFollowSystemTheme(m.ui.theme == "system");
     const std::filesystem::path root = m.projectRoot.empty() ? std::filesystem::path(".") : std::filesystem::path(m.projectRoot);
     std::vector<std::string> sheets;
     for (const std::string& style : m.ui.styles) {
@@ -137,7 +139,7 @@ std::expected<std::unique_ptr<ProjectHost>, std::string> ProjectHost::start(cons
         const std::string title = ws.title.empty() ? m.name : ws.title;
         AppWindow& w = host->m_app->createWindow({.title = title, .width = ws.width, .height = ws.height});
         w.setRedrawPolicy(ws.redraw == project::RedrawMode::Continuous ? RedrawPolicy::Continuous : RedrawPolicy::OnDemand);
-        applyProjectTheme(*host->m_app, w, m.ui.theme);
+        applyProjectTheme(w, m.ui.theme);
         for (const std::string& css : sheets)
             if (auto added = w.ui().addStyleSheet(css); !added) return std::unexpected("ui.styles: invalid style sheet");
         const std::string& doc = ws.root.empty() ? m.ui.root : ws.root;

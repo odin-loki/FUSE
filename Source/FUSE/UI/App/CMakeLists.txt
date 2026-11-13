@@ -150,3 +150,21 @@ if(FUSE_BUILD_APP_SAMPLES)
         endif()
     endforeach()
 endif()
+
+# fuse_app_project (in tree only: needs fuse_project and fuse_core): project.json schema 2 `kind: app` / `hybrid`
+# projects through the minimal init path (fuse::app::ProjectHost, include/fuse/app/project_host.hpp), and the runners.
+if(TARGET fuse_project AND TARGET fuse_core)
+    add_library(fuse_app_project STATIC src/project_host.cpp)
+    target_link_libraries(fuse_app_project PUBLIC fuse_app_native fuse_project PRIVATE fuse_core)
+    # fuse_app_host <project>: app projects; no engine game side linked
+    add_executable(fuse_app_host samples/app_host.cpp)
+    target_link_libraries(fuse_app_host PRIVATE fuse_app_project)
+    # the engine game side for hybrid projects (composer, worlds, physics): only hosts that run hybrids link it
+    if(TARGET fuse_hybrid)
+        add_library(fuse_app_project_hybrid STATIC src/project_host_hybrid.cpp)
+        target_link_libraries(fuse_app_project_hybrid PUBLIC fuse_app_project fuse_hybrid)
+        add_executable(fuse_hybrid_host samples/app_host.cpp)
+        target_link_libraries(fuse_hybrid_host PRIVATE fuse_app_project_hybrid)
+        target_compile_definitions(fuse_hybrid_host PRIVATE FUSE_APP_HOST_HYBRID=1)
+    endif()
+endif()

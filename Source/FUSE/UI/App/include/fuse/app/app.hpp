@@ -210,6 +210,7 @@ public:
     bool tryClose();
     /// Follow the system light / dark preference and accent: applyTheme() now (when known) and on every change.
     void setFollowSystemTheme(bool on);
+    bool followsSystemTheme() const { return m_followTheme; }
     /// Re-colours the default widget theme with one token override sheet (themeTokensCss; light / dark / high
     /// contrast from widgets::themeTokensCss), replaced in place on every call; restyles the window.
     void applyTheme(const SystemTheme& t);

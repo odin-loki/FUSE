@@ -1073,6 +1073,13 @@ u64 hashStyle(const ComputedStyle& cs) {
     mix(cs.background.r); mix(cs.background.g); mix(cs.background.a); mix(cs.color.r); mix(cs.color.a);
     mix(cs.width.value); mix(cs.height.value); mix(cs.padding.l); mix(cs.padding.t); mix(cs.gap); mix(cs.fontSize);
     mix(cs.opacity); mix(cs.borderWidth); mix(cs.radius[0]); mix(cs.grow);
+    // placement and the remaining colour channels: a HUD moves anchored / absolute nodes and fades colours every frame,
+    // and styles that differ only in those must not share one probe chain (fuse_ui_bench_hud spent 80% of a frame
+    // comparing ComputedStyles in it)
+    mix(cs.left.value); mix(cs.top.value); mix(cs.right.value); mix(cs.bottom.value); mix(cs.margin.l); mix(cs.margin.t);
+    mix(cs.background.b); mix(cs.color.g); mix(cs.color.b); mix(cs.background2.r); mix(cs.background2.g); mix(cs.background2.b);
+    mix(cs.borderColor.r); mix(cs.borderColor.g); mix(cs.borderColor.b); mix(cs.minWidth.value); mix(cs.minHeight.value);
+    mix(cs.maxWidth.value); mix(cs.maxHeight.value); mix(cs.basis.value); mix(cs.shadowBlur); mix(cs.letterSpacing);
     h = (h ^ (u64(cs.layout) | u64(cs.direction) << 8 | u64(cs.visible) << 16 | u64(cs.alignItems) << 24 | u64(cs.justify) << 32)) * 1099511628211ull;
     return h;
 }

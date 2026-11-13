@@ -280,16 +280,14 @@ if(TARGET fuse_ui_game)
     endif()
     # plan §6 HUD budget: ~300-node HUD animated as in play, UI CPU per frame median <= 0.5 ms (the scene is shared
     # with Game/samples/hud_bench.cpp, the Android bench app that is not built yet: docs/ui/archive/PORT_magical_bassi.md)
-    # The benchmark is always built; the gate is registered only with FUSE_UI_PORTING_BENCH_HUD: main's core measures
-    # 0.57-0.68 ms on the 0.5 ms budget the branch met with its paint-time text cache (not ported yet).
-    option(FUSE_UI_PORTING_BENCH_HUD "Register the fuse_ui_bench_hud gate (0.5 ms HUD budget; not met yet, see PORT_magical_bassi.md)" OFF)
+    # Registered since StyleEngine's style hash covers placement and all colour channels: before that every style a HUD
+    # animates (anchored / absolute offsets, fades) landed in one probe chain and main measured 0.57-0.76 ms; now
+    # ~0.10 ms on the same machine (docs/ui/BASELINES.md).
     add_executable(fuse_ui_bench_hud test_bench_hud.cpp)
     target_link_libraries(fuse_ui_bench_hud PRIVATE fuse_ui_game)
     target_include_directories(fuse_ui_bench_hud PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB} ${CMAKE_CURRENT_SOURCE_DIR}/../Game/samples)
-    if(FUSE_UI_PORTING_BENCH_HUD)
-        add_test(NAME fuse_ui_bench_hud COMMAND fuse_ui_bench_hud)
-        set_tests_properties(fuse_ui_bench_hud PROPERTIES LABELS "fuse_ui;gate;perf" RUN_SERIAL TRUE) # timing budget
-    endif()
+    add_test(NAME fuse_ui_bench_hud COMMAND fuse_ui_bench_hud)
+    set_tests_properties(fuse_ui_bench_hud PROPERTIES LABELS "fuse_ui;gate;perf" RUN_SERIAL TRUE) # timing budget
     if(TARGET fuse_ui_game_ecs)
         fuse_ui_test(fuse_ui_ecs_surface test_game_bridges.cpp)
         target_link_libraries(fuse_ui_ecs_surface PRIVATE fuse_ui_game_ecs)
@@ -359,6 +357,10 @@ if(TARGET fuse_ui_doc AND NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS") 
     fuse_ui_test(fuse_ui_hot_reload_file test_hot_reload_file.cpp)
     target_link_libraries(fuse_ui_hot_reload_file PRIVATE fuse_ui_doc)
     set_tests_properties(fuse_ui_hot_reload_file PROPERTIES LABELS "fuse_ui;gate")
+    # style sheet hot reload (StyleSheetFileWatcher: replaced in place by handle)
+    fuse_ui_test(fuse_ui_hot_reload_style test_hot_reload.cpp)
+    target_link_libraries(fuse_ui_hot_reload_style PRIVATE fuse_ui_doc)
+    set_tests_properties(fuse_ui_hot_reload_style PROPERTIES LABELS "fuse_ui;gate")
 endif()
 # Golden of the interaction visuals (action menu with shortcut texts; list drag ghost + insertion line). The image was
 # rendered with the MINIMAL text profile; there is no FULL-profile golden, so the gate exists for MINIMAL only.
@@ -584,4 +586,59 @@ if(TARGET fuse_ui_extras)
         add_test(NAME fuse_ui_extras_richtext_golden COMMAND fuse_ui_richtext_tests --gate=golden)
         set_tests_properties(fuse_ui_extras_richtext_golden PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     endif()
+endif()
+
+# ---- binary size (plan section 6: measure, then hold within +10 %) -----------------------------------------------
+# fuse_app_binary_size: the stripped hello_app. The budget is per toolchain: baseline + 10 %. Linux x86-64, GCC 13.3,
+# Release, MINIMAL text, standalone UI tree, measured 2026-11-13 on main: 1,936,432 bytes -> 2,130,000. Other
+# toolchains / build types report the size and skip (77) until -DFUSE_APP_BINARY_BUDGET=<bytes> is set. Re-measure
+# when the widget library grows on purpose (docs/ui/BASELINES.md).
+if(TARGET hello_app AND NOT CMAKE_CROSSCOMPILING)
+    set(_fuse_app_budget 0)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64" AND FUSE_UI_TEXT STREQUAL "MINIMAL"
+       AND CMAKE_BUILD_TYPE STREQUAL "Release" AND CMAKE_STRIP AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+       AND CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR) # the standalone UI tree
+        set(_fuse_app_budget 2130000)
+    endif()
+    if(FUSE_APP_BINARY_BUDGET)
+        set(_fuse_app_budget ${FUSE_APP_BINARY_BUDGET})
+    endif()
+    set(_fuse_app_bin $<TARGET_FILE:hello_app>)
+    add_executable(fuse_app_binary_size test_app_binary_size.cpp)
+    if(NOT MSVC AND CMAKE_STRIP)
+        set(_fuse_app_bin ${CMAKE_CURRENT_BINARY_DIR}/hello_app.stripped)
+        add_custom_target(fuse_app_hello_stripped ALL
+            COMMAND ${CMAKE_STRIP} -o ${_fuse_app_bin} $<TARGET_FILE:hello_app> DEPENDS hello_app VERBATIM)
+        add_dependencies(fuse_app_binary_size fuse_app_hello_stripped)
+    endif()
+    add_test(NAME fuse_app_binary_size COMMAND fuse_app_binary_size --file=${_fuse_app_bin} --budget=${_fuse_app_budget}
+             "--profile=${CMAKE_CXX_COMPILER_ID} ${CMAKE_BUILD_TYPE}, text ${FUSE_UI_TEXT}")
+    set_tests_properties(fuse_app_binary_size PROPERTIES SKIP_RETURN_CODE 77 LABELS "fuse_ui;gate;perf")
+endif()
+
+# ---- project.json schema 2 + AppPresent + the minimal init path (in tree: fuse_app_project needs fuse_project) ------
+# fuse_project_schema2: schema 1 files unchanged, schema 2 round trip and validation, the Application template, an app
+# project through ProjectHost (headless), ui.theme. With the engine game side (fuse_app_project_hybrid) also the
+# deferred game side of a hybrid project; its GPU viewport and the --native run need a Vulkan device.
+if(TARGET fuse_app_project)
+    add_executable(fuse_project_schema2 test_project_schema2.cpp)
+    target_compile_definitions(fuse_project_schema2 PRIVATE FUSE_REPO_ROOT="${FUSE_UI_REPO_ROOT}")
+    if(TARGET fuse_app_project_hybrid)
+        target_link_libraries(fuse_project_schema2 PRIVATE fuse_app_project_hybrid fuse_core)
+        target_compile_definitions(fuse_project_schema2 PRIVATE FUSE_PROJECT_SCHEMA2_HYBRID=1)
+    else()
+        target_link_libraries(fuse_project_schema2 PRIVATE fuse_app_project fuse_core)
+    endif()
+    add_test(NAME fuse_project_schema2 COMMAND fuse_project_schema2)
+    set_tests_properties(fuse_project_schema2 PROPERTIES LABELS "fuse_ui;gate;project" TIMEOUT 300 RUN_SERIAL TRUE)
+    add_test(NAME fuse_project_schema2_native COMMAND fuse_project_schema2 --native)
+    set_tests_properties(fuse_project_schema2_native PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
+        LABELS "fuse_ui;gate;project;vulkan")
+endif()
+
+# ---- Extras PDF: vector paths of a draw list as PDF path operators --------------------------------------------------
+if(TARGET fuse_ui_extras)
+    fuse_ui_test(fuse_ui_extras_pdf_paths test_pdf_paths.cpp)
+    target_link_libraries(fuse_ui_extras_pdf_paths PRIVATE fuse_ui_extras)
+    set_tests_properties(fuse_ui_extras_pdf_paths PROPERTIES LABELS "fuse_ui;gate")
 endif()
