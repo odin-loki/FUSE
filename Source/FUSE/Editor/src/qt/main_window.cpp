@@ -1078,6 +1078,10 @@ void MainWindow::refreshPanels() {
     m_timeline->refresh();
     if (m_lighting->isVisible()) m_lighting->refresh();
     m_viewport->update();
+    // The undo history may have changed with what the panels now show (a tick applied a posted edit,
+    // add / remove, reparent): enable Edit > Undo / Redo (and Ctrl+Z / Ctrl+Y) now, not on the next
+    // 100 ms status tick, which would ignore an undo issued right after the edit (disabled QAction).
+    updateEditActions();
 }
 
 void MainWindow::onFocusChanged(QWidget* /*old*/, QWidget* now) {
