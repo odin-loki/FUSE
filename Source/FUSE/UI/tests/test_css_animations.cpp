@@ -11,6 +11,7 @@
 //     no style-table growth and no allocation per animated frame
 // (Adapted from the gui-framework gate of the same name: cubic-bezier / steps, animation events other than the end,
 // transition longhands and animation-composition are not ported.)
+#include "test_alloc_hooks.hpp"
 #include "test_util.hpp"
 
 #include <cmath>
@@ -24,20 +25,10 @@ using namespace fuse::ui::test;
 
 static long g_allocs = 0;
 static bool g_count = false;
-void* operator new(std::size_t n) {
+// Every global allocation form is replaced and counted (test_alloc_hooks.hpp).
+void fuse::ui::test::countAlloc(std::size_t) noexcept {
     if (g_count) ++g_allocs;
-    if (void* p = std::malloc(n ? n : 1)) return p;
-    throw std::bad_alloc();
 }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-// The nothrow forms too (std::stable_sort's temporary buffer uses them): left to the runtime they would allocate
-// with its operator new and free through ours (an alloc-dealloc mismatch under ASan), and go uncounted.
-void* operator new(std::size_t n, const std::nothrow_t&) noexcept {
-    if (g_count) ++g_allocs;
-    return std::malloc(n ? n : 1);
-}
-void operator delete(void* p, const std::nothrow_t&) noexcept { std::free(p); }
 
 namespace {
 bool near(f32 a, f32 b, f32 eps = 2e-3f) { return std::fabs(a - b) <= eps; }

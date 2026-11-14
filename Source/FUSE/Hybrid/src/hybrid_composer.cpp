@@ -265,6 +265,10 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
 
     if (m_softwarePlaceholderEnabled) {
         m_renderer.beginFrame(320, 240);
+    } else {
+        // A placeholder switched off (explicitly, or by the GPU scene coming up) holds no frame: without this the
+        // RGBA buffer of the last software frame stayed readable as if it were current.
+        m_renderer.release();
     }
 
     if (m_world3D && m_flags.enable3D) {

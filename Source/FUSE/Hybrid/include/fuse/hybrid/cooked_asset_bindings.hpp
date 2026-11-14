@@ -77,6 +77,8 @@ public:
     [[nodiscard]] const std::vector<CookedShaderBinding>& shaders() const { return m_shaders; }
 
     [[nodiscard]] std::optional<CookedMaterialBinding> findMaterial(u32 materialId) const;
+    /// Same lookup without copying the binding (per-frame callers: no cookedPath copy).
+    [[nodiscard]] const CookedMaterialBinding* findMaterialPtr(u32 materialId) const;
     [[nodiscard]] std::optional<CookedShaderBinding> findShader(u32 shaderId) const;
 
     /// Tint factors derived from bound cooked asset headers (0..1).

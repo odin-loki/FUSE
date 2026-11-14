@@ -18,8 +18,12 @@ add_test(NAME remaster_poco_schema_parity COMMAND remaster_poco_tests parity "${
 add_test(NAME remaster_poco_fuzz COMMAND remaster_poco_tests fuzz 1000)
 add_test(NAME remaster_store_canonical COMMAND remaster_store_tests "${CMAKE_CURRENT_BINARY_DIR}/store_tmp")
 add_test(NAME remaster_db COMMAND remaster_db_tests "${CMAKE_CURRENT_BINARY_DIR}/db_tmp")
+# The gate runs fuse_remaster itself: in a MinGW tree that is a PE run through the emulator ('|'-joined), and the
+# doctor output is the Windows one.
+string(REPLACE ";" "|" _rm_cli_emu "${CMAKE_CROSSCOMPILING_EMULATOR}")
 add_test(NAME remaster_cli
     COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:fuse_remaster> -DWORK=${CMAKE_CURRENT_BINARY_DIR}/cli_tmp
+            "-DEMU=${_rm_cli_emu}" -DTARGET_WIN32=$<BOOL:${WIN32}>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/remaster_cli_gate.cmake)
 set_tests_properties(remaster_poco_roundtrip remaster_poco_schema_parity remaster_poco_fuzz PROPERTIES LABELS "remaster;poco")
 set_tests_properties(remaster_store_canonical PROPERTIES LABELS "remaster;store")

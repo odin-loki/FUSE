@@ -782,14 +782,24 @@ int runWave(const char* wav_path) {
         scene.engine.destroy(); // closes the device: the wave writer finalises the RIFF sizes
     }
     std::printf("[audio-out] wave device: submitted %llu played %llu dropped %llu underruns %llu silence %llu, "
-                "underruns while streaming %llu, float32=%d, %llu steady ticks with %llu game-thread allocations\n",
+                "underruns while streaming %llu, float32=%d, device callback=%d, %llu steady ticks with %llu game-thread "
+                "allocations\n",
                 static_cast<unsigned long long>(stats.frames_submitted),
                 static_cast<unsigned long long>(stats.frames_played),
                 static_cast<unsigned long long>(stats.frames_dropped),
                 static_cast<unsigned long long>(stats.underruns),
                 static_cast<unsigned long long>(stats.silence_frames),
                 static_cast<unsigned long long>(streaming_underruns), stats.float32_output ? 1 : 0,
-                static_cast<unsigned long long>(ticks), tick_allocs);
+                stats.device_callback ? 1 : 0, static_cast<unsigned long long>(ticks), tick_allocs);
+    if (stats.underruns > 0) {
+        // Where and why the device first ran dry: the play position, and how long the consumer (device
+        // callback, or the feeder poll in queued-buffer mode) had been away when it found the queue empty.
+        std::printf("[audio-out] wave device: first underrun at played frame %llu (%.1f ms into the stream), "
+                    "consumer wake gap %.2f ms\n",
+                    static_cast<unsigned long long>(stats.first_underrun_frame),
+                    1000.0 * static_cast<double>(stats.first_underrun_frame) / rate,
+                    static_cast<double>(stats.first_underrun_gap_us) / 1000.0);
+    }
     expectTrue(stats.frames_dropped == 0, "wave: device pacing never drops a block");
     expectTrue(streaming_underruns == 0, "wave: no underrun while the engine was streaming");
     expectTrue(stats.frames_played >= stats.frames_submitted, "wave: every submitted frame was played");

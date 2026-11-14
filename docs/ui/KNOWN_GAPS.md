@@ -80,8 +80,9 @@ Intermittent or load-sensitive:
 
 - `fuse_audio_output_wave` on Windows: failed 2 of about 25 runs, passed on rerun. The branch does not touch Audio.
 - `fuse_editor_ui_ui_frame` / `fuse_editor_ui_frame` (one gate, two names): wall-clock CPU raster budget (8 ms for a
-  full 1600x900 window). The opaque-rect fill in `draw_list.cpp` took it from 7.5 to 4.8 ms; a loaded machine can
-  still miss it.
+  full 1600x900 window). The opaque-rect fill in `draw_list.cpp` took it from 7.5 to 4.8 ms, the per-command column
+  map of image commands (the viewport) halved the instructions again (8.2 ms Linux / 10.4 ms macOS runner before,
+  passing on both after, run 43572986508 / 43572988648); a loaded machine can still miss it.
 - `fuse_editor_ui_gpu_viewport`, `fuse_editor_ui_live_present`: fail under parallel ctest load, pass alone.
 - Wall-clock gates in general (label `perf`: `fuse_ui_bench_10k`, `fuse_ui_vector_steady`, `fuse_ui_modelview_1m_rows`,
   `fuse_ui_mv_selection_1m`, `fuse_ui_mv_tree_1m`, `fuse_app_hello_startup`) miss on a loaded Linux machine. They are
@@ -95,13 +96,16 @@ Hazards:
   Linux runners were shut down mid-build. Nothing guards against the next shader that trips it.
 - `demo_hybrid_hud` still skips its readback checks in present mode; with `presentReadback` they could be enabled.
 
+Fixed on this branch, failing on `main` before: `fuse_vulkan_validation_gate` (VUID-VkImageViewCreateInfo-image-04441:
+views of transfer-only images in the RHI allocator and the UI CPU-upload canvas), `fuse_runtime_steady_state_alloc`
+(the editor's mesh / SDF preview catalog allocated 256 times a frame), `fuse_hybrid_renderer_bootstrap` without a
+Vulkan device (a disabled placeholder kept the last software frame). Linux umbrella run 43572986508: core job 1415 of
+1415.
+
 ## Fails on `main` too (left alone by policy)
 
 Same failure with the same test and code on `main`; not fixed here.
 
-- Linux: `fuse_vulkan_validation_gate` (VUID-VkImageViewCreateInfo-image-04441); `fuse_runtime_steady_state_alloc`
-  (the editor phase allocates); `fuse_hybrid_renderer_bootstrap` under ASan, and in a build without a Vulkan loader
-  ("disabled software placeholder skips RGBA buffer writes").
 - Windows: `fuse_core_ui1_text_input` on every job (`ImmSetCompositionStringW` succeeds on the hosted runner, the
   composition read back is empty; `main` run 43323981954); `fuse_ui_bench_10k` on every job but debug (0.5 ms budget,
   0.50 to 0.94 ms on the hosted runners, 0.38 to 0.43 ms on a Linux machine; the budget stays).

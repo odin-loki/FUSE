@@ -202,7 +202,11 @@ EditorShellWindow::EditorShellWindow(fuse::app::AppWindow& window, EditorControl
         }
     loadBindings_(); // menus / tooltips show the effective shortcuts
     if (m_ui.registry().find("editorshellroot") == 0xFFFFFFFFu) m_ui.registry().registerWidget<ShellRootW>();
-    m_ui.addStyleSheet(editorShellCss(m_opt.fontScale));
+    // the shell's own sheet: a parse error is a bug in editorShellCss, so say so instead of dropping it silently
+    if (std::vector<fuse::ui::StyleDiagnostic> diags; !m_ui.addStyleSheet(editorShellCss(m_opt.fontScale), &diags))
+        for (const auto& d : diags)
+            std::fprintf(stderr, "editor_shell: built-in stylesheet line %u: %s\n", unsigned(d.line),
+                         d.message.c_str());
     m_ui.setCss(m_ui.root(), "padding", "0px");
     m_ui.setCss(m_ui.root(), "gap", "0px");
     m_image.resize(640, 360, fuse::ui::packPremultiplied(tokenColor("ChildBg")));

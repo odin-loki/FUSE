@@ -308,6 +308,11 @@ struct WidgetClass {
     A11yRole role = A11yRole::Group;
     bool focusable = false;
     bool interactive = false; ///< receives pointer press / click (buttons, fields)
+    /// `paint` reads nothing but the node's own style, states, text, value, rect and icon (whose setters invalidate
+    /// the node), the theme and the context's fonts / icon set: while none changed, a clipped subtree of such nodes
+    /// keeps its draw commands from the previous frame instead of painting again (UiContext paint memo). Classes
+    /// without `paint` (the core paints their background and text) are pure as well.
+    bool purePaint = false;
     /// Content size (excluding padding) for `available` content width (may be +inf). Null: text or zero.
     Size (*measure)(UiContext&, NodeHandle, Size available) = nullptr;
     /// Paints after the core background / border; null: paints the node's text.
@@ -354,6 +359,7 @@ public:
         if constexpr (requires { W::kRole; }) c.role = W::kRole;
         if constexpr (requires { W::kFocusable; }) c.focusable = W::kFocusable;
         if constexpr (requires { W::kInteractive; }) c.interactive = W::kInteractive;
+        if constexpr (requires { W::kPurePaint; }) c.purePaint = W::kPurePaint;
         if constexpr (requires { &W::measure; }) c.measure = &W::measure;
         if constexpr (requires { &W::paint; }) c.paint = &W::paint;
         if constexpr (requires { &W::onEvent; }) c.onEvent = &W::onEvent;
@@ -948,6 +954,25 @@ private:
     Rect m_damage;
     f32 m_renderScale = 1.f;
     bool m_painting = false; ///< inside paintPass: glyphs are emitted in device pixels when m_renderScale != 1
+    /// Paint memo (ui.cpp, paintBody): a clipped node whose subtree is unchanged since the previous paint, holds only
+    /// pure-paint classes (WidgetClass::purePaint) and recorded plain commands copies them from m_prevDraw (the list
+    /// of that paint) instead of painting them again. Node changes reach the memo through touchSubtree (every mark),
+    /// context-wide ones through m_paintEpoch.
+    struct PaintMemo {
+        u32 gen = 0, first = 0, count = 0, painted = 0, serial = 0, epoch = 0, atlasGen = 0;
+        Rect rect;
+        f32 opacity = 0.f;
+        bool valid = false;
+    };
+    void touchSubtree(u32 i);
+    std::vector<PaintMemo> m_paintMemo;
+    DrawList m_prevDraw;
+    u32 m_paintSerial = 0;   ///< paintLists calls
+    u32 m_paintEpoch = 0;    ///< bumped by context-wide paint changes (markAllDirty, theme, fonts)
+    u32 m_paintFxDepth = 0;  ///< inside an effect group (paintEffects): no memo
+    bool m_memoOn = false;   ///< this paint may use / record memos (main list, scale 1, no OS popups / windows)
+    bool m_memoPure = true;  ///< everything painted since the innermost memo candidate began is memoisable
+    bool m_memoLive = false; ///< this paint recorded or replayed a memo: the next one keeps its list in m_prevDraw
     bool m_osPopups = false;
     Rect m_popupScreen;
     std::vector<u32> m_popupPending;
@@ -1010,6 +1035,17 @@ private:
     TextScope enterTextScope(u32 node);
     std::vector<FamilySlot> m_families;
     TextScope m_textScope;
+    /// Painted-text memo (ui.cpp): the glyph commands of a node's text are kept per node and call order (the node's
+    /// own text, then each paintString its paint callback makes) and appended again while every input of that paint is
+    /// unchanged; a frame that repaints thousands of unchanged labels does not lay them out and look up their glyphs
+    /// again. `m_textPaintNode` / `m_textPaintSlot`: the node being painted and its next slot (paintBody resets them).
+    struct TextPaintEntry;
+    TextPaintEntry* textPaintSlot(u32 node);
+    static u8 textPaintFeatures();
+    void paintStringMemo(DrawList& dl, const fuse::text::Font& font, std::string_view s, Rect box, Color c,
+                         const fuse::text::TextLayoutDesc& d, u32 node, u8 deco);
+    u32 m_textPaintNode = 0xFFFFFFFFu;
+    u32 m_textPaintSlot = 0;
     bool m_systemFonts = true;
     f32 m_msdfThreshold = 0.f;
     const IconSet* m_icons = nullptr;

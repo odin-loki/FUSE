@@ -24,7 +24,8 @@ void menu(U& ui, Log& log, std::string& field, int& page) {
     if (ui.button("p1", "Audio", page == 1)) { page = 1; log.clicks.push_back("p1"); }
     ui.separator();
     for (int i = 0; i < 12 && ui.hasRoom(); ++i) {
-        char id[8], lbl[16];
+        // sized for any int ("-2147483648"): -Wformat-truncation cannot assume the loop bound
+        char id[16], lbl[24];
         std::snprintf(id, sizeof id, "o%d", i);
         std::snprintf(lbl, sizeof lbl, "Option %d", i);
         if (ui.button(id, lbl)) log.clicks.push_back(id);

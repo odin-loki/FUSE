@@ -187,6 +187,15 @@ VkImageUsageFlags toVkImageUsage(ImageUsage usage) {
     return flags;
 }
 
+/// A view needs one of these usages (VUID-VkImageViewCreateInfo-image-04441); a copy-only image (transfer usage
+/// alone) is created without one and its Texture::view stays null.
+bool imageUsageAllowsView(VkImageUsageFlags usage) {
+    constexpr VkImageUsageFlags kViewUsages = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    return (usage & kViewUsages) != 0;
+}
+
 VkFormat toVkFormat(GpuFormat format) {
     return static_cast<VkFormat>(static_cast<u32>(format));
 }
@@ -444,7 +453,7 @@ bool vmaCreateImageImpl(VmaAllocator allocator, VkDevice device, VkPhysicalDevic
     viewInfo.subresourceRange.levelCount = desc.mipLevels;
     viewInfo.subresourceRange.layerCount = desc.arrayLayers;
     VkImageView view = VK_NULL_HANDLE;
-    if (vkCreateImageView(device, &viewInfo, nullptr, &view) != VK_SUCCESS) {
+    if (imageUsageAllowsView(imageInfo.usage) && vkCreateImageView(device, &viewInfo, nullptr, &view) != VK_SUCCESS) {
         vmaDestroyImage(allocator, image, allocation);
         return false;
     }
@@ -691,7 +700,7 @@ bool nativeCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, const T
     viewInfo.subresourceRange.layerCount = desc.arrayLayers;
 
     VkImageView view = VK_NULL_HANDLE;
-    if (vkCreateImageView(device, &viewInfo, nullptr, &view) != VK_SUCCESS) {
+    if (imageUsageAllowsView(imageInfo.usage) && vkCreateImageView(device, &viewInfo, nullptr, &view) != VK_SUCCESS) {
         closeExportedHandle(exported);
         vkDestroyImage(device, image, nullptr);
         vkFreeMemory(device, memory, nullptr);

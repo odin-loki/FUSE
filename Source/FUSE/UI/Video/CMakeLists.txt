@@ -1,6 +1,7 @@
 # fuse_ui_video: Theora (.ogv) decode for the video widget (UI10 media).
 # Builds libtheora 1.2.0's decoder (BSD-3-Clause) from the release archive vendored at vendor/xiph-theora-v1.2.0.tar.gz
-# (the same archive the Torque vcpkg port uses), checked against the raw sha256 below and extracted into the build tree.
+# (the same archive the Torque vcpkg port uses), checked against the raw sha256 below and extracted into the build tree,
+# where the FUSE patches in patches/ are applied (patches/README.md; the vendored archive itself stays verbatim).
 # libogg comes from cmake/FuseXiph.cmake (fuse_xiph_ogg) when the full tree built it; a standalone UI build compiles its
 # own copy from vendor/xiph-ogg-v1.3.6.tar.gz (pin: vendor/xiph/ogg/VERSION). No system library is used.
 #   fuse_ui_theora      libtheora decoder (static, C, warnings off)
@@ -12,6 +13,8 @@ set(_fuse_ui_xiph "${CMAKE_BINARY_DIR}/_fuse_ui_xiph")
 set(_fuse_ui_theora_sha "e0c35771b425c32a052ffb358a2aed14219340ab850b48dc85b01939c0513a31")
 set(_fuse_ui_ogg_sha "95b643da661155d79db9de2fca55daed3a8d491039829def246aacb3d9201c81")
 
+# Extracts the vendored archive into the build tree (re-extracted when the pin or a patch changes) and applies the
+# patches given after `out` (paths, in order) to the extracted tree with `git apply` (or patch(1) without git).
 function(_fuse_ui_extract archive sha top out)
     set(${out} "" PARENT_SCOPE)
     set(_tar "${_fuse_ui_vendor}/${archive}")
@@ -19,20 +22,48 @@ function(_fuse_ui_extract archive sha top out)
         message(STATUS "fuse_ui_video: ${archive} missing")
         return()
     endif()
+    set(_want "${sha}")
+    foreach(_p ${ARGN})
+        file(SHA256 "${_p}" _ph)
+        string(APPEND _want " ${_ph}")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_p}")
+    endforeach()
     set(_stamp "${_fuse_ui_xiph}/${top}.sha256")
     set(_have "")
     if(EXISTS "${_stamp}")
         file(READ "${_stamp}" _have)
         string(STRIP "${_have}" _have)
     endif()
-    if(NOT _have STREQUAL sha OR NOT IS_DIRECTORY "${_fuse_ui_xiph}/${top}")
+    if(NOT _have STREQUAL _want OR NOT IS_DIRECTORY "${_fuse_ui_xiph}/${top}")
         file(SHA256 "${_tar}" _actual)
         if(NOT _actual STREQUAL sha)
             message(FATAL_ERROR "fuse_ui_video: ${archive} sha256 ${_actual} does not match the pin ${sha}")
         endif()
+        file(REMOVE "${_stamp}")
         file(REMOVE_RECURSE "${_fuse_ui_xiph}/${top}")
         file(ARCHIVE_EXTRACT INPUT "${_tar}" DESTINATION "${_fuse_ui_xiph}")
-        file(WRITE "${_stamp}" "${sha}\n")
+        if(ARGN)
+            find_package(Git QUIET)
+            find_program(FUSE_UI_PATCH_EXECUTABLE patch)
+            if(NOT GIT_EXECUTABLE AND NOT FUSE_UI_PATCH_EXECUTABLE)
+                message(FATAL_ERROR "fuse_ui_video: git or patch is needed to apply the FUSE patches to ${archive}")
+            endif()
+        endif()
+        foreach(_p ${ARGN})
+            if(GIT_EXECUTABLE)
+                # GIT_CEILING_DIRECTORIES: apply as a plain patch even when the build dir sits inside a git checkout
+                set(_apply "${CMAKE_COMMAND}" -E env "GIT_CEILING_DIRECTORIES=${_fuse_ui_xiph}"
+                           "${GIT_EXECUTABLE}" apply --whitespace=nowarn "${_p}")
+            else() # e.g. the FreeBSD VM: base-system patch(1), no git
+                set(_apply "${FUSE_UI_PATCH_EXECUTABLE}" -p1 -s -i "${_p}")
+            endif()
+            execute_process(COMMAND ${_apply}
+                            WORKING_DIRECTORY "${_fuse_ui_xiph}/${top}" RESULT_VARIABLE _rc ERROR_VARIABLE _err)
+            if(NOT _rc EQUAL 0)
+                message(FATAL_ERROR "fuse_ui_video: ${_p} does not apply to ${archive}: ${_err}")
+            endif()
+        endforeach()
+        file(WRITE "${_stamp}" "${_want}\n")
     endif()
     set(${out} "${_fuse_ui_xiph}/${top}" PARENT_SCOPE)
 endfunction()
@@ -71,7 +102,8 @@ else()
     endif()
 endif()
 
-_fuse_ui_extract(xiph-theora-v1.2.0.tar.gz ${_fuse_ui_theora_sha} theora-1.2.0 _th_dir)
+_fuse_ui_extract(xiph-theora-v1.2.0.tar.gz ${_fuse_ui_theora_sha} theora-1.2.0 _th_dir
+                 "${CMAKE_CURRENT_SOURCE_DIR}/patches/0001-theora-encoder-shift-ub.patch")
 if(NOT _th_dir OR NOT _ogg_target)
     message(STATUS "fuse_ui_video: Theora or Ogg source unavailable; the video widget keeps its stub sources")
     return()
