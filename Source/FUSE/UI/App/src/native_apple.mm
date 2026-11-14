@@ -247,8 +247,9 @@ CGFloat macScreenTop() {
 f32 macBacking(const Rec& r) { return r.window ? f32(r.window.backingScaleFactor) : 1.f; }
 /// Top-left of the content view in physical px (NativePlatform::screenOrigin; tool windows are placed from it).
 Vec2 macOriginPx(const Rec& r) {
-    if (!r.window || !r.view) return {};
-    const NSRect inScreen = [r.window convertRectToScreen:[r.view convertRect:r.view.bounds toView:nil]];
+    NSView* view = r.window.contentView; // the FuseView (declared further down)
+    if (!r.window || !view) return {};
+    const NSRect inScreen = [r.window convertRectToScreen:[view convertRect:view.bounds toView:nil]];
     const f32 k = macBacking(r);
     return {f32(NSMinX(inScreen)) * k, f32(macScreenTop() - NSMaxY(inScreen)) * k};
 }
