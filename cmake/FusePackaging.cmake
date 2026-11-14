@@ -48,8 +48,11 @@ foreach(_t fuse_cook fuse_convert fuse_import)
     endif()
 endforeach()
 if(_fuse_install_targets)
+    # BUNDLE: on iOS (CMAKE_MACOSX_BUNDLE defaults ON there) every executable is a MACOSX_BUNDLE and
+    # install(TARGETS) refuses one without a BUNDLE DESTINATION; same rule as before the Qt removal.
     install(TARGETS ${_fuse_install_targets}
-        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT ${FUSE_PACKAGE_COMPONENT})
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT ${FUSE_PACKAGE_COMPONENT}
+        BUNDLE DESTINATION "." COMPONENT ${FUSE_PACKAGE_COMPONENT})
 endif()
 
 set(_fuse_data "${CMAKE_INSTALL_DATADIR}")
