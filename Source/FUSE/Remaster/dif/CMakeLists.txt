@@ -25,8 +25,11 @@ if(FUSE_BUILD_CORE_TESTS OR BUILD_TESTING)
     set_tests_properties(remaster_dif PROPERTIES LABELS "remaster;dif" TIMEOUT 120)
     # `fuse_remaster dif <file>` on the generated fixture: 3 brushes, area 307, lightmaps skipped.
     if(TARGET fuse_remaster)
+        # The gate runs PE executables in a MinGW tree: pass the emulator ('|'-joined) through.
+        string(REPLACE ";" "|" _rm_dif_emu "${CMAKE_CROSSCOMPILING_EMULATOR}")
         add_test(NAME remaster_dif_cli
                  COMMAND ${CMAKE_COMMAND} -DFIXTURE_EXE=$<TARGET_FILE:remaster_dif_tests> -DEXE=$<TARGET_FILE:fuse_remaster>
+                         "-DEMU=${_rm_dif_emu}"
                          -DWORK=${CMAKE_CURRENT_BINARY_DIR}/remaster_dif_cli -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/remaster_dif_cli_gate.cmake)
         set_tests_properties(remaster_dif_cli PROPERTIES LABELS "remaster;dif" TIMEOUT 120)
     endif()
