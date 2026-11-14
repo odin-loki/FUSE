@@ -9,7 +9,7 @@
 
 namespace fuse::editor {
 
-/// U6 → Track B bridge: Qt/editor viewport surface queued for `SwapchainDesc` wiring.
+/// U6 → Track B bridge: editor viewport surface queued for `SwapchainDesc` wiring.
 struct ViewportSwapchainHandoff {
     void* nativeSurface = nullptr;
     u32 width = 0;

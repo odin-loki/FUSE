@@ -1,7 +1,7 @@
 #pragma once
 
-// MP-B6-QT-INSPECTOR / UNI-U6-INSP-1: typed, Qt-free description of every ECS component the
-// editor inspector can edit, add and remove. The Qt inspector generates its editors from this
+// MP-B6-QT-INSPECTOR / UNI-U6-INSP-1: typed, toolkit-free description of every ECS component the
+// editor inspector can edit, add and remove. The editor inspector generates its editors from this
 // table; the game thread applies the resulting `SetProperty` / `AddComponent` / `RemoveComponent`
 // commands through the same table (editor_command_apply.cpp), so the UI never touches components.
 
@@ -88,7 +88,7 @@ bool readComponentProperty(const ecs::Registry& registry, ecs::EntityID entity, 
 bool writeComponentProperty(ecs::Registry& registry, ecs::EntityID entity, std::string_view propertyName,
                             std::string_view value);
 
-// ---- value helpers shared by the Qt editors and the command apply path ---------------------------
+// ---- value helpers shared by the inspector editors and the command apply path ---------------------------
 
 /// Quaternion for XYZ Euler angles in degrees (rotate about X, then Y, then Z: q = qz * qy * qx).
 [[nodiscard]] ecs::quat quatFromEulerDeg(f32 xDeg, f32 yDeg, f32 zDeg);

@@ -1,4 +1,4 @@
-// fuse_editor_fuse: the FUSE editor with FUSE UI chrome (UI9, FUSE_EDITOR_SHELL=fuse), beside fuse_editor_qt.
+// fuse_editor_fuse: the FUSE editor (FUSE UI chrome; UI9, plan §8). The package installs it as bin/fuse_editor.
 //   fuse_editor_fuse [scene.fscene] [--font-scale=1.25] [--screenshot=out.png]
 #include "fuse/app/native.hpp"
 #if defined(FUSE_EDITOR_HAS_A11Y)

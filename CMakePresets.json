@@ -67,10 +67,10 @@
       }
     },
     {
-      "name": "fuse-editor-qt",
-      "displayName": "FUSE Editor Qt gates (Release, mirrors fuse-editor-qt CI)",
+      "name": "fuse-editor",
+      "displayName": "FUSE Editor gates (Release, FUSE UI shell + fuse_editor_ui_* gates)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/editor-qt",
+      "binaryDir": "${sourceDir}/build/editor",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "FUSE_BUILD_CORE": "ON",
@@ -88,7 +88,7 @@
         "FUSE_SHIPPING": "ON",
         "FUSE_BUILD_EDITOR": "OFF",
         "FUSE_BUILD_EDITOR_API": "OFF",
-        "FUSE_ENABLE_QT_PRESENT": "OFF"
+        "FUSE_ENABLE_EDITOR_PRESENT": "OFF"
       }
     },
     {

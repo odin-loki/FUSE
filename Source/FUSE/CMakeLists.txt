@@ -94,8 +94,8 @@ if(ANDROID AND TARGET fuse_rhi AND TARGET fuse_app_native AND COMMAND fuse_app_a
     add_subdirectory(Renderer/android)
 endif()
 
-# UI9 (docs/plans/FUSE_EDITOR_QT_FIRST_PLAN.md): the Qt-free EditorController and, with FUSE_EDITOR_SHELL=fuse, the
-# FUSE UI editor shell beside the Qt one (Source/FUSE/EditorShell).
+# UI9 / Stage 3 (docs/plans/FUSE_EDITOR_QT_FIRST_PLAN.md §8): the EditorController and, with FUSE_BUILD_EDITOR, the
+# FUSE UI editor shell (Source/FUSE/EditorShell) — the editor. After UI: it links fuse_app.
 if(FUSE_BUILD_EDITOR_API OR FUSE_BUILD_EDITOR)
     add_subdirectory(EditorShell)
 endif()

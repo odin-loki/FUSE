@@ -1,5 +1,6 @@
-// fuse_editor_ui_* twin gates (UI9): the FUSE UI editor shell checked the way the fuse_editor_qt_* gates check the Qt
-// shell (same names, same panel ids / actions / title format), headless on the CPU rasteriser. One executable:
+// fuse_editor_ui_* gates (UI9): the editor (FUSE UI shell) checked the way the former Qt shell's fuse_editor_qt_* gates
+// checked it (same names, same panel ids / actions / title format; they replaced those gates at the Stage 3 switch),
+// headless on the CPU rasteriser. One executable:
 //   fuse_editor_ui_gates --gate=<name> [--out=shot.png]
 #include "fuse/editor/fui/editor_shell.hpp"
 #include "scripted_services.hpp"
@@ -1476,7 +1477,7 @@ void gateGpuViewport(Rig& r) {
 #endif
 }
 
-// ---- icon: window + executable icon (Qt twin: fuse_editor_qt_icon, Editor/src/qt/app_icon.cpp) -----------------------
+// ---- icon: window + executable icon (was fuse_editor_qt_icon in the former Qt shell) -----------------------
 void gateIcon(Rig& r) {
     const std::vector<fuse::ui::Image> icons = fui::applicationIcon();
     CHECK(icons.size() == fui::kAppIconSizes.size());
@@ -2738,7 +2739,7 @@ void gatePlayCamera(Rig& r) {
     CHECK(pickMenu(r, "Play", ActionId::PlayFromSpawn) && !r.c.playFromSpawn());
 }
 
-// ---- GUI-1 shell gates (Qt test_editor_qt_shell.cpp) -----------------------------------------------------------------
+// ---- GUI-1 shell gates (ported from the former test_editor_qt_shell.cpp) --------------------------------------------
 void gateShellDocks(Rig& r) {
     static constexpr const char* kIds[] = {"dock.hierarchy", "dock.inspector", "dock.console", "dock.project_hub", "dock.asset_browser",
                                            "dock.material_editor", "dock.sdf_sculpt", "dock.profiler", "dock.sequencer", "dock.timeline",

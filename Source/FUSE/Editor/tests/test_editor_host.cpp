@@ -451,11 +451,7 @@ void testRuntimeViewportSurfaceHandoffStub() {
 
 void testQVulkanWindowWsiProbeHeadlessSafe() {
     const fuse::editor::QVulkanWindowWsiProbeResult probe = fuse::editor::probeQVulkanWindowWsi();
-#if defined(FUSE_HAS_QT_VULKAN)
-    expectTrue(probe.attempted || probe.headlessSkipped, "qvulkan window probe attempted or skipped");
-#else
     expectTrue(probe.headlessSkipped, "qvulkan window probe skipped without Qt Vulkan");
-#endif
 }
 
 void testViewportVulkanSurfaceBootstrapStub() {
@@ -523,12 +519,7 @@ void testViewportVulkanBootstrapTeardownStress() {
 
     expectTrue(stress.cyclesAttempted == 6u, "viewport teardown stress attempts all cycles");
     expectTrue(stress.cyclesCompleted == 6u, "viewport teardown stress completes all cycles");
-#if defined(FUSE_HAS_QT_VULKAN)
-    expectTrue(stress.stubPathCycles + stress.realSurfaceCycles == 6u,
-               "Qt bootstrap stress records surface path per cycle");
-#else
     expectTrue(stress.stubPathCycles == 6u, "headless CI uses winId stub path for every cycle");
-#endif
 }
 
 void testRuntimeViewportQtSurfaceHandoffCommand() {
@@ -623,7 +614,7 @@ void testViewportQtPresentGateHeadlessSafe() {
     const fuse::editor::ViewportSwapchainHandoff& handoff = host.runtimeViewport().swapchainHandoff();
     expectTrue(handoff.qtRealSurface, "real Qt surface flagged on handoff");
     expectTrue(!fuse::editor::viewportQtPresentEligible(handoff),
-               "Qt present ineligible without FUSE_ENABLE_QT_PRESENT on headless CI");
+               "Qt present ineligible without FUSE_ENABLE_EDITOR_PRESENT on headless CI");
     expectTrue(!fuse::editor::viewportQtPresentPathEligible(handoff, true),
                "Qt present path not fully eligible without gate on headless CI");
 #if defined(FUSE_VULKAN_BACKEND)

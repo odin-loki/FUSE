@@ -1,4 +1,4 @@
-// fuse_editor_ui_* gates for the Qt-removal blockers on the panel pages (QT_PARITY.md): the Profiler flame graph and
+// fuse_editor_ui_* gates that closed the Qt-removal blockers on the panel pages (QT_PARITY.md): the Profiler flame graph and
 // timeline key drag retime. Headless on the CPU rasteriser, real pointer / key events through the UiContext.
 //   fuse_editor_ui_panels2_gates --gate=<profiler_flame|timeline_drag> [--out=shot.png]
 #include "fuse/editor/fui/editor_shell.hpp"

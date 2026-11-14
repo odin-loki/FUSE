@@ -1,7 +1,7 @@
 #pragma once
-// Q8 theme tokens: the editor dark theme (P6 `set_dark_theme`) as toolkit-neutral data. Same values as the Qt shell's
-// kDarkThemeSpec (src/qt/editor_theme.hpp, which stays the Qt source until Q8 moves it here); the twin gates
-// fuse_editor_ui_theme / fuse_editor_qt_theme check both shells against these numbers.
+// Q8 theme tokens: the editor dark theme (P6 `set_dark_theme`) as toolkit-neutral data, the single source since the
+// Stage 3 switch (same values as the former Qt shell's kDarkThemeSpec); fuse_editor_ui_theme checks the shell against
+// these numbers.
 #include <array>
 #include <string>
 #include <string_view>
@@ -29,7 +29,7 @@ inline constexpr std::array<ThemeToken, 26> kEditorDarkTheme{{
     {"TextDisabled", 0.40f, 0.43f, 0.46f, 1.f},   {"Separator", 0.18f, 0.20f, 0.22f, 1.f},
 }};
 
-/// 8-bit "#rrggbb" / "#rrggbbaa" for a role (round to nearest, the Qt shell's quantisation). Empty when unknown.
+/// 8-bit "#rrggbb" / "#rrggbbaa" for a role (round to nearest, the former Qt shell's quantisation). Empty when unknown.
 inline std::string themeHex(std::string_view role) {
     for (const ThemeToken& t : kEditorDarkTheme) {
         if (role != t.role) continue;

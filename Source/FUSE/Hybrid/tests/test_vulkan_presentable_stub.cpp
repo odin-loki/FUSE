@@ -58,7 +58,7 @@ void testDesktopPresentGateDefaultOff() {
     expectTrue(!fuse::renderer::desktopGlfwPresentRuntimeReady(),
                "desktop GLFW present runtime unavailable without gate");
 #endif
-#if defined(FUSE_ENABLE_QT_PRESENT)
+#if defined(FUSE_ENABLE_EDITOR_PRESENT)
     if (fuse::platform::displayServerAvailable()) {
         expectTrue(fuse::renderer::desktopQtPresentRuntimeReady(),
                    "display+Qt present runtime ready when gate enabled");

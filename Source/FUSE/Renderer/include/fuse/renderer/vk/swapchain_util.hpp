@@ -55,7 +55,8 @@ bool desktopGlfwPresentRuntimeReady();
 /// Runtime: Win32 WSI available and desktop Win32 present gate is ON.
 bool desktopWin32PresentRuntimeReady();
 
-/// Runtime: display available and the Qt present gate is ON — compile-time `FUSE_ENABLE_QT_PRESENT`
+/// Runtime: display available and the editor present gate is ON (the "Qt" in the name is the former Qt shell's) —
+/// compile-time `FUSE_ENABLE_EDITOR_PRESENT`
 /// or the editor host's runtime opt-in (`TrackBHostFeature::EditorViewportPresent`).
 bool desktopQtPresentRuntimeReady();
 

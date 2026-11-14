@@ -11,7 +11,7 @@
 
 namespace fuse::editor {
 
-/// Headless console log buffer (B6.11 stub — Qt text view deferred to U6 chrome).
+/// Headless console log buffer (B6.11; the FUSE UI shell's Console panel shows it).
 class ConsolePanel {
 public:
     using LogLevel = fuse::log::Level;
@@ -72,7 +72,7 @@ public:
     /// Unknown / untokenisable lines go to `handler` instead of failing (empty clears it).
     void setFallbackHandler(FallbackHandler handler) { m_fallback = std::move(handler); }
     [[nodiscard]] bool hasFallbackHandler() const { return static_cast<bool>(m_fallback); }
-    /// Logged lines per level (repeats included), for the Qt filter buttons.
+    /// Logged lines per level (repeats included), for the console filter buttons.
     [[nodiscard]] u32 levelCount(LogLevel level) const;
     [[nodiscard]] std::vector<std::string> commandNames() const;
 

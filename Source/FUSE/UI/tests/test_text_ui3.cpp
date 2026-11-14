@@ -8,7 +8,8 @@
 //   cache_zero_alloc steady-state shaping, layout (wrapping, alignment, eliding, fallback runs, RTL), measuring,
 //                    atlas lookups and segmentation of already-seen strings perform no heap allocation.
 //   dpi_<scale>      bundled font + fallback chain at 14 px x scale: metrics, advances and ink scale with the DPR,
-//                    line breaks are scale-invariant, no missing glyphs (twins of fuse_editor_qt_font_*).
+//                    line breaks are scale-invariant, no missing glyphs (what the former Qt shell's
+//                    fuse_editor_qt_font_* gates checked; the editor's are fuse_editor_ui_font_*).
 //   colrv1           data/colrv1_test.ttf (make_colrv1_test_font.py): without enableColorGlyphs, COLRv1 graphs flattened
 //                    to solid layers (gradients as mean colour, PaintColrGlyph through a transform, v0 records win);
 //                    with it, exact RGBA rendering (linear / radial / sweep gradients, transforms, composite modes, clip

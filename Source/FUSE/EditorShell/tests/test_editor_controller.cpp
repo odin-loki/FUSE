@@ -1,4 +1,4 @@
-// fuse_editor_controller_api: the Qt-free EditorController (Q1) without any shell: action table, title format, entity
+// fuse_editor_controller_api: the toolkit-free EditorController (Q1) without any shell: action table, title format, entity
 // create / undo / redo through the unified journal, selection, reparent (cycle-safe), inspector edits, transport,
 // console, file save / open round trip with the unsaved-changes prompt, recent files.
 #include "scripted_services.hpp"

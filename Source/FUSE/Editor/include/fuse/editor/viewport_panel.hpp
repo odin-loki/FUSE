@@ -37,7 +37,7 @@ struct ViewportCamera {
     static constexpr f32 kMaxPitchDeg = 89.f;
 };
 
-/// One frame of viewport input as the Qt shell reports it (Qt-free).
+/// One frame of viewport input as the editor shell reports it (toolkit-free).
 struct ViewportInput {
     /// Mouse travel since the previous report, in pixels (+x right, +y down, Qt convention).
     f32 mouseDeltaX = 0.f;
@@ -60,7 +60,7 @@ struct ViewportRay {
 };
 
 /// Headless viewport panel API (B6.3): fly/look camera, view/projection, pixel rays and the
-/// render-target size the renderer framebuffer follows. The Qt shell forwards input and resizes.
+/// render-target size the renderer framebuffer follows. The editor shell forwards input and resizes.
 class ViewportPanel {
 public:
     void setMode(ViewportMode mode);

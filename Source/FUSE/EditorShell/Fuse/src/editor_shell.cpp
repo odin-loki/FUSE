@@ -1179,7 +1179,7 @@ void EditorShellWindow::syncConsole_() {
 void EditorShellWindow::buildPlaceholder_(NodeHandle page, const ShellPanel& p) {
     const NodeHandle t = w::label(m_ui, page, p.title, std::string(p.id) + ".title");
     (void)t;
-    const NodeHandle l = w::label(m_ui, page, "Not ported to FUSE UI yet (Qt shell: --editor-shell=qt).", std::string(p.id) + ".note");
+    const NodeHandle l = w::label(m_ui, page, "This panel has no FUSE UI page yet.", std::string(p.id) + ".note");
     m_ui.addClass(l, "ed-dim");
 }
 

@@ -1,7 +1,7 @@
 #pragma once
-// Qt-free project tools shared by both editor shells: Project Settings (project.json edits), Import Asset (copy into
+// Toolkit-free project tools of the editor: Project Settings (project.json edits), Import Asset (copy into
 // assets/<kind>/ + cook on import with fuse_cook) and Build / Package (stage a project into a self-contained folder).
-// Ports of the Qt ProjectSettingsDialog / importAssetsIntoProject / makeAssetCookJob / packageProject logic.
+// Ports of the former Qt shell's ProjectSettingsDialog / importAssetsIntoProject / makeAssetCookJob / packageProject logic.
 #include <fuse/project/manifest.hpp>
 #include <fuse/types.hpp>
 

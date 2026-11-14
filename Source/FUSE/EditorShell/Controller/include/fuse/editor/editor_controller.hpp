@@ -1,11 +1,11 @@
 #pragma once
-// Q1 seam (FUSE_EDITOR_QT_FIRST_PLAN.md §3.1): EditorController + ShellServices, the one Qt-free facade both editor
-// shells call. It owns the scene mutex and the game-loop thread, runs the file / project flows (prompts through
+// Q1 seam (FUSE_EDITOR_QT_FIRST_PLAN.md §3.1): EditorController + ShellServices, the toolkit-free facade the editor
+// shell calls. It owns the scene mutex and the game-loop thread, runs the file / project flows (prompts through
 // ShellServices), keeps the unified undo journal (Q2), runs the action table (Q6) and publishes what panels show as
 // plain structs (EditorViewState, copied out under the lock; Q9 later swaps the lock for tick-published snapshots).
 //
-// First client: the FUSE UI shell (fuse_editor_fuse, FUSE_EDITOR_SHELL=fuse). The Qt shell (fuse_editor_qt) keeps its
-// own MainWindow logic until it is routed through here (Q1 in the Qt tree).
+// Client: the FUSE UI shell (fuse_editor_fuse), the editor since the Stage 3 switch (plan §8). Comments that name a Qt
+// class (MainWindow, HierarchyWidget, ...) point at the former Qt shell's code this logic was ported from.
 #include <fuse/editor/component_schema.hpp>
 #include <fuse/editor/console_panel.hpp>
 #include <fuse/editor/editor_actions.hpp>
@@ -37,7 +37,7 @@ struct Rgba {
     f32 r = 0.f, g = 0.f, b = 0.f, a = 1.f;
 };
 
-/// Dialogs and prompts the shell implements (Qt today, FUSE UI in fuse_editor_fuse, scripted in tests).
+/// Dialogs and prompts the shell implements (FUSE UI / OS dialogs in fuse_editor_fuse, scripted in tests).
 class ShellServices {
 public:
     virtual ~ShellServices() = default;
@@ -49,7 +49,7 @@ public:
     virtual std::optional<Rgba> pickColour(Rgba initial) = 0;
     virtual PromptAnswer askSaveDiscardCancel(std::string_view text) = 0;
     virtual void warn(std::string_view title, std::string_view text) = 0;
-    /// Opens a file in the system editor (Qt QDesktopServices::openUrl). False when the shell cannot.
+    /// Opens a file in the system editor (the system handler for the file). False when the shell cannot.
     virtual bool openExternal(std::string_view path) { (void)path; return false; }
 };
 
@@ -118,7 +118,7 @@ struct ViewportPointerEvent {
 };
 
 /// Edit > Preferences general options (Qt EditorPreferences: prefs/previewSun, cameraSpeed, lookSensitivity,
-/// restoreLayout). Qt-free; the FUSE shell persists them in the app settings file.
+/// restoreLayout). toolkit-free; the FUSE shell persists them in the app settings file.
 struct EditorPreferences {
     bool previewSun = true;
     f64 cameraSpeed = 10.0;
@@ -223,7 +223,7 @@ public:
     /// component name, or "#<index>".
     [[nodiscard]] static bool hierarchyMatches(std::string_view label, std::span<const std::string> components, u32 index,
                                                std::string_view query);
-    // ---- prefabs (Qt Entity menu; Qt-free commands posted to the game thread) ----------------------------------
+    // ---- prefabs (Qt Entity menu; toolkit-free commands posted to the game thread) ----------------------------------
     bool savePrefab(const std::string& path);        ///< selection -> .prefab
     bool instantiatePrefab(const std::string& path);
     bool prefabLinkAction(const std::string& op, const std::string& path = {}); ///< revert / apply / variant / reload / unlink

@@ -272,7 +272,7 @@ endif()
 if(FUSE_CORE_BAN_GLOBAL_NEW)
     # PRIVATE + Debug only. Engine TUs that include fuse/alloc/new_ban.hpp route
     # keyword new/malloc through HeapGuard. Do not replace global ::operator new —
-    # Qt/STL in the same process would abort.
+    # the STL and third-party libraries in the same process would abort.
     target_compile_definitions(fuse_core
         PRIVATE
             $<$<CONFIG:Debug>:FUSE_ENGINE_HEAP_GUARD=1>
@@ -392,9 +392,8 @@ if [ \"\${_use_xvfb}\" -eq 0 ]; then
     exec \"$@\"
 fi
 if command -v xvfb-run >/dev/null 2>&1; then
-    # WSLg sets WAYLAND_DISPLAY; Qt prefers Wayland and aborts during teardown under xvfb.
+    # WSLg sets WAYLAND_DISPLAY; the gate must open its window on the private Xvfb, not on Wayland.
     unset WAYLAND_DISPLAY
-    export QT_QPA_PLATFORM=\"\${QT_QPA_PLATFORM:-xcb}\"
     exec xvfb-run -a -s \"-screen 0 1920x1080x24 -nolisten tcp\" \"$@\"
 fi
 echo \"SKIP: no DISPLAY and xvfb-run not installed\"

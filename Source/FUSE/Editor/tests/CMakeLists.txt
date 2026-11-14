@@ -161,7 +161,7 @@ else()
     )
 endif()
 
-# B6 gate suites (B6.13 checklist rows whose logic is Qt-free).
+# B6 gate suites (B6.13 checklist rows whose logic is toolkit-free).
 foreach(_fuse_b6_gate IN ITEMS command hierarchy gizmo panels play_mode)
     add_executable(fuse_editor_b6_${_fuse_b6_gate}_gates test_b6_${_fuse_b6_gate}_gates.cpp)
     target_link_libraries(fuse_editor_b6_${_fuse_b6_gate}_gates PRIVATE fuse_editor_api fuse_core)

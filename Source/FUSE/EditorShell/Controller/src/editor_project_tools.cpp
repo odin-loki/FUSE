@@ -1,4 +1,4 @@
-// Qt-free project tools (see editor_project_tools.hpp).
+// toolkit-free project tools (see editor_project_tools.hpp).
 #include <fuse/editor/editor_project_tools.hpp>
 
 #include <fuse/project/loader.hpp>

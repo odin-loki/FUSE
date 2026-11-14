@@ -1,6 +1,6 @@
 #pragma once
 
-// Qt viewport seq preview overlay stub (U5 wave 18) — headless-friendly scrub sample for runtime viewport.
+// Viewport seq preview overlay stub (U5 wave 18) — headless-friendly scrub sample for runtime viewport.
 
 #include <fuse/cinematics/types.hpp>
 #include <fuse/types.hpp>

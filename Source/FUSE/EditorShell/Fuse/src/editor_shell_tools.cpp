@@ -1,5 +1,5 @@
 // UI9: File > Project Settings / Build / Package dialogs and the hierarchy rename row (Qt ProjectSettingsDialog,
-// BuildPackageDialog, HierarchyWidget::beginRename parity) on the Qt-free project tools.
+// BuildPackageDialog, HierarchyWidget::beginRename parity) on the toolkit-free project tools.
 #include "fuse/editor/fui/editor_shell.hpp"
 
 #include <fuse/ui/widgets/widgets.hpp>

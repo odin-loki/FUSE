@@ -7,7 +7,7 @@
 
 namespace fuse::editor {
 
-/// Shared editor chrome state — Qt-free; mirrors P6 `EditorState` selection/edit flags.
+/// Shared editor chrome state — toolkit-free; mirrors P6 `EditorState` selection/edit flags.
 struct EditorState {
     std::vector<ecs::EntityID> selectedEntities;
     ecs::EntityID primarySelection = ecs::EntityID::null();

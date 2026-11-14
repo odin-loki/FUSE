@@ -30,7 +30,7 @@ struct FlameNode {
     std::vector<u32> children; ///< indices into `flameNodes()`, sorted by name
 };
 
-/// Qt-free model behind the profiler panel's flame graph (B6.10). Consumes the chronological
+/// toolkit-free model behind the profiler panel's flame graph (B6.10). Consumes the chronological
 /// `fuse::profiler` event ring: per thread, Begin / End events are paired by scope id with a
 /// stack (so nesting follows the actual call structure, not only the recorded depth), GPU / CUDA
 /// complete events become leaf slices, and slices are merged by call path into flame nodes.

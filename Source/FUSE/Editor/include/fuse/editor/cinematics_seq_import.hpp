@@ -44,21 +44,21 @@ public:
     [[nodiscard]] bool scrubPreviewAtMs(fuse::cinematics::TimelineMs timeMs,
                                         fuse::cinematics::SeqScrubPreview& outPreview) const;
 
-    /// Qt seq preview pane stub — posts scrub time through EditorHost for game-thread sampling.
+    /// Seq preview pane stub — posts scrub time through EditorHost for game-thread sampling.
     bool postScrubPreviewAtMs(fuse::cinematics::TimelineMs timeMs);
     [[nodiscard]] SeqPreviewPaneSample previewPaneSampleAtMs(fuse::cinematics::TimelineMs timeMs) const;
 
-    /// Wire Qt seq preview pane — import asset + post initial scrub through EditorHost.
+    /// Wire seq preview pane — import asset + post initial scrub through EditorHost.
     bool wirePreviewPaneToHost(fuse::cinematics::TimelineMs initialTimeMs = 0);
 
-    /// Wire Qt seq overlay ↔ timeline host stub through EditorHost.
+    /// Wire seq overlay ↔ timeline host stub through EditorHost.
     bool wireTimelineHostToHost(fuse::cinematics::TimelineMs initialTimeMs = 0);
     [[nodiscard]] const fuse::cinematics::TimelineHostOverlaySample& lastTimelineHostSample() const {
         return m_lastTimelineHostSample;
     }
     [[nodiscard]] u32 timelineHostWireCount() const { return m_timelineHostWireCount; }
 
-    /// Qt viewport seq preview stub — post scrub time for runtime viewport overlay sampling.
+    /// Viewport seq preview stub — post scrub time for runtime viewport overlay sampling.
     bool postViewportSeqPreviewAtMs(fuse::cinematics::TimelineMs timeMs);
     [[nodiscard]] u32 viewportSeqPreviewPostCount() const { return m_viewportSeqPreviewPostCount; }
     [[nodiscard]] const SeqPreviewPaneSample& lastWiredPreviewSample() const { return m_lastWiredPreviewSample; }

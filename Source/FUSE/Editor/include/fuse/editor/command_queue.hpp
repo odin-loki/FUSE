@@ -44,7 +44,7 @@ enum class CommandKind {
 };
 
 /// UI-thread command envelope — applied on the game thread via CommandQueue::drain().
-/// Full Qt editor panes land in U6; this header stays Qt-free.
+/// The editor panes live in the FUSE UI shell (EditorShell/Fuse); this header stays toolkit-free.
 struct EditorCommand {
     CommandKind kind = CommandKind::SetProperty;
     Handle<Object> target = Handle<Object>::invalid();
@@ -78,7 +78,7 @@ EditorCommand makeConsoleExecCommand(std::string line);
 EditorCommand makeSavePrefabCommand(std::string path);
 EditorCommand makeInstantiatePrefabCommand(std::string path);
 EditorCommand makePrefabLinkCommand(std::string op, std::string path = {});
-/// MP-B6-QT-INSPECTOR: property / component / hierarchy edits posted by the Qt inspector and
+/// MP-B6-QT-INSPECTOR: property / component / hierarchy edits posted by the editor inspector and
 /// hierarchy (`target` / `parent` are ECS entity ids as Handle<Object>(index, generation)).
 EditorCommand makeSetPropertyCommand(Handle<Object> target, std::string propertyName, std::string value);
 EditorCommand makeAddComponentCommand(Handle<Object> target, std::string componentName);

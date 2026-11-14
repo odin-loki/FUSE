@@ -77,7 +77,7 @@ std::span<const ActionDesc> editorActions() { return kActions; }
 const ActionDesc& actionDesc(ActionId id) { return kActions[static_cast<usize>(id)]; }
 const ActionDesc* findAction(std::string_view key) {
     for (const ActionDesc& a : kActions)
-        if (key == a.stableId || key == a.qtObjectName) return &a;
+        if (key == a.stableId || key == a.objectName) return &a;
     return nullptr;
 }
 std::span<const char* const> editorMenus() { return kMenus; }

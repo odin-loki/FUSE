@@ -6,7 +6,6 @@ Build trees (any subset; missing ones are skipped):
   --tree DIR     full FUSE tree (fuse_runtime_smoke, fuse_app_host, fuse_editor_fuse, fuse_editor_ui_gates)
   --ui-min DIR   standalone UI build, -DFUSE_UI_TEXT=MINIMAL  (cmake -S Source/FUSE/UI ...)
   --ui-full DIR  standalone UI build, -DFUSE_UI_TEXT=FULL
-  --qt DIR       tree with -DFUSE_BUILD_EDITOR=ON (fuse_editor_qt_gates: Qt editor ui_frame)
 
 Windows: run from a normal desktop session (the windows really show). Linux: run under a display, e.g.
   xvfb-run -a -s "-screen 0 1920x1080x24" python3 scripts/ui_baselines.py --ui-min build-ui ...
@@ -140,7 +139,6 @@ def main():
     ap.add_argument("--tree")
     ap.add_argument("--ui-min")
     ap.add_argument("--ui-full")
-    ap.add_argument("--qt")
     ap.add_argument("--runs", type=int, default=5)
     ap.add_argument("--idle-seconds", type=float, default=10.0)
     ap.add_argument("--json")
@@ -253,14 +251,6 @@ def main():
             cmd = [gates, "--gate=ui_frame", f"--out={d}/ui_frame.png"]
             r["frames"]["FUSE editor shell hover frame ms"] = best_of(cmd, r"ui_frame: ([\d.]+) ms")
             r["frames"]["FUSE editor shell full-window CPU raster ms"] = best_of(cmd, r"CPU raster ([\d.]+) ms")
-    qt = find(a.qt, "fuse_editor_qt_gates")
-    if qt:
-        # the Qt DLLs must be on PATH (e.g. C:/Qt/6.x/msvc2022_64/bin); Windows has no $DISPLAY for the gate's check
-        if WINDOWS:
-            os.environ.setdefault("QT_QPA_PLATFORM", "windows")
-        _, rc, out = run([qt, "ui_frame"], 600)
-        r["frames"]["Qt editor steady frame median ms"] = parse(r"steady-state editor UI frame[^\n]*median ([\d.]+) ms", out)
-        r["frames"]["Qt editor full-window repaint median ms"] = parse(r"full-window repaint[^\n]*median ([\d.]+) ms", out)
 
     print(f"# FUSE UI baselines — {r['platform']} — {r['date']}\n")
     print("| Binary | Stripped size |\n|---|---|")

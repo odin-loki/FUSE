@@ -1,4 +1,4 @@
-// fuse_editor_ui_* gates for the Qt-removal blockers of docs/editor/QT_PARITY.md: floating panels as OS windows,
+// fuse_editor_ui_* gates that closed the Qt-removal blockers of docs/editor/QT_PARITY.md: floating panels as OS windows,
 // panel and hierarchy drag and drop, the hierarchy context menu, the colour dialog, OS file dialogs and the editor's
 // keyboard (Tab) order. Real pointer / key events (UiContext, or posted OS input for the native gates).
 //   fuse_editor_ui_parity_gates --gate=<float_window|dock_drag|dock_split|hierarchy_dnd|hierarchy_menu|color_dialog|native_dialogs|tab_order>

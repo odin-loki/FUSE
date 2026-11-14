@@ -1,8 +1,7 @@
 #pragma once
-// UI9 (FUSE_EDITOR_QT_FIRST_PLAN.md): the editor chrome built with FUSE UI (FUSE_EDITOR_SHELL=fuse), beside the Qt
-// shell and driven by the same Qt-free EditorController. Same panel ids (dock.hierarchy, dock.inspector, ...), the
-// same action table (menus, toolbar, shortcuts) and the same window title, so the fuse_editor_ui_* gates mirror the
-// fuse_editor_qt_* ones.
+// UI9 / Stage 3 (FUSE_EDITOR_QT_FIRST_PLAN.md §8): the editor chrome, built with FUSE UI and driven by the toolkit-free
+// EditorController. It kept the former Qt shell's panel ids (dock.hierarchy, dock.inspector, ...), action table (menus,
+// toolbar, shortcuts) and window title, so the fuse_editor_ui_* gates check what the fuse_editor_qt_* gates checked.
 //
 // Layout: menu bar / toolbar (main + transport) / dock area (left: Hierarchy | Project Hub | Asset Browser,
 // right: Inspector | Material Editor | SDF Sculpt, bottom: Console | Profiler | Sequencer | Timeline; each side starts
@@ -42,7 +41,7 @@ struct EditorShellOptions {
     static std::string defaultIconPack();
 };
 
-/// One panel of the Qt shell's dock set: its Qt objectName-style id, tab title and side.
+/// One panel of the dock set (the former Qt shell's): its objectName-style id, tab title and side.
 struct ShellPanel {
     const char* id;
     const char* title;
@@ -145,7 +144,7 @@ public:
     [[nodiscard]] NodeHandle panelPage(std::string_view panelId) const;
     /// True when `panelId` ("profiler" or "dock.profiler") is the current tab of its dock.
     [[nodiscard]] bool panelVisible(std::string_view panelId) const;
-    /// The Qt-free models behind the seven UI9 panels.
+    /// The toolkit-free models behind the seven UI9 panels.
     [[nodiscard]] EditorPanels& panels() { return *m_models; }
     [[nodiscard]] NodeHandle viewportNode() const { return m_viewport; }
     /// Toolbar icon name of an action ("file-plus", "save", ...; "" = text only) and whether the pack has it.

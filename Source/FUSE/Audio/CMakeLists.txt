@@ -90,6 +90,7 @@ if(FUSE_AUDIO_ENABLE_OPENAL)
         set(_FUSE_OPENAL_SOFT_DIR "${FUSE_VENDOR_DIR}/openal-soft")
         if(EXISTS "${_FUSE_OPENAL_SOFT_DIR}/include/AL/al.h")
             set(ALSOFT_UTILS OFF CACHE BOOL "" FORCE)
+            set(ALSOFT_NO_CONFIG_UTIL ON CACHE BOOL "" FORCE) # alsoft-config is a Qt utility: never look for Qt
             set(ALSOFT_EXAMPLES OFF CACHE BOOL "" FORCE)
             set(ALSOFT_TESTS OFF CACHE BOOL "" FORCE)
             set(ALSOFT_INSTALL OFF CACHE BOOL "" FORCE)

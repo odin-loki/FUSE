@@ -20,7 +20,7 @@ ctest --test-dir build/fuse-debug --output-on-failure
 | `fuse-debug`, `fuse-release`, `fuse-profile` | Daily product builds |
 | `fuse-asan` | Address + undefined sanitizers on FUSE targets |
 | `fuse-shipping` | Runtime without editor |
-| `fuse-editor-debug` | Qt 6 `fuse_editor` |
+| `fuse-editor-debug`, `fuse-editor` | FUSE UI editor `fuse_editor_fuse` (`FUSE_BUILD_EDITOR=ON`); `fuse-editor` is the Release gate tree (`ctest -L fuse_editor_ui`) |
 | `fuse-track-b-unlock` | Local production-present defaults |
 | `fuse-werror-*` | `-Werror` / `/WX` on FUSE targets |
 | `fuse-mingw-*` | Windows x64 cross from Linux (Wine ctest) |

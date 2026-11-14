@@ -7,7 +7,7 @@
 
 namespace fuse::editor {
 
-/// Headless asset browser model (B6.9 stub — Qt grid/tree deferred to U6 chrome).
+/// Headless asset browser model (B6.9; the grid / list view is the FUSE UI shell's Asset Browser).
 class AssetBrowser {
 public:
     enum class AssetType : u8 {

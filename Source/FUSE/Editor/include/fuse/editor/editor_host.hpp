@@ -53,7 +53,7 @@ struct EditorConsoleLine {
     std::string text;
 };
 
-/// Qt-free in-process editor runtime host (WP-08 / U6).
+/// toolkit-free in-process editor runtime host (WP-08 / U6).
 /// UI thread calls postFromUi(); game thread calls gameTick() to drain commands.
 class EditorHost {
 public:

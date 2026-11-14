@@ -1,9 +1,9 @@
 #pragma once
-// UI9 panel models: the Qt-free state + commands behind the seven panels that are not hierarchy / inspector / console
+// UI9 panel models: the toolkit-free state + commands behind the seven panels that are not hierarchy / inspector / console
 // (Project Hub, Asset Browser, Material Editor, SDF Sculpt, Profiler, Sequencer, Timeline). Each method locks the
 // controller's scene mutex, edits through the host's UndoStack (so the controller's unified undo journal sees it) and
-// returns plain view structs. The FUSE UI shell is the first client; the Qt widgets in Editor/src/qt keep their own
-// copies of this logic until they are routed through here.
+// returns plain view structs for the FUSE UI shell. Qt class names in the comments (AssetBrowserWidget, LightingPanel,
+// ...) name the former Qt shell's widgets this logic was ported from.
 #include <fuse/editor/editor_controller.hpp>
 #include <fuse/editor/material_editor_panel.hpp>
 #include <fuse/editor/profiler_panel.hpp>

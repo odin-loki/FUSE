@@ -82,7 +82,7 @@ function(fuse_volk_attach target)
 
     # Expose volk.h, volk.c (VOLK_IMPLEMENTATION), and fuse_volk_pin.h from the shim tree only.
     # Do not add ${_volk_dir} itself: its VERSION pin file is picked up as <version> on
-    # case-insensitive mounts (OneDrive /drvfs), which breaks Qt and libc++ <version>.
+    # case-insensitive mounts (OneDrive /drvfs), which breaks libc++ <version> (and broke the former Qt shell).
     foreach(_hdr volk.h volk.c fuse_volk_pin.h)
         set(_link "${_shim_dir}/${_hdr}")
         if(NOT EXISTS "${_link}")

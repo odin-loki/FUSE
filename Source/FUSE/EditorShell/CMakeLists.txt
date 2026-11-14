@@ -1,7 +1,13 @@
-# UI9 (docs/plans/FUSE_EDITOR_QT_FIRST_PLAN.md): the Qt-free EditorController (Q1 seam) shared by both editor shells, and
-# the FUSE UI shell (fuse_editor_fuse) built beside the Qt one when FUSE_EDITOR_SHELL=fuse. Qt stays the default.
-set(FUSE_EDITOR_SHELL "qt" CACHE STRING "Editor chrome toolkit: qt (fuse_editor_qt, default) or fuse (also builds fuse_editor_fuse + fuse_editor_ui_* gates)")
-set_property(CACHE FUSE_EDITOR_SHELL PROPERTY STRINGS qt fuse)
+# UI9 / Stage 3 (docs/plans/FUSE_EDITOR_QT_FIRST_PLAN.md §8): the editor is the FUSE UI shell. With FUSE_BUILD_EDITOR_API
+# this builds the toolkit-free EditorController (Q1 seam), the panel models and the scene viewport host with their tests;
+# FUSE_BUILD_EDITOR=ON adds the shell (fuse_editor_fuse), the editor executable (fuse_editor_fuse_app, binary
+# fuse_editor_fuse) and the fuse_editor_ui_* gates. There is no toolkit switch: the former Qt shell and its
+# FUSE_EDITOR_SHELL=qt|fuse option were removed at the switch.
+if(DEFINED CACHE{FUSE_EDITOR_SHELL})
+    message(WARNING "FUSE_EDITOR_SHELL is gone (the editor is the FUSE UI shell; FUSE_BUILD_EDITOR=ON builds it) — ignoring "
+                    "FUSE_EDITOR_SHELL=${FUSE_EDITOR_SHELL}")
+    unset(FUSE_EDITOR_SHELL CACHE)
+endif()
 
 if(NOT TARGET fuse_editor_api)
     return()
@@ -30,7 +36,7 @@ fuse_apply_cxx23(fuse_editor_panel_models_tests)
 add_test(NAME fuse_editor_panel_models COMMAND fuse_editor_panel_models_tests)
 set_tests_properties(fuse_editor_panel_models PROPERTIES LABELS "fuse_ui;fuse_editor_ui")
 
-# Qt-independent scene renderer host (zero-copy viewport): EditorHost scene -> hybrid::HybridSceneRenderer on a device
+# Toolkit-independent scene renderer host (zero-copy viewport): EditorHost scene -> hybrid::HybridSceneRenderer on a device
 # a swapchain presenter can adopt.
 add_library(fuse_editor_scene_host STATIC SceneHost/src/scene_viewport_host.cpp)
 target_include_directories(fuse_editor_scene_host PUBLIC SceneHost/include)
@@ -40,8 +46,15 @@ if(TARGET fuse_rhi_profiling)
 endif()
 fuse_apply_cxx23(fuse_editor_scene_host)
 
-if(NOT FUSE_EDITOR_SHELL STREQUAL "fuse" OR NOT TARGET fuse_app)
+if(NOT FUSE_BUILD_EDITOR)
     return()
+endif()
+if(FUSE_PLATFORM_MOBILE)
+    message(WARNING "FUSE_BUILD_EDITOR is desktop-only; skipping the editor shell on the mobile profile")
+    return()
+endif()
+if(NOT TARGET fuse_app)
+    message(FATAL_ERROR "FUSE_BUILD_EDITOR=ON needs FUSE UI (fuse_app): configure with FUSE_BUILD_UI=ON and FUSE_BUILD_UI_APP=ON")
 endif()
 
 # window icon rasters (Source/FUSE/Branding) embedded as byte arrays; regenerated when a PNG changes
@@ -85,7 +98,8 @@ if(TARGET fuse_app_native)
     fuse_apply_cxx23(fuse_editor_fuse_app)
 endif()
 
-# Twin gates: same names as the Qt editor gates (fuse_editor_qt_*), one executable, --gate=<name>; each writes a PNG.
+# Editor gates: one executable, --gate=<name>; each writes a PNG. The names are those of the former Qt shell's gates
+# (fuse_editor_qt_<name> -> fuse_editor_ui_<name>, docs/editor/QT_PARITY.md), which these replaced at the switch.
 add_executable(fuse_editor_ui_gates tests/test_editor_ui_gates.cpp)
 if(WIN32)
     target_sources(fuse_editor_ui_gates PRIVATE "${_fuse_branding}/fuse_editor.rc") # icon gate: executable icon resource
@@ -126,9 +140,8 @@ set_tests_properties(fuse_editor_ui_scene_viewport fuse_editor_ui_gpu_viewport f
     PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(fuse_editor_ui_build_package fuse_editor_ui_edit_tools fuse_editor_ui_shell_timeline PROPERTIES TIMEOUT 600)
 
-# Qt-removal blockers on the panel pages (docs/editor/QT_PARITY.md): Profiler flame graph, timeline key drag retime.
-# Qt-removal blockers (docs/editor/QT_PARITY.md): floating panels as OS windows, drag to dock, hierarchy drag and drop
-# and context menu, colour dialog, OS file dialogs (FUSE UI fallback), Tab order. float_window / native_dialogs need a
+# The gates that closed the Qt-removal blockers (docs/editor/QT_PARITY.md): floating panels as OS windows, drag to dock,
+# hierarchy drag and drop and context menu, colour dialog, OS file dialogs (FUSE UI fallback), Tab order. float_window / native_dialogs need a
 # display (77 without one; Linux: under Xvfb).
 add_executable(fuse_editor_ui_parity_gates tests/test_editor_ui_parity.cpp)
 target_link_libraries(fuse_editor_ui_parity_gates PRIVATE fuse_editor_fuse)
@@ -144,6 +157,7 @@ foreach(gate dock_drag dock_split hierarchy_dnd hierarchy_menu color_dialog tab_
 endforeach()
 set_tests_properties(fuse_editor_ui_float_window fuse_editor_ui_native_dialogs PROPERTIES RUN_SERIAL TRUE)
 
+# Panel-page blockers: Profiler flame graph, timeline key drag retime.
 add_executable(fuse_editor_ui_panels2_gates tests/test_editor_ui_panels2.cpp)
 target_link_libraries(fuse_editor_ui_panels2_gates PRIVATE fuse_editor_fuse)
 fuse_apply_cxx23(fuse_editor_ui_panels2_gates)
@@ -152,7 +166,7 @@ foreach(gate profiler_flame timeline_drag)
     set_tests_properties(fuse_editor_ui_${gate} PROPERTIES LABELS "fuse_ui;fuse_editor_ui")
 endforeach()
 
-# Desktop accessibility (Qt-removal prerequisite): a UI Automation client reads the real editor window (menus, panel
+# Desktop accessibility (was a Qt-removal prerequisite): a UI Automation client reads the real editor window (menus, panel
 # pages, inspector fields) and drives it through AccessKit. Windows only; 77 without AccessKit.
 if(WIN32 AND TARGET fuse_app_a11y)
     add_executable(fuse_editor_ui_a11y_gate tests/test_editor_ui_a11y.cpp)
