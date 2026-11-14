@@ -380,10 +380,13 @@ void detail::renderRange(const RasterEnv& env, const DrawList& list, std::size_t
         }
         for (int y = y0; y < y1; ++y) {
             u32* row = target.row(y) - ox; // indexed by device x
-            const bool solidRow = y >= iy0 && y < iy1;
+            // the solid interior span of this row: one fill, the per-pixel loop covers only the edges around it
+            const int sx0 = std::max(ix0, x0), sx1 = std::min(ix1, x1);
+            const bool solidRow = y >= iy0 && y < iy1 && sx0 < sx1;
+            if (solidRow) std::fill(row + sx0, row + sx1, solid);
             for (int x = x0; x < x1; ++x) {
-                if (solidRow && x >= ix0 && x < ix1) {
-                    row[x] = solid;
+                if (solidRow && x == sx0) {
+                    x = sx1 - 1; // already stored
                     continue;
                 }
                 const f32 px = f32(x) + 0.5f, py = f32(y) + 0.5f;

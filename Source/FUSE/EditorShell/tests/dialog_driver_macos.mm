@@ -90,7 +90,8 @@ std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
         // and name it on separate ticks, then OK until the modal session ends. Each step is logged: a call into the
         // remote panel that blocks shows up as the last line.
         ++stage;
-        auto step = [&](const char* what) { std::fprintf(stderr, "dialog driver stage %d: %s\n", stage, what); };
+        const int sg = stage; // (a __block variable cannot be captured by a lambda)
+        auto step = [sg](const char* what) { std::fprintf(stderr, "dialog driver stage %d: %s\n", sg, what); };
         if (stage < 6) return;
         if (stage == 6) {
             step(a.kind == K::Open ? "directoryURL = the file" : "directoryURL = the folder");
