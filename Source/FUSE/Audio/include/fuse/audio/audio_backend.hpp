@@ -33,9 +33,10 @@ struct AudioOutputStats {
 ///
 /// * OpenAL: one streaming AL source (direct channels, source-relative) fed from a lock-free SPSC
 ///   ring that submit() writes on the game thread. With AL_SOFT_callback_buffer (openal-soft) the
-///   device's mixer thread reads the ring directly (ring = output_ring_blocks + device_buffers
-///   blocks), so the whole ring absorbs a late device thread; otherwise a feeder thread refills
-///   `device_buffers` queued buffers of `frames_per_buf` stereo frames from it. AL_EXT_float32 when
+///   device's mixer thread reads the ring directly (ring = output_ring_blocks + the device_buffers
+///   buffers a queue would hold), so the whole ring absorbs a late device thread; otherwise a feeder
+///   thread refills `device_buffers` queued buffers from it. Either way a buffer is a multiple of
+///   `frames_per_buf` sized so the device's share spans >= 2 device periods. AL_EXT_float32 when
 ///   available, else 16-bit. Underruns insert silence and are counted; ALC_EXT_disconnect is polled
 ///   and a lost device is re-opened (ALC_SOFT_reopen_device, else a full close / reopen). All AL
 ///   calls after init happen on the feeder thread.

@@ -241,10 +241,11 @@ struct AudioBackend::OpenALStream {
                 }
             }
         }
-        if (!use_callback) {
-            size_buffers();
-            reset_queue();
-        }
+        // Both modes: the device's share of the buffering must span >= 2 device periods (the mixer pulls a
+        // whole period at a time and, waking late, renders the periods it missed back to back). Callback mode
+        // adds buffer_count * buffer_frames to the ring (init()) instead of queueing that many AL buffers.
+        size_buffers();
+        reset_queue();
         // Callback mode: the feeder thread starts the source (run()), after init() has sized the ring.
         return true;
     }
@@ -475,13 +476,14 @@ bool AudioBackend::init(const AudioDesc& desc) {
         std::copy(std::begin(attrs), std::end(attrs), stream->attrs);
         if (stream->open(nullptr)) {
             // Queue mode: the ring holds at least two AL buffers' worth so the feeder always finds a full one.
-            // Callback mode: the ring is the whole device queue, so it also takes the device_buffers blocks a
-            // queue would have held (same total depth); playback starts once that much is primed.
+            // Callback mode: the ring is the whole device queue, so it also takes the device_buffers AL buffers
+            // (buffer_frames each, sized to the device period) a queue would have held: same total depth as
+            // queue mode. Playback starts once that much is primed.
             const u32 blocks_per_buffer = stream->buffer_frames / m_blockFrames;
             u32 ring_blocks = std::max<u32>(std::max<u32>(desc.output_ring_blocks, 1), 2 * blocks_per_buffer);
             if (stream->use_callback) {
-                ring_blocks += stream->buffer_count;
-                stream->cb_prime_samples = static_cast<usize>(stream->buffer_count) * m_blockFrames * 2;
+                ring_blocks += stream->buffer_count * blocks_per_buffer;
+                stream->cb_prime_samples = static_cast<usize>(stream->buffer_count) * stream->buffer_frames * 2;
             }
             const usize ring_samples = static_cast<usize>(ring_blocks) * m_blockFrames * 2;
             stream->ring.reset(ring_samples);
