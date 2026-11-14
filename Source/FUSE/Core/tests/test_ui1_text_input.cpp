@@ -19,6 +19,7 @@
 #include <imm.h>
 #endif
 #include <cstring>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,88 @@ void expect(bool ok, const char* what) {
         ++g_failures;
     }
 }
+
+#if defined(_WIN32)
+// The IME side of IMM32 (immdev.h, not in every SDK / MinGW header set): an IME keeps its pre-edit in the input
+// context's COMPOSITIONSTRING block, which ImmGetCompositionStringW (what the pump reads on WM_IME_COMPOSITION) returns.
+struct ImeCompositionString { // COMPOSITIONSTRING
+    DWORD dwSize, dwCompReadAttrLen, dwCompReadAttrOffset, dwCompReadClauseLen, dwCompReadClauseOffset, dwCompReadStrLen,
+        dwCompReadStrOffset, dwCompAttrLen, dwCompAttrOffset, dwCompClauseLen, dwCompClauseOffset, dwCompStrLen,
+        dwCompStrOffset, dwCursorPos, dwDeltaStart, dwResultReadClauseLen, dwResultReadClauseOffset, dwResultReadStrLen,
+        dwResultReadStrOffset, dwResultClauseLen, dwResultClauseOffset, dwResultStrLen, dwResultStrOffset, dwPrivateSize,
+        dwPrivateOffset;
+};
+struct ImeInputContext { // INPUTCONTEXT
+    HWND hWnd;
+    BOOL fOpen;
+    POINT ptStatusWndPos, ptSoftKbdPos;
+    DWORD fdwConversion, fdwSentence;
+    union {
+        LOGFONTA A;
+        LOGFONTW W;
+    } lfFont;
+    COMPOSITIONFORM cfCompForm;
+    CANDIDATEFORM cfCandForm[4];
+    HANDLE hCompStr, hCandInfo, hGuideLine, hPrivate;
+    DWORD dwNumMsgBuf;
+    HANDLE hMsgBuf;
+    DWORD fdwInit;
+    DWORD dwReserve[3];
+};
+
+/// Puts `text` (UTF-16, caret at its end) into `imc`'s composition string the way an IME does. The hosted Windows
+/// runners have no IME for the default layout: ImmSetCompositionStringW(SCS_SETSTR) returns TRUE there but nothing
+/// keeps the string, so the pump's WM_IME_COMPOSITION path would read back an empty pre-edit. Returns false when
+/// imm32 lacks the IME-side exports or refuses the block.
+bool storeCompositionAsIme(HIMC imc, const wchar_t* text, DWORD length) {
+    const HMODULE imm = GetModuleHandleW(L"imm32.dll");
+    if (imm == nullptr) return false;
+    using LockIMC = ImeInputContext*(WINAPI*)(HIMC);
+    using UnlockIMC = BOOL(WINAPI*)(HIMC);
+    using LockIMCC = LPVOID(WINAPI*)(HANDLE);
+    using UnlockIMCC = BOOL(WINAPI*)(HANDLE);
+    using ReSizeIMCC = HANDLE(WINAPI*)(HANDLE, DWORD);
+    using CreateIMCC = HANDLE(WINAPI*)(DWORD);
+    const auto lockImc = reinterpret_cast<LockIMC>(reinterpret_cast<void*>(GetProcAddress(imm, "ImmLockIMC")));
+    const auto unlockImc = reinterpret_cast<UnlockIMC>(reinterpret_cast<void*>(GetProcAddress(imm, "ImmUnlockIMC")));
+    const auto lockImcc = reinterpret_cast<LockIMCC>(reinterpret_cast<void*>(GetProcAddress(imm, "ImmLockIMCC")));
+    const auto unlockImcc = reinterpret_cast<UnlockIMCC>(reinterpret_cast<void*>(GetProcAddress(imm, "ImmUnlockIMCC")));
+    const auto resizeImcc = reinterpret_cast<ReSizeIMCC>(reinterpret_cast<void*>(GetProcAddress(imm, "ImmReSizeIMCC")));
+    const auto createImcc = reinterpret_cast<CreateIMCC>(reinterpret_cast<void*>(GetProcAddress(imm, "ImmCreateIMCC")));
+    if (!lockImc || !unlockImc || !lockImcc || !unlockImcc || !resizeImcc || !createImcc) return false;
+    ImeInputContext* ic = lockImc(imc);
+    if (ic == nullptr) return false;
+    const DWORD strOffset = static_cast<DWORD>(sizeof(ImeCompositionString));
+    const DWORD attrOffset = strOffset + (length + 1u) * static_cast<DWORD>(sizeof(wchar_t));
+    const DWORD size = attrOffset + length;
+    HANDLE block = ic->hCompStr != nullptr ? resizeImcc(ic->hCompStr, size) : createImcc(size);
+    bool ok = false;
+    if (block != nullptr) {
+        ic->hCompStr = block;
+        if (auto* cs = static_cast<ImeCompositionString*>(lockImcc(block))) {
+            std::memset(cs, 0, size);
+            cs->dwSize = size;
+            cs->dwCompStrLen = length; // UTF-16 units (Unicode input context)
+            cs->dwCompStrOffset = strOffset;
+            cs->dwCompAttrLen = length; // ATTR_INPUT (0) per unit
+            cs->dwCompAttrOffset = attrOffset;
+            cs->dwCursorPos = length;
+            std::memcpy(reinterpret_cast<char*>(cs) + strOffset, text, length * sizeof(wchar_t));
+            unlockImcc(block);
+            ok = true;
+        }
+    }
+    unlockImc(imc);
+    return ok;
+}
+
+/// The input context's GCS_COMPSTR, as the pump reads it.
+std::wstring compositionOf(HIMC imc) {
+    wchar_t buf[64] = {};
+    const LONG bytes = ImmGetCompositionStringW(imc, GCS_COMPSTR, buf, sizeof(buf) - sizeof(wchar_t));
+    return bytes > 0 ? std::wstring(buf, static_cast<size_t>(bytes) / sizeof(wchar_t)) : std::wstring();
+}
+#endif
 } // namespace
 
 int main() {
@@ -178,8 +261,18 @@ int main() {
             bool imeTested = false;
             if (HIMC imc = ImmGetContext(hwnd)) {
                 const wchar_t comp[] = L"\u304B\u306A";
-                if (ImmSetCompositionStringW(imc, SCS_SETSTR, const_cast<wchar_t*>(comp), sizeof(comp) - sizeof(wchar_t),
-                                             nullptr, 0) != FALSE) {
+                const DWORD compLen = static_cast<DWORD>(std::size(comp) - 1u);
+                // An installed IME takes SCS_SETSTR and keeps the string; without one (the hosted runners) the test
+                // stores it in the input context itself, as an IME would, so the pump's IMM path still runs.
+                const BOOL setByIme = ImmSetCompositionStringW(imc, SCS_SETSTR, const_cast<wchar_t*>(comp),
+                                                               compLen * static_cast<DWORD>(sizeof(wchar_t)), nullptr, 0);
+                const std::wstring want(comp, compLen);
+                const bool viaIme = setByIme != FALSE && compositionOf(imc) == want;
+                const bool stored = viaIme || (storeCompositionAsIme(imc, comp, compLen) && compositionOf(imc) == want);
+                std::printf("    IMM composition string: %s\n",
+                            viaIme ? "set through the IME" : (stored ? "stored in the input context (no IME)" : "not held"));
+                expect(stored, "IMM32 input context holds the composition string");
+                if (stored) {
                     imeTested = true;
                     SendMessageW(hwnd, WM_IME_COMPOSITION, 0, GCS_COMPSTR | GCS_CURSORPOS);
                     PostMessageW(hwnd, WM_NULL, 0, 0);
@@ -199,9 +292,10 @@ int main() {
                     pump.drainEvents(events);
                     expect(pump.composition().empty(), "WM_IME_ENDCOMPOSITION ends pre-edit");
                 }
+                if (!viaIme && stored) storeCompositionAsIme(imc, L"", 0); // leave the context as found
                 ImmReleaseContext(hwnd, imc);
             }
-            if (!imeTested) std::printf("    note: no IMM context / ImmSetCompositionStringW refused; IME section skipped\n");
+            if (!imeTested) std::printf("    note: no IMM context for the window; IME section skipped\n");
             setTextInputArea(window, 12, 24, 2, 16);
             endTextInput(window);
 
