@@ -85,7 +85,11 @@ Intermittent or load-sensitive:
 - `fuse_editor_ui_ui_frame` / `fuse_editor_ui_frame` (one gate, two names): wall-clock CPU raster budget (8 ms for a
   full 1600x900 window). The opaque-rect fill in `draw_list.cpp` took it from 7.5 to 4.8 ms, the per-command column
   map of image commands (the viewport) halved the instructions again (8.2 ms Linux / 10.4 ms macOS runner before,
-  passing on both after, run 43572986508 / 43572988648); a loaded machine can still miss it.
+  passing on both after, run 43572986508 / 43572988648); a loaded machine can still miss it. The 2 ms full 9-dock
+  repaint missed at 2.05 ms on windows-2022 when the parallel name ran beside other tests (run 43611889220): since then
+  `fuse_editor_ui_ui_frame` only reports the budgets (`FUSE_UI_PERF_REPORT_ONLY=1`) and the `RUN_SERIAL`
+  `fuse_editor_ui_frame` enforces them, and StyleEngine::compute only tries the rules keyed on a node's id / classes /
+  type (repaint median 0.79-1.71 ms -> 0.31-0.63 ms on an idle 4-core Linux box).
 - `fuse_editor_ui_gpu_viewport`, `fuse_editor_ui_live_present`: fail under parallel ctest load, pass alone.
 - Wall-clock gates in general (label `perf`: `fuse_ui_bench_10k`, `fuse_ui_vector_steady`, `fuse_ui_modelview_1m_rows`,
   `fuse_ui_mv_selection_1m`, `fuse_ui_mv_tree_1m`, `fuse_app_hello_startup`) miss on a loaded Linux machine. They are
