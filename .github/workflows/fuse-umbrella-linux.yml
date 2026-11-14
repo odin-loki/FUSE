@@ -75,7 +75,7 @@ jobs:
         # The single serial pass took ~60 min.
         run: |
           ctest --test-dir build-fuse --no-tests=error --output-on-failure --timeout 2400 -j"$(nproc)" -LE perf \
-            --resource-spec-file build-fuse/fuse_ctest_resources.json
+            --resource-spec-file "$PWD/build-fuse/fuse_ctest_resources.json"
           ctest --test-dir build-fuse --no-tests=error --output-on-failure --timeout 2400 -L perf
 
       - name: Run demo_hybrid_hud
@@ -242,7 +242,7 @@ jobs:
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
         run: |
           ctest --test-dir build/fuse-asan --no-tests=error --output-on-failure -j"$(nproc)" --timeout 2400 \
-            --resource-spec-file build/fuse-asan/fuse_ctest_resources.json
+            --resource-spec-file "$PWD/build/fuse-asan/fuse_ctest_resources.json"
 
       # The u8 parity demos + editor PIE embed (label u8) run in the step above; a second -L u8 pass only repeated them
       # (~3 min): the FUSE_SANITIZE test ENVIRONMENT overrides a step's ASAN_OPTIONS, so it was the same run.
