@@ -2,6 +2,7 @@
 
 #include <fuse/types.hpp>
 
+#include <span>
 #include <string>
 #include <vector>
 
@@ -44,25 +45,31 @@ struct SdfPreviewHint {
 };
 
 /// Headless-safe mesh/SDF preview catalog — software placeholder draws colored stubs.
+///
+/// The editor rebuilds the catalog every frame (clear() + add*()). clear() keeps the hint slots and their
+/// strings, so a steady frame with the same scene re-fills them without allocating.
 class MeshSdfPreviewCatalog {
 public:
     void clear();
 
-    void addMesh(const MeshPreviewHint& hint);
-    void addSdf(const SdfPreviewHint& hint);
+    /// Returns the stored slot, so a caller can fill a string field in place (no temporary).
+    MeshPreviewHint& addMesh(const MeshPreviewHint& hint);
+    SdfPreviewHint& addSdf(const SdfPreviewHint& hint);
 
-    [[nodiscard]] u32 meshCount() const { return static_cast<u32>(m_meshes.size()); }
-    [[nodiscard]] u32 sdfCount() const { return static_cast<u32>(m_sdfs.size()); }
+    [[nodiscard]] u32 meshCount() const { return m_meshCount; }
+    [[nodiscard]] u32 sdfCount() const { return m_sdfCount; }
     [[nodiscard]] u32 visibleMeshCount() const;
     [[nodiscard]] u32 visibleSdfCount() const;
     [[nodiscard]] u32 cookedMeshResolvedCount() const;
 
-    [[nodiscard]] const std::vector<MeshPreviewHint>& meshes() const { return m_meshes; }
-    [[nodiscard]] const std::vector<SdfPreviewHint>& sdfs() const { return m_sdfs; }
+    [[nodiscard]] std::span<const MeshPreviewHint> meshes() const { return {m_meshes.data(), m_meshCount}; }
+    [[nodiscard]] std::span<const SdfPreviewHint> sdfs() const { return {m_sdfs.data(), m_sdfCount}; }
 
 private:
-    std::vector<MeshPreviewHint> m_meshes;
+    std::vector<MeshPreviewHint> m_meshes; ///< slots [0, m_meshCount) are live; the rest are kept for reuse
     std::vector<SdfPreviewHint> m_sdfs;
+    u32 m_meshCount = 0;
+    u32 m_sdfCount = 0;
 };
 
 } // namespace fuse::hybrid
