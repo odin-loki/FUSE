@@ -23,7 +23,9 @@
 //   --mode converge    T2, T0 and the CPU oracle (DdgiCpuVolume::updateProbes) from reset, 24 updates of every
 //                      probe with the same rotation sequence: per-probe mean irradiance of T2 vs T0 and of each
 //                      vs the oracle within 2% of the volume's mean (documented bound); ddgi.probe at 96 surface
-//                      points: T2 vs T0 within 3% of the points' mean
+//                      points: T2 vs T0 within 0.1%, GPU vs oracle within 5% of the points' mean. The room's
+//                      blocker and pillar are lifted 5 cm off the floor here (roomScene: coplanar faces give
+//                      equal-t hits whose winner the ray-query implementation picks)
 //   --mode parity_rq_states / parity_sdf_states   the same, 6 frames, with relocation + classification + the
 //                      RTXGI surface bias (normal + view) + distance clamp (statesConfig; the room's blocker and
 //                      pillar hold probes inside geometry): additionally (e) probe data == the oracle's
@@ -98,6 +100,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------
@@ -297,8 +300,7 @@ int setup(Context& ctx, bool validation) {
             return kSkip;
         }
         setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         setenv("VK_INSTANCE_LAYERS", "", 1);
@@ -390,15 +392,19 @@ DdgiCpuSurface surface(f32 r, f32 g, f32 b, Vec3 emissive = {}) {
 }
 
 /// Room (floor, 3 walls, an open side), a blocker and a pillar holding probes inside them, an emissive
-/// panel; sun + sky (the CPU gates' scene).
-DdgiCpuScene roomScene(Vec3 sun = Vec3{0.3f, 0.8f, 0.5f}) {
+/// panel; sun + sky (the CPU gates' scene). `lift` raises the blocker and the pillar off the floor: resting on
+/// it (lift 0), their bottom faces are coplanar with the floor's top, so a downward ray from a probe inside
+/// them hits the box's backface and the floor's front face at the same t, and which one a ray query commits
+/// is implementation-defined (lavapipe and the SDF tracer report the backface; the RTX 3090 and the oracle's
+/// slab test the floor on some rays) -- see runConverge.
+DdgiCpuScene roomScene(Vec3 sun = Vec3{0.3f, 0.8f, 0.5f}, f32 lift = 0.f) {
     DdgiCpuScene s;
     s.addBox({-4.f, -0.5f, -4.f}, {4.f, 0.f, 4.f}, surface(0.7f, 0.7f, 0.7f));
     s.addBox({-4.f, 0.f, -4.f}, {-3.8f, 3.f, 4.f}, surface(0.8f, 0.15f, 0.1f));
     s.addBox({3.8f, 0.f, -4.f}, {4.f, 3.f, 4.f}, surface(0.1f, 0.7f, 0.2f));
     s.addBox({-4.f, 0.f, -4.f}, {4.f, 3.f, -3.8f}, surface(0.7f, 0.7f, 0.7f));
-    s.addBox({-1.f, 0.f, -0.5f}, {0.5f, 1.2f, 0.7f}, surface(0.7f, 0.7f, 0.7f));
-    s.addBox({1.4f, 0.f, 1.f}, {2.2f, 2.1f, 1.6f}, surface(0.8f, 0.15f, 0.1f));
+    s.addBox({-1.f, lift, -0.5f}, {0.5f, 1.2f, 0.7f}, surface(0.7f, 0.7f, 0.7f));
+    s.addBox({1.4f, lift, 1.f}, {2.2f, 2.1f, 1.6f}, surface(0.8f, 0.15f, 0.1f));
     s.addBox({-2.5f, 2.f, 1.5f}, {-1.5f, 2.1f, 2.5f}, surface(0.2f, 0.2f, 0.2f, {3.f, 2.5f, 2.f}));
     s.sun_direction = sun.normalized();
     s.sun_irradiance = {3.f, 2.8f, 2.5f};
@@ -1089,7 +1095,12 @@ int runConverge(Context& ctx) {
         return kSkip;
     }
     Scene s;
-    if (!buildScene(ctx, s, roomScene())) {
+    // Blocker and pillar 5 cm off the floor: no coplanar faces, so no equal-t hits whose winner the
+    // implementation picks (roomScene). Resting on the floor, ~10 such rays per update (probes inside them)
+    // switched backface / floor hits between T2 and T0 on the RTX 3090, and the change detection carried them
+    // to 2.5% at the probes / surface points. 5 cm keeps the gap wide enough for the SDF march (no step
+    // exhaustion under the boxes); the probes stay inside both.
+    if (!buildScene(ctx, s, roomScene(Vec3{0.3f, 0.8f, 0.5f}, 0.05f))) {
         std::fprintf(stderr, "FAIL: scene\n");
         return 1;
     }
@@ -1173,7 +1184,8 @@ int runConverge(Context& ctx) {
                 kFrames, volumeMean, t2t0, t2o, t0o, pts.size(), pointMean, pointDiff / pointMean, pointOracle / pointMean);
     expect(volumeMean > 0.05, "the volume is lit");
     // Bounds (documented in the execution doc): T2 vs T0 differ only on rays grazing an edge (triangles vs the
-    // SDF's minDistance) -> per-probe 2%, surface points 0.1%. Against the oracle both GPU paths also see the
+    // SDF's minDistance; the lifted scene has no equal-t coplanar hits) -> per-probe 2%, surface points 0.1%
+    // (RTX 3090: 0 differing rays over the 24 updates, 0.14% / 3.2e-5). Against the oracle both GPU paths also see the
     // f32 ray set (<= 4e-7 rad from the oracle's f64 one), which flips a few discrete change-detection
     // decisions (hysteresis 0.9 vs 0.15 for a texel) -> per-probe 2%, surface points 5%.
     expect(t2t0 <= 0.02 && t2o <= 0.02 && t0o <= 0.02, "T2, T0 and the oracle converge to the same probes (2% of the mean)");
@@ -1425,12 +1437,10 @@ int runTod(Context& ctx) {
     }
     auto flicker = [&](const std::vector<std::vector<f64>>& e) {
         f64 second = 0.0, mean = 0.0;
-        u32 n = 0;
         for (usize t = 1; t + 1 < e.size(); ++t) {
             for (usize i = 0; i < e[t].size(); ++i) {
                 second += std::fabs(e[t][i] - 0.5 * (e[t - 1][i] + e[t + 1][i]));
                 mean += e[t][i];
-                ++n;
             }
         }
         return second / std::max(mean, 1e-9);

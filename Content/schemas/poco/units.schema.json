@@ -1,0 +1,22 @@
+{
+  "$id": "fuse.poco/1/units.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Units of the payload; metersPerUnit converts legacy game units to metres.",
+  "properties": {
+    "handedness": {
+      "type": "string"
+    },
+    "length": {
+      "type": "string"
+    },
+    "metersPerUnit": {
+      "type": "number"
+    },
+    "up": {
+      "type": "string"
+    }
+  },
+  "title": "units",
+  "type": "object"
+}

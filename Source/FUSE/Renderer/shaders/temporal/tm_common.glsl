@@ -81,4 +81,10 @@ layout(push_constant) uniform FuseTmPush {
     uint64_t out_;  // taau.resolve: optional f32x4 dump, else 0
 } pc;
 
+// Correctly rounded division / square root (fuse_div_rn / fuse_sqrt_rn, common/exact_math.glsl): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but the motion pass scales the object-space point by
+// barycentric quotients and the TAAU resolve feeds quotients to floor() texel choices, rejection tests and the clip
+// box.
+#include "../common/exact_math.glsl"
+
 #endif // FUSE_TM_COMMON_GLSL

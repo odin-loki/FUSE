@@ -3,6 +3,7 @@
 
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/pipeline_batch.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -77,6 +78,15 @@ SsfxBufferLayout SsfxBufferLayout::compute(u32 width, u32 height) {
     l.gi = take(n * kTexel);
     l.bounce[0] = take(n * kTexel);
     l.bounce[1] = take(n * kTexel);
+    u32 levels = 0;
+    u32 offsets[8];
+    l.hizBytes = hiz_layout(width, height, levels, offsets) * kScalar;
+    l.hiz = take(l.hizBytes);
+    l.aoBlurred = take(n * kScalar);
+    l.aoDenoised = take(n * kScalar);
+    l.aoHistory[0] = take(n * 8u);
+    l.aoHistory[1] = take(n * 8u);
+    l.ssrSteps = take(n * 8u);
     l.workBytes = cursor;
     return l;
 }
@@ -142,6 +152,7 @@ void SsfxGpu::destroy() {
     if (!m_initialized) {
         return;
     }
+    waitPipelineBuilds(this); // builds queued on a PipelineBatch write m_pipelines
 #if defined(FUSE_VULKAN_BACKEND)
     collectRetired(~0ull);
     Retired current{};
@@ -185,6 +196,9 @@ void SsfxGpu::destroy() {
     m_stats = SsfxStats{};
     m_constants = SsfxFrameConstants{};
     m_hasDump = false;
+    m_hasMotion = false;
+    m_historyWrite = 0;
+    m_historyValid = false;
     m_initialized = false;
 }
 
@@ -199,6 +213,9 @@ bool SsfxGpu::createPipelines() {
         k[kSsr] = code(kSxSsrSlangSpv);
         k[kSsgi] = code(kSxSsgiSlangSpv);
         k[kCompose] = code(kSxComposeSlangSpv);
+        k[kHiz] = code(kSxHizSlangSpv);
+        k[kAoBlur] = code(kSxAoBlurSlangSpv);
+        k[kAoTemporal] = code(kSxAoTemporalSlangSpv);
         m_language = "slang";
         found = true;
     }
@@ -210,6 +227,9 @@ bool SsfxGpu::createPipelines() {
         k[kSsr] = code(kSxSsrGlslSpv);
         k[kSsgi] = code(kSxSsgiGlslSpv);
         k[kCompose] = code(kSxComposeGlslSpv);
+        k[kHiz] = code(kSxHizGlslSpv);
+        k[kAoBlur] = code(kSxAoBlurGlslSpv);
+        k[kAoTemporal] = code(kSxAoTemporalGlslSpv);
         m_language = "glsl";
         found = true;
     }
@@ -232,28 +252,10 @@ bool SsfxGpu::createPipelines() {
     }
     m_layoutHandle = layout;
     const VkPipelineCreateFlags createFlags = static_cast<VkPipelineCreateFlags>(m_desc.bindless->pipelineCreateFlags());
+    // On the open PipelineBatch's workers when there is one (FrameComposer::init), else here.
     for (u32 i = 0; i < kKernelCount; ++i) {
-        VkShaderModuleCreateInfo moduleInfo{};
-        moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        moduleInfo.codeSize = k[i].bytes;
-        moduleInfo.pCode = k[i].words;
-        VkShaderModule module = VK_NULL_HANDLE;
-        if (vkCreateShaderModule(device, &moduleInfo, nullptr, &module) != VK_SUCCESS) {
-            return false;
-        }
-        VkComputePipelineCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-        info.flags = createFlags;
-        info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-        info.stage.module = module;
-        info.stage.pName = "main";
-        info.layout = layout;
-        VkPipeline pipeline = VK_NULL_HANDLE;
-        const VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
-        vkDestroyShaderModule(device, module, nullptr);
-        m_pipelines[i] = pipeline;
-        if (result != VK_SUCCESS) {
+        if (!buildComputePipeline(this, device, k[i].words, k[i].bytes, layout, createFlags,
+                                  &m_pipelines[i])) {
             return false;
         }
     }
@@ -285,6 +287,7 @@ bool SsfxGpu::createWork(u32 width, u32 height) {
     m_work = fresh;
     m_workQueue = rg::kNoQueue;
     m_layout = layout;
+    m_historyValid = false; // the AO history lived in the old buffer
     ++m_stats.workRebuilds;
     return true;
 }
@@ -409,6 +412,8 @@ bool SsfxGpu::beginFrame(u64 frameSerial, const SsfxGpuSettings& settings, const
     m_stats.passes = 0;
     m_stats.aoRan = m_stats.ssrRan = false;
     m_stats.ssgiBounces = 0;
+    m_stats.hizLevels = 0;
+    m_stats.aoBlurRan = m_stats.aoTemporalRan = m_stats.aoHistoryUsed = false;
     if (w != m_width || h != m_height || m_work.handle == nullptr || m_output.image.image == nullptr) {
         if (!createWork(w, h) || !createOutput(w, h)) {
             return false;
@@ -448,7 +453,31 @@ bool SsfxGpu::beginFrame(u64 frameSerial, const SsfxGpuSettings& settings, const
     if (c.sky == 0u) {
         c.flags &= ~static_cast<u32>(kSsfxFlagSky | kSsfxFlagSkyGi);
     }
+    // Hi-Z SSR, AO blur / temporal denoise.
+    c.hiz = (c.flags & kSsfxFlagHiz) != 0u ? work + m_layout.hiz : 0u;
+    c.ssrSteps = (c.flags & kSsfxFlagHiz) != 0u ? work + m_layout.ssrSteps : 0u;
+    c.aoBlurred = work + m_layout.aoBlurred;
+    c.aoDenoised = work + m_layout.aoDenoised;
+    c.motion = images.motionAddress;
+    c.aoFinal = c.ao;
+    if ((c.flags & kSsfxFlagAo) == 0u) {
+        c.flags &= ~static_cast<u32>(kSsfxFlagAoBlur | kSsfxFlagAoTemporal);
+    }
+    if ((c.flags & kSsfxFlagAoBlur) != 0u) {
+        c.aoFinal = c.aoBlurred;
+    }
+    if ((c.flags & kSsfxFlagAoTemporal) != 0u) {
+        c.aoHistoryIn = work + m_layout.aoHistory[m_historyWrite ^ 1u];
+        c.aoHistoryOut = work + m_layout.aoHistory[m_historyWrite];
+        c.aoHistoryValid = m_historyValid ? 1u : 0u;
+        c.aoFinal = c.aoDenoised;
+        m_historyWrite ^= 1u;
+        m_historyValid = true;
+    } else {
+        m_historyValid = false;
+    }
     m_hasDump = images.dumpAddress != 0u;
+    m_hasMotion = images.motionAddress != 0u;
     m_constants = c;
     const u32 slot = static_cast<u32>(frameSerial % m_desc.framesInFlight);
     const u64 offset = static_cast<u64>(slot) * kFrameStride;
@@ -517,6 +546,41 @@ void SsfxGpu::addPasses(rg::Graph& graph, const SsfxGraphRefs& refs, const SsfxG
             graph.addPass("ssfx.gtao", &SsfxGpu::recordDispatch, r)
                 .use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
         }
+        if ((c.flags & kSsfxFlagAoBlur) != 0u) {
+            if (PassRecord* r = nextRecord(kAoBlur)) {
+                ++m_stats.passes;
+                m_stats.aoBlurRan = true;
+                graph.addPass("ssfx.ao_blur", &SsfxGpu::recordDispatch, r)
+                    .use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
+            }
+        }
+        if ((c.flags & kSsfxFlagAoTemporal) != 0u) {
+            if (PassRecord* r = nextRecord(kAoTemporal)) {
+                ++m_stats.passes;
+                m_stats.aoTemporalRan = true;
+                m_stats.aoHistoryUsed = c.aoHistoryValid != 0u;
+                rg::PassBuilder pass = graph.addPass("ssfx.ao_temporal", &SsfxGpu::recordDispatch, r);
+                pass.use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
+                if (m_hasMotion && inputs.motion.valid()) {
+                    pass.use(inputs.motion, rg::Access::StorageRead, {}, rg::kStageCompute);
+                }
+            }
+        }
+    }
+    if ((c.flags & kSsfxFlagHiz) != 0u) {
+        for (u32 level = 1u; level <= c.hizLevels; ++level) {
+            PassRecord* r = nextRecord(kHiz);
+            if (r == nullptr) {
+                break;
+            }
+            r->push.mode = level;
+            r->groups[0] = groups(hiz_extent(m_width, level), kSsfxTile);
+            r->groups[1] = groups(hiz_extent(m_height, level), kSsfxTile);
+            ++m_stats.passes;
+            ++m_stats.hizLevels;
+            graph.addPass("ssfx.hiz", &SsfxGpu::recordDispatch, r)
+                .use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
+        }
     }
     if ((c.flags & kSsfxFlagSsr) != 0u) {
         if (PassRecord* r = nextRecord(kSsr)) {
@@ -574,7 +638,15 @@ void SsfxGpu::addPasses(rg::Graph& graph, const SsfxGraphRefs& refs, const SsfxG
 
 u64 SsfxGpu::copyBytes(SsfxCopySource what) const {
     const u64 n = static_cast<u64>(m_width) * m_height;
-    return what == SsfxCopySource::Ao ? n * kScalar : n * kTexel;
+    switch (what) {
+    case SsfxCopySource::Ao:
+    case SsfxCopySource::AoBlurred:
+    case SsfxCopySource::AoDenoised: return n * kScalar;
+    case SsfxCopySource::AoHistoryIn:
+    case SsfxCopySource::SsrSteps: return n * 8u;
+    case SsfxCopySource::Hiz: return std::max<u64>(m_layout.hizBytes, 4u);
+    default: return n * kTexel;
+    }
 }
 
 void SsfxGpu::addCopy(rg::Graph& graph, const SsfxGraphRefs& refs, SsfxCopySource what, rg::BufferRef dst,
@@ -596,6 +668,13 @@ void SsfxGpu::addCopy(rg::Graph& graph, const SsfxGraphRefs& refs, SsfxCopySourc
     case SsfxCopySource::Ao: src = m_layout.ao; break;
     case SsfxCopySource::Ssr: src = m_layout.ssr; break;
     case SsfxCopySource::Gi: src = m_layout.gi; break;
+    case SsfxCopySource::Hiz: src = m_layout.hiz; break;
+    case SsfxCopySource::AoBlurred: src = m_layout.aoBlurred; break;
+    case SsfxCopySource::AoDenoised: src = m_layout.aoDenoised; break;
+    case SsfxCopySource::AoHistoryIn:
+        src = m_constants.aoHistoryIn != 0u ? m_constants.aoHistoryIn - m_work.deviceAddress : m_layout.aoHistory[0];
+        break;
+    case SsfxCopySource::SsrSteps: src = m_layout.ssrSteps; break;
     }
     r->copySrc = src;
     r->copyBytes = copyBytes(what);

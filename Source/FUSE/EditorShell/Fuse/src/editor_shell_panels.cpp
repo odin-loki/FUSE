@@ -2,6 +2,7 @@
 #include "editor_shell_panels.hpp"
 
 #include <fuse/ui/widgets/widgets.hpp>
+#include <fuse/profiler/profiler.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -56,13 +57,28 @@ bool ShellPanelPages::build(std::string_view id, NodeHandle page) {
     else if (id == "timeline") buildTimeline_(page);
     else if (id == "navigation") buildNavigation_(page);
     else if (id == "terrain") buildTerrain_(page);
+    else if (id == "lighting") buildLighting_(page);
     else return false;
     return true;
 }
 
 void ShellPanelPages::sync(f32 uiMs, bool frame) {
+    fuse::profiler::ProfileScope scope("editor.panels"); // recorded scopes feed the Profiler flame graph
     if (frame) {
-        if (m_shell.panelVisible("profiler")) m_m.profilerSample(uiMs);
+        if (m_shell.panelVisible("profiler")) {
+            fuse::profiler::ProfileScope sample("editor.profiler_sample");
+            // GPU time of the scene viewport: GpuProfiler zones per render-graph pass, resolved without blocking
+            if (SceneViewportHost* host = m_shell.sceneViewport(); host && host->pollGpuTimings(m_gpuTimings)) {
+                std::vector<GpuPassView> passes;
+                passes.reserve(m_gpuTimings.passes.size());
+                for (const SceneViewportGpuPass& p : m_gpuTimings.passes) passes.push_back({p.name, p.depth, p.ms});
+                m_m.profilerSetGpu(m_gpuTimings.totalMs, std::move(passes));
+            }
+            m_m.profilerSample(uiMs);
+            // the flame view re-captures the profiler ring twice a second (30 Hz UI timer)
+            if (profilerView() == 1 && ++m_prFlameTick % 15 == 1) m_m.profilerCaptureFlame();
+            syncFlame_(); // keyed on capture + size: re-places the bars once the page is laid out / resized
+        }
         const auto now = std::chrono::steady_clock::now();
         const f32 dt = m_lastTick.time_since_epoch().count() ? std::min(0.1f, std::chrono::duration<f32>(now - m_lastTick).count()) : 0.f;
         m_lastTick = now;
@@ -73,12 +89,23 @@ void ShellPanelPages::sync(f32 uiMs, bool frame) {
     if (!all && m_m.revision() == m_seenRevision) return;
     m_seenView = view;
     m_seenRevision = m_m.revision();
-    if (all) { syncHub_(); syncAssets_(); syncMaterial_(); syncSculpt_(); }
-    syncProfiler_();
+    if (all) {
+        fuse::profiler::ProfileScope sc("editor.panels.scene");
+        syncHub_(); syncAssets_(); syncMaterial_(); syncSculpt_();
+    }
+    {
+        fuse::profiler::ProfileScope sc("editor.panels.profiler");
+        syncProfiler_();
+        syncFlame_();
+    }
     syncNavigation_();
     syncTerrain_();
+    syncLighting_();
     syncSequencer_();
-    syncTimeline_();
+    {
+        fuse::profiler::ProfileScope sc("editor.panels.timeline");
+        syncTimeline_();
+    }
     if (!all) { syncMaterial_(); syncSculpt_(); syncAssets_(); syncHub_(); }
 }
 
@@ -248,6 +275,7 @@ void ShellPanelPages::assetsMenuAction(u32 action) {
 void ShellPanelPages::syncAssets_() {
     if (!m_assetList) return;
     const AssetBrowserView v = m_m.assets();
+    m_ui.setDisabled(m_ui.find("assets.up"), v.crumbs.size() <= 1); // Qt: Up disabled at the project root
     std::string lines;
     m_assetPaths.clear();
     m_assetNames.clear();
@@ -315,6 +343,26 @@ void ShellPanelPages::buildMaterial_(NodeHandle page) {
     });
     m_matSummary = w::label(m_ui, col, "", "material.summary");
     m_ui.addClass(m_matSummary, "ed-dim");
+    // Qt usability row: name (Enter renames), presets, usage + Select users
+    NodeHandle nf = field_(page, "Name");
+    m_matName = w::lineEdit(m_ui, nf, "", "material.name");
+    m_ui.setCss(m_matName, "flex-grow", "1");
+    m_ui.connect(m_matName, SignalKind::Submitted, [this](UiContext& u, NodeHandle n, const SignalArgs&) { m_m.materialRename(u.text(n)); m_shell.sync(); });
+    nf = field_(page, "Preset");
+    std::string presets = "(apply preset)";
+    for (const std::string& n : EditorPanels::materialPresetNames()) presets += "\n" + n;
+    m_matPreset = w::comboBox(m_ui, nf, presets, 0, "material.preset");
+    m_ui.connect(m_matPreset, SignalKind::ValueChanged, [this](UiContext& u, NodeHandle n, const SignalArgs& a) {
+        if (a.value >= 1.f) m_m.materialApplyPreset(u32(a.value) - 1u);
+        u.setValue(n, 0.f);
+        m_shell.sync();
+    });
+    nf = row_(page);
+    m_matUsage = w::label(m_ui, nf, "", "material.usage");
+    m_ui.setCss(m_matUsage, "flex-grow", "1");
+    m_matUsers = w::button(m_ui, nf, "Select users", "material.select_users");
+    w::setTooltip(m_ui, m_matUsers, "Select every entity whose mesh / SDF object uses this material");
+    m_ui.connect(m_matUsers, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { m_m.materialSelectUsers(); m_shell.sync(); });
 
     NodeHandle f = field_(page, "Base colour");
     m_matColor = w::button(m_ui, f, "Pick...", "material.color");
@@ -331,7 +379,7 @@ void ShellPanelPages::buildMaterial_(NodeHandle page) {
     m_matShader = w::comboBox(m_ui, f, "Standard (PBR)\nWood\nMetal\nConcrete", 0, "material.shader");
     m_ui.connect(m_matShader, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) { m_m.materialSetShader(u32(a.value)); m_shell.sync(); });
     f = field_(page, "UV scale");
-    m_matUv = w::spinBox(m_ui, f, 0.05f, 64.f, 1.f, 0.25f, "material.uv_scale");
+    m_matUv = w::spinBox(m_ui, f, 0.05f, 64.f, 1.f, 0.05f, "material.uv_scale"); // steps from the minimum: 0.05 keeps whole values
     m_ui.connect(m_matUv, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) { m_m.materialSetUvScale(a.value); m_shell.sync(); });
     f = field_(page, "Texture");
     m_matTexture = w::label(m_ui, f, "(none)", "material.texture");
@@ -348,7 +396,8 @@ void ShellPanelPages::syncMaterial_() {
     std::snprintf(b, sizeof b, "%u|%.3f,%.3f,%.3f|%.3f|%.3f|%u|%.3f|%s|%d%d%u", v.current, double(v.srgb[0]), double(v.srgb[1]), double(v.srgb[2]),
                   double(v.state.roughness), double(v.state.metallic), v.shader, double(v.state.uvScale), v.state.baseColorTexture.c_str(),
                   v.hasSelection, v.selectionHasMaterial, v.selectionMaterial);
-    std::string key = join(v.names) + "#" + b;
+    const u32 users = m_m.materialUsage();
+    std::string key = join(v.names) + "#" + b + "#" + std::to_string(users);
     if (key == m_matKey) return;
     m_matKey = std::move(key);
     m_ui.setText(m_matList, join(v.names));
@@ -359,6 +408,9 @@ void ShellPanelPages::syncMaterial_() {
     m_ui.setValue(m_matUv, v.state.uvScale);
     m_ui.setText(m_matTexture, v.state.baseColorTexture.empty() ? std::string("(none)") : leaf(v.state.baseColorTexture));
     m_ui.setText(m_matSummary, v.summary);
+    if (m_ui.focused() != m_matName) m_ui.setText(m_matName, v.current < v.names.size() ? v.names[v.current] : std::string());
+    m_ui.setText(m_matUsage, users == 1 ? std::string("Used by 1 entity") : "Used by " + std::to_string(users) + " entities");
+    m_ui.setDisabled(m_matUsers, users == 0);
     m_ui.setDisabled(m_matAssign, !v.hasSelection);
     std::snprintf(b, sizeof b, "#%02X%02X%02X", int(v.srgb[0] * 255.f + .5f), int(v.srgb[1] * 255.f + .5f), int(v.srgb[2] * 255.f + .5f));
     m_ui.setText(m_matColor, std::string(b));
@@ -521,10 +573,103 @@ void ShellPanelPages::buildProfiler_(NodeHandle page) {
     m_ui.connect(m_prPause, SignalKind::Toggled, [this](UiContext&, NodeHandle, const SignalArgs& a) { m_m.profilerSetPaused(a.flag); m_shell.sync(); });
     const NodeHandle clr = w::button(m_ui, r, "Clear", "profiler.clear");
     m_ui.connect(clr, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { m_m.profilerClear(); m_shell.sync(); });
+    // Chart (CPU history vs budget) or Flame Graph (merged fuse::profiler scopes; Qt flame graph widget)
+    m_prView = w::comboBox(m_ui, r, "Chart\nFlame Graph", 0, "profiler.view");
+    w::setTooltip(m_ui, m_prView, "Frame-time chart or flame graph of the recorded profiler scopes");
+    m_ui.connect(m_prView, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) { setProfilerView(u32(a.value)); });
     m_prSummary = w::label(m_ui, r, "", "profiler.summary");
     m_prChart = w::chart(m_ui, page, w::ChartKind::Line, "profiler.chart");
     m_ui.setCss(m_prChart, "flex-grow", "1");
     m_ui.setCss(m_prChart, "min-height", "80px");
+    // flame graph: absolutely placed bars (roots at the bottom), hover tooltip, click selects (profiler.flame_info)
+    m_prFlame = w::panel(m_ui, page, "profiler.flame");
+    m_ui.setA11y(m_prFlame, fuse::ui::A11yRole::Group, "Flame graph");
+    m_ui.setCss(m_prFlame, "flex-grow", "1");
+    m_ui.setCss(m_prFlame, "min-height", "80px");
+    m_ui.setCss(m_prFlame, "padding", "0px");
+    m_ui.setCss(m_prFlame, "layout", "absolute"); // bars at left / top in the area
+    m_ui.setCss(m_prFlame, "overflow", "hidden");
+    m_ui.setCss(m_prFlame, "background", "#17171C");
+    m_ui.setCss(m_prFlame, "display", "none");
+    m_prFlameInfo = w::label(m_ui, page, "", "profiler.flame_info");
+    m_ui.addClass(m_prFlameInfo, "ed-dim");
+    m_ui.setCss(m_prFlameInfo, "display", "none");
+}
+
+void ShellPanelPages::setProfilerView(u32 view) {
+    if (!m_prFlame) return;
+    view = std::min(view, 1u);
+    if (u32(std::max(0.f, m_ui.value(m_prView))) != view) m_ui.setValue(m_prView, f32(view));
+    m_ui.setCss(m_prChart, "display", view == 0 ? "flex" : "none");
+    m_ui.setCss(m_prFlame, "display", view == 1 ? "flex" : "none");
+    m_ui.setCss(m_prFlameInfo, "display", view == 1 ? "flex" : "none");
+    if (view == 1) {
+        m_m.profilerCaptureFlame();
+        m_prFlameKey.clear();
+        syncFlame_();
+    }
+}
+
+u32 ShellPanelPages::profilerView() const { return m_prView ? u32(std::max(0.f, m_ui.value(m_prView))) : 0u; }
+
+void ShellPanelPages::flameInfo_(i32 bar) {
+    const FlameView& f = m_m.profilerFlame();
+    m_prFlameSel = bar >= 0 && bar < i32(f.bars.size()) ? bar : -1;
+    for (std::size_t i = 0; i < m_prBars.size(); ++i)
+        if (m_ui.alive(m_prBars[i])) m_ui.setCss(m_prBars[i], "border", i32(i) == m_prFlameSel ? "1px #FFFFFF" : "0px #17171C");
+    if (m_prFlameSel < 0) {
+        m_ui.setText(m_prFlameInfo, f.summary.empty() ? std::string("No profiler scopes recorded yet.") : f.summary);
+        return;
+    }
+    const FlameBarView& b = f.bars[std::size_t(m_prFlameSel)];
+    char t[320];
+    std::snprintf(t, sizeof t, "%s   %.3f ms total (%.1f%%)   self %.3f ms   %u call%s   depth %u", b.name.c_str(), double(b.totalMs),
+                  double((b.x1 - b.x0) * 100.f), double(b.selfMs), b.calls, b.calls == 1 ? "" : "s", b.depth);
+    m_ui.setText(m_prFlameInfo, t);
+}
+
+void ShellPanelPages::syncFlame_() {
+    if (!m_prFlame || profilerView() != 1) return;
+    const FlameView& f = m_m.profilerFlame();
+    const fuse::ui::Rect area = m_ui.contentRect(m_prFlame);
+    const f32 width = std::max(120.f, area.w), height = std::max(60.f, area.h);
+    const std::string key = std::to_string(f.captures) + "|" + std::to_string(int(width)) + "x" + std::to_string(int(height));
+    if (key == m_prFlameKey) return;
+    m_prFlameKey = key;
+    for (NodeHandle b : m_prBars)
+        if (m_ui.alive(b)) m_ui.destroy(b);
+    m_prBars.assign(f.bars.size(), NodeHandle{});
+    constexpr f32 kRow = 18.f;
+    // warm hues by depth (classic flame colours); the label is clipped to the bar
+    static constexpr unsigned kHues[] = {0xE8833A, 0xEBA046, 0xD9643A, 0xF0B455, 0xE07040, 0xF2C66A};
+    for (std::size_t i = 0; i < f.bars.size(); ++i) {
+        const FlameBarView& b = f.bars[i];
+        const f32 x = b.x0 * width, wpx = (b.x1 - b.x0) * width;
+        const f32 y = height - kRow * f32(b.depth + 1);
+        if (wpx < 2.f || y < -kRow) continue; // too narrow / too deep to draw (still in the model)
+        // one line: the name cut to what fits (~7 px a character; labels would wrap otherwise)
+        const std::size_t fit = wpx > 14.f ? std::size_t((wpx - 8.f) / 7.f) : 0u;
+        std::string text = fit >= b.name.size() ? b.name : fit >= 3 ? b.name.substr(0, fit - 2) + ".." : std::string();
+        const NodeHandle n = w::label(m_ui, m_prFlame, text, "profiler.flame.bar" + std::to_string(i));
+        // (the flame area is a `layout: absolute` box: left / top place the bar inside it. CSS `position: absolute` would
+        // take the bar out of it and place it against the window.)
+        m_ui.setCss(n, "left", std::to_string(int(x)) + "px");
+        m_ui.setCss(n, "top", std::to_string(int(y)) + "px");
+        m_ui.setCss(n, "width", std::to_string(std::max(1, int(wpx) - 1)) + "px");
+        m_ui.setCss(n, "height", std::to_string(int(kRow) - 1) + "px");
+        m_ui.setCss(n, "padding", "0px 3px");
+        m_ui.setCss(n, "overflow", "hidden");
+        m_ui.setCss(n, "color", "#101014");
+        char hex[16];
+        std::snprintf(hex, sizeof hex, "#%06X", kHues[b.depth % std::size(kHues)]);
+        m_ui.setCss(n, "background", hex);
+        char tip[320];
+        std::snprintf(tip, sizeof tip, "%s: %.3f ms (self %.3f ms), %u call%s", b.name.c_str(), double(b.totalMs), double(b.selfMs), b.calls,
+                      b.calls == 1 ? "" : "s");
+        w::setTooltip(m_ui, n, tip);
+        m_prBars[i] = n;
+    }
+    flameInfo_(m_prFlameSel < i32(f.bars.size()) ? m_prFlameSel : -1);
 }
 void ShellPanelPages::syncProfiler_() {
     if (!m_prChart) return;
@@ -539,6 +684,11 @@ void ShellPanelPages::syncProfiler_() {
     w::chartSetSeries(m_ui, m_prChart, 0, "CPU ms", tail, Color::rgb(0x4FC3F7));
     const std::vector<f32> budget(tail.size(), 1000.f / std::max(1.f, v.targetFps));
     w::chartSetSeries(m_ui, m_prChart, 1, "budget", budget, Color::rgb(0xFF8A65));
+    if (v.gpuFrames > 0 && v.gpuHistory.size() == v.history.size()) { // scene viewport GPU time (timestamp queries)
+        std::vector<f32> gpu(v.gpuHistory.end() - std::ptrdiff_t(n), v.gpuHistory.end());
+        if (gpu.empty()) gpu.push_back(0.f);
+        w::chartSetSeries(m_ui, m_prChart, 2, "GPU ms", gpu, Color::rgb(0x81C784));
+    }
 }
 
 // ---- Sequencer ------------------------------------------------------------------------------------------------------
@@ -549,7 +699,7 @@ void ShellPanelPages::buildSequencer_(NodeHandle page) {
     m_sqScrub = w::slider(m_ui, f, 0.f, 1.f, 0.f, 0.f, "sequencer.scrub");
     m_ui.setCss(m_sqScrub, "flex-grow", "1");
     m_ui.connect(m_sqScrub, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
-        m_m.sequencerScrub(i32(a.value * f32(m_m.sequencer().rangeMs) + .5f));
+        m_m.sequencerScrubUi(i32(a.value * f32(m_m.sequencer().rangeMs) + .5f));
         m_shell.sync();
     });
     m_sqPreview = w::label(m_ui, page, "", "sequencer.preview");
@@ -611,8 +761,52 @@ void ShellPanelPages::buildTimeline_(NodeHandle page) {
         m_m.timelineZoomBy(0.5f, m_m.timeline().playheadMs);
     });
     btn("Fit", "timeline.fit", "Zoom to fit (F)", [this] { m_m.timelineZoomToFit(); });
+    // key row (Qt TimelineWidget curve controls): pick a key on a lane, retime it, interpolation, tangents
+    const NodeHandle keys = row_(page);
+    w::label(m_ui, keys, "Lane");
+    m_tlLane = w::comboBox(m_ui, keys, "(none)", 0, "timeline.lane");
+    m_ui.setCss(m_tlLane, "min-width", "160px");
+    auto keyBtn = [&](const char* text, const char* id, const char* tip, auto fn) {
+        const NodeHandle b = w::button(m_ui, keys, text, id);
+        w::setTooltip(m_ui, b, tip);
+        m_ui.connect(b, SignalKind::Clicked, [this, fn](UiContext&, NodeHandle, const SignalArgs&) { fn(); m_shell.sync(); });
+    };
+    keyBtn("Select Key", "timeline.select_key", "Select the lane's key nearest the playhead", [this] {
+        const TimelineView v = m_m.timeline();
+        const i32 lane = i32(m_ui.value(m_tlLane));
+        if (lane < 0 || u32(lane) >= v.lanes.size() || v.lanes[u32(lane)].keysMs.empty()) return;
+        const auto& ks = v.lanes[u32(lane)].keysMs;
+        i32 best = 0;
+        for (i32 k = 1; k < i32(ks.size()); ++k)
+            if (std::abs(ks[u32(k)] - v.playheadMs) < std::abs(ks[u32(best)] - v.playheadMs)) best = k;
+        m_m.timelineSelectKey(lane, best);
+    });
+    keyBtn("Retime", "timeline.retime", "Move the selected key to the playhead (one undo step)", [this] {
+        m_m.timelineMoveSelectedKey(m_m.timeline().playheadMs);
+    });
+    keyBtn("Delete", "timeline.delete_selected", "Delete the selected key", [this] { m_m.timelineDeleteSelectedKey(); });
+    m_tlInterp = w::comboBox(m_ui, keys, "Linear\nConstant\nCubic (auto)\nCubic (flat)", 0, "timeline.interp");
+    m_ui.connect(m_tlInterp, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+        static constexpr std::pair<u32, u32> kModes[4] = {{0, 0}, {1, 0}, {2, 0}, {2, 1}}; // KeyInterp, TangentMode
+        const u32 i = std::min(3u, u32(a.value));
+        m_m.timelineSetSelectedKeyInterp(kModes[i].first, kModes[i].second);
+        m_shell.sync();
+    });
+    w::label(m_ui, keys, "In / out");
+    m_tlTanIn = w::spinBox(m_ui, keys, -1000.f, 1000.f, 0.f, 0.5f, "timeline.tan_in");
+    m_tlTanOut = w::spinBox(m_ui, keys, -1000.f, 1000.f, 0.f, 0.5f, "timeline.tan_out");
+    for (NodeHandle n : {m_tlTanIn, m_tlTanOut})
+        m_ui.connect(n, SignalKind::Submitted, [this](UiContext& u, NodeHandle, const SignalArgs&) {
+            m_m.timelineSetSelectedKeyTangents(u.value(m_tlTanIn), u.value(m_tlTanOut));
+            m_shell.sync();
+        });
+    m_tlKeyInfo = w::label(m_ui, keys, "", "timeline.key_info");
+    m_ui.addClass(m_tlKeyInfo, "ed-dim");
     m_tlBox = w::panel(m_ui, page);
     m_ui.setCss(m_tlBox, "flex-grow", "1");
+    // curve strip: the selected lane sampled over the clip
+    m_tlCurve = w::chart(m_ui, page, w::ChartKind::Line, "timeline.curve");
+    m_ui.setCss(m_tlCurve, "min-height", "60px");
 }
 void ShellPanelPages::syncTimeline_() {
     if (!m_tlBox) return;
@@ -626,10 +820,13 @@ void ShellPanelPages::syncTimeline_() {
     m_ui.setValue(m_tlTime, f32(v.playheadMs));
     m_ui.setValue(m_tlLength, f32(v.durationMs));
     m_ui.setText(m_tlStatus, v.status);
-    if (tracks != m_tlKey || !m_tlWidget) {
+    // not while a key is dragged: the widget's own clip follows the pointer, the model moves underneath
+    if ((tracks != m_tlKey || !m_tlWidget) && !m_m.timelineKeyDragging()) {
         m_tlKey = std::move(tracks);
+        const bool hadFocus = m_tlWidget && m_ui.focused() == m_tlWidget;
         if (m_tlWidget) m_ui.destroy(m_tlWidget);
         m_tlWidget = w::timeline(m_ui, m_tlBox, f32(v.durationMs) / 1000.f, "timeline.track");
+        if (hadFocus) m_ui.setFocus(m_tlWidget); // a rebuild keeps the keyboard on the timeline
         m_ui.setCss(m_tlWidget, "flex-grow", "1");
         if (v.lanes.empty()) w::timelineAddTrack(m_ui, m_tlWidget, "(no keys: select an entity, Key Selection)");
         for (const auto& l : v.lanes) {
@@ -639,11 +836,20 @@ void ShellPanelPages::syncTimeline_() {
                 w::timelineAddClip(m_ui, m_tlWidget, t, std::max(0.f, s - 0.04f), s + 0.04f, "", Color::rgb(0xFFD54F));
             }
         }
+        if (v.selTrack >= 0 && v.selKey >= 0) w::timelineSelectClip(m_ui, m_tlWidget, v.selTrack, v.selKey); // the model's key
         m_ui.connect(m_tlWidget, SignalKind::ValueChanged, [this](UiContext&, NodeHandle, const SignalArgs& a) {
             m_m.timelineSetPlayhead(m_m.timelineSnapMs(i32(a.value * 1000.f + .5f)));
             m_shell.sync();
         });
-        m_ui.connect(m_tlWidget, SignalKind::Event, [this](UiContext&, NodeHandle, const SignalArgs&) {
+        m_ui.connect(m_tlWidget, SignalKind::Event, [this](UiContext&, NodeHandle, const SignalArgs& a) {
+            if (a.value >= 5.f) { // key (clip) drag: 5 press, 6 move, 7 release
+                timelineDragEvent_(u32(a.value) - 3u);
+                return;
+            }
+            if (a.value == 2.f) { // Ctrl+Left / Right moved the selected key's clip: one "Move key" step
+                timelineKeyMoved_();
+                return;
+            }
             const auto view = w::timelineView(m_ui, m_tlWidget); // Ctrl / Shift + wheel
             m_m.timelineSetView(i32(view.x * 1000.f + .5f), i32(view.y * 1000.f + .5f));
             m_shell.sync();
@@ -658,6 +864,162 @@ void ShellPanelPages::syncTimeline_() {
     }
     m_ui.setValue(m_tlWidget, f32(v.playheadMs) / 1000.f);
     m_ui.invalidate(m_tlWidget);
+    // lanes, selected key, curve strip
+    std::string lanes;
+    for (const auto& l : v.lanes) lanes += (lanes.empty() ? "" : "\n") + l.label;
+    if (lanes.empty()) lanes = "(none)";
+    if (std::string_view(m_ui.text(m_tlLane)) != lanes) m_ui.setText(m_tlLane, lanes);
+    std::string curveKey = m_tlKey + "#" + std::to_string(v.selTrack) + ":" + std::to_string(v.selKey) + ":" + std::to_string(v.selInterp) + ":" +
+                           std::to_string(v.selIn) + ":" + std::to_string(v.selOut);
+    if (curveKey == m_tlCurveKey) return;
+    m_tlCurveKey = std::move(curveKey);
+    if (v.selKey >= 0) {
+        if (v.selTrack < i32(v.lanes.size())) m_ui.setValue(m_tlLane, f32(v.selTrack));
+        const u32 mode = m_m.timelineSelectedKeyTangentMode();
+        m_ui.setValue(m_tlInterp, f32(v.selInterp == 2 ? (mode == 1 ? 3 : 2) : v.selInterp));
+        m_ui.setValue(m_tlTanIn, v.selIn);
+        m_ui.setValue(m_tlTanOut, v.selOut);
+        m_ui.setText(m_tlKeyInfo, "key " + std::to_string(v.selKey) + " @ " + std::to_string(m_m.timelineKeyTime(v.selTrack, v.selKey)) + " ms");
+    } else {
+        m_ui.setText(m_tlKeyInfo, "no key selected");
+    }
+    std::vector<f32> curve;
+    if (v.selTrack >= 0)
+        for (u32 i = 0; i <= 120; ++i) curve.push_back(m_m.timelineSampleSelected(i32(f32(v.durationMs) * f32(i) / 120.f)));
+    if (curve.empty()) curve.push_back(0.f);
+    w::chartSetSeries(m_ui, m_tlCurve, 0, "value", curve, Color::rgb(0x81C784));
+}
+
+// Key drag (Qt TimelineCanvas): the dragged clip is a key of lane `track`; the key follows the pointer live, snapped to
+// the Snap rate (Shift: 1 ms), and the drop is one "Move key" undo step; Escape cancels (ShellPanelPages::event).
+void ShellPanelPages::timelineDragEvent_(u32 phase) {
+    const w::TimelineClipDrag d = w::timelineClipDrag(m_ui, m_tlWidget);
+    const TimelineView v = m_m.timeline();
+    if (phase == 2) {
+        if (d.track >= v.lanes.size() || d.clip >= v.lanes[d.track].keysMs.size()) return;
+        if (!m_m.timelineBeginKeyDrag(i32(d.track), i32(d.clip))) return;
+        m_tlDragFromMs = v.lanes[d.track].keysMs[d.clip];
+        return;
+    }
+    if (m_tlDragFromMs < 0 || !m_m.timelineKeyDragging()) return;
+    const i32 raw = m_tlDragFromMs + i32(std::lround((d.pointerSec - d.downSec) * 1000.f));
+    const i32 ms = (m_ui.modifiers() & fuse::ui::kModShift) ? std::clamp(raw, 0, v.durationMs) : m_m.timelineSnapMs(raw);
+    if (m_m.timelineKeyTime(v.selTrack, v.selKey) != ms) m_m.timelineDragKeyTo(ms);
+    if (phase == 4) {
+        m_tlDragFromMs = -1;
+        m_m.timelineEndKeyDrag(true);
+        m_tlKey.clear(); // rebuild the lanes from the model
+    }
+    m_shell.sync();
+}
+
+// Keyboard retime (timeline widget Ctrl+Left / Right on the selected clip): the key is the clip's centre (clips are
+// key -/+ 40 ms, clamped at 0, so key = end - 40 ms); the move is one "Move key" undo step like a drag.
+void ShellPanelPages::timelineKeyMoved_() {
+    const w::TimelineClipDrag d = w::timelineClipDrag(m_ui, m_tlWidget);
+    const TimelineView v = m_m.timeline();
+    if (d.track >= v.lanes.size() || d.clip >= v.lanes[d.track].keysMs.size()) return;
+    const i32 ms = m_m.timelineSnapMs(i32(std::lround((w::timelineClip(m_ui, m_tlWidget, d.track, d.clip).y - 0.04f) * 1000.f)));
+    if (!m_m.timelineBeginKeyDrag(i32(d.track), i32(d.clip))) return;
+    m_m.timelineDragKeyTo(std::clamp(ms, 0, v.durationMs));
+    m_m.timelineEndKeyDrag(true);
+    m_tlKey.clear();
+    m_shell.sync();
+}
+
+// ---- Lighting (Qt LightingPanel) ------------------------------------------------------------------------------------
+void ShellPanelPages::buildLighting_(NodeHandle page) {
+    auto colourBtn = [&](NodeHandle parent, const char* id, const char* which) {
+        const NodeHandle b = w::button(m_ui, parent, "#FFFFFF", id);
+        m_ui.connect(b, SignalKind::Clicked, [this, which](UiContext&, NodeHandle, const SignalArgs&) { m_m.lightingPickColour(which); m_shell.sync(); });
+        return b;
+    };
+    auto spin = [&](NodeHandle parent, f32 lo, f32 hi, f32 step, const char* id, auto fn) {
+        const NodeHandle n = w::spinBox(m_ui, parent, lo, hi, 0.f, step, id);
+        m_ui.setCss(n, "flex-grow", "1");
+        m_ui.connect(n, SignalKind::ValueChanged, [this, fn](UiContext&, NodeHandle, const SignalArgs& a) {
+            if (m_ltUpdating) return;
+            fn(a.value);
+            m_shell.sync();
+        });
+        return n;
+    };
+    w::label(m_ui, page, "Sun");
+    NodeHandle r = row_(page);
+    m_ltSunLabel = w::label(m_ui, r, "(no sun)", "lighting.sun");
+    m_ui.setCss(m_ltSunLabel, "flex-grow", "1");
+    m_ltAddSun = w::button(m_ui, r, "Add Sun", "lighting.add_sun");
+    m_ui.connect(m_ltAddSun, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { m_m.lightingAddSun(); m_shell.sync(); });
+    r = field_(page, "Elevation");
+    m_ltElev = spin(r, -90.f, 90.f, 1.f, "lighting.elevation", [this](f32 v) { m_m.lightingSetSunAngles(v, m_ui.value(m_ltAzim)); });
+    r = field_(page, "Azimuth");
+    m_ltAzim = spin(r, -180.f, 180.f, 5.f, "lighting.azimuth", [this](f32 v) { m_m.lightingSetSunAngles(m_ui.value(m_ltElev), v); });
+    r = field_(page, "Intensity");
+    m_ltSunInt = spin(r, 0.f, 1.0e6f, 0.1f, "lighting.sun_intensity", [this](f32 v) { m_m.lightingSetSunIntensity(v); });
+    r = field_(page, "Color");
+    m_ltSunColor = colourBtn(r, "lighting.sun_color", "sun");
+    w::label(m_ui, page, "Ambient");
+    m_ltAddAmb = w::button(m_ui, page, "Add Ambient Light", "lighting.add_ambient");
+    m_ui.connect(m_ltAddAmb, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { m_m.lightingAddAmbient(); m_shell.sync(); });
+    r = field_(page, "Intensity");
+    m_ltAmbInt = spin(r, 0.f, 1000.f, 0.05f, "lighting.ambient_intensity", [this](f32 v) { m_m.lightingSetAmbientIntensity(v); });
+    r = field_(page, "Color");
+    m_ltAmbColor = colourBtn(r, "lighting.ambient_color", "ambient");
+    w::label(m_ui, page, "Fog");
+    m_ltAddFog = w::button(m_ui, page, "Add Fog", "lighting.add_fog");
+    m_ui.connect(m_ltAddFog, SignalKind::Clicked, [this](UiContext&, NodeHandle, const SignalArgs&) { m_m.lightingAddFog(); m_shell.sync(); });
+    r = field_(page, "Density");
+    m_ltFogDensity = spin(r, 0.f, 1.f, 0.001f, "lighting.fog_density", [this](f32 v) { m_m.lightingSetFogDensity(v); });
+    r = field_(page, "Visible dist.");
+    m_ltFogDist = spin(r, 1.f, 1.0e6f, 10.f, "lighting.fog_distance", [this](f32 v) { m_m.lightingSetFogDistance(v); });
+    r = field_(page, "Color");
+    m_ltFogColor = colourBtn(r, "lighting.fog_color", "fog");
+}
+
+void ShellPanelPages::syncLighting_() {
+    if (!m_ltSunLabel) return;
+    const LightingView v = m_m.lighting();
+    char b[512];
+    std::snprintf(b, sizeof b, "%u.%u|%u|%u|%.3f,%.3f,%.4f|%.4f|%.5f,%.3f|%.3f%.3f%.3f|%.3f%.3f%.3f|%.3f%.3f%.3f", v.sun.index, v.sun.generation,
+                  v.ambient.generation, v.fog.generation, double(v.elevation), double(v.azimuth), double(v.sunIntensity), double(v.ambientIntensity),
+                  double(v.fogDensity), double(v.fogDistance), double(v.sunColor[0]), double(v.sunColor[1]), double(v.sunColor[2]),
+                  double(v.ambientColor[0]), double(v.ambientColor[1]), double(v.ambientColor[2]), double(v.fogColor[0]), double(v.fogColor[1]),
+                  double(v.fogColor[2]));
+    if (m_ltKey == b) return;
+    m_ltKey = b;
+    m_ltUpdating = true;
+    const bool sun = v.sun.valid(), amb = v.ambient.valid(), fog = v.fog.valid();
+    m_ui.setText(m_ltSunLabel, v.sunLabel);
+    m_ui.setCss(m_ltAddSun, "display", sun ? "none" : "flex");
+    m_ui.setCss(m_ltAddAmb, "display", amb ? "none" : "flex");
+    m_ui.setCss(m_ltAddFog, "display", fog ? "none" : "flex");
+    for (NodeHandle n : {m_ltElev, m_ltAzim, m_ltSunInt, m_ltSunColor}) m_ui.setDisabled(n, !sun);
+    for (NodeHandle n : {m_ltAmbInt, m_ltAmbColor}) m_ui.setDisabled(n, !amb);
+    for (NodeHandle n : {m_ltFogDensity, m_ltFogDist, m_ltFogColor}) m_ui.setDisabled(n, !fog);
+    const auto swatch = [&](NodeHandle n, const f32* c) {
+        char hex[16];
+        auto q = [](f32 x) { return int(std::clamp(x, 0.f, 1.f) * 255.f + .5f); };
+        std::snprintf(hex, sizeof hex, "#%02X%02X%02X", q(c[0]), q(c[1]), q(c[2]));
+        m_ui.setText(n, hex);
+        m_ui.setCss(n, "background", hex);
+        m_ui.setCss(n, "color", c[0] * .3f + c[1] * .59f + c[2] * .11f > .5f ? "#101014" : "#F0F0F4");
+    };
+    if (sun) {
+        if (m_ui.focused() != m_ltElev) m_ui.setValue(m_ltElev, v.elevation);
+        if (m_ui.focused() != m_ltAzim) m_ui.setValue(m_ltAzim, v.azimuth);
+        if (m_ui.focused() != m_ltSunInt) m_ui.setValue(m_ltSunInt, v.sunIntensity);
+        swatch(m_ltSunColor, v.sunColor);
+    }
+    if (amb) {
+        if (m_ui.focused() != m_ltAmbInt) m_ui.setValue(m_ltAmbInt, v.ambientIntensity);
+        swatch(m_ltAmbColor, v.ambientColor);
+    }
+    if (fog) {
+        if (m_ui.focused() != m_ltFogDensity) m_ui.setValue(m_ltFogDensity, v.fogDensity);
+        if (m_ui.focused() != m_ltFogDist) m_ui.setValue(m_ltFogDist, v.fogDistance);
+        swatch(m_ltFogColor, v.fogColor);
+    }
+    m_ltUpdating = false;
 }
 
 bool ShellPanelPages::event(const fuse::ui::Event& e, NodeHandle target) {
@@ -672,6 +1034,24 @@ bool ShellPanelPages::event(const fuse::ui::Event& e, NodeHandle target) {
             const u32 line = u32(a.value); // the separator is line 4
             assetsMenuAction(line < 4 ? line : line - 1);
         });
+        return true;
+    }
+    // flame graph: a click on a bar selects it (name, total / self ms, calls in profiler.flame_info)
+    if (e.type == EventType::PointerDown && e.button == fuse::ui::MouseButton::Left && m_prFlame && within_(target, m_prFlame)) {
+        for (std::size_t i = 0; i < m_prBars.size(); ++i)
+            if (m_prBars[i].valid() && within_(target, m_prBars[i])) {
+                flameInfo_(i32(i));
+                return true;
+            }
+        flameInfo_(-1);
+        return true;
+    }
+    // Escape while dragging a key restores it (nothing on the undo stack)
+    if (e.type == EventType::KeyDown && e.key == Key::Escape && m_m.timelineKeyDragging()) {
+        m_m.timelineEndKeyDrag(false);
+        m_tlDragFromMs = -1;
+        m_tlKey.clear(); // the widget (and its drag) is rebuilt from the model
+        m_shell.sync();
         return true;
     }
     if (e.type != EventType::KeyDown || !m_tlWidget || !within_(target, m_tlBox)) return false;

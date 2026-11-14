@@ -21,6 +21,7 @@
 #include <expected>
 #include <initializer_list>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -28,6 +29,7 @@
 namespace fuse::ui {
 
 class UiContext;
+class IconSet; // fuse/ui/icon_set.hpp
 
 // ---- Input ---------------------------------------------------------------------------------------------------------
 /// UI key set (maps 1:1 onto fuse::platform key set v2 names; see platform/events_v2.hpp).
@@ -149,10 +151,41 @@ struct AnimSpec {
 
 /// Clipboard backend of a context (UI1). Default: a context-local buffer; apps install the platform clipboard
 /// (fuse::platform::setClipboardText / clipboardText, see platform_bridge.hpp).
+/// One keyframe of a scripted animation (UiContext::animate): `prop` has `value` at `offset` of the iteration.
+/// Several keyframes may share an offset (one per property). offset < 0: spaced evenly between its neighbours for
+/// that property (the first is 0, the last 1). `ease` shapes the way to the property's next keyframe.
+struct Keyframe {
+    f32 offset = -1.f;
+    Prop prop = Prop::Opacity;
+    PropValue value;
+    Easing ease = Easing::Linear;
+};
+/// Timing of a scripted animation (the Web Animations EffectTiming subset).
+struct AnimationTiming {
+    f32 duration = 0.3f;  ///< s per iteration
+    f32 delay = 0.f;      ///< s before the first iteration (negative: starts part-way in)
+    f32 endDelay = 0.f;   ///< s after the last iteration before it counts as finished
+    f32 iterations = 1.f; ///< may be fractional; infinity = repeats forever
+    AnimDirection direction = AnimDirection::Normal;
+    AnimFill fill = AnimFill::None; ///< Forwards / Both: the end values stay applied after it finishes
+    Easing easing = Easing::Linear; ///< over each whole iteration
+    f32 playbackRate = 1.f;         ///< negative plays backwards
+};
+enum class AnimPlayState : u8 { Idle, Running, Paused, Finished }; ///< Idle: no such animation (never started, cancelled, removed)
+
 struct ClipboardHooks {
     bool (*set)(void* user, std::string_view utf8) = nullptr;
     bool (*get)(void* user, std::string& out) = nullptr;
     void* user = nullptr;
+};
+
+/// Locale data widgets format with (the calendar's month header, weekday names and first column). Core and widgets
+/// carry no locale tables: fuse_ui_l10n fills these in (`fuse::ui::l10n::setUiLocale(ui, tag)`, header-only
+/// fuse/ui/l10n/ui_locale.hpp), so binaries that never localise do not link them. Null hooks: English, Monday first.
+struct LocaleHooks {
+    std::string (*monthYear)(std::string_view locale, int year, int month) = nullptr; ///< "März 2024"
+    std::string_view (*weekdayShort)(std::string_view locale, int isoWeekday) = nullptr; ///< 1 = Monday: "Mo."
+    int (*firstDayOfWeek)(std::string_view locale) = nullptr; ///< ISO 1 (Monday) .. 7 (Sunday)
 };
 
 // ---- Signals -------------------------------------------------------------------------------------------------------
@@ -162,6 +195,10 @@ enum class SignalKind : u8 {
     RowMoved,      ///< item views with drag reorder: {value = from, value2 = to (index after the move)}
     Dropped,       ///< item views: a drag from another view landed {value = insert index, text = drag text, event = Drop}
     DragEnded,     ///< item views: the drag that started here ended {value = source row, flag = accepted, value2 = DropAction}
+    EditingFinished, ///< line edits with options, key sequence edits: Enter / focus loss with acceptable text {text}
+    Highlighted,     ///< completer on a line edit: a completion is highlighted {value = model row, text}
+    Activated,       ///< completer on a line edit: a completion was chosen {value = model row, text}
+    AnimationFinished, ///< a keyframe animation of the node reached its end {value = AnimationHandle::index, value2 = its generation}
 };
 struct SignalArgs {
     f32 value = 0.f;
@@ -366,6 +403,22 @@ public:
     std::expected<void, UiError> addStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags = nullptr);
     void addStyleSheet(StyleSheet sheet); ///< an already parsed (or cooked) sheet
     void clearStyleSheets();
+    // ---- style sheets by handle, the theme slot, theme token colours (Core/src/style_sheets.cpp) ----
+    /// addStyleSheet that returns a handle (never 0) for replaceStyleSheet / removeStyleSheet (theme overrides, hot
+    /// reload of one sheet). Handles die with clearStyleSheets.
+    u32 addStyleSheetTracked(StyleSheet sheet);
+    /// Swaps a tracked sheet in place (same cascade position) / drops it; every node is restyled. False: unknown handle.
+    bool replaceStyleSheet(u32 handle, StyleSheet sheet);
+    bool removeStyleSheet(u32 handle);
+    /// The theme slot: the first call adds the sheet (widgets::install puts the default theme here), every later call
+    /// replaces it in place, so switching dark / light / high contrast neither stacks sheets nor reorders app sheets.
+    std::expected<void, UiError> setThemeStyleSheet(std::string_view css, std::vector<StyleDiagnostic>* diags = nullptr);
+    u32 themeStyleSheet() const { return m_themeSheet; } ///< handle of the theme slot (0: never set)
+    /// `:root` token `tokenHash` (hashId("--name")) as a colour, `fallback` when no sheet defines it. Cached; paint-safe.
+    Color themeColor(u32 tokenHash, Color fallback) const {
+        Color c;
+        return m_styles.tokenColor(tokenHash, c) ? c : fallback;
+    }
 
     // tree
     NodeHandle root() const { return m_root; }
@@ -426,6 +479,10 @@ public:
     /// the action does not apply (see A11ySnapshotNode::actions). This is the entry point platform adapters and
     /// tests use; it must be called on the context's thread.
     bool performA11yAction(NodeHandle node, A11yAction action, f32 value = 0.f, u32 child = 0, std::string_view text = {});
+    /// Free-form attributes for attribute selectors (`[data-kind=warning]`). `id` is always readable as an attribute.
+    void setAttribute(NodeHandle n, std::string_view name, std::string_view value);
+    void removeAttribute(NodeHandle n, std::string_view name);
+    bool attribute(NodeHandle n, std::string_view name, std::string_view& out) const;
     void setUserData(NodeHandle n, u64 v);
     u64 userData(NodeHandle n) const;
     /// Per-node text edit buffer (created on first use; LineEdit and friends).
@@ -445,6 +502,19 @@ public:
     // frame
     void setViewport(Size s);
     Size viewport() const { return m_viewport; }
+    /// @media inputs that are not derived: prefers-color-scheme, hover, pointer (0 none, 1 coarse, 2 fine). Width /
+    /// height follow setViewport, resolution follows setRenderScale, prefers-reduced-motion follows setReducedMotion.
+    void setMediaPreferences(bool dark, bool hover = true, u8 pointer = 2);
+    /// The theme side of @media alone: prefers-color-scheme (dark / light) and prefers-contrast (more /
+    /// no-preference); hover and pointer stay. widgets::install / setTheme and AppWindow::applyTheme call it, so a
+    /// document's `@media (prefers-color-scheme: dark)` rules follow the theme the application shows.
+    void setMediaTheme(bool dark, bool moreContrast = false);
+    bool mediaDark() const { return m_mediaDark; }
+    bool mediaMoreContrast() const { return m_mediaContrast; }
+    /// `p` (context coordinates) in the layout space of `n`: mapped back through the CSS transforms of `n` and its
+    /// ancestors, so it can be compared with rect(n). fromLocal is the inverse. Without transforms both return `p`.
+    Vec2 toLocal(NodeHandle n, Vec2 p) const;
+    Vec2 fromLocal(NodeHandle n, Vec2 p) const;
     void update(f32 dtSeconds = 0.f);
     bool needsUpdate() const; ///< false when an on-demand app can sleep
     /// Seconds until the context needs an update: 0 when dirty / animating / commands pending, the earliest timer
@@ -478,6 +548,15 @@ public:
     /// Where popups may be placed: the screen bounds with OS popups, the viewport otherwise.
     Rect popupArea() const;
     const std::vector<PopupSurface>& popupSurfaces() const { return m_popupSurfaces; }
+    /// OS tool windows (Qt: a floated QDockWidget is its own top-level window). When on, overlay-layer nodes with the
+    /// class "os-window" (widgets::dockFloat adds it) are left out of drawList() and painted into windowSurfaces(),
+    /// the same form as popup surfaces; the host shows each in its own borderless OS window owned by the main one at
+    /// window origin + rect and feeds its pointer input back in context coordinates. Unlike popups they stay open (no
+    /// outside-click close, no grab) and keyboard input keeps arriving through the main window (one focus for the
+    /// whole context). Off (the default) they are painted inside the window like any overlay node.
+    void setOsWindows(bool on);
+    bool osWindows() const { return m_osWindows; }
+    const std::vector<PopupSurface>& windowSurfaces() const { return m_windowSurfaces; }
     /// Union of the rects that changed in the last update(), in logical units.
     Rect damage() const { return m_damage; }
     /// damage() in device pixels of drawList(): scaled by renderScale(), rounded outwards (plus 1 px at scales != 1,
@@ -486,6 +565,16 @@ public:
     const FrameStats& stats() const { return m_stats; }
     u64 frameIndex() const { return m_frame; }
     void markAllDirty();
+    /// BCP 47 locale tag widgets format with, and its data (LocaleHooks; must outlive the context, null = keep the
+    /// current hooks). A change repaints everything.
+    void setLocale(std::string_view tag, const LocaleHooks* hooks = nullptr) {
+        if (tag == m_locale && (!hooks || hooks == m_localeHooks)) return;
+        m_locale = tag;
+        if (hooks) m_localeHooks = hooks;
+        markAllDirty();
+    }
+    std::string_view locale() const { return m_locale; }
+    const LocaleHooks* localeHooks() const { return m_localeHooks; }
     /// Repaints `n` next update (widgets whose paint reads external state, e.g. item models).
     void invalidate(NodeHandle n) { if (node(n)) markPaint(n.index); }
     /// Re-measures and re-lays out `n` next update (widgets whose content size depends on state the core does not
@@ -564,6 +653,9 @@ public:
     DropAction dropExternal(Vec2 pos, const DragData& data);
     bool dragExternalMove(Vec2 pos, const DragData& data);
     void dragExternalLeave();
+    /// Ends a drag started in the UI whose drop happened outside it (the platform layer handed the data to another
+    /// application): the target, if any, gets DragLeave and the source DragEnd with `result`. No-op without such a drag.
+    void dragFinishExternal(DropAction result);
     /// Delivers `e` to `n` through the normal capture / target / bubble route (synthetic events, tests).
     bool sendEvent(NodeHandle n, const Event& e);
     void setShortcutHook(const ShortcutHook& h) { m_shortcutHook = h; }
@@ -578,6 +670,9 @@ public:
     /// Modifier state (kMod*) stamped on pointer events; platform layers update it on every modifier change.
     void setModifiers(u8 mods) { m_mods = mods; }
     u8 modifiers() const { return m_mods; }
+    /// A key press goes to the focused node (capture / target / bubble), then to the shortcut hook, focus navigation
+    /// (Tab, arrows) and last, when nothing took it, to the root's SignalKind::Event slots as {value = Key, event}:
+    /// the place for application-wide keys that must work whatever has the focus, or with no focus at all.
     bool keyDown(Key k, u8 mods = 0);
     bool keyUp(Key k, u8 mods = 0);
     bool textInput(std::string_view utf8);
@@ -630,7 +725,30 @@ public:
     enum class AnimProp : u8 { Opacity, OffsetX, OffsetY, Value };
     using Ease = Easing; ///< Linear, InOutCubic, OutBack, In, Out
     void animate(NodeHandle n, AnimProp p, f32 to, f32 seconds, Ease e = Ease::InOutCubic);
-    bool animating() const { return m_animCount > 0 || m_styleAnimCount > 0; }
+    bool animating() const { return m_animCount > 0 || m_styleAnimBusy > 0 || m_propAnimCount > 0 || m_keyAnimRunning > 0; }
+    // Keyframe animations (Web Animations style). CSS: `animation: <@keyframes name> ...` starts / stops them from the
+    // cascade. Script: animate() below. Both run on the style of the node (any property; non-interpolable ones switch
+    // half-way), on top of transitions, in list order (CSS first, then scripted ones in creation order). A missing
+    // first / last keyframe of a property means its underlying value. Time advances in update(dt).
+    /// Starts an animation of `n` over `keys` (copied). The handle stays valid until the animation is cancelled, the
+    /// node is destroyed, or it finishes without a forwards fill.
+    AnimationHandle animate(NodeHandle n, std::span<const Keyframe> keys, const AnimationTiming& timing = {});
+    /// The same from the body of an @keyframes rule: "from { opacity: 0 } 60% { transform: scale(1.1) } to { ... }".
+    AnimationHandle animateCss(NodeHandle n, std::string_view keyframes, const AnimationTiming& timing = {});
+    void playAnimation(AnimationHandle a);    ///< resumes; restarts from the beginning when it had finished
+    void pauseAnimation(AnimationHandle a);
+    void reverseAnimation(AnimationHandle a); ///< negates the playback rate and plays
+    void finishAnimation(AnimationHandle a);  ///< jumps to the end (the start when playing backwards); no-op when infinite
+    void cancelAnimation(AnimationHandle a);  ///< removes it and its effect (no AnimationFinished)
+    void setAnimationTime(AnimationHandle a, f32 seconds); ///< current time, counted from the start of the delay
+    f32 animationTime(AnimationHandle a) const;
+    void setPlaybackRate(AnimationHandle a, f32 rate);
+    f32 playbackRate(AnimationHandle a) const;
+    AnimPlayState animationState(AnimationHandle a) const;
+    /// The animations of `n` (CSS and scripted), oldest first. Returns how many there are; fills at most out.size().
+    u32 animations(NodeHandle n, std::span<AnimationHandle> out) const;
+    /// Writes the animation's current values to the node as inline values (Animation.commitStyles).
+    void commitAnimationStyles(AnimationHandle a);
     /// Style motion (plan §4.6 / §4.10). CSS `transition` fades animatable properties when a node's style changes
     /// (state, class, inline value); `enter-animation` / `exit-animation` play when a node first shows / is hidden.
     /// animateProperty moves one animatable style property from its current value to `to` with a tween or a spring and
@@ -684,6 +802,25 @@ public:
     const fuse::text::Font* fontFor(std::string_view family, int weight, bool italic);
     /// The font of a node's computed style (the context's font for a dead handle).
     const fuse::text::Font* nodeFont(NodeHandle n);
+    /// `base` with the style's variable-font and OpenType settings: on a variable face, once the application called
+    /// fuse::text::enableVariableFonts(), the instance at wght = font-weight, wdth = font-stretch, opsz = font-size
+    /// (font-optical-sizing: auto) and then font-variation-settings; with font-feature-settings its
+    /// Font::withFeatures variant (FULL text profile; other profiles return the font unchanged). fontFor(style)
+    /// applies this to the face it picked. Instances and variants are cached by fuse_text: no steady-state allocation.
+    const fuse::text::Font& styledFont(const fuse::text::Font& base, const ComputedStyle& s);
+    /// Text whose size in device pixels (font-size x renderScale) is at or above `devicePx` is drawn from multi-channel
+    /// signed distance fields (one MSDF per glyph at GlyphAtlas::kMsdfPixelSize, scaled: crisp at any size, e.g. zoomed
+    /// or world-space UI) instead of per-size coverage. 0 (default) turns it off. Calls fuse::text::enableMsdf().
+    /// Drawn by the CPU rasteriser; the GPU packer skips MSDF glyph commands (draw_list.hpp, kGlyphMsdf).
+    void setMsdfThreshold(f32 devicePx);
+    f32 msdfThreshold() const { return m_msdfThreshold; }
+
+    // icons (fuse/ui/icon_set.hpp): the pack the `icon` style property, widgets::setIcon(ui, node, name) and the
+    // "icon" key of .fuseui nodes look names up in (before the built-in icons of fuse/ui/icons.hpp)
+    /// Attaches an icon pack (non-owning: it must outlive the context or be detached with nullptr). Re-lays out and
+    /// repaints every node.
+    void setIcons(const IconSet* icons);
+    const IconSet* icons() const { return m_icons; }
     /// Registers an application family under its name() for `font-family` (non-owning: it must outlive the context).
     /// Registered families win over installed fonts of the same name.
     void addFontFamily(fuse::text::FontFamily& family);
@@ -722,7 +859,7 @@ private:
     void arrange(u32 i, Rect box);
     void arrangeChildren(u32 i);
     void paintPass();
-    void paintLists(std::vector<PopupSurface>& next);
+    void paintLists(std::vector<PopupSurface>& next, std::vector<PopupSurface>& nextWindows);
     void paintRec(u32 i, f32 opacity, DrawList& dl);
     /// Overlay scrollbar geometry of a scroll container along an axis (0 = x, 1 = y); false when it does not overflow.
     bool scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const;
@@ -767,9 +904,33 @@ private:
     void tickStyleAnims(f32 dt);
     void applyStyleDiff(u32 i, const ComputedStyle& before, const ComputedStyle& after);
     void startEnter(u32 i, MotionKind kind, f32 seconds);
+    // style engine port (ui.cpp, "Style engine extensions")
+    struct KeyAnim;
+    KeyAnim* keyAnim(AnimationHandle a);
+    const KeyAnim* keyAnim(AnimationHandle a) const;
+    KeyAnim& newKeyAnim(NodeHandle n);
+    void endKeyAnim(KeyAnim& ka);
+    void buildCssKeys(KeyAnim& ka);
+    bool applyKeyAnim(const KeyAnim& ka, ComputedStyle& out) const;
+    void tickKeyAnims(f32 dt);
+    void syncCssAnimations(u32 i, const ComputedStyle& after);
+    void syncStyleFlags(u32 i, const ComputedStyle& s);
+    void invalidateStyleFor(u32 i, const StyleInvalidation& inv);
+    void markStyleSubtree(u32 i, u32 depth);
+    void structureChanged(u32 parent, u32 child);
+    void syncMedia();
+    bool settleContainers();
+    void placeOutOfFlow(u32 parent, u32 k);
+    void placeAllOutOfFlow();
+    Rect stickyRect(u32 parent, u32 k, Rect r, const Rect& parentContent) const;
+    void paintBody(u32 i, f32 opacity, DrawList& dl);
+    void paintEffects(u32 i, f32 opacity, DrawList& dl);
+    u32 sortChildren(u32 i) const; ///< pushes the children of `i` on m_zScratch in paint order; returns the base index
+    bool mapIntoNode(u32 i, Vec2& p) const;
 
     WidgetRegistry m_registry;
     StyleEngine m_styles;
+    u32 m_themeSheet = 0; ///< setThemeStyleSheet slot (StyleEngine handle)
     const fuse::text::Font* m_font = nullptr;
     fuse::text::GlyphAtlas m_atlas;
     std::vector<Node> m_nodes;
@@ -791,6 +952,8 @@ private:
     Rect m_popupScreen;
     std::vector<u32> m_popupPending;
     std::vector<PopupSurface> m_popupSurfaces;
+    bool m_osWindows = false;
+    std::vector<PopupSurface> m_windowSurfaces;
     u64 m_popupRevision = 0;
     FrameStats m_stats;
     u64 m_frame = 0;
@@ -805,6 +968,8 @@ private:
     Rect m_caret;
     ClipboardHooks m_clipboard;
     std::string m_localClipboard;
+    std::string m_locale;
+    const LocaleHooks* m_localeHooks = nullptr;
     Vec2 m_pointer{-1.f, -1.f};
     u8 m_mods = 0;
     Cursor m_cursorOverride = Cursor::Auto;
@@ -846,6 +1011,8 @@ private:
     std::vector<FamilySlot> m_families;
     TextScope m_textScope;
     bool m_systemFonts = true;
+    f32 m_msdfThreshold = 0.f;
+    const IconSet* m_icons = nullptr;
 
     struct Connection {
         u32 node = 0xFFFFFFFFu, nodeGen = 0, gen = 0;
@@ -930,6 +1097,7 @@ private:
         ComputedStyle from;  ///< transition start values
         f32 t = 0.f;         ///< s since the transition (re)started
         bool active = false, transitioning = false, exiting = false;
+        bool busy = false;   ///< a transition, property animation or exit runs (counted in m_styleAnimBusy)
         MotionKind exitKind = MotionKind::None;
         f32 exitT = 0.f, exitDur = 0.f, exitFromOpacity = 1.f;
     };
@@ -947,6 +1115,44 @@ private:
     std::vector<PropAnim> m_propAnims;
     u32 m_styleAnimCount = 0, m_propAnimCount = 0;
     bool m_reducedMotion = false, m_sheetSwap = false;
+    // keyframe animations (CSS `animation`, animate())
+    struct AnimKey {
+        Prop prop = Prop::Opacity;
+        f32 offset = 0.f;
+        Easing ease = Easing::Linear;
+        bool hasEase = false;
+        PropValue value;
+    };
+    struct KeyAnim {
+        NodeHandle node;
+        u32 gen = 1;
+        bool active = false, css = false;
+        u32 name = 0;         ///< css: animationNameId of the @keyframes rule
+        u32 sheetVersion = 0; ///< css: the sheets `keys` were built from
+        std::vector<AnimKey> keys; ///< sorted by (prop, offset)
+        AnimationTiming timing;
+        Easing keyEase = Easing::Linear; ///< between keyframes that carry none
+        double time = 0.0;               ///< current time, s
+        AnimPlayState state = AnimPlayState::Idle;
+        u64 serial = 0;                  ///< creation order
+    };
+    std::vector<KeyAnim> m_keyAnims;
+    u32 m_keyAnimCount = 0, m_keyAnimRunning = 0, m_styleAnimBusy = 0;
+    u64 m_keyAnimSerial = 0;
+    bool m_keyAnimDirty = false;
+    // effects, positioning, queries
+    u32 m_fxCount = 0;                 ///< nodes whose style has effects (transform / filter / clip-path / mask / fixed)
+    u32 m_fxDepth = 0;                 ///< paint: inside that many effect groups
+    std::vector<std::pair<u32, Rect>> m_fxBounds; ///< what each effect node covered when it was last painted
+    Rect m_fxPendingDamage;
+    std::vector<u32> m_outOfFlow;      ///< position: absolute / fixed nodes
+    std::vector<u32> m_fixedOrder;     ///< fixed nodes in the order they were last painted (hit testing)
+    struct ZEntry { i64 key; u32 node; };
+    mutable std::vector<ZEntry> m_zScratch;
+    struct ContainerEntry { u32 node; Size size; };
+    std::vector<ContainerEntry> m_containers; ///< query containers and the size their subtree was last styled for
+    bool m_mediaDark = false, m_mediaHover = true, m_mediaContrast = false;
+    u8 m_mediaPointer = 2;
 
     struct Command {
         std::atomic<u64> seq{0};

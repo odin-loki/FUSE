@@ -48,7 +48,7 @@ Lua stack helpers live in `fuse/script/script_bind_lua.hpp`.
 
 ## Console
 
-`ScriptConsole` is a headless REPL for tests and a future editor panel: built-in command stubs, a fixed-capacity history ring, and dispatch by name. Qt console chrome is not wired yet.
+`ScriptConsole` is a headless REPL for tests and a future editor panel: built-in command stubs, a fixed-capacity history ring, and dispatch by name. The editor's FUSE UI Console panel has its own Lua REPL (`fuse_editor_ui_e15_console`).
 
 ## Rules
 

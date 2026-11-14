@@ -112,6 +112,15 @@ void fillTreeModel(w::StringTreeModel& m, const JsonValue& items) {
 }
 /// Built-in icons by name ("save", "chevron-left", ...; fuse/ui/icons.hpp).
 bool iconByName(const JsonValue& v, Icon& out) { return v.isString() && findIcon(v.string, out); }
+/// Pack icons shown by `svgimage` nodes: one store handle per (pack, icon), kept (a reloaded document reuses them).
+w::SvgHandle packIconHandle(const IconSet& set, u32 icon) {
+    static std::map<std::pair<const IconSet*, u32>, w::SvgHandle> cache;
+    const auto key = std::make_pair(&set, icon);
+    if (const auto it = cache.find(key); it != cache.end() && w::svgGet(it->second)) return it->second;
+    const w::SvgHandle h = w::svgAdopt(SvgImage(set.image(icon)));
+    cache[key] = h;
+    return h;
+}
 /// Inline SVG sources of documents: parsed once per distinct source and kept (a reloaded document reuses them).
 w::SvgHandle svgBySource(const std::string& xml) {
     static std::map<std::string, w::SvgHandle> cache;
@@ -172,7 +181,10 @@ bool menuButtonProp(UiContext& ui, NodeHandle n, std::string_view key, const Jso
     ui.setA11y(n, A11yRole::Button, title);
     return true;
 }
-bool tabWidgetProp(UiContext&, NodeHandle, std::string_view key, const JsonValue&) { return key == "tabs"; } // (factory)
+bool tabOptionProp(UiContext& ui, NodeHandle bar, std::string_view key, const JsonValue& v);
+bool tabWidgetProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
+    return key == "tabs" /* (factory) */ || tabOptionProp(ui, w::tabWidgetBar(ui, n), key, v); // "closable", "movable", "scrollButtons"
+}
 NodeHandle tabWidgetChild(UiContext& ui, NodeHandle n, std::size_t i, const JsonValue&) { return w::tabPage(ui, n, u32(i)); }
 NodeHandle stackChild(UiContext& ui, NodeHandle n, std::size_t, const JsonValue&) { return w::stackAddPage(ui, n); }
 bool splitterProp(UiContext&, NodeHandle, std::string_view key, const JsonValue&) { return key == "stacked" || key == "sizes"; }
@@ -253,7 +265,12 @@ bool treeModelProp(UiContext& ui, NodeHandle n, std::string_view key, const Json
     return false;
 }
 bool svgImageProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
-    if (key == "icon") { // a built-in icon by name
+    if (key == "icon") { // an icon of the context's pack (attached before the document loads), else a built-in one
+        if (const IconSet* set = ui.icons(); set && v.isString())
+            if (const i32 i = set->find(v.string); i >= 0) {
+                w::setSvgImage(ui, n, packIconHandle(*set, u32(i)));
+                return true;
+            }
         Icon icon;
         if (!iconByName(v, icon)) return false;
         w::setSvgImage(ui, n, w::iconHandle(icon));
@@ -373,6 +390,145 @@ bool timelineProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonV
     return true;
 }
 
+// ---- Qt-parity options and the extras widgets (widgets/edit_options.hpp, widgets/extra.hpp) -------------------------------
+bool lineEditProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
+    w::LineEditOptions o = w::lineEditOptions(ui, n);
+    if (key == "placeholder" && v.isString()) o.placeholder = v.string;
+    else if (key == "echo" && v.isString())
+        o.echo = v.string == "password" ? w::EchoMode::Password : v.string == "noecho" ? w::EchoMode::NoEcho
+               : v.string == "passwordEchoOnEdit" ? w::EchoMode::PasswordEchoOnEdit : w::EchoMode::Normal;
+    else if (key == "maxLength" && v.isNumber()) o.maxLength = u32(std::max(0.0, v.number));
+    else if (key == "readOnly" && v.isBool()) o.readOnly = v.boolean;
+    else if (key == "inputMask" && v.isString()) o.inputMask = v.string;
+    else return false;
+    w::setLineEditOptions(ui, n, std::move(o));
+    return true;
+}
+bool spinBoxProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
+    w::SpinBoxOptions o = w::spinBoxOptions(ui, n);
+    if (key == "prefix" && v.isString()) o.prefix = v.string;
+    else if (key == "suffix" && v.isString()) o.suffix = v.string;
+    else if (key == "specialValueText" && v.isString()) o.specialValueText = v.string;
+    else if (key == "wrapping" && v.isBool()) o.wrapping = v.boolean;
+    else if (key == "decimals" && v.isNumber()) o.decimals = i32(v.number);
+    else return false;
+    w::setSpinBoxOptions(ui, n, std::move(o));
+    return true;
+}
+bool tabOptionProp(UiContext& ui, NodeHandle bar, std::string_view key, const JsonValue& v) {
+    if (!v.isBool()) return false;
+    if (key == "closable") w::setTabsClosable(ui, bar, v.boolean);
+    else if (key == "movable") w::setTabsMovable(ui, bar, v.boolean);
+    else if (key == "scrollButtons") w::setTabUsesScrollButtons(ui, bar, v.boolean);
+    else return false;
+    return true;
+}
+bool lcdProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
+    if (key == "digits") return true; // read by the factory
+    if (key == "text" && v.isString()) { w::setLcdText(ui, n, v.string); return true; }
+    if (key == "base" && v.isNumber()) { w::setLcdBase(ui, n, u32(std::max(0.0, v.number))); return true; }
+    return false;
+}
+bool keySequenceProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
+    if (key != "text" || !v.isString()) return false;
+    Shortcut s;
+    (void)parseShortcut(v.string, s);
+    w::setKeySequence(ui, n, s);
+    return true;
+}
+bool toolBoxProp(UiContext&, NodeHandle, std::string_view key, const JsonValue&) { return key == "pages"; } // (factory)
+NodeHandle toolBoxChild(UiContext& ui, NodeHandle n, std::size_t i, const JsonValue&) { return w::toolBoxPage(ui, n, u32(i)); }
+Rect rectOf(const JsonValue* v, Rect fallback) {
+    if (!v || !v->isArray() || v->array.size() != 4) return fallback;
+    return {f32(v->array[0].number), f32(v->array[1].number), f32(v->array[2].number), f32(v->array[3].number)};
+}
+bool mdiWindowProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
+    if (key == "text") return true; // the title: read by the factory
+    if (key == "rect" && v.isArray() && v.array.size() == 4) { w::setMdiGeometry(ui, n, rectOf(&v, {})); return true; }
+    return false;
+}
+NodeHandle mdiWindowChild(UiContext& ui, NodeHandle n, std::size_t, const JsonValue&) { return w::mdiBody(ui, n); }
+u32 standardButtonsOf(const JsonValue* v) {
+    static constexpr std::pair<std::string_view, u32> kNames[] = {
+        {"ok", w::StdButton::Ok}, {"save", w::StdButton::Save}, {"saveAll", w::StdButton::SaveAll}, {"open", w::StdButton::Open},
+        {"yes", w::StdButton::Yes}, {"yesToAll", w::StdButton::YesToAll}, {"no", w::StdButton::No}, {"noToAll", w::StdButton::NoToAll},
+        {"abort", w::StdButton::Abort}, {"retry", w::StdButton::Retry}, {"ignore", w::StdButton::Ignore}, {"close", w::StdButton::Close},
+        {"cancel", w::StdButton::Cancel}, {"discard", w::StdButton::Discard}, {"help", w::StdButton::Help}, {"apply", w::StdButton::Apply},
+        {"reset", w::StdButton::Reset}, {"restoreDefaults", w::StdButton::RestoreDefaults}};
+    u32 mask = 0;
+    if (v && v->isArray())
+        for (const JsonValue& b : v->array)
+            for (const auto& [name, bit] : kNames)
+                if (b.isString() && b.string == name) mask |= bit;
+    return mask;
+}
+w::ButtonBoxLayout buttonLayoutOf(std::string_view s) {
+    return s == "windows" ? w::ButtonBoxLayout::Windows : s == "mac" ? w::ButtonBoxLayout::Mac : s == "kde" ? w::ButtonBoxLayout::Kde
+         : s == "gnome" ? w::ButtonBoxLayout::Gnome : w::ButtonBoxLayout::Platform;
+}
+bool buttonBoxProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
+    if (key == "buttons" && v.isArray()) { w::setDialogButtonBoxStandardButtons(ui, n, standardButtonsOf(&v)); return true; }
+    if (key == "layout" && v.isString()) { w::setDialogButtonBoxOptions(ui, n, {.layout = buttonLayoutOf(v.string)}); return true; }
+    return false;
+}
+bool editComboProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
+    if (key == "insertPolicy") return true; // read by the factory
+    if (key == "items" && v.isArray()) {
+        const i32 cur = w::comboCurrentIndex(ui, n);
+        while (w::comboCount(ui, n)) w::comboRemoveItem(ui, n, w::comboCount(ui, n) - 1);
+        for (const JsonValue& it : v.array) w::comboAddItem(ui, n, it.isString() ? std::string_view(it.string) : std::string_view{});
+        if (cur >= 0 && u32(cur) < w::comboCount(ui, n)) w::setComboCurrentIndex(ui, n, cur);
+        return true;
+    }
+    if (key == "placeholder" && v.isString()) return lineEditProp(ui, w::comboLineEdit(ui, n), key, v);
+    return false;
+}
+// Graphics scenes built from document data: owned here, keyed by their view, dropped with it (as the inline models).
+struct OwnedScene {
+    u64 uid = 0;
+    const UiContext* ui = nullptr;
+    NodeHandle view;
+    std::unique_ptr<w::GraphicsScene> scene;
+};
+std::vector<OwnedScene>& scenes() { static std::vector<OwnedScene> s; return s; }
+w::GraphicsScene* sceneFor(UiContext& ui, NodeHandle view) {
+    auto& all = scenes();
+    std::erase_if(all, [](const OwnedScene& s) { return !UiContext::exists(s.uid) || !s.ui->alive(s.view); });
+    for (OwnedScene& s : all)
+        if (s.uid == ui.uid() && s.view == view) return s.scene.get();
+    all.push_back({ui.uid(), &ui, view, std::make_unique<w::GraphicsScene>()});
+    return all.back().scene.get();
+}
+bool graphicsViewProp(UiContext& ui, NodeHandle n, std::string_view key, const JsonValue& v) {
+    if (key == "zoom" && v.isNumber()) { w::setViewTransform(ui, n, f32(v.number), w::viewPan(ui, n)); return true; }
+    if (key != "items" || !v.isArray()) return false;
+    // [{ "shape": rect|ellipse|line|text|polygon, "rect": [x, y, w, h], "points": [[x, y]...], "fill", "stroke",
+    //    "strokeWidth", "z", "text", "movable", "selectable" }]
+    auto scene = std::make_unique<w::GraphicsScene>();
+    for (const JsonValue& it : v.array) {
+        w::GraphicsItem g;
+        const std::string_view shape = str(it, "shape", "rect");
+        g.shape = shape == "ellipse" ? w::GraphicsShape::Ellipse : shape == "line" ? w::GraphicsShape::Line
+                : shape == "text" ? w::GraphicsShape::Text : shape == "polygon" ? w::GraphicsShape::Polygon : w::GraphicsShape::Rect;
+        g.rect = rectOf(it.get("rect"), {});
+        if (const JsonValue* pts = it.get("points"); pts && pts->isArray())
+            for (const JsonValue& p : pts->array)
+                if (p.isArray() && p.array.size() == 2) g.points.push_back({f32(p.array[0].number), f32(p.array[1].number)});
+        g.fill = color(it.get("fill"), g.fill);
+        g.stroke = color(it.get("stroke"), g.stroke);
+        g.strokeWidth = num(it, "strokeWidth", g.strokeWidth);
+        g.z = num(it, "z", 0.f);
+        g.text = std::string(str(it, "text"));
+        g.movable = flag(it, "movable", true);
+        g.selectable = flag(it, "selectable", true);
+        scene->add(std::move(g));
+    }
+    w::GraphicsScene* owned = sceneFor(ui, n); // the view keeps pointing at the same scene object: swap its content
+    *owned = std::move(*scene);
+    w::setGraphicsScene(ui, n, owned);
+    return true;
+}
+
 struct Builtin {
     std::string_view name;
     Make make;
@@ -384,10 +540,12 @@ const Builtin kBuiltins[] = {
     {"slider", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::slider(ui, p, 0.f, 1.f, 0.f, 0.f, id); }},
     {"progressbar", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::progressBar(ui, p, 0.f, id); }},
     {"dial", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::dial(ui, p, 0.f, 1.f, 0.f, id); }},
-    {"spinbox", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::spinBox(ui, p, 0.f, 100.f, 0.f, 1.f, id); }},
+    {"spinbox", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::spinBox(ui, p, 0.f, 100.f, 0.f, 1.f, id); },
+     &spinBoxProp}, // "prefix", "suffix", "specialValueText", "wrapping", "decimals"
     {"scrollbar", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue& n) { return w::scrollBar(ui, p, !flag(n, "horizontal", false), id); },
      [](UiContext&, NodeHandle, std::string_view key, const JsonValue&) { return key == "horizontal"; }},
-    {"lineedit", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::lineEdit(ui, p, {}, id); }},
+    {"lineedit", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::lineEdit(ui, p, {}, id); },
+     &lineEditProp}, // "placeholder", "echo": normal|password|noecho|passwordEchoOnEdit, "maxLength", "readOnly", "inputMask"
     {"textedit", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::textEdit(ui, p, {}, id); }},
     {"richtext", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::richText(ui, p, {}, id); }},
     {"header", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::headerView(ui, p, {}, 120.f, id); },
@@ -471,7 +629,8 @@ const Builtin kBuiltins[] = {
     {"svgimage", // "icon": a built-in icon name, or "svg": inline source; sized by the style (width / height)
      [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::svgImage(ui, p, {}, 0.f, 0.f, id); }, &svgImageProp},
     // names that are not registered classes: variants and compound widgets
-    {"doublespinbox", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::doubleSpinBox(ui, p, 0.f, 1.f, 0.f, 0.1f, id); }},
+    {"doublespinbox", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::doubleSpinBox(ui, p, 0.f, 1.f, 0.f, 0.1f, id); },
+     &spinBoxProp},
     {"plaintextedit", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::plainTextEdit(ui, p, {}, id); }},
     {"modellistview", // "items": [text...]
      [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) {
@@ -512,6 +671,37 @@ const Builtin kBuiltins[] = {
      [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue& n) {
          return w::fontPicker(ui, p, n.get("families") ? joined(*n.get("families")) : std::string{}, num(n, "size", 14.f), id);
      }, &creationOnly},
+    // Qt-parity widgets of widgets/edit_options.hpp and widgets/extra.hpp
+    {"editcombo", // "items": [text...], "value" = current index, "insertPolicy": none|top|bottom|alphabetical, "placeholder"
+     [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue& n) {
+         const std::string_view pol = str(n, "insertPolicy", "bottom");
+         return w::editableComboBox(ui, p, n.get("items") ? joined(*n.get("items")) : std::string{}, 0,
+                                    pol == "none" ? w::InsertPolicy::NoInsert : pol == "top" ? w::InsertPolicy::InsertAtTop
+                                    : pol == "alphabetical" ? w::InsertPolicy::InsertAlphabetically : w::InsertPolicy::InsertAtBottom, id);
+     }, &editComboProp},
+    {"lcdnumber", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue& n) { return w::lcdNumber(ui, p, u32(num(n, "digits", 6.f)), id); },
+     &lcdProp},
+    {"keysequenceedit", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::keySequenceEdit(ui, p, {}, id); },
+     &keySequenceProp},
+    {"toolbox", // "pages": [title...]; child k is the content of page k; "value" = the open page
+     [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue& n) {
+         return w::toolBox(ui, p, n.get("pages") ? joined(*n.get("pages")) : std::string{}, id);
+     }, &toolBoxProp, &toolBoxChild},
+    {"mdiarea", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::mdiArea(ui, p, id); }},
+    {"mdiwindow", // a child of an mdiarea: "text" = title, "rect": [x, y, w, h]; children go to the body
+     [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue& n) {
+         return w::mdiSubWindow(ui, p, str(n, "text"), rectOf(n.get("rect"), {12.f, 12.f, 240.f, 160.f}), id);
+     }, &mdiWindowProp, &mdiWindowChild},
+    {"graphicsview", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) {
+         const NodeHandle v = w::graphicsView(ui, p, nullptr, id);
+         if (ui.alive(v)) w::setGraphicsScene(ui, v, sceneFor(ui, v)); // the document owns the scene
+         return v;
+     }, &graphicsViewProp},
+    {"vkeyboard", [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue&) { return w::virtualKeyboard(ui, p, id); }},
+    {"dialogbuttonbox", // "buttons": ["ok", "cancel", "apply", ...], "layout": platform|windows|mac|kde|gnome
+     [](UiContext& ui, NodeHandle p, std::string_view id, const JsonValue& n) {
+         return w::dialogButtonBox(ui, p, standardButtonsOf(n.get("buttons")), {.layout = buttonLayoutOf(str(n, "layout", "platform"))}, id);
+     }, &buttonBoxProp},
 };
 const Builtin* builtin(std::string_view name) {
     for (const Builtin& b : kBuiltins)
@@ -565,11 +755,21 @@ bool prop(UiContext& ui, NodeHandle node, std::string_view cls, std::string_view
     if (key == "tooltip" && v.isString()) { w::setTooltip(ui, node, v.string); return true; }
     if (key == "contextMenu" && v.isArray()) { w::setContextMenu(ui, node, joined(v)); return true; }
     if (key == "paneSize") return true; // read by the splitter the node is a child of
-    if (key == "icon") { // a built-in icon on a button / tool button (16 px, left of the text)
-        Icon icon;
+    if (cls == "tabbar" && tabOptionProp(ui, node, key, v)) return true; // "closable", "movable", "scrollButtons"
+    if (key == "icon") { // an icon on a button / tool button (16 px, left of the text)
         const std::string_view name = ui.registry().get(ui.classOf(node)).name;
-        if ((name != "button" && name != "toolbutton") || !iconByName(v, icon)) return false;
-        w::setIcon(ui, node, icon);
+        PropValue pv;
+        if ((name != "button" && name != "toolbutton") || !v.isString() || !parsePropValue(fuse::ui::Prop::Icon, v.string, pv)) return false;
+        // with a pack attached (UiContext::setIcons) the name becomes the `icon` style property: the pack's icon, or
+        // one a pack attached later brings; a name only the built-in set has is set as before (widgets::iconOf)
+        const bool inPack = ui.icons() && ui.icons()->findHash(pv.ident()) >= 0;
+        Icon builtin;
+        if (!inPack && iconByName(v, builtin)) {
+            w::setIcon(ui, node, builtin);
+            return true;
+        }
+        if (!ui.icons()) return false; // no pack: only the built-in names exist
+        ui.set(node, fuse::ui::Prop::Icon, pv);
         return true;
     }
     return false;
@@ -600,6 +800,14 @@ bool setValue(UiContext& ui, NodeHandle node, f32 v) {
     }
     if (ui.hasClass(node, "tabwidget")) {
         ui.setValue(w::tabWidgetBar(ui, node), v, true);
+        return true;
+    }
+    if (ui.hasClass(node, "toolbox")) { // the open page
+        w::setToolBoxIndex(ui, node, u32(std::max(0.f, v)));
+        return true;
+    }
+    if (ui.registry().get(ui.classOf(node)).name == "editcombo") { // the current item (its text goes into the field)
+        w::setComboCurrentIndex(ui, node, i32(v));
         return true;
     }
     return false;

@@ -65,7 +65,10 @@ Vec2 toLogical(Vec2 px, f32 scale) { return scale > 0.f ? Vec2{px.x / scale, px.
 ColorScheme schemeFromGtkTheme(std::string_view t) {
     t = trimmed(t);
     if (t.empty()) return ColorScheme::Unknown;
-    return containsNoCase(t, "dark") ? ColorScheme::Dark : ColorScheme::Light;
+    return containsNoCase(t, "dark") || containsNoCase(t, "inverse") ? ColorScheme::Dark : ColorScheme::Light;
+}
+bool highContrastFromGtkTheme(std::string_view t) {
+    return containsNoCase(t, "highcontrast") || containsNoCase(t, "high-contrast") || containsNoCase(t, "high_contrast");
 }
 ColorScheme schemeFromGsettings(std::string_view out) {
     out = trimmed(out);
@@ -73,23 +76,14 @@ ColorScheme schemeFromGsettings(std::string_view out) {
     if (out == "prefer-light" || out == "default") return ColorScheme::Light;
     return ColorScheme::Unknown;
 }
+// The token sets live in the widget library (Widgets/src/theme.cpp): the app layer only maps the OS preference on them.
 std::string themeTokensCss(const SystemTheme& t) {
-    std::string css = t.scheme == ColorScheme::Light
-                          ? ":root { --bg: #f3f4f7; --surface: #ffffff; --surface-hi: #e7e8ee; --border: #c3c5d0; --text: #1c1d22; "
-                            "--text-dim: #6a6c7a; --accent: #2f6fe0; --accent-hi: #1f5fd0; --danger: #c9353a; "
-                          : ":root { --bg: #1e1f24; --surface: #2a2b32; --surface-hi: #34353e; --border: #474955; --text: #e6e6eb; "
-                            "--text-dim: #9a9cab; --accent: #3d8bfd; --accent-hi: #5a9dff; --danger: #e5484d; ";
-    if (t.hasAccent) {
-        auto hex = [](Color c, f32 k) {
-            char b[16];
-            auto ch = [&](f32 v) { return int(std::clamp(v * k, 0.f, 1.f) * 255.f + 0.5f); };
-            std::snprintf(b, sizeof b, "#%02x%02x%02x", ch(c.r), ch(c.g), ch(c.b));
-            return std::string(b);
-        };
-        css += "--accent: " + hex(t.accent, 1.f) + "; --accent-hi: " + hex(t.accent, t.scheme == ColorScheme::Light ? 0.88f : 1.15f) + "; ";
-    }
-    css += "background: var(--bg); color: var(--text); }\n";
-    return css;
+    widgets::ThemeDesc d;
+    d.variant = t.highContrast ? widgets::ThemeVariant::HighContrast
+                               : t.scheme == ColorScheme::Light ? widgets::ThemeVariant::Light : widgets::ThemeVariant::Dark;
+    d.hasAccent = t.hasAccent;
+    d.accent = t.accent;
+    return widgets::themeTokensCss(d);
 }
 
 // ---- menus -----------------------------------------------------------------------------------------------------------
@@ -182,7 +176,9 @@ void AppWindow::rebuildMenu() {
         if (m_ui.alive(m_menuBar)) m_ui.destroy(m_menuBar);
         const NodeHandle parent = m_ui.alive(m_menuParent) ? m_menuParent : m_ui.root();
         m_menuBar = widgets::menuBar(m_ui, parent);
-        if (const NodeHandle first = m_ui.firstChild(parent); first != m_menuBar) m_ui.moveTo(m_menuBar, parent, first);
+        NodeHandle first = m_ui.firstChild(parent);
+        if (first == m_chrome.caption) first = m_ui.nextSibling(first); // below a client-side title bar (chrome.hpp)
+        if (first != m_menuBar) m_ui.moveTo(m_menuBar, parent, first);
         m_menuButtons.clear();
     }
     m_menuLines.resize(m_menu.menus.size());
@@ -285,6 +281,7 @@ void AppWindow::setVisible(bool on) {
 }
 void AppWindow::setPosition(Vec2 p) {
     m_wantPosition = p;
+    m_positionAsked = true;
     if (m_backend.apply) {
         ask(WindowRequest::Position);
         return;
@@ -338,8 +335,12 @@ void AppWindow::notifyScale(f32 before) {
 }
 void AppWindow::applyTheme(const SystemTheme& t) {
     if (auto sheet = StyleSheet::parse(themeTokensCss(t))) {
-        // one override sheet: re-applying replaces the previous tokens by adding a later sheet (later :root wins)
-        m_ui.addStyleSheet(std::move(*sheet));
+        // one override sheet, replaced in place on every later call (the sheet list does not grow)
+        if (m_ui.styles().hasSheet(m_themeOverride)) (void)m_ui.replaceStyleSheet(m_themeOverride, std::move(*sheet));
+        else m_themeOverride = m_ui.addStyleSheetTracked(std::move(*sheet));
+        // the same answer for the application's own @media (prefers-color-scheme / prefers-contrast) rules; the
+        // default high-contrast token set is the dark one
+        m_ui.setMediaTheme(t.highContrast || t.scheme != ColorScheme::Light, t.highContrast);
         m_ui.markAllDirty();
         m_forceRedraw = true;
     }

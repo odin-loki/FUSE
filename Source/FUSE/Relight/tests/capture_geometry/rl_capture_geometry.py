@@ -934,7 +934,7 @@ def cmd_run(args):
     sys.path.insert(0, args.tap_tools)
     sys.dont_write_bytecode = True  # no __pycache__ in RL-1.1's source directory
     import rl_tap_run  # noqa: E402  (RL-1.1's Wine driver: run directory, DLLs, environment)
-    if not __import__("shutil").which("wine") and not __import__("shutil").which("wine64"):
+    if not os.environ.get("FUSE_WINE") and not __import__("shutil").which("wine") and not __import__("shutil").which("wine64"):
         print("SKIP: wine not installed")
         return SKIP
     ns = argparse.Namespace(d3d9=args.d3d9, d3d8=args.d3d8, runner=args.runner, prefix_root=args.prefix_root)

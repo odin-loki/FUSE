@@ -19,7 +19,12 @@ enum NodeFlags : u32 {
     kFlagCapturesDrag = 1u << 4,
     kFlagStyled = 1u << 5,  ///< styled at least once (a first style never transitions)
     kFlagExiting = 1u << 6, ///< hidden, still painted by its exit animation: not hit, not focusable
+    kFlagFx = 1u << 7,        ///< the style has effects (ComputedStyle::hasEffects): painted / hit through paintEffects
+    kFlagZKids = 1u << 8,     ///< a child is positioned or has a z-index: children are painted and hit in z order
+    kFlagOutOfFlow = 1u << 9, ///< position: absolute / fixed (listed in m_outOfFlow)
+    kFlagContainer = 1u << 10, ///< a query container (listed in m_containers)
 };
+inline bool outOfFlow(const ComputedStyle& s) { return s.position == PositionKind::Absolute || s.position == PositionKind::Fixed; }
 enum Dirty : u8 { kDirtyStyle = 1, kDirtyLayout = 2, kDirtyPaint = 4, kDirtyText = 8, kDirtyMeasure = 16 };
 
 /// uids of the contexts that exist (UiContext::exists). Never destroyed: contexts with static storage duration
@@ -79,6 +84,7 @@ struct UiContext::Cold {
     std::string a11yName;
     A11yLive a11yLive = A11yLive::Off;
     std::vector<std::pair<Prop, PropValue>> inl;
+    std::vector<std::pair<u32, std::string>> attrs; ///< hashId(name) -> value (attribute selectors)
     fuse::text::TextLayout layout;
     f32 layoutWidth = -1.f, layoutSize = -1.f;
     std::unique_ptr<fuse::text::TextEditBuffer> edit;
@@ -139,6 +145,27 @@ struct ContextSubject final : StyleSubject {
     }
     u32 states(u32 n) const override { return nodes[n].state; }
     u32 parent(u32 n) const override { return nodes[n].parent; }
+    u32 prevSibling(u32 n) const override { return nodes[n].prev; }
+    u32 nextSibling(u32 n) const override { return nodes[n].next; }
+    u32 firstChild(u32 n) const override { return nodes[n].first; }
+    bool empty(u32 n) const override { return nodes[n].first == kNone && ui.m_cold[n]->text.empty(); }
+    bool attribute(u32 n, u32 nameHash, std::string_view& out) const override {
+        for (const auto& [h, v] : ui.m_cold[n]->attrs)
+            if (h == nameHash) { out = v; return true; }
+        static constexpr u32 kId = hashId("id");
+        if (nameHash == kId && !ui.m_cold[n]->id.empty()) { out = ui.m_cold[n]->id; return true; }
+        return false;
+    }
+    bool containerSize(u32 n, u32 name, bool needHeight, Size& out) const override {
+        for (u32 a = nodes[n].parent; a != kNone; a = nodes[a].parent) {
+            if (!(nodes[a].flags & kFlagContainer)) continue;
+            const ComputedStyle& s = ui.m_styles.style(nodes[a].targetStyle);
+            if (!s.containerType || (name && s.containerName != name) || (needHeight && s.containerType != 2)) continue;
+            out = {std::max(0.f, nodes[a].rect.w - s.padding.h()), std::max(0.f, nodes[a].rect.h - s.padding.v())};
+            return true;
+        }
+        return false;
+    }
 };
 
 // ---- Lifetime ------------------------------------------------------------------------------------------------------
@@ -166,6 +193,9 @@ UiContext::UiContext(const UiContextDesc& d) : m_font(d.font), m_atlas(d.atlasSi
         def.family = def.owned.get();
         m_families.push_back(std::move(def));
     }
+    m_keyAnims.reserve(16);
+    m_zScratch.reserve(64);
+    syncMedia();
     registerCoreClasses(m_registry);
     m_root = create(m_registry.find("root"), {}, "root");
     m_layerClass = m_registry.find("layer");
@@ -215,6 +245,7 @@ u32 UiContext::alloc() {
         c.text.clear();
         c.a11yName.clear();
         c.inl.clear();
+        c.attrs.clear();
         c.layoutWidth = c.layoutSize = -1.f;
         c.edit.reset();
     } else {
@@ -275,9 +306,10 @@ NodeHandle UiContext::create(u32 cls, NodeHandle parent, std::string_view id) {
     if (parent.valid()) {
         linkBefore(i, parent.index, kNone);
         markLayout(parent.index);
+        if (m_styles.features()) structureChanged(parent.index, i);
     }
     m_anyStyleDirty = m_anyLayoutDirty = m_anyPaintDirty = true;
-    return {i, n.gen};
+    return {i, m_nodes[i].gen};
 }
 
 std::expected<NodeHandle, UiError> UiContext::create(std::string_view className, NodeHandle parent, std::string_view id) {
@@ -311,6 +343,8 @@ void UiContext::destroyRec(u32 i) {
                 m_styles.releaseScratch(a.slot);
                 a.active = false;
                 --m_styleAnimCount;
+                if (a.busy) --m_styleAnimBusy;
+                a.busy = false;
             }
     if (m_propAnimCount)
         for (auto& a : m_propAnims)
@@ -318,6 +352,24 @@ void UiContext::destroyRec(u32 i) {
                 a.active = false;
                 --m_propAnimCount;
             }
+    if (m_keyAnimCount)
+        for (auto& ka : m_keyAnims)
+            if (ka.active && ka.node.index == i) endKeyAnim(ka);
+    if (n.flags & (kFlagFx | kFlagOutOfFlow | kFlagContainer)) {
+        if (n.flags & kFlagFx) {
+            --m_fxCount;
+            for (std::size_t k = 0; k < m_fxBounds.size(); ++k)
+                if (m_fxBounds[k].first == i) { // what it covered has to be repainted
+                    m_fxPendingDamage = m_fxDepth || m_fxCount ? Rect{0.f, 0.f, m_viewport.w, m_viewport.h} : m_fxPendingDamage.unite(m_fxBounds[k].second);
+                    m_fxBounds[k] = m_fxBounds.back();
+                    m_fxBounds.pop_back();
+                    break;
+                }
+        }
+        if (n.flags & kFlagOutOfFlow) std::erase(m_outOfFlow, i);
+        if (n.flags & kFlagContainer) std::erase_if(m_containers, [&](const ContainerEntry& c) { return c.node == i; });
+        std::erase(m_fixedOrder, i);
+    }
     n.alive = false;
     n.first = n.last = n.parent = n.next = n.prev = kNone;
     m_free.push_back(i);
@@ -331,6 +383,7 @@ void UiContext::destroy(NodeHandle h) {
     unlink(h.index);
     destroyRec(h.index);
     if (p != kNone) markLayout(p);
+    if (p != kNone && m_styles.features()) structureChanged(p, kNone);
     m_anyPaintDirty = true;
 }
 
@@ -347,6 +400,13 @@ void UiContext::moveTo(NodeHandle h, NodeHandle np, NodeHandle before) {
     if (old != kNone) markLayout(old);
     markLayout(np.index);
     markStyle(h.index);
+    if (const ComputedStyle& ms = m_styles.style(m_nodes[h.index].style); ms.position != PositionKind::Static || ms.zIndex != kZAuto)
+        m_nodes[np.index].flags |= kFlagZKids; // the new parent paints its children in z order from now on
+    if (const u32 feat = m_styles.features()) {
+        if (old != kNone && old != np.index) structureChanged(old, kNone);
+        structureChanged(np.index, h.index);
+        if (feat & kStyleDescend) markStyleSubtree(h.index, 255); // its descendants now sit under other ancestors
+    }
 }
 
 NodeHandle UiContext::parent(NodeHandle h) const {
@@ -428,6 +488,7 @@ void UiContext::addClass(NodeHandle h, std::string_view cls) {
         n->classes[n->classCount++] = c;
         markStyle(h.index);
         for (u32 k = n->first; k != kNone; k = m_nodes[k].next) markStyle(k);
+        if (m_styles.features()) invalidateStyleFor(h.index, m_styles.classInvalidation(c));
     }
 }
 void UiContext::removeClass(NodeHandle h, std::string_view cls) {
@@ -439,6 +500,7 @@ void UiContext::removeClass(NodeHandle h, std::string_view cls) {
             n->classes[k] = n->classes[--n->classCount];
             markStyle(h.index);
             for (u32 j = n->first; j != kNone; j = m_nodes[j].next) markStyle(j);
+            if (m_styles.features()) invalidateStyleFor(h.index, m_styles.classInvalidation(c));
             return;
         }
 }
@@ -485,6 +547,14 @@ void UiContext::setText(NodeHandle h, std::string_view s) {
     if (!node(h)) return;
     Cold& c = *m_cold[h.index];
     if (c.text == s) return;
+    if ((m_styles.features() & kStyleEmptyText) && c.text.empty() != s.empty()) { // :empty looks at the text too
+        markStyle(h.index);
+        StyleInvalidation inv;
+        inv.has = (m_styles.features() & kStyleHas) != 0;
+        inv.descend = (m_styles.features() & kStyleStructDeep) ? 255 : 0;
+        inv.siblings = (m_styles.features() & kStyleSibling) != 0;
+        invalidateStyleFor(h.index, inv);
+    }
     c.text.assign(s);
     c.layoutWidth = -1.f;
     m_nodes[h.index].dirty |= kDirtyText;
@@ -522,10 +592,12 @@ void UiContext::setState(NodeHandle h, u32 bits, bool on) {
     if (!n) return;
     const u32 s = on ? (n->state | bits) : (n->state & ~bits);
     if (s == n->state) return;
+    const u32 changed = s ^ n->state;
     n->state = s;
     markStyle(h.index);
     markPaint(h.index);
     for (u32 k = n->first; k != kNone; k = m_nodes[k].next) markStyle(k);
+    if (m_styles.features()) invalidateStyleFor(h.index, m_styles.stateInvalidation(changed));
 }
 u32 UiContext::states(NodeHandle h) const { return node(h) ? node(h)->state : 0u; }
 void UiContext::setFocusable(NodeHandle h, bool on) {
@@ -597,6 +669,7 @@ void UiContext::setViewport(Size s) {
     if (s == m_viewport) return;
     m_viewport = s;
     markLayout(m_root.index);
+    syncMedia();
 }
 
 // ---- Style pass ----------------------------------------------------------------------------------------------------
@@ -606,7 +679,11 @@ void UiContext::applyStyleDiff(u32 i, const ComputedStyle& before, const Compute
     const ComputedStyle& lb = after;
     const bool fontChanged = la.fontSize != lb.fontSize || la.textAlign != lb.textAlign || la.rtl != lb.rtl ||
                              la.fontWeight != lb.fontWeight || la.fontItalic != lb.fontItalic || la.fontFamily != lb.fontFamily ||
-                             la.letterSpacing != lb.letterSpacing || la.lineHeight != lb.lineHeight;
+                             la.letterSpacing != lb.letterSpacing || la.lineHeight != lb.lineHeight ||
+                             la.fontStretch != lb.fontStretch || la.fontVariationCount != lb.fontVariationCount ||
+                             la.fontVariationTags != lb.fontVariationTags || la.fontVariationValues != lb.fontVariationValues ||
+                             la.fontFeatureCount != lb.fontFeatureCount || la.fontFeatureTags != lb.fontFeatureTags ||
+                             la.fontFeatureValues != lb.fontFeatureValues;
     markPaint(i);
     // compare layout-relevant fields only
     la.background = lb.background; la.background2 = lb.background2; la.borderColor = lb.borderColor;
@@ -616,6 +693,13 @@ void UiContext::applyStyleDiff(u32 i, const ComputedStyle& before, const Compute
     la.textDecoration = lb.textDecoration;
     la.transitions = lb.transitions; la.transitionCount = lb.transitionCount; la.enterAnim = lb.enterAnim; la.exitAnim = lb.exitAnim;
     la.enterDuration = lb.enterDuration; la.exitDuration = lb.exitDuration;
+    la.zIndex = lb.zIndex; la.transform = lb.transform; la.originX = lb.originX; la.originY = lb.originY; la.filter = lb.filter;
+    la.clipPath = lb.clipPath; la.mask = lb.mask; la.maskLuminance = lb.maskLuminance; la.backgroundImage = lb.backgroundImage;
+    la.animations = lb.animations; la.animationCount = lb.animationCount; la.containerType = lb.containerType;
+    la.containerName = lb.containerName;
+    syncStyleFlags(i, lb);
+    if ((before.containerType != lb.containerType || before.containerName != lb.containerName) && m_styles.usesContainerQueries())
+        markStyleSubtree(i, 255); // what its queries answer changed (the style pass reaches the subtree after this node)
     if (fontChanged) {
         m_cold[i]->layoutWidth = -1.f;
         n.dirty |= kDirtyText;
@@ -644,6 +728,7 @@ void UiContext::styleRec(u32 i, bool parentChanged) {
             const ComputedStyle next = m_styles.style(idx);
             const bool wasVisible = !first && m_styles.style(before).visible;
             n.targetStyle = idx;
+            if (next.animationCount || m_keyAnimCount) syncCssAnimations(i, next);
             const bool motion = !first && !m_reducedMotion && !m_sheetSwap;
             bool trans = false;
             if (motion && next.transitionCount && next.visible && cur.visible)
@@ -696,7 +781,8 @@ void UiContext::stylePass() {
     if (m_styles.sheetVersion() != m_seenSheetVersion) {
         m_seenSheetVersion = m_styles.sheetVersion();
         for (auto& n : m_nodes)
-            if (n.alive) n.dirty |= kDirtyStyle;
+            if (n.alive) n.dirty |= kDirtyStyle | kDirtyPaint; // paint too: widget paint code reads theme tokens (themeColor)
+        m_anyPaintDirty = true;
         m_sheetSwap = true; // a theme swap is not a state change: nothing transitions
     }
     styleRec(m_root.index, false);
@@ -822,8 +908,41 @@ const fuse::text::Font* UiContext::fontFor(std::span<const u32> families, int we
     return f ? f : m_font;
 }
 const fuse::text::Font* UiContext::fontFor(const ComputedStyle& s) {
-    if (s.fontWeight == 400 && !s.fontItalic && s.fontFamily[0] == 0) return m_font; // the common case
-    return fontFor(std::span<const u32>(s.fontFamily), s.fontWeight, s.fontItalic);
+    const fuse::text::Font* f = (s.fontWeight == 400 && !s.fontItalic && s.fontFamily[0] == 0)
+                                    ? m_font // the common case
+                                    : fontFor(std::span<const u32>(s.fontFamily), s.fontWeight, s.fontItalic);
+    return f ? &styledFont(*f, s) : nullptr;
+}
+const fuse::text::Font& UiContext::styledFont(const fuse::text::Font& base, const ComputedStyle& s) {
+    const fuse::text::Font* f = &base;
+    if (base.isVariable() && fuse::text::variableFontsEnabled()) {
+        using fuse::text::fontTag;
+        std::array<fuse::text::FontVariation, 3 + kMaxFontVariations> v;
+        std::size_t n = 0;
+        v[n++] = {fontTag("wght"), f32(s.fontWeight)};
+        v[n++] = {fontTag("wdth"), s.fontStretch};
+        v[n++] = {fontTag("opsz"), s.fontSize}; // font-optical-sizing: auto
+        for (u8 k = 0; k < s.fontVariationCount; ++k) v[n++] = {s.fontVariationTags[k], s.fontVariationValues[k]};
+        f = &base.instance(std::span<const fuse::text::FontVariation>(v.data(), n));
+    }
+    if (s.fontFeatureCount) { // font-feature-settings (FULL: HarfBuzz; other profiles: unchanged)
+        std::array<fuse::text::FontFeature, kMaxFontFeatures> ft;
+        for (u8 k = 0; k < s.fontFeatureCount; ++k) ft[k] = {s.fontFeatureTags[k], s.fontFeatureValues[k]};
+        f = &f->withFeatures(std::span<const fuse::text::FontFeature>(ft.data(), s.fontFeatureCount));
+    }
+    return *f;
+}
+void UiContext::setIcons(const IconSet* icons) {
+    if (icons == m_icons) return;
+    m_icons = icons;
+    markAllDirty(); // icon sizes are part of the content size
+}
+void UiContext::setMsdfThreshold(f32 devicePx) {
+    devicePx = std::isfinite(devicePx) ? std::max(devicePx, 0.f) : 0.f;
+    if (devicePx > 0.f) fuse::text::enableMsdf();
+    if (devicePx == m_msdfThreshold) return;
+    m_msdfThreshold = devicePx;
+    markAllDirty(); // glyphs may switch between coverage and MSDF
 }
 const fuse::text::Font* UiContext::fontFor(std::string_view family, int weight, bool italic) {
     const u32 h = family.empty() ? 0u : fuse::text::familyHash(family);
@@ -845,16 +964,62 @@ void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, 
     paintTextLayout(dl, tl, o, col, px, nodeIdx, deco);
 }
 
+namespace {
+u32 straightRgba(Color c) {
+    auto q = [](f32 v) { return u32(std::lround(std::clamp(v, 0.f, 1.f) * 255.f)); };
+    return q(c.r) | (q(c.g) << 8) | (q(c.b) << 16) | (q(c.a) << 24);
+}
+} // namespace
+
 void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, Vec2 o, Color col, f32 px, u32 nodeIdx, u8 deco) {
     if (!m_font || col.a <= 0.f) return;
     const fuse::text::Font& font = tl.font ? *tl.font : *m_font;
     const f32 rs = m_painting ? m_renderScale : 1.f;
+    const bool msdf = m_msdfThreshold > 0.f && fuse::text::msdfEnabled();
     for (const auto& ln : tl.lines) {
         for (u32 k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) {
             const auto& g = tl.glyphs[k];
             if (g.glyph == fuse::text::kInvisibleGlyph) continue;
             fuse::text::forEachPaintGlyph(font, g, px, [&](const fuse::text::Font& f, std::uint32_t glyph, f32 fpx,
                                                                const fuse::text::ColorLayer* layer) {
+                if (layer && layer->image) { // bitmap strike / exact COLRv1: one RGBA atlas glyph (enableColorGlyphs)
+                    const auto ag = m_atlas.getColor(f, glyph, fpx * rs, straightRgba(Color{col.r, col.g, col.b, 1.f}));
+                    if (!ag.valid || ag.w == 0) return;
+                    DrawCmd c;
+                    c.op = DrawOp::Glyph;
+                    c.gradient = kGlyphColor;
+                    c.rect = {std::round((o.x + g.x) * rs) + f32(ag.x0), std::round((o.y + ln.baseline) * rs) + f32(ag.y0), f32(ag.w), f32(ag.h)};
+                    c.devicePx = rs == 1.f ? 0 : 1;
+                    c.u = ag.u;
+                    c.v = ag.v;
+                    c.tw = ag.w;
+                    c.th = ag.h;
+                    c.fill = {1.f, 1.f, 1.f, col.a};
+                    c.node = nodeIdx;
+                    dl.push(c);
+                    return;
+                }
+                if (msdf && fpx * rs >= m_msdfThreshold) { // MSDF texels at kMsdfPixelSize stretched to the device size
+                    const auto ag = m_atlas.getMsdf(f, glyph);
+                    if (!ag.valid || ag.w == 0) return;
+                    const f32 k = fpx * rs / fuse::text::GlyphAtlas::kMsdfPixelSize;
+                    DrawCmd c;
+                    c.op = DrawOp::Glyph;
+                    c.gradient = kGlyphMsdf;
+                    c.rect = {(o.x + g.x) * rs + f32(ag.x0) * k, (o.y + ln.baseline) * rs + f32(ag.y0) * k, f32(ag.w) * k, f32(ag.h) * k};
+                    c.devicePx = rs == 1.f ? 0 : 1;
+                    c.blur = fuse::text::GlyphAtlas::kMsdfRange;
+                    c.u = ag.u;
+                    c.v = ag.v;
+                    c.tw = ag.w;
+                    c.th = ag.h;
+                    c.fill = (!layer || layer->foreground)
+                                 ? col
+                                 : Color{f32(layer->r) / 255.f, f32(layer->g) / 255.f, f32(layer->b) / 255.f, f32(layer->a) / 255.f * col.a};
+                    c.node = nodeIdx;
+                    dl.push(c);
+                    return;
+                }
                 const auto ag = m_atlas.get(f, glyph, fpx * rs);
                 if (!ag.valid || ag.w == 0) return;
                 DrawCmd c;
@@ -970,7 +1135,7 @@ Size UiContext::measure(u32 i, Size avail) {
             case LayoutKind::Box:
                 for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
                     const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-                    if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
+                    if (!cs.visible || m_nodes[k].cls == m_layerClass || outOfFlow(cs)) continue;
                     const Size m = measure(k, {in.w - cs.margin.h(), in.h - cs.margin.v()});
                     const f32 mw = m.w + cs.margin.h(), mh = m.h + cs.margin.v();
                     if (row) { c.w += mw; c.h = std::max(c.h, mh); }
@@ -980,14 +1145,14 @@ Size UiContext::measure(u32 i, Size avail) {
                 if (count > 1) (row ? c.w : c.h) += s.gap * f32(count - 1);
                 break;
             case LayoutKind::Grid: {
-                const u32 cols = std::max<u32>(1, s.gridColumnCount);
+                const u32 cols = s.subgrid ? std::clamp<u32>(s.gridColumnSpan, 1, kMaxGridTracks) : std::max<u32>(1, s.gridColumnCount);
                 std::array<f32, kMaxGridTracks> colW{};
                 f32 rowH = 0.f, total = 0.f;
                 u32 col = 0;
                 const f32 cw = std::isfinite(in.w) ? (in.w - s.gap * f32(cols - 1)) / f32(cols) : kInf;
                 for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
                     const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-                    if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
+                    if (!cs.visible || m_nodes[k].cls == m_layerClass || outOfFlow(cs)) continue;
                     const Size m = measure(k, {cw, kInf});
                     colW[col] = std::max(colW[col], m.w + cs.margin.h());
                     rowH = std::max(rowH, m.h + cs.margin.v());
@@ -1006,7 +1171,7 @@ Size UiContext::measure(u32 i, Size avail) {
                 f32 x = 0.f, y = 0.f, lineH = 0.f;
                 for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
                     const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-                    if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
+                    if (!cs.visible || m_nodes[k].cls == m_layerClass || outOfFlow(cs)) continue;
                     const Size m = measure(k, {in.w, kInf});
                     const f32 mw = m.w + cs.margin.h(), mh = m.h + cs.margin.v();
                     if (x > 0.f && x + mw > in.w) { y += lineH + s.gap; x = 0.f; lineH = 0.f; }
@@ -1020,7 +1185,7 @@ Size UiContext::measure(u32 i, Size avail) {
             default: // Stack, Anchor, Absolute: union of children
                 for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
                     const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-                    if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
+                    if (!cs.visible || m_nodes[k].cls == m_layerClass || outOfFlow(cs)) continue;
                     const Size m = measure(k, in);
                     const f32 ox = s.layout == LayoutKind::Stack ? 0.f : cs.left.resolve(in.w, 0.f);
                     const f32 oy = s.layout == LayoutKind::Stack ? 0.f : cs.top.resolve(in.h, 0.f);
@@ -1038,6 +1203,10 @@ Size UiContext::measure(u32 i, Size avail) {
         }
         out.w = fw ? bw : c.w + s.padding.h();
         out.h = fh ? bh : c.h + s.padding.v();
+        if (s.aspectRatio > 0.f) { // the auto side follows the other one
+            if (fh && !fw) out.w = out.h * s.aspectRatio;
+            else if (!fh) out.h = out.w / s.aspectRatio;
+        }
         out.w = clampSize(out.w, s.minWidth, s.maxWidth, avail.w);
         out.h = clampSize(out.h, s.minHeight, s.maxHeight, avail.h);
     }
@@ -1073,6 +1242,15 @@ void UiContext::arrangeChildren(u32 i) {
         r.y += kn.offset.y;
         extent.w = std::max(extent.w, r.right() - c.x - kn.offset.x + m_styles.style(kn.style).margin.r);
         extent.h = std::max(extent.h, r.bottom() - c.y - kn.offset.y + m_styles.style(kn.style).margin.b);
+        // a positioned child: relative moves by its insets, sticky stays in the scrollport (not under an Anchor /
+        // Absolute layout, which has placed the child by those insets already)
+        if ((n.flags & kFlagZKids) && s.layout != LayoutKind::Anchor && s.layout != LayoutKind::Absolute) {
+            const ComputedStyle& ks = m_styles.style(kn.style);
+            if (ks.position == PositionKind::Relative) {
+                r.x += !ks.left.isAuto() ? ks.left.resolve(c.w, 0.f) : -ks.right.resolve(c.w, 0.f);
+                r.y += !ks.top.isAuto() ? ks.top.resolve(c.h, 0.f) : -ks.bottom.resolve(c.h, 0.f);
+            } else if (ks.position == PositionKind::Sticky) r = stickyRect(i, k, r, c);
+        }
         arrange(k, r);
     };
     auto hidden = [&](u32 k) {
@@ -1080,7 +1258,8 @@ void UiContext::arrangeChildren(u32 i) {
             arrange(k, {0.f, 0.f, m_viewport.w, m_viewport.h});
             return true;
         }
-        if (m_styles.style(m_nodes[k].style).visible) return false;
+        const ComputedStyle& ks = m_styles.style(m_nodes[k].style);
+        if (ks.visible) return outOfFlow(ks); // absolute / fixed: placed after the flow (placeOutOfFlow)
         arrange(k, {c.x, c.y, 0.f, 0.f});
         return true;
     };
@@ -1093,7 +1272,7 @@ void UiContext::arrangeChildren(u32 i) {
         // pass 1: basis sizes (kept in the node's prevRect.w scratch? no: recompute; measure is cached)
         for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
             const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
-            if (!cs.visible || m_nodes[k].cls == m_layerClass) continue;
+            if (!cs.visible || m_nodes[k].cls == m_layerClass || outOfFlow(cs)) continue;
             const Size m = measure(k, {c.w - cs.margin.h(), c.h - cs.margin.v()});
             const f32 basis = fixedLen(cs.basis, mainAvail) ? cs.basis.resolve(mainAvail, 0.f) : (row ? m.w : m.h);
             used += basis + (row ? cs.margin.h() : cs.margin.v());
@@ -1126,9 +1305,18 @@ void UiContext::arrangeChildren(u32 i) {
             const f32 mBefore = row ? cs.margin.l : cs.margin.t, mAfter = row ? cs.margin.r : cs.margin.b;
             const f32 cmB = row ? cs.margin.t : cs.margin.l, cmA = row ? cs.margin.b : cs.margin.r;
             const Align al = cs.alignSelf != Align::Auto ? cs.alignSelf : s.alignItems;
-            const bool crossFixed = row ? fixedLen(cs.height, crossAvail) : fixedLen(cs.width, crossAvail);
+            bool crossFixed = row ? fixedLen(cs.height, crossAvail) : fixedLen(cs.width, crossAvail);
             const f32 crossRoom = crossAvail - cmB - cmA;
             f32 cross = row ? m.h : m.w;
+            if (cs.aspectRatio > 0.f) { // aspect-ratio: a stretched cross size sets the main size; a given main size the cross size
+                const bool mainFixed = row ? fixedLen(cs.width, mainAvail) : fixedLen(cs.height, mainAvail);
+                if (!mainFixed && !crossFixed && al == Align::Stretch && cs.grow <= 0.f && !fixedLen(cs.basis, mainAvail))
+                    main = row ? std::max(0.f, crossRoom) * cs.aspectRatio : std::max(0.f, crossRoom) / cs.aspectRatio;
+                else if (!crossFixed) {
+                    cross = row ? main / cs.aspectRatio : main * cs.aspectRatio;
+                    crossFixed = true;
+                }
+            }
             if (al == Align::Stretch && !crossFixed) cross = std::max(0.f, crossRoom);
             f32 co = cmB;
             if (al == Align::Center) co += (crossRoom - cross) * 0.5f;
@@ -1143,20 +1331,40 @@ void UiContext::arrangeChildren(u32 i) {
         break;
     }
     case LayoutKind::Grid: {
-        const u32 cols = std::max<u32>(1, s.gridColumnCount);
+        u32 cols = std::max<u32>(1, s.gridColumnCount);
         std::array<f32, kMaxGridTracks> w{}, x{};
-        f32 fixedSum = s.gap * f32(cols - 1), frSum = 0.f;
-        for (u32 k = 0; k < cols; ++k) {
-            const Length t = s.gridColumnCount ? s.gridColumns[k] : Length::fr(1.f);
-            if (t.unit == Unit::Px || t.unit == Unit::Percent) { w[k] = t.resolve(c.w, 0.f); fixedSum += w[k]; }
-            else frSum += t.unit == Unit::Fr ? t.value : 1.f;
-        }
-        const f32 frUnit = frSum > 0.f ? std::max(0.f, c.w - fixedSum) / frSum : 0.f;
-        for (u32 k = 0; k < cols; ++k) {
-            const Length t = s.gridColumnCount ? s.gridColumns[k] : Length::fr(1.f);
-            if (!(t.unit == Unit::Px || t.unit == Unit::Percent)) w[k] = frUnit * (t.unit == Unit::Fr ? t.value : 1.f);
-            x[k] = k ? x[k - 1] + w[k - 1] + s.gap : 0.f;
-        }
+        auto tracks = [&](const ComputedStyle& gs, f32 width, u32 count) {
+            f32 fixedSum = gs.gap * f32(count - 1), frSum = 0.f;
+            for (u32 k = 0; k < count; ++k) {
+                const Length t = gs.gridColumnCount ? gs.gridColumns[k] : Length::fr(1.f);
+                if (t.unit == Unit::Px || t.unit == Unit::Percent) { w[k] = t.resolve(width, 0.f); fixedSum += w[k]; }
+                else frSum += t.unit == Unit::Fr ? t.value : 1.f;
+            }
+            const f32 frUnit = frSum > 0.f ? std::max(0.f, width - fixedSum) / frSum : 0.f;
+            for (u32 k = 0; k < count; ++k) {
+                const Length t = gs.gridColumnCount ? gs.gridColumns[k] : Length::fr(1.f);
+                if (!(t.unit == Unit::Px || t.unit == Unit::Percent)) w[k] = frUnit * (t.unit == Unit::Fr ? t.value : 1.f);
+                x[k] = k ? x[k - 1] + w[k - 1] + gs.gap : 0.f;
+            }
+        };
+        const ComputedStyle* ps = n.parent != kNone ? &m_styles.style(m_nodes[n.parent].style) : nullptr;
+        if (s.subgrid && ps && ps->layout == LayoutKind::Grid && !ps->subgrid) {
+            // subgrid: the columns are the parent's tracks this node spans (found by where it was placed)
+            const Node& pn = m_nodes[n.parent];
+            const u32 pcols = std::max<u32>(1, ps->gridColumnCount);
+            const f32 pw = std::max(0.f, pn.rect.w - ps->padding.h()), px = pn.rect.x + ps->padding.l - pn.scroll.x;
+            tracks(*ps, pw, pcols);
+            u32 first = 0;
+            for (u32 k = 1; k < pcols; ++k)
+                if (std::abs(px + x[k] + s.margin.l - n.rect.x) < std::abs(px + x[first] + s.margin.l - n.rect.x)) first = k;
+            cols = std::clamp<u32>(s.gridColumnSpan, 1, pcols - first);
+            const f32 base = c0.x - px;
+            for (u32 k = 0; k < cols; ++k) {
+                const f32 lo = std::max(0.f, x[first + k] - base), hi = std::min(c.w, x[first + k] + w[first + k] - base);
+                x[k] = lo;
+                w[k] = std::max(0.f, hi - lo);
+            }
+        } else tracks(s, c.w, cols);
         // auto placement row-major; explicit column / row (1-based) honoured, spans within the column count
         u32 col = 0, rowIdx = 0;
         f32 y = 0.f, rowH = 0.f;
@@ -1171,7 +1379,7 @@ void UiContext::arrangeChildren(u32 i) {
             if (rowIdx != curRow) { y += rowH + s.gap; rowH = 0.f; curRow = rowIdx; }
             const f32 cw = x[col + span - 1] + w[col + span - 1] - x[col];
             const Size m = measure(k, {cw - cs.margin.h(), kInf});
-            const f32 h = m.h;
+            const f32 h = cs.aspectRatio > 0.f && !fixedLen(cs.height, kInf) ? std::max(0.f, cw - cs.margin.h()) / cs.aspectRatio : m.h;
             place(k, {std::round(c.x + x[col] + cs.margin.l), std::round(c.y + y + cs.margin.t), std::round(cw - cs.margin.h()), std::round(h)});
             rowH = std::max(rowH, h + cs.margin.v());
             col += span;
@@ -1238,6 +1446,9 @@ void UiContext::arrangeChildren(u32 i) {
     }
     }
     n.extent = extent;
+    if (n.flags & kFlagZKids)
+        for (u32 k = n.first; k != kNone; k = m_nodes[k].next)
+            if (m_nodes[k].flags & kFlagOutOfFlow) placeOutOfFlow(i, k);
     if (s.overflow == Overflow::Scroll) {
         const Vec2 mx{std::max(0.f, extent.w - c.w), std::max(0.f, extent.h - c.h)};
         if (n.scroll.x > mx.x || n.scroll.y > mx.y) {
@@ -1251,6 +1462,11 @@ void UiContext::arrangeChildren(u32 i) {
 
 // ---- Paint ---------------------------------------------------------------------------------------------------------
 void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
+    if (m_nodes[i].flags & kFlagFx) paintEffects(i, opacity, dl);
+    else paintBody(i, opacity, dl);
+}
+
+void UiContext::paintBody(u32 i, f32 opacity, DrawList& dl) {
     Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
     if (n.dirty & kDirtyPaint) {
@@ -1264,6 +1480,7 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     const NodeHandle h{i, n.gen};
     auto tint = [&](Color c) { return c.withAlpha(c.a * opacity); };
     const f32 rad = s.radius[0];
+    const std::size_t firstCmd = dl.size();
     if (s.shadowColor.a > 0.f && (s.shadowBlur > 0.f || s.shadowX != 0.f || s.shadowY != 0.f))
         dl.shadow({n.rect.x + s.shadowX, n.rect.y + s.shadowY, n.rect.w, n.rect.h}, tint(s.shadowColor), s.shadowBlur, rad);
     if (s.backdropBlur > 0.f) dl.backdrop(n.rect, s.backdropBlur, s.radius);
@@ -1273,8 +1490,13 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     } else if (s.background.a > 0.f || (s.borderWidth > 0.f && s.borderColor.a > 0.f)) {
         dl.roundedRect(n.rect, tint(s.background), s.radius, tint(s.borderColor), s.borderWidth);
     }
-    for (std::size_t k = dl.size() - std::min<std::size_t>(dl.size(), 3); k < dl.size(); ++k)
-        if (dl.cmds()[k].node == 0xFFFFFFFFu) dl.cmds()[k].node = i;
+    if (s.backgroundImage.kind != GradientSpecKind::None) { // background-image: over the background colour
+        GradientStop stops[kMaxGradientStops];
+        const Gradient g = gradientOf(s.backgroundImage, n.rect, stops);
+        for (u8 k = 0; k < s.backgroundImage.stopCount; ++k) stops[k].color.a *= opacity;
+        dl.gradientRect(n.rect, g, s.radius);
+    }
+    for (std::size_t k = firstCmd; k < dl.size(); ++k) dl.cmds()[k].node = i;
     const WidgetClass& wc = m_registry.get(n.cls);
     const Rect content = contentRect(h);
     if (wc.paint) {
@@ -1290,16 +1512,33 @@ void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
     if (n.first == kNone) return;
     const bool clip = s.overflow != Overflow::Visible;
     if (clip) dl.pushClip(n.rect, rad);
-    for (u32 k = n.first; k != kNone; k = m_nodes[k].next) {
-        if (clip && m_nodes[k].rect.intersect(n.rect).empty()) { // culled; still consume dirty flags
+    auto paintChild = [&](u32 k) {
+        // culled (not when it has effects: a transform moves it); still consume dirty flags
+        if (clip && !(m_nodes[k].flags & kFlagFx) && m_nodes[k].rect.intersect(n.rect).empty()) {
             if (m_nodes[k].dirty & kDirtyPaint) { m_damage = m_damage.unite(m_nodes[k].rect.intersect(n.rect)); m_nodes[k].dirty &= u8(~kDirtyPaint); }
-            continue;
+            return;
         }
-        if (m_osPopups && &dl == &m_draw && hasClass({k, m_nodes[k].gen}, "clamp")) { // own OS window
-            m_popupPending.push_back(k);
-            continue;
+        if ((m_osPopups || m_osWindows) && &dl == &m_draw) { // own OS window (popup / tool window)
+            const NodeHandle kh{k, m_nodes[k].gen};
+            if ((m_osPopups && hasClass(kh, "clamp")) || (m_osWindows && hasClass(kh, "os-window"))) {
+                m_popupPending.push_back(k);
+                return;
+            }
         }
         paintRec(k, opacity, dl);
+    };
+    if (!(n.flags & kFlagZKids)) {
+        for (u32 k = n.first; k != kNone; k = m_nodes[k].next) paintChild(k);
+    } else { // z order: negative z-index, in-flow, positioned, positive z-index; fixed nodes go last, over everything
+        const u32 base = sortChildren(i);
+        for (std::size_t z = base; z < m_zScratch.size(); ++z) {
+            const u32 k = m_zScratch[z].node;
+            // fixed nodes of the window's own list are painted last, from paintLists (a culled or scrolled-away
+            // parent does not take them along)
+            if (&dl == &m_draw && m_styles.style(m_nodes[k].style).position == PositionKind::Fixed) continue;
+            paintChild(k);
+        }
+        m_zScratch.resize(base);
     }
     if (clip) dl.popClip();
     if (s.overflow == Overflow::Scroll)
@@ -1327,15 +1566,33 @@ bool UiContext::scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const {
     return true;
 }
 
-void UiContext::paintLists(std::vector<PopupSurface>& next) {
+void UiContext::paintLists(std::vector<PopupSurface>& next, std::vector<PopupSurface>& nextWindows) {
     const f32 rs = m_renderScale;
     m_draw.clear();
     m_popupPending.clear();
     next.clear();
+    nextWindows.clear();
+    m_fixedOrder.clear();
     paintRec(m_root.index, 1.f, m_draw);
+    if (!m_outOfFlow.empty()) { // position: fixed: over everything, outside every clip, by z-index then creation order
+        for (u32 k : m_outOfFlow)
+            if (m_styles.style(m_nodes[k].style).position == PositionKind::Fixed && m_nodes[k].parent != kNone && visibleChain(m_nodes[k].parent))
+                m_fixedOrder.push_back(k);
+        std::stable_sort(m_fixedOrder.begin(), m_fixedOrder.end(), [&](u32 a, u32 b) {
+            const i32 za = m_styles.style(m_nodes[a].style).zIndex, zb = m_styles.style(m_nodes[b].style).zIndex;
+            return (za == kZAuto ? 0 : za) < (zb == kZAuto ? 0 : zb);
+        });
+        for (u32 k : m_fixedOrder) paintRec(k, 1.f, m_draw);
+    }
+    if (!m_fxPendingDamage.empty()) {
+        m_damage = m_damage.unite(m_fxPendingDamage);
+        m_fxPendingDamage = {};
+    }
     if (m_drag.active) paintDragOverlay(m_draw); // drag ghost + drop indicator, over everything
     m_draw.scale(rs);
     for (u32 k : m_popupPending) {
+        const bool tool = m_osWindows && hasClass({k, m_nodes[k].gen}, "os-window");
+        const std::vector<PopupSurface>& prev = tool ? m_windowSurfaces : m_popupSurfaces;
         PopupSurface ps;
         ps.node = {k, m_nodes[k].gen};
         ps.rect = m_nodes[k].rect;
@@ -1351,30 +1608,32 @@ void UiContext::paintLists(std::vector<PopupSurface>& next) {
             ps.draw.translate({-std::round(ps.rect.x * rs), -std::round(ps.rect.y * rs)});
         }
         ps.revision = ++m_popupRevision;
-        for (const PopupSurface& old : m_popupSurfaces)
+        for (const PopupSurface& old : prev)
             if (old.node == ps.node && old.rect.x == ps.rect.x && old.rect.y == ps.rect.y && old.rect.w == ps.rect.w &&
                 old.rect.h == ps.rect.h && old.draw.hash() == ps.draw.hash())
                 ps.revision = old.revision;
-        next.push_back(std::move(ps));
+        (tool ? nextWindows : next).push_back(std::move(ps));
     }
 }
 
 void UiContext::paintPass() {
     m_stats.repainted = false;
     if (!m_anyPaintDirty) return;
-    std::vector<PopupSurface> next;
+    std::vector<PopupSurface> next, nextWindows;
     m_painting = true;
     const std::uint32_t atlasGen = m_atlas.generation();
-    paintLists(next);
+    paintLists(next, nextWindows);
     if (m_atlas.generation() != atlasGen) {
         // the glyph atlas filled up and was reset while painting (likelier at high render scales): commands emitted
         // before the reset point at stale texels, so paint once more into the fresh atlas
         m_stats.painted = 0;
-        paintLists(next);
+        paintLists(next, nextWindows);
     }
     m_painting = false;
-    if (next.size() != m_popupSurfaces.size()) m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
+    if (next.size() != m_popupSurfaces.size() || nextWindows.size() != m_windowSurfaces.size())
+        m_damage = m_damage.unite({0.f, 0.f, m_viewport.w, m_viewport.h});
     m_popupSurfaces = std::move(next);
+    m_windowSurfaces = std::move(nextWindows);
     if (m_overlayDirty) { // the drag overlay is not a node: repaint everything it may have touched
         m_damage = {0.f, 0.f, m_viewport.w, m_viewport.h};
         m_overlayDirty = false;
@@ -1389,6 +1648,7 @@ void UiContext::setRenderScale(f32 scale) {
     if (scale == m_renderScale) return;
     m_renderScale = scale;
     markAllDirty();
+    syncMedia();
 }
 Rect UiContext::deviceDamage() const {
     const f32 rs = m_renderScale;
@@ -1405,6 +1665,12 @@ void UiContext::setOsPopups(bool on, Rect screen) {
     m_osPopups = on;
     m_popupScreen = screen;
     if (!on) m_popupSurfaces.clear();
+    markAllDirty();
+}
+void UiContext::setOsWindows(bool on) {
+    if (on == m_osWindows) return;
+    m_osWindows = on;
+    if (!on) m_windowSurfaces.clear();
     markAllDirty();
 }
 Rect UiContext::popupArea() const {
@@ -1460,6 +1726,7 @@ void UiContext::update(f32 dt) {
             if (a.t >= a.duration) { a.active = false; --m_animCount; }
         }
     }
+    if (m_keyAnimCount || m_keyAnimDirty) tickKeyAnims(dt);
     if (m_styleAnimCount || m_propAnimCount) tickStyleAnims(dt);
     if (m_gesture.longArmed) gestureTick(dt);
     if (m_anyStyleDirty || m_styles.sheetVersion() != m_seenSheetVersion) stylePass();
@@ -1467,14 +1734,22 @@ void UiContext::update(f32 dt) {
         Node& r = m_nodes[m_root.index];
         if (r.measureKey != Size{m_viewport.w, m_viewport.h}) measure(m_root.index, m_viewport);
         arrange(m_root.index, {0.f, 0.f, m_viewport.w, m_viewport.h});
+        if (!m_outOfFlow.empty()) placeAllOutOfFlow();
         m_anyLayoutDirty = false;
+        // container queries: a container whose size changed restyles its subtree, which may lay out again
+        for (int pass = 0; pass < 4 && !m_containers.empty() && settleContainers(); ++pass) {
+            stylePass();
+            arrange(m_root.index, {0.f, 0.f, m_viewport.w, m_viewport.h});
+            if (!m_outOfFlow.empty()) placeAllOutOfFlow();
+            m_anyLayoutDirty = false;
+        }
     }
     paintPass();
 }
 
 bool UiContext::needsUpdate() const {
     if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || m_touch.fling) return true;
-    if (m_styleAnimCount || m_propAnimCount || m_gesture.longArmed) return true;
+    if (m_styleAnimBusy || m_propAnimCount || m_keyAnimRunning || m_keyAnimDirty || m_gesture.longArmed) return true;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return true;
     for (const auto& t : m_timers)
         if (t.active) return true;
@@ -1483,7 +1758,7 @@ bool UiContext::needsUpdate() const {
 
 f32 UiContext::nextWakeSeconds() const {
     if (m_anyStyleDirty || m_anyLayoutDirty || m_anyPaintDirty || m_animCount || m_touch.fling) return 0.f;
-    if (m_styleAnimCount || m_propAnimCount) return 0.f;
+    if (m_styleAnimBusy || m_propAnimCount || m_keyAnimRunning || m_keyAnimDirty) return 0.f;
     if (m_styles.sheetVersion() != m_seenSheetVersion) return 0.f;
     if (m_head.load(std::memory_order_acquire) != m_tail) return 0.f;
     f32 t = std::numeric_limits<f32>::infinity();
@@ -1498,18 +1773,50 @@ NodeHandle UiContext::hitRec(u32 i, Vec2 p) const {
     const Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
     if (!s.visible || n.animOpacity <= 0.f || (n.flags & kFlagExiting)) return {};
+    if ((n.flags & kFlagFx) && !mapIntoNode(i, p)) return {}; // through the inverse transform; outside clip-path / mask
     const bool inside = n.rect.contains(p);
     if (!inside && s.overflow != Overflow::Visible) return {};
-    for (u32 k = n.last; k != kNone; k = m_nodes[k].prev) {
-        const NodeHandle h = hitRec(k, p);
+    if (!(n.flags & kFlagZKids)) {
+        for (u32 k = n.last; k != kNone; k = m_nodes[k].prev) {
+            const NodeHandle h = hitRec(k, p);
+            if (h.valid()) return h;
+        }
+    } else { // topmost first: the paint order backwards; fixed nodes are hit from hitTest
+        const u32 base = sortChildren(i);
+        NodeHandle h;
+        for (std::size_t z = m_zScratch.size(); z-- > base && !h.valid();) {
+            const u32 k = m_zScratch[z].node;
+            if (m_styles.style(m_nodes[k].style).position != PositionKind::Fixed) h = hitRec(k, p);
+        }
+        m_zScratch.resize(base);
         if (h.valid()) return h;
     }
     if (inside && s.pointerEvents) return {i, n.gen};
     return {};
 }
-NodeHandle UiContext::hitTest(Vec2 p) const { return hitRec(m_root.index, p); }
+NodeHandle UiContext::hitTest(Vec2 p) const {
+    for (std::size_t k = m_fixedOrder.size(); k-- > 0;) { // position: fixed nodes are on top of everything
+        const u32 f = m_fixedOrder[k];
+        if (f >= m_nodes.size() || !m_nodes[f].alive || !(m_nodes[f].flags & kFlagOutOfFlow) || !visibleChain(f)) continue;
+        const NodeHandle h = hitRec(f, p);
+        if (h.valid()) return h;
+    }
+    return hitRec(m_root.index, p);
+}
 
-bool UiContext::dispatch(u32 target, const Event& e) {
+bool UiContext::dispatch(u32 target, const Event& ev) {
+    // inside transformed nodes handlers get the pointer in the target's layout space (comparable with rect())
+    Event mapped;
+    const Event* ep = &ev;
+    if (m_fxCount && ev.type != EventType::KeyDown && ev.type != EventType::KeyUp && ev.type != EventType::Text) {
+        const Vec2 local = toLocal({target, m_nodes[target].gen}, ev.pos);
+        if (!(local == ev.pos)) {
+            mapped = ev;
+            mapped.pos = local;
+            ep = &mapped;
+        }
+    }
+    const Event& e = *ep;
     m_path.clear();
     for (u32 a = target; a != kNone; a = m_nodes[a].parent) m_path.push_back(a);
     const NodeHandle th{target, m_nodes[target].gen};
@@ -1544,7 +1851,15 @@ bool UiContext::dispatch(u32 target, const Event& e) {
 void UiContext::setHover(u32 i) {
     const u32 old = node(m_hover) ? m_hover.index : kNone;
     if (old == i) return;
-    for (u32 a = old; a != kNone; a = m_nodes[a].parent) setState({a, m_nodes[a].gen}, kStateHover, false);
+    // ancestors shared with the new chain keep :hover (toggling them off and on again restyled and repainted them: a
+    // pointer moving from one button to the next damaged the whole window)
+    const auto onNewChain = [&](u32 a) {
+        for (u32 b = i; b != kNone; b = m_nodes[b].parent)
+            if (b == a) return true;
+        return false;
+    };
+    for (u32 a = old; a != kNone; a = m_nodes[a].parent)
+        if (!onNewChain(a)) setState({a, m_nodes[a].gen}, kStateHover, false);
     for (u32 a = i; a != kNone; a = m_nodes[a].parent) setState({a, m_nodes[a].gen}, kStateHover, true);
     m_hover = handleOf(i);
     if (old != kNone) {
@@ -1928,6 +2243,11 @@ bool UiContext::keyDown(Key k, u8 mods) {
         default: break;
         }
     }
+    // keys nobody took go to the root's Event signal {value = key, event}: application-wide keys that must work
+    // whatever has the focus, or with no focus at all (Escape ends a drag the application runs itself)
+    const NodeHandle before = m_focus;
+    emit(m_root, SignalKind::Event, {.value = f32(u32(k)), .event = &e});
+    if (m_focus != before) return true;
     return node(m_focus) != nullptr && m_registry.get(m_nodes[m_focus.index].cls).focusable;
 }
 
@@ -2200,6 +2520,8 @@ void UiContext::releaseStyleAnim(StyleAnim& a) {
     m_styles.releaseScratch(a.slot);
     a.active = false;
     --m_styleAnimCount;
+    if (a.busy) --m_styleAnimBusy;
+    a.busy = false;
 }
 
 void UiContext::composeAnimated(StyleAnim& a) {
@@ -2243,9 +2565,28 @@ void UiContext::composeAnimated(StyleAnim& a) {
             applyProp(sb, pa.prop, pa.keys[pa.spec.spring ? pa.keyCount - 1 : j + 1].value);
             lerpStyleProp(out, sa, sb, pa.prop, k);
         }
+    bool busy = running; // time-dependent: a held keyframe animation keeps the slot without asking for frames
+    if (m_keyAnimCount) {
+        // CSS animations first, then scripted ones, each group in creation order (later ones win)
+        for (int pass = 0; pass < 2; ++pass) {
+            u64 after = 0;
+            for (;;) {
+                const KeyAnim* next = nullptr;
+                for (const KeyAnim& ka : m_keyAnims)
+                    if (ka.active && ka.node == a.node && ka.css == (pass == 0) && ka.serial > after && (!next || ka.serial < next->serial)) next = &ka;
+                if (!next) break;
+                after = next->serial;
+                if (applyKeyAnim(*next, out)) running = true;
+            }
+        }
+    }
     if (a.exiting) {
-        running = true;
+        running = busy = true;
         out.visible = true; // stays laid out and painted until the exit animation is over
+    }
+    if (busy != a.busy) {
+        a.busy = busy;
+        m_styleAnimBusy += busy ? 1u : ~0u;
     }
     const ComputedStyle old = m_styles.style(n.style);
     if (!running) {
@@ -2293,6 +2634,8 @@ void UiContext::tickStyleAnims(f32 dt) {
             m_styles.releaseScratch(a.slot);
             a.active = false;
             --m_styleAnimCount;
+            if (a.busy) --m_styleAnimBusy;
+            a.busy = false;
             continue;
         }
         a.t += dt;
@@ -2406,6 +2749,7 @@ bool UiContext::styleAnimating(NodeHandle h) const {
 void UiContext::setReducedMotion(bool on) {
     if (on == m_reducedMotion) return;
     m_reducedMotion = on;
+    syncMedia();
     if (!on) return;
     for (auto& a : m_anims) // running tweens land on their end value at the next update
         if (a.active) a.duration = 0.f;
@@ -2709,6 +3053,812 @@ bool UiContext::performA11yAction(NodeHandle h, A11yAction action, f32 value, u3
         return dispatch(i, e);
     }
     default: return false; // Expand / Collapse / Select: only classes that have them
+    }
+}
+
+// ====================================================================================================================
+// Style engine extensions: attributes, selector invalidation, @media / @container upkeep, positioned layout
+// (relative / absolute / fixed / sticky, z order), effects (transform / filter / clip-path / mask groups, transformed
+// hit testing) and keyframe animations (CSS `animation`, UiContext::animate).
+// ====================================================================================================================
+
+// ---- Attributes ----------------------------------------------------------------------------------------------------
+void UiContext::setAttribute(NodeHandle h, std::string_view name, std::string_view value) {
+    if (!node(h) || name.empty()) return;
+    const u32 key = hashId(name);
+    auto& attrs = m_cold[h.index]->attrs;
+    bool found = false;
+    for (auto& [k, v] : attrs)
+        if (k == key) {
+            if (v == value) return;
+            v.assign(value);
+            found = true;
+        }
+    if (!found) attrs.emplace_back(key, std::string(value));
+    markStyle(h.index);
+    for (u32 k = m_nodes[h.index].first; k != kNone; k = m_nodes[k].next) markStyle(k);
+    if (m_styles.features()) invalidateStyleFor(h.index, m_styles.attributeInvalidation(key));
+}
+void UiContext::removeAttribute(NodeHandle h, std::string_view name) {
+    if (!node(h)) return;
+    const u32 key = hashId(name);
+    auto& attrs = m_cold[h.index]->attrs;
+    if (std::erase_if(attrs, [&](const auto& kv) { return kv.first == key; }) == 0) return;
+    markStyle(h.index);
+    for (u32 k = m_nodes[h.index].first; k != kNone; k = m_nodes[k].next) markStyle(k);
+    if (m_styles.features()) invalidateStyleFor(h.index, m_styles.attributeInvalidation(key));
+}
+bool UiContext::attribute(NodeHandle h, std::string_view name, std::string_view& out) const {
+    if (!node(h)) return false;
+    return ContextSubject(*this, m_nodes).attribute(h.index, hashId(name), out);
+}
+
+// ---- Selector invalidation -----------------------------------------------------------------------------------------
+// Marks the descendants of `i` down to `depth` levels for restyling.
+void UiContext::markStyleSubtree(u32 i, u32 depth) {
+    if (!depth) return;
+    u32 level = 1;
+    u32 k = m_nodes[i].first;
+    while (k != kNone) {
+        markStyle(k);
+        if (level < depth && m_nodes[k].first != kNone) {
+            k = m_nodes[k].first;
+            ++level;
+            continue;
+        }
+        while (m_nodes[k].next == kNone) {
+            k = m_nodes[k].parent;
+            --level;
+            if (k == i || k == kNone) return;
+        }
+        k = m_nodes[k].next;
+    }
+}
+
+// What a class / state / attribute change of `i` reaches beyond the node and its children (the callers mark those).
+void UiContext::invalidateStyleFor(u32 i, const StyleInvalidation& inv) {
+    if (inv.descend > 1) markStyleSubtree(i, inv.descend);
+    if (inv.siblings)
+        for (u32 k = m_nodes[i].next; k != kNone; k = m_nodes[k].next) {
+            markStyle(k);
+            if (inv.descend) markStyleSubtree(k, inv.descend);
+        }
+    if (inv.has) {
+        if (m_styles.features() & kStyleHasDeep) { // :has() left of a subject: anything may depend on it
+            for (auto& n : m_nodes)
+                if (n.alive) n.dirty |= kDirtyStyle;
+            m_anyStyleDirty = true;
+            return;
+        }
+        for (u32 a = i; a != kNone; a = m_nodes[a].parent) { // the anchors: ancestors and earlier siblings on the way up
+            markStyle(a);
+            for (u32 p = m_nodes[a].prev; p != kNone; p = m_nodes[p].prev) markStyle(p);
+        }
+    }
+}
+
+// A child was added to / removed from / moved under `parent` (`child`: the new node, kNone for a removal).
+void UiContext::structureChanged(u32 parent, u32 child) {
+    const u32 feat = m_styles.features();
+    if (feat & (kStyleStructural | kStyleSibling)) {
+        markStyle(parent); // :empty
+        for (u32 k = m_nodes[parent].first; k != kNone; k = m_nodes[k].next) {
+            markStyle(k);
+            if (feat & kStyleStructDeep) markStyleSubtree(k, 255);
+        }
+    }
+    if (feat & kStyleHas) {
+        StyleInvalidation inv;
+        inv.has = true;
+        markStyle(parent);
+        invalidateStyleFor(child != kNone ? child : parent, inv);
+    }
+}
+
+// ---- @media / @container -------------------------------------------------------------------------------------------
+void UiContext::syncMedia() {
+    MediaEnv env;
+    env.width = m_viewport.w;
+    env.height = m_viewport.h;
+    env.dark = m_mediaDark;
+    env.reducedMotion = m_reducedMotion;
+    env.hover = m_mediaHover;
+    env.pointer = m_mediaPointer;
+    env.resolution = m_renderScale;
+    env.moreContrast = m_mediaContrast;
+    m_styles.setMediaEnv(env);
+}
+void UiContext::setMediaTheme(bool dark, bool moreContrast) {
+    if (m_mediaDark == dark && m_mediaContrast == moreContrast) return;
+    m_mediaDark = dark;
+    m_mediaContrast = moreContrast;
+    syncMedia();
+}
+void UiContext::setMediaPreferences(bool dark, bool hover, u8 pointer) {
+    m_mediaDark = dark;
+    m_mediaHover = hover;
+    m_mediaPointer = std::min<u8>(pointer, 2);
+    syncMedia();
+}
+
+// Restyles the subtree of every query container whose content box changed since its subtree was last styled.
+bool UiContext::settleContainers() {
+    bool changed = false;
+    for (ContainerEntry& c : m_containers) {
+        const Node& n = m_nodes[c.node];
+        if (!n.alive) continue;
+        const ComputedStyle& s = m_styles.style(n.targetStyle);
+        const Size now{std::max(0.f, n.rect.w - s.padding.h()), std::max(0.f, n.rect.h - s.padding.v())};
+        if (now == c.size) continue;
+        c.size = now;
+        if (!m_styles.usesContainerQueries()) continue;
+        markStyleSubtree(c.node, 255);
+        changed = changed || m_nodes[c.node].first != kNone;
+    }
+    return changed;
+}
+
+// Keeps the per-node flags and side lists that follow from the style on screen.
+void UiContext::syncStyleFlags(u32 i, const ComputedStyle& s) {
+    Node& n = m_nodes[i];
+    const bool fx = s.hasEffects(), oof = outOfFlow(s), cont = s.containerType != 0;
+    if (fx != ((n.flags & kFlagFx) != 0)) {
+        n.flags ^= kFlagFx;
+        if (fx) ++m_fxCount;
+        else {
+            --m_fxCount;
+            for (std::size_t k = 0; k < m_fxBounds.size(); ++k)
+                if (m_fxBounds[k].first == i) { // what the effect covered is repainted
+                    m_fxPendingDamage = m_fxCount ? Rect{0.f, 0.f, m_viewport.w, m_viewport.h} : m_fxPendingDamage.unite(m_fxBounds[k].second);
+                    m_fxBounds[k] = m_fxBounds.back();
+                    m_fxBounds.pop_back();
+                    break;
+                }
+        }
+    }
+    if (oof != ((n.flags & kFlagOutOfFlow) != 0)) {
+        n.flags ^= kFlagOutOfFlow;
+        if (oof) m_outOfFlow.push_back(i);
+        else std::erase(m_outOfFlow, i);
+    }
+    if (cont != ((n.flags & kFlagContainer) != 0)) {
+        n.flags ^= kFlagContainer;
+        if (cont) m_containers.push_back({i, {-1.f, -1.f}});
+        else {
+            std::erase_if(m_containers, [&](const ContainerEntry& c) { return c.node == i; });
+            if (m_styles.usesContainerQueries()) markStyleSubtree(i, 255);
+        }
+    }
+    if ((s.position != PositionKind::Static || s.zIndex != kZAuto) && n.parent != kNone) m_nodes[n.parent].flags |= kFlagZKids;
+}
+
+// ---- Positioned layout ---------------------------------------------------------------------------------------------
+// position: absolute / fixed child `k` of `parent`: placed against the padding box of the nearest positioned
+// ancestor (absolute; the viewport when there is none) or the viewport (fixed). Without insets on an axis it sits at
+// the start of its parent's content box.
+void UiContext::placeOutOfFlow(u32 parent, u32 k) {
+    const Node& kn = m_nodes[k];
+    const ComputedStyle& cs = m_styles.style(kn.style);
+    if (!cs.visible) return;
+    Rect cb{0.f, 0.f, m_viewport.w, m_viewport.h};
+    if (cs.position == PositionKind::Absolute)
+        for (u32 a = parent; a != kNone; a = m_nodes[a].parent)
+            if (m_styles.style(m_nodes[a].style).position != PositionKind::Static) {
+                cb = m_nodes[a].rect;
+                cb.x -= m_nodes[a].scroll.x; // scrolls with the content of its containing block
+                cb.y -= m_nodes[a].scroll.y;
+                break;
+            }
+    const Node& pn = m_nodes[parent];
+    const Rect pc = contentRect({parent, pn.gen});
+    const Size m = measure(k, {cb.w - cs.margin.h(), cb.h - cs.margin.v()});
+    const bool hasL = !cs.left.isAuto(), hasR = !cs.right.isAuto(), hasT = !cs.top.isAuto(), hasB = !cs.bottom.isAuto();
+    const f32 l = cs.left.resolve(cb.w, 0.f), r = cs.right.resolve(cb.w, 0.f), t = cs.top.resolve(cb.h, 0.f), b = cs.bottom.resolve(cb.h, 0.f);
+    f32 w = m.w, h = m.h;
+    if (hasL && hasR && !fixedLen(cs.width, cb.w)) w = std::max(0.f, cb.w - l - r - cs.margin.h());
+    if (hasT && hasB && !fixedLen(cs.height, cb.h)) h = std::max(0.f, cb.h - t - b - cs.margin.v());
+    if (cs.aspectRatio > 0.f) {
+        if (!fixedLen(cs.height, cb.h) && !(hasT && hasB)) h = w / cs.aspectRatio;
+        else if (!fixedLen(cs.width, cb.w) && !(hasL && hasR)) w = h * cs.aspectRatio;
+    }
+    const f32 x = hasL ? cb.x + l + cs.margin.l : hasR ? cb.right() - r - cs.margin.r - w : pc.x - pn.scroll.x + cs.margin.l;
+    const f32 y = hasT ? cb.y + t + cs.margin.t : hasB ? cb.bottom() - b - cs.margin.b - h : pc.y - pn.scroll.y + cs.margin.t;
+    arrange(k, {std::round(x + kn.offset.x), std::round(y + kn.offset.y), std::round(w), std::round(h)});
+}
+
+// After the tree is arranged: out-of-flow nodes whose containing block changed without their parent being arranged
+// again (a resized ancestor, a new viewport) are placed once more. A no-op for nodes already in place.
+void UiContext::placeAllOutOfFlow() {
+    for (std::size_t k = 0; k < m_outOfFlow.size(); ++k) {
+        const u32 i = m_outOfFlow[k];
+        if (m_nodes[i].alive && m_nodes[i].parent != kNone && visibleChain(m_nodes[i].parent)) placeOutOfFlow(m_nodes[i].parent, i);
+    }
+}
+
+// position: sticky child `k` laid out at `r` inside `parent` (content box `pc`, scrolled coordinates): kept inside
+// the scrollport of the nearest scrolling ancestor by its insets, for as long as the parent's content box has room.
+Rect UiContext::stickyRect(u32 parent, u32 k, Rect r, const Rect& pc) const {
+    const ComputedStyle& cs = m_styles.style(m_nodes[k].style);
+    u32 sc = parent;
+    while (sc != kNone && m_styles.style(m_nodes[sc].style).overflow != Overflow::Scroll) sc = m_nodes[sc].parent;
+    if (sc == kNone) return r;
+    const Rect port = contentRect({sc, m_nodes[sc].gen});
+    const bool own = sc == parent; // the scroller is the containing block: no limit other than its content
+    if (!cs.top.isAuto()) {
+        const f32 stuck = std::max(r.y, port.y + cs.top.resolve(port.h, 0.f));
+        r.y = own ? stuck : std::min(stuck, std::max(r.y, pc.bottom() - r.h));
+    } else if (!cs.bottom.isAuto()) {
+        const f32 stuck = std::min(r.y, port.bottom() - cs.bottom.resolve(port.h, 0.f) - r.h);
+        r.y = own ? stuck : std::max(stuck, std::min(r.y, pc.y));
+    }
+    if (!cs.left.isAuto()) {
+        const f32 stuck = std::max(r.x, port.x + cs.left.resolve(port.w, 0.f));
+        r.x = own ? stuck : std::min(stuck, std::max(r.x, pc.right() - r.w));
+    } else if (!cs.right.isAuto()) {
+        const f32 stuck = std::min(r.x, port.right() - cs.right.resolve(port.w, 0.f) - r.w);
+        r.x = own ? stuck : std::max(stuck, std::min(r.x, pc.x));
+    }
+    return r;
+}
+
+// Children of `i` in paint order on m_zScratch (from the returned index): z-index, then in-flow before positioned,
+// then tree order. The caller truncates m_zScratch back to the returned index.
+u32 UiContext::sortChildren(u32 i) const {
+    const u32 base = u32(m_zScratch.size());
+    i64 order = 0;
+    for (u32 k = m_nodes[i].first; k != kNone; k = m_nodes[k].next) {
+        const ComputedStyle& s = m_styles.style(m_nodes[k].style);
+        const i64 z = s.zIndex == kZAuto ? 0 : s.zIndex;
+        const i64 tier = z == 0 && (s.position != PositionKind::Static || s.zIndex != kZAuto) ? 1 : 0;
+        m_zScratch.push_back({z * (i64(1) << 34) + tier * (i64(1) << 32) + order++, k});
+    }
+    std::sort(m_zScratch.begin() + base, m_zScratch.end(), [](const ZEntry& a, const ZEntry& b) { return a.key < b.key; });
+    return base;
+}
+
+// ---- Effects -------------------------------------------------------------------------------------------------------
+// Maps `p` from the space outside node `i` into its own (inverse transform); false when the point misses the node's
+// clip-path or lies where its mask is transparent.
+bool UiContext::mapIntoNode(u32 i, Vec2& p) const {
+    const Node& n = m_nodes[i];
+    const ComputedStyle& s = m_styles.style(n.style);
+    if (!s.transform.identity()) {
+        Affine inv;
+        if (!styleTransform(s, n.rect).invert(inv)) return false;
+        p = inv.apply(p);
+    }
+    if (!clipShapeContains(s.clipPath, n.rect, p)) return false;
+    if (s.mask.kind != GradientSpecKind::None) {
+        const Color c = gradientColorAt(s.mask, n.rect, p);
+        const f32 m = s.maskLuminance ? (0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b) * c.a : c.a;
+        if (m < 1.f / 255.f) return false;
+    }
+    return true;
+}
+
+Vec2 UiContext::toLocal(NodeHandle h, Vec2 p) const {
+    if (!node(h) || !m_fxCount) return p;
+    u32 chain[64];
+    int depth = 0;
+    for (u32 a = h.index; a != kNone && depth < 64; a = m_nodes[a].parent)
+        if (m_nodes[a].flags & kFlagFx) chain[depth++] = a;
+    while (depth-- > 0) { // outermost first
+        const Node& n = m_nodes[chain[depth]];
+        const ComputedStyle& s = m_styles.style(n.style);
+        Affine inv;
+        if (!s.transform.identity() && styleTransform(s, n.rect).invert(inv)) p = inv.apply(p);
+    }
+    return p;
+}
+Vec2 UiContext::fromLocal(NodeHandle h, Vec2 p) const {
+    if (!node(h) || !m_fxCount) return p;
+    for (u32 a = h.index; a != kNone; a = m_nodes[a].parent) {
+        if (!(m_nodes[a].flags & kFlagFx)) continue;
+        const ComputedStyle& s = m_styles.style(m_nodes[a].style);
+        if (!s.transform.identity()) p = styleTransform(s, m_nodes[a].rect).apply(p);
+    }
+    return p;
+}
+
+namespace {
+Rect grown(const Rect& r, f32 e) { return r.empty() ? r : Rect{r.x - e, r.y - e, r.w + 2.f * e, r.h + 2.f * e}; }
+/// Bounds (list units, before DrawList::scale) of what commands [first, last) draw. `rs`: the scale device-pixel
+/// glyph commands were recorded at.
+Rect commandBounds(const DrawList& dl, std::size_t first, std::size_t last, f32 rs) {
+    Rect out;
+    const auto& cmds = dl.cmds();
+    for (std::size_t k = first; k < last && k < cmds.size(); ++k) {
+        const DrawCmd& c = cmds[k];
+        Rect r;
+        switch (c.op) {
+        case DrawOp::PopClip:
+        case DrawOp::PushClipPath:
+        case DrawOp::PushLayer:
+        case DrawOp::PushMask: continue;
+        case DrawOp::PushClip: { // what is inside, cut by the clip
+            const std::size_t end = std::min(matchingPop(dl, k), last);
+            r = commandBounds(dl, k + 1, end, rs).intersect(c.rect);
+            k = end;
+            break;
+        }
+        case DrawOp::PushTransform: // its content lives in another space: the mapped bounds stand for it
+            r = c.rect;
+            k = std::min(matchingPop(dl, k), last);
+            break;
+        case DrawOp::PushFilter:
+            r = grown(c.rect, 2.f);
+            k = std::min(matchingPop(dl, k), last);
+            break;
+        case DrawOp::Shadow: r = grown(c.rect, c.blur * 2.f); break;
+        case DrawOp::Line: {
+            const f32 hw = c.borderWidth * 0.5f + 1.f;
+            r = {std::min(c.rect.x, c.rect.w) - hw, std::min(c.rect.y, c.rect.h) - hw, std::abs(c.rect.w - c.rect.x) + 2.f * hw,
+                 std::abs(c.rect.h - c.rect.y) + 2.f * hw};
+            break;
+        }
+        case DrawOp::Glyph:
+            r = c.devicePx ? Rect{c.rect.x / rs, c.rect.y / rs, f32(c.tw) / rs, f32(c.th) / rs} : Rect{c.rect.x, c.rect.y, f32(c.tw), f32(c.th)};
+            break;
+        default: r = c.rect; break;
+        }
+        out = out.unite(r);
+    }
+    return out;
+}
+/// How far a filter list spreads its content, in list units at any render scale.
+f32 styleFilterReach(const FilterList& f) {
+    f32 reach = 0.f;
+    for (u8 k = 0; k < f.count; ++k) {
+        if (f.fn[k].kind == FilterKind::Blur) reach += 3.f * f.fn[k].amount + 3.f;
+        else if (f.fn[k].kind == FilterKind::DropShadow)
+            reach += 3.f * f.fn[k].amount + 4.f + std::max(std::abs(f.shadowOffset.x), std::abs(f.shadowOffset.y));
+    }
+    return reach;
+}
+} // namespace
+
+// Paints a node whose style has effects. Its commands (and its subtree's) are recorded inside groups, outermost
+// first: transform, mask, clip-path, filter - so the result is transform(mask(clip(filter(content)))), the CSS order.
+void UiContext::paintEffects(u32 i, f32 opacity, DrawList& dl) {
+    Node& n = m_nodes[i];
+    const ComputedStyle s = m_styles.style(n.style);
+    const bool wasDirty = (n.dirty & kDirtyPaint) != 0;
+    const Rect outerDamage = m_damage;
+    m_damage = {};
+    const std::size_t mark = dl.size();
+    constexpr std::size_t kNoCmd = ~std::size_t(0);
+    std::size_t xfCmd = kNoCmd, maskCmd = kNoCmd, clipCmd = kNoCmd, filterCmd = kNoCmd;
+    if (!s.transform.identity()) {
+        xfCmd = dl.size();
+        dl.pushTransform(styleTransform(s, n.rect), n.rect);
+    }
+    if (s.mask.kind != GradientSpecKind::None) {
+        GradientStop stops[kMaxGradientStops];
+        maskCmd = dl.size();
+        dl.pushMask(gradientOf(s.mask, n.rect, stops), n.rect, s.maskLuminance ? MaskMode::Luminance : MaskMode::Alpha);
+    }
+    if (s.clipPath.kind != ClipShapeKind::None) {
+        thread_local Path path;
+        path.clear();
+        clipShapePath(s.clipPath, n.rect, path);
+        clipCmd = dl.size();
+        dl.pushClipPath(path, s.clipPath.evenOdd ? FillRule::EvenOdd : FillRule::NonZero);
+    }
+    if (s.filter.count) {
+        FilterOp ops[kMaxFilters];
+        for (u8 k = 0; k < s.filter.count; ++k) {
+            ops[k] = {s.filter.fn[k].kind, s.filter.fn[k].amount, {}, {}};
+            if (ops[k].kind == FilterKind::DropShadow) {
+                ops[k].offset = s.filter.shadowOffset;
+                ops[k].color = s.filter.shadowColor.withAlpha(s.filter.shadowColor.a * opacity);
+            }
+        }
+        filterCmd = dl.size();
+        dl.pushFilter(std::span<const FilterOp>(ops, s.filter.count), n.rect);
+    }
+    const std::size_t groups = dl.size() - mark;
+    const std::size_t content = dl.size();
+    ++m_fxDepth;
+    paintBody(i, opacity, dl);
+    --m_fxDepth;
+    Rect bounds = commandBounds(dl, content, dl.size(), m_renderScale);
+    const Rect plain = bounds; // where this content is without the effects
+    Rect visual;
+    if (bounds.empty()) {
+        dl.cmds().resize(mark); // nothing drawn: no groups either
+    } else {
+        for (std::size_t k = 0; k < groups; ++k) dl.popClip();
+        if (filterCmd != kNoCmd) {
+            dl.setGroupBounds(filterCmd, bounds);
+            bounds = grown(bounds, styleFilterReach(s.filter));
+        }
+        if (clipCmd != kNoCmd) bounds = bounds.intersect(dl.cmds()[clipCmd].rect);
+        if (maskCmd != kNoCmd) dl.setGroupBounds(maskCmd, bounds);
+        if (xfCmd != kNoCmd) {
+            dl.setGroupBounds(xfCmd, bounds);
+            visual = dl.cmds()[xfCmd].rect;
+        } else visual = bounds;
+        for (std::size_t k = mark; k < content; ++k) dl.cmds()[k].node = i;
+    }
+    // damage: the effect moves / spreads pixels, so any change below repaints everything the node covers, before and
+    // now. Inside another effect group this lands in that group's own damage, which makes it do the same.
+    const bool changed = wasDirty || !m_damage.empty();
+    m_damage = outerDamage;
+    Rect* last = nullptr;
+    for (auto& e : m_fxBounds)
+        if (e.first == i) last = &e.second;
+    if (!last) { // the effect is new: until now the node was painted in place
+        m_fxBounds.emplace_back(i, plain);
+        last = &m_fxBounds.back().second;
+    }
+    if (changed || !(*last == visual)) m_damage = m_damage.unite(*last).unite(visual);
+    *last = visual;
+}
+
+// ---- Keyframe animations -------------------------------------------------------------------------------------------
+namespace {
+double animEnd(const AnimationTiming& t) { return double(t.delay) + double(t.duration) * double(t.iterations) + double(t.endDelay); }
+/// Progress within the iteration at `time` (0..1 after direction and the iteration easing); false: no effect now.
+bool animProgress(const AnimationTiming& t, double time, f32& out) {
+    const double local = time - double(t.delay);
+    const double active = double(t.duration) * double(t.iterations);
+    double overall;
+    if (local < 0.0) {
+        if (t.fill != AnimFill::Backwards && t.fill != AnimFill::Both) return false;
+        overall = 0.0;
+    } else if (local >= active) {
+        if (t.fill != AnimFill::Forwards && t.fill != AnimFill::Both) return false;
+        overall = double(t.iterations);
+    } else {
+        overall = t.duration > 0.f ? local / double(t.duration) : double(t.iterations);
+    }
+    if (!std::isfinite(overall)) overall = 0.0;
+    double iter = std::floor(overall), frac = overall - iter;
+    if (frac == 0.0 && overall > 0.0 && local >= active) { // the end of the last iteration, not the start of the next
+        iter -= 1.0;
+        frac = 1.0;
+    }
+    const bool odd = (i64(iter) & 1) != 0;
+    const bool backwards = t.direction == AnimDirection::Reverse || (t.direction == AnimDirection::Alternate && odd) ||
+                           (t.direction == AnimDirection::AlternateReverse && !odd);
+    out = applyEasing(t.easing, f32(backwards ? 1.0 - frac : frac));
+    return true;
+}
+} // namespace
+
+UiContext::KeyAnim* UiContext::keyAnim(AnimationHandle a) {
+    if (a.index >= m_keyAnims.size()) return nullptr;
+    KeyAnim& ka = m_keyAnims[a.index];
+    return ka.active && ka.gen == a.generation ? &ka : nullptr;
+}
+const UiContext::KeyAnim* UiContext::keyAnim(AnimationHandle a) const {
+    if (a.index >= m_keyAnims.size()) return nullptr;
+    const KeyAnim& ka = m_keyAnims[a.index];
+    return ka.active && ka.gen == a.generation ? &ka : nullptr;
+}
+
+UiContext::KeyAnim& UiContext::newKeyAnim(NodeHandle n) {
+    KeyAnim* slot = nullptr;
+    for (auto& ka : m_keyAnims)
+        if (!ka.active) { slot = &ka; break; }
+    if (!slot) slot = &m_keyAnims.emplace_back();
+    slot->keys.clear(); // keeps its capacity
+    slot->node = n;
+    slot->active = true;
+    slot->css = false;
+    slot->name = 0;
+    slot->timing = {};
+    slot->keyEase = Easing::Linear;
+    slot->time = 0.0;
+    slot->state = AnimPlayState::Running;
+    slot->serial = ++m_keyAnimSerial;
+    ++m_keyAnimCount;
+    m_keyAnimDirty = true;
+    return *slot;
+}
+void UiContext::endKeyAnim(KeyAnim& ka) {
+    if (!ka.active) return;
+    ka.active = false;
+    ka.state = AnimPlayState::Idle;
+    ++ka.gen;
+    --m_keyAnimCount;
+    m_keyAnimDirty = true;
+}
+
+// The keyframes of a CSS animation, from the @keyframes rule of its name in the current sheets.
+void UiContext::buildCssKeys(KeyAnim& ka) {
+    ka.keys.clear();
+    ka.sheetVersion = m_styles.sheetVersion();
+    const KeyframesRule* rule = m_styles.findKeyframes(ka.name);
+    if (!rule) return;
+    for (const KeyframeBlock& f : rule->frames)
+        for (const Declaration& d : f.decls) {
+            AnimKey k;
+            if (!m_styles.resolveDeclaration(d, k.value)) continue;
+            k.prop = d.prop;
+            k.offset = f.offset;
+            k.hasEase = f.hasEase;
+            k.ease = f.ease;
+            ka.keys.push_back(k);
+        }
+    std::stable_sort(ka.keys.begin(), ka.keys.end(), [](const AnimKey& a, const AnimKey& b) {
+        return a.prop != b.prop ? u8(a.prop) < u8(b.prop) : a.offset < b.offset;
+    });
+}
+
+// Applies the animation's current values on top of `out`; false when it has no effect at its current time.
+bool UiContext::applyKeyAnim(const KeyAnim& ka, ComputedStyle& out) const {
+    f32 p;
+    if (ka.keys.empty() || !animProgress(ka.timing, ka.time, p)) return false;
+    const std::size_t count = ka.keys.size();
+    for (std::size_t g = 0; g < count;) {
+        std::size_t e = g;
+        while (e < count && ka.keys[e].prop == ka.keys[g].prop) ++e;
+        const Prop prop = ka.keys[g].prop;
+        // the keyframes around p; a missing first / last one is the underlying value
+        const AnimKey* k0 = nullptr;
+        const AnimKey* k1 = nullptr;
+        for (std::size_t k = g; k < e; ++k) {
+            if (ka.keys[k].offset <= p) k0 = &ka.keys[k];
+            else { k1 = &ka.keys[k]; break; }
+        }
+        const f32 o0 = k0 ? k0->offset : 0.f, o1 = k1 ? k1->offset : 1.f;
+        f32 t = o1 > o0 ? (p - o0) / (o1 - o0) : 1.f;
+        t = applyEasing(k0 && k0->hasEase ? k0->ease : ka.keyEase, std::clamp(t, 0.f, 1.f));
+        if (k0 && (!k1 && k0->offset >= 1.f)) t = 0.f; // at the last keyframe: its value
+        if (propInfo(prop).animatable) {
+            ComputedStyle sa = out, sb = out;
+            if (k0) applyProp(sa, prop, k0->value);
+            if (k1) applyProp(sb, prop, k1->value);
+            lerpStyleProp(out, sa, sb, prop, t);
+        } else if (const AnimKey* pick = t < 0.5f ? k0 : k1) { // discrete: switches half-way
+            applyProp(out, prop, pick->value);
+        }
+        g = e;
+    }
+    return true;
+}
+
+// The CSS `animation` list of node `i` changed (or its visibility): start what is new, drop what is gone, retime
+// what stayed.
+void UiContext::syncCssAnimations(u32 i, const ComputedStyle& after) {
+    const NodeHandle h{i, m_nodes[i].gen};
+    const u8 count = after.visible ? after.animationCount : 0;
+    for (auto& ka : m_keyAnims) {
+        if (!ka.active || !ka.css || ka.node != h) continue;
+        bool listed = false;
+        for (u8 k = 0; k < count; ++k) listed = listed || after.animations[k].name == ka.name;
+        if (!listed) endKeyAnim(ka);
+    }
+    bool effect = false;
+    for (u8 k = 0; k < count; ++k) {
+        const AnimationSpec& sp = after.animations[k];
+        if (!sp.name) continue;
+        KeyAnim* ka = nullptr;
+        for (auto& x : m_keyAnims)
+            if (x.active && x.css && x.node == h && x.name == sp.name) ka = &x;
+        if (!ka) {
+            ka = &newKeyAnim(h);
+            ka->css = true;
+            ka->name = sp.name;
+            buildCssKeys(*ka);
+        }
+        ka->timing.duration = sp.duration;
+        ka->timing.delay = sp.delay;
+        ka->timing.iterations = sp.iterations;
+        ka->timing.direction = sp.direction;
+        ka->timing.fill = sp.fill;
+        ka->timing.easing = Easing::Linear;
+        ka->keyEase = sp.ease;
+        if (sp.paused) ka->state = AnimPlayState::Paused;
+        else if (ka->state == AnimPlayState::Paused) ka->state = AnimPlayState::Running;
+        f32 p;
+        effect = effect || animProgress(ka->timing, ka->time, p);
+    }
+    if (effect) ensureStyleAnim(i); // composed by the caller (styleRec), so the first frame already shows it
+    m_keyAnimDirty = true;
+}
+
+void UiContext::tickKeyAnims(f32 dt) {
+    m_keyAnimDirty = false;
+    u32 running = 0;
+    for (std::size_t k = 0; k < m_keyAnims.size(); ++k) {
+        KeyAnim* ka = &m_keyAnims[k];
+        if (!ka->active) continue;
+        if (!node(ka->node)) { endKeyAnim(*ka); continue; }
+        if (ka->css && ka->sheetVersion != m_styles.sheetVersion()) buildCssKeys(*ka);
+        const double end = animEnd(ka->timing);
+        const f32 rate = ka->timing.playbackRate;
+        bool finished = false;
+        if (ka->state == AnimPlayState::Running) {
+            const bool endless = !std::isfinite(end) && rate >= 0.f;
+            if (m_reducedMotion) { // no motion: straight to the end; an endless animation stays where it is
+                if (!endless) ka->time = rate >= 0.f ? end : 0.0;
+            } else ka->time += double(dt) * double(rate);
+            if (!endless && (rate >= 0.f ? ka->time >= end : ka->time <= 0.0)) {
+                ka->time = rate >= 0.f ? end : 0.0;
+                ka->state = AnimPlayState::Finished;
+                finished = true;
+            } else if (!(m_reducedMotion && endless) && rate != 0.f) ++running;
+        }
+        const NodeHandle nh = ka->node;
+        const u32 gen = ka->gen;
+        f32 p;
+        if (m_nodes[nh.index].style == m_nodes[nh.index].targetStyle && animProgress(ka->timing, ka->time, p))
+            ensureStyleAnim(nh.index); // not animated yet: composed by tickStyleAnims
+        if (finished) {
+            emit(nh, SignalKind::AnimationFinished, {.value = f32(k), .flag = true, .value2 = f32(gen)});
+            ka = &m_keyAnims[k]; // a slot may have started animations
+            // a scripted animation that leaves nothing behind is done; CSS ones live as long as the style lists them
+            if (ka->active && ka->gen == gen && ka->state == AnimPlayState::Finished && !ka->css &&
+                !animProgress(ka->timing, ka->time, p))
+                endKeyAnim(*ka);
+        }
+    }
+    m_keyAnimRunning = running;
+}
+
+AnimationHandle UiContext::animate(NodeHandle n, std::span<const Keyframe> keys, const AnimationTiming& timing) {
+    if (!node(n) || keys.empty()) return {};
+    KeyAnim& ka = newKeyAnim(n);
+    ka.timing = timing;
+    ka.timing.duration = std::max(0.f, timing.duration);
+    ka.timing.iterations = std::max(0.f, timing.iterations);
+    for (const Keyframe& k : keys) {
+        if (u8(k.prop) >= kPropCount) continue;
+        AnimKey a;
+        a.prop = k.prop;
+        a.offset = k.offset < 0.f ? -1.f : std::min(k.offset, 1.f);
+        a.ease = k.ease;
+        a.hasEase = true;
+        a.value = k.value;
+        ka.keys.push_back(a);
+    }
+    auto byProp = [](const AnimKey& a, const AnimKey& b) { return u8(a.prop) < u8(b.prop); };
+    std::stable_sort(ka.keys.begin(), ka.keys.end(), byProp);
+    for (std::size_t g = 0; g < ka.keys.size();) { // offsets left out: spread between the neighbours, per property
+        std::size_t e = g;
+        while (e < ka.keys.size() && ka.keys[e].prop == ka.keys[g].prop) ++e;
+        if (ka.keys[g].offset < 0.f) ka.keys[g].offset = e - g == 1 ? 1.f : 0.f; // a single keyframe is the end value
+        if (ka.keys[e - 1].offset < 0.f) ka.keys[e - 1].offset = 1.f;
+        for (std::size_t k = g + 1; k < e; ++k) {
+            if (ka.keys[k].offset >= 0.f) { ka.keys[k].offset = std::max(ka.keys[k].offset, ka.keys[k - 1].offset); continue; }
+            std::size_t j = k;
+            while (ka.keys[j].offset < 0.f) ++j;
+            const f32 a = ka.keys[k - 1].offset, b = std::max(ka.keys[j].offset, a);
+            for (std::size_t x = k; x < j; ++x) ka.keys[x].offset = a + (b - a) * f32(x - k + 1) / f32(j - k + 1);
+        }
+        g = e;
+    }
+    const AnimationHandle handle{u32(&ka - m_keyAnims.data()), ka.gen};
+    f32 p;
+    if (animProgress(ka.timing, ka.time, p)) composeAnimated(ensureStyleAnim(n.index));
+    return handle;
+}
+
+AnimationHandle UiContext::animateCss(NodeHandle n, std::string_view keyframes, const AnimationTiming& timing) {
+    KeyframesRule rule;
+    if (!node(n) || !parseKeyframes(keyframes, rule)) return {};
+    std::vector<Keyframe> keys;
+    for (const KeyframeBlock& f : rule.frames)
+        for (const Declaration& d : f.decls) {
+            Keyframe k;
+            if (!m_styles.resolveDeclaration(d, k.value)) continue;
+            k.prop = d.prop;
+            k.offset = f.offset;
+            k.ease = f.hasEase ? f.ease : Easing::Linear;
+            keys.push_back(k);
+        }
+    return animate(n, keys, timing);
+}
+
+namespace {
+/// After a change made through the API: the node's style follows at once (not only at the next update).
+template <class Recompose>
+void afterAnimChange(bool& dirty, Recompose&& recompose) {
+    dirty = true;
+    recompose();
+}
+} // namespace
+
+void UiContext::playAnimation(AnimationHandle a) {
+    KeyAnim* ka = keyAnim(a);
+    if (!ka) return;
+    if (ka->state == AnimPlayState::Finished) ka->time = ka->timing.playbackRate >= 0.f ? 0.0 : animEnd(ka->timing);
+    if (!std::isfinite(ka->time)) ka->time = 0.0;
+    ka->state = AnimPlayState::Running;
+    afterAnimChange(m_keyAnimDirty, [&] { if (node(ka->node)) composeAnimated(ensureStyleAnim(ka->node.index)); });
+}
+void UiContext::pauseAnimation(AnimationHandle a) {
+    KeyAnim* ka = keyAnim(a);
+    if (!ka || ka->state == AnimPlayState::Paused) return;
+    ka->state = AnimPlayState::Paused;
+    m_keyAnimDirty = true;
+}
+void UiContext::reverseAnimation(AnimationHandle a) {
+    KeyAnim* ka = keyAnim(a);
+    if (!ka) return;
+    ka->timing.playbackRate = -ka->timing.playbackRate;
+    const double end = animEnd(ka->timing);
+    if (ka->state == AnimPlayState::Finished || !std::isfinite(ka->time)) ka->time = ka->timing.playbackRate >= 0.f ? 0.0 : (std::isfinite(end) ? end : 0.0);
+    ka->state = AnimPlayState::Running;
+    afterAnimChange(m_keyAnimDirty, [&] { if (node(ka->node)) composeAnimated(ensureStyleAnim(ka->node.index)); });
+}
+void UiContext::finishAnimation(AnimationHandle a) {
+    KeyAnim* ka = keyAnim(a);
+    if (!ka) return;
+    const double end = animEnd(ka->timing);
+    if (ka->timing.playbackRate >= 0.f && !std::isfinite(end)) return;
+    ka->time = ka->timing.playbackRate >= 0.f ? end : 0.0;
+    ka->state = AnimPlayState::Running; // the next update reports it as finished (AnimationFinished)
+    afterAnimChange(m_keyAnimDirty, [&] { if (node(ka->node)) composeAnimated(ensureStyleAnim(ka->node.index)); });
+}
+void UiContext::cancelAnimation(AnimationHandle a) {
+    KeyAnim* ka = keyAnim(a);
+    if (!ka) return;
+    const NodeHandle n = ka->node;
+    endKeyAnim(*ka);
+    if (node(n))
+        if (StyleAnim* sa = styleAnimOf(n)) composeAnimated(*sa);
+}
+void UiContext::setAnimationTime(AnimationHandle a, f32 seconds) {
+    KeyAnim* ka = keyAnim(a);
+    if (!ka || !std::isfinite(seconds)) return;
+    ka->time = double(seconds);
+    if (ka->state == AnimPlayState::Finished) ka->state = AnimPlayState::Running;
+    afterAnimChange(m_keyAnimDirty, [&] { if (node(ka->node)) composeAnimated(ensureStyleAnim(ka->node.index)); });
+}
+f32 UiContext::animationTime(AnimationHandle a) const {
+    const KeyAnim* ka = keyAnim(a);
+    return ka ? f32(ka->time) : 0.f;
+}
+void UiContext::setPlaybackRate(AnimationHandle a, f32 rate) {
+    KeyAnim* ka = keyAnim(a);
+    if (!ka || !std::isfinite(rate)) return;
+    ka->timing.playbackRate = rate;
+    if (ka->state == AnimPlayState::Finished) ka->state = AnimPlayState::Running;
+    m_keyAnimDirty = true;
+}
+f32 UiContext::playbackRate(AnimationHandle a) const {
+    const KeyAnim* ka = keyAnim(a);
+    return ka ? ka->timing.playbackRate : 0.f;
+}
+AnimPlayState UiContext::animationState(AnimationHandle a) const {
+    const KeyAnim* ka = keyAnim(a);
+    return ka ? ka->state : AnimPlayState::Idle;
+}
+u32 UiContext::animations(NodeHandle n, std::span<AnimationHandle> out) const {
+    u32 count = 0;
+    if (!node(n)) return 0;
+    u64 after = 0;
+    for (;;) { // oldest first
+        const KeyAnim* next = nullptr;
+        for (const KeyAnim& ka : m_keyAnims)
+            if (ka.active && ka.node == n && ka.serial > after && (!next || ka.serial < next->serial)) next = &ka;
+        if (!next) break;
+        after = next->serial;
+        if (count < out.size()) out[count] = {u32(next - m_keyAnims.data()), next->gen};
+        ++count;
+    }
+    return count;
+}
+void UiContext::commitAnimationStyles(AnimationHandle a) {
+    KeyAnim* ka = keyAnim(a);
+    if (!ka || !node(ka->node)) return;
+    const NodeHandle n = ka->node;
+    ComputedStyle now = m_styles.style(m_nodes[n.index].targetStyle);
+    if (StyleAnim* sa = styleAnimOf(n)) {
+        composeAnimated(*sa);
+        ka = keyAnim(a);
+        if (!ka) return;
+    }
+    now = m_styles.style(m_nodes[n.index].style);
+    Prop last = Prop::Count;
+    for (std::size_t k = 0; k < ka->keys.size(); ++k) {
+        const Prop p = ka->keys[k].prop;
+        if (p == last) continue;
+        last = p;
+        set(n, p, readProp(now, p));
     }
 }
 

@@ -29,7 +29,10 @@ fuse_no_fp_contract(fuse_svo PRIVATE)
 # Single-source "svo_ray_cast" kernel (docs/compute-kernels.md): CUDA trampoline when the toolkit is found.
 if(FUSE_CUDA_BACKEND)
     target_sources(fuse_svo PRIVATE ${_fuse_svo_dir}/kernels/svo_ray_cast.cu)
-    set_target_properties(fuse_svo PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+    # Whole-TU device compilation (no -rdc): the kernel calls nothing outside its TU, and with relocatable
+    # device code the final register allocation at device link gave the walk 80 registers + 56 B of local
+    # memory instead of 72 + none: 1M-ray benchmark ~9.2 ms with -rdc, ~7.0 ms without (RTX 3090, 2026-11-05).
+    set_target_properties(fuse_svo PROPERTIES CUDA_SEPARABLE_COMPILATION OFF)
     # No fma contraction in the DDA: the device walk takes the same decisions as the host build.
     set_source_files_properties(${_fuse_svo_dir}/kernels/svo_ray_cast.cu PROPERTIES COMPILE_OPTIONS "-fmad=false")
 endif()

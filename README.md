@@ -2,7 +2,7 @@
 
 **Fast Unified Simulation Engine**
 
-One program for 2D, 3D, and hybrid worlds. ISO C++ host, handle-based ownership, a fiber job spine, Vulkan and optional CUDA, and a Qt 6 editor.
+One program for 2D, 3D, and hybrid worlds. ISO C++ host, handle-based ownership, a fiber job spine, Vulkan and optional CUDA, and an editor built with FUSE UI.
 
 *Exact where it matters. Parallel everywhere else.*
 
@@ -37,7 +37,7 @@ FUSE is a single runtime and a single editor:
 | Target | Role |
 |--------|------|
 | `fuse_runtime` | Game / player process — 2D, 3D, or both in one frame |
-| `fuse_editor` | Qt 6 desktop shell — project hub, viewports, inspectors |
+| `fuse_editor_fuse` | Desktop editor in FUSE UI — project hub, viewports, inspectors |
 | `fuse_tools` | CLI cookers and importers |
 
 Gameplay, AI, FX, cinematics, mechanics, and adventure systems are **engine modules**, not bolt-on kits. 2D and 3D share object identity, assets, input, audio, and networking.
@@ -48,7 +48,7 @@ Current public APIs live under `fuse::` in [`Source/FUSE/`](Source/FUSE/).
 
 ## Status
 
-FUSE is under active construction. The product CMake graph, `fuse_core`, dimension worlds, hybrid compositor, feature modules, project format, and headless demos are in tree. The Vulkan renderer, CUDA compute path, and Qt editor are scaffolding toward Track B.
+FUSE is under active construction. The product CMake graph, `fuse_core`, dimension worlds, hybrid compositor, feature modules, project format, and headless demos are in tree. The Vulkan renderer, CUDA compute path, and editor are scaffolding toward Track B.
 
 See [`docs/roadmap.md`](docs/roadmap.md) for the phase map.
 

@@ -14,7 +14,7 @@ class MaterialSystem;
 
 namespace fuse::editor {
 
-/// Authoring-side material fields mirrored for Qt-free panel logic (B6.7).
+/// Authoring-side material fields mirrored for toolkit-free panel logic (B6.7).
 struct MaterialEditState {
     f32 baseColorR = 1.f;
     f32 baseColorG = 1.f;

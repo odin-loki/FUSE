@@ -25,7 +25,7 @@ void main(uint3 tid: SV_DispatchThreadID) {
     float g = lit.y;
     float b = lit.z;
     if ((F.flags & kSxFlagAo) != 0u) {
-        const float ao = sxFloats(F.ao)[i];
+        const float ao = sxFloats(F.aoFinal)[i]; // GTAO, blurred or temporally denoised (aoFinal)
         float vr = ao;
         float vg = ao;
         float vb = ao;

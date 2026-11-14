@@ -24,6 +24,7 @@ add_dependencies(fuse_relight_bridge_client_tests fuse_relight_bridge_schema_gen
 set_target_properties(fuse_relight_bridge_client_tests PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 if(TARGET fuse_relight_bridge_client_obj)
     target_link_libraries(fuse_relight_bridge_client_tests PRIVATE fuse_relight_bridge_client_obj dinput8 dxguid)
+    target_compile_definitions(fuse_relight_bridge_client_tests PRIVATE FUSE_RELIGHT_BRIDGE_CLIENT_OBJ=1)
     target_link_options(fuse_relight_bridge_client_tests PRIVATE -static -static-libgcc -static-libstdc++)
 endif()
 set(_rl_bc_labels "relight;bridge;gate")

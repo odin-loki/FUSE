@@ -24,6 +24,15 @@ struct Json {
     std::vector<Json> arr;
     std::vector<std::pair<std::string, Json>> obj;
 
+    // Defined below, once Json is complete: Clang (libstdc++ 14) instantiates the constexpr vector destructor of an
+    // implicit special member while Json is still incomplete, and std::pair<std::string, Json> needs a complete Json.
+    Json();
+    Json(const Json&);
+    Json(Json&&) noexcept;
+    Json& operator=(const Json&);
+    Json& operator=(Json&&) noexcept;
+    ~Json();
+
     const Json* find(std::string_view key) const {
         for (const auto& kv : obj) {
             if (kv.first == key) {
@@ -33,6 +42,13 @@ struct Json {
         return nullptr;
     }
 };
+
+Json::Json() = default;
+Json::Json(const Json&) = default;
+Json::Json(Json&&) noexcept = default;
+Json& Json::operator=(const Json&) = default;
+Json& Json::operator=(Json&&) noexcept = default;
+Json::~Json() = default;
 
 const char* typeName(Json::Type t) {
     switch (t) {

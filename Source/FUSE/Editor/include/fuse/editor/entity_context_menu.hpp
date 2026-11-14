@@ -31,7 +31,7 @@ struct ContextMenuItem {
     bool separatorBefore = false;
 };
 
-/// Where the viewport sits inside the top-level editor window, as the Qt shell reports it.
+/// Where the viewport sits inside the top-level editor window, as the editor shell reports it.
 /// Window coordinates are logical (device-independent) pixels, origin top-left, +y down (Qt
 /// convention). The viewport's own pixel space (`ViewportPanel::screenRay`, `openInViewport`
 /// px/py) is physical framebuffer pixels = logical * devicePixelRatio.

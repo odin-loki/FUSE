@@ -13,6 +13,15 @@
 //                and an open context menu with a separator and a hovered item
 //   hud        — minimap (circle with a map image and rotating map, square north-up; blips incl. clamped ones) and
 //                ammo counters (pips, bar fallback, low ammo, reload)        [needs fuse_ui_game]
+//   controls   — the Tier A controls in their states (checked, disabled, keyboard-focused with the focus ring), tab
+//                bar, list, scroll bar, dial, progress bar, table rows with stripes     [MINIMAL goldens only]
+//   editors    — code editor (syntax colours, selection, gutter), timeline, node graph, curve editor, calendar,
+//                date-time edit: the widgets whose paint code reads theme tokens      [MINIMAL goldens only]
+// Themes: `--theme=light` / `--theme=contrast` renders the same scenes (all but hud) with the light / high-contrast token sets
+// (ctest fuse_ui_theme_golden_<light|contrast>_<scene>, goldens widgets_<scene>_<light|contrast>.png, MINIMAL text
+// profile only). The dark goldens predate keyboard focus rings; their FULL-profile twins cannot be re-rendered without
+// the fetched FULL text stack, so the dark dialogs / wizard cells are captured with the focus parked (their pixels
+// are the ones from before the rings existed) and the themed goldens show the rings.
 // The scenes are deterministic: fixed viewports, no clocks, timers / animations advanced by explicit update(dt).
 #include "test_util.hpp"
 
@@ -40,6 +49,13 @@ namespace {
 u8 ch(u32 p, int c) { return u8((p >> (8 * c)) & 0xFF); }
 Vec2 ctr(Rect r) { return {r.x + r.w * 0.5f, r.y + r.h * 0.5f}; }
 
+w::ThemeVariant gTheme = w::ThemeVariant::Dark;
+/// w::install plus the theme under test.
+void installThemed(UiContext& ui) {
+    w::install(ui);
+    if (gTheme != w::ThemeVariant::Dark) UI_CHECK(w::setTheme(ui, gTheme).has_value());
+}
+
 /// Lets style transitions (focus ring, popup fade-in, check marks) run out: half a second in 60 Hz steps.
 void settle(UiContext& ui) {
     for (int i = 0; i < 30; ++i) ui.update(1.f / 60.f);
@@ -55,7 +71,7 @@ void blit(Image& sheet, const Image& cell, int x, int y) {
 // ---- containers ----------------------------------------------------------------------------------------------------
 void sceneContainers(Image& img) {
     UiContext ui({.viewport = {660, 470}, .font = &font()});
-    w::install(ui);
+    installThemed(ui);
     ui.setCss(ui.root(), "padding", "12px");
     ui.setCss(ui.root(), "gap", "10px");
     const NodeHandle tb = w::toolBar(ui, ui.root(), "tb");
@@ -124,7 +140,7 @@ void sceneContainers(Image& img) {
 // ---- text ----------------------------------------------------------------------------------------------------------
 void sceneText(Image& img) {
     UiContext ui({.viewport = {660, 400}, .font = &font()});
-    w::install(ui);
+    installThemed(ui);
     ui.setCss(ui.root(), "padding", "12px");
     ui.setCss(ui.root(), "gap", "10px");
     const NodeHandle row = w::panel(ui, ui.root(), "row");
@@ -159,12 +175,13 @@ struct DialogCell {
     int cw, chh;
     UiContext ui;
     DialogCell(int cellW, int cellH) : cw(cellW), chh(cellH), ui({.viewport = {f32(cellW), f32(cellH)}, .font = &font()}) {
-        w::install(ui);
+        installThemed(ui);
         ui.setCss(ui.root(), "padding", "10px");
         w::button(ui, ui.root(), "Behind the scrim"); // modal dialogs dim what is behind them
         ui.update();
     }
     void into(Image& sheet, int col, int rowIdx) {
+        if (gTheme == w::ThemeVariant::Dark) ui.setFocus({}); // see the header: the dark goldens predate focus rings
         settle(ui);
         Image cell;
         render(ui, cell);
@@ -224,7 +241,7 @@ void sceneWizard(Image& img) {
 // ---- main window: docks, flame graph -------------------------------------------------------------------------------
 void sceneMainWindow(Image& img) {
     UiContext ui({.viewport = {900, 560}, .font = &font()});
-    w::install(ui);
+    installThemed(ui);
     const NodeHandle mw = w::mainWindow(ui, ui.root(), "mw");
     w::menuBarMenu(ui, w::mainWindowMenuBar(ui, mw), "File", "New\nOpen\n-\nQuit");
     w::menuBarMenu(ui, w::mainWindowMenuBar(ui, mw), "Edit", "Undo\nRedo");
@@ -286,7 +303,7 @@ void place(UiContext& ui, NodeHandle n, f32 x, f32 y, f32 wpx, f32 hpx) {
 }
 void sceneHud(Image& img) {
     UiContext ui({.viewport = {640, 300}, .font = &font()});
-    w::install(ui);
+    installThemed(ui);
     g::install(ui);
     ui.setCss(ui.root(), "layout", "anchor");
     ui.setCss(ui.root(), "background", "#1B2230");
@@ -348,7 +365,7 @@ void sceneHud(Image& img) {
 // ---- double spin box + context menu ---------------------------------------------------------------------------------
 void sceneSpinMenu(Image& img) {
     UiContext ui({.viewport = {520, 260}, .font = &font()});
-    w::install(ui);
+    installThemed(ui);
     ui.setCss(ui.root(), "padding", "12px");
     ui.setCss(ui.root(), "gap", "10px");
     const NodeHandle row = w::panel(ui, ui.root(), "row");
@@ -400,25 +417,132 @@ void sceneSpinMenu(Image& img) {
     render(ui, img);
 }
 
+// ---- controls: Tier A in its states, one keyboard-focused ----------------------------------------------------------
+void sceneControls(Image& img) {
+    UiContext ui({.viewport = {660, 430}, .font = &font()});
+    installThemed(ui);
+    ui.setCss(ui.root(), "padding", "12px");
+    ui.setCss(ui.root(), "gap", "10px");
+    const auto row = [&] {
+        const NodeHandle r = w::panel(ui, ui.root());
+        ui.addClass(r, "row");
+        return r;
+    };
+    NodeHandle r = row();
+    w::button(ui, r, "Button");
+    ui.addClass(w::button(ui, r, "Primary"), "primary");
+    ui.setDisabled(w::button(ui, r, "Disabled"), true);
+    w::toolButton(ui, r, "Tool");
+    w::link(ui, r, "A link");
+    ui.addClass(w::label(ui, r, "dim label"), "dim");
+    r = row();
+    w::checkBox(ui, r, "Checked", true);
+    const NodeHandle focused = w::checkBox(ui, r, "Focused", false, "focused");
+    ui.setDisabled(w::checkBox(ui, r, "Disabled", true), true);
+    w::radioButton(ui, r, "Radio on", true);
+    w::radioButton(ui, r, "Radio off", false);
+    w::toggleSwitch(ui, r, "On", true);
+    w::toggleSwitch(ui, r, "Off", false);
+    r = row();
+    ui.setCss(w::slider(ui, r, 0.f, 100.f, 35.f), "width", "160px");
+    ui.setCss(w::progressBar(ui, r, 0.6f), "width", "140px");
+    w::dial(ui, r, 0.f, 1.f, 0.7f);
+    const NodeHandle sb = w::scrollBar(ui, r, false);
+    ui.setCss(sb, "width", "150px");
+    r = row();
+    ui.setCss(w::lineEdit(ui, r, "line edit"), "width", "150px");
+    w::spinBox(ui, r, 0.f, 10.f, 4.f);
+    w::comboBox(ui, r, "Low\nMedium\nHigh", 1);
+    ui.setDisabled(w::lineEdit(ui, r, "disabled"), true);
+    w::tabBar(ui, ui.root(), "Scene\nAssets\nConsole", 1);
+    r = row();
+    ui.setCss(r, "align-items", "flex-start");
+    ui.setCss(w::listView(ui, r, "Alpha\nBeta\nGamma\nDelta", 1), "width", "160px");
+    ui.setCss(w::treeView(ui, r, "Root\n Child one\n Child two\nOther"), "width", "180px");
+    const NodeHandle card = w::panel(ui, r);
+    ui.addClass(card, "card");
+    ui.addClass(w::label(ui, card, "Card title"), "title");
+    w::label(ui, card, "Body text on a card.");
+    ui.update();
+    ui.setFocus(focused, FocusReason::Keyboard);
+    ui.pointerMove({650.f, 425.f});
+    settle(ui);
+    UI_CHECK((ui.states(focused) & kStateFocusVisible) != 0);
+    render(ui, img);
+}
+
+// ---- editors: the widgets whose paint code reads theme tokens ------------------------------------------------------
+void sceneEditors(Image& img) {
+    UiContext ui({.viewport = {820, 560}, .font = &font()});
+    installThemed(ui);
+    ui.setCss(ui.root(), "padding", "10px");
+    ui.setCss(ui.root(), "gap", "8px");
+    const auto row = [&] {
+        const NodeHandle r = w::panel(ui, ui.root());
+        ui.addClass(r, "row");
+        ui.setCss(r, "align-items", "flex-start");
+        return r;
+    };
+    NodeHandle r = row();
+    const NodeHandle code = w::codeEdit(ui, r, "-- spawn the player\nlocal hp = 100\nfunction hit(n)\n  hp = hp - n\n  return \"ouch\"\nend\n");
+    ui.setCss(code, "width", "300px");
+    ui.setCss(code, "height", "150px");
+    const NodeHandle graph = w::nodeGraph(ui, r, "graph");
+    ui.setCss(graph, "width", "470px");
+    ui.setCss(graph, "height", "150px");
+    const w::GraphPin in1[] = {{"A", 1}, {"B", 2}};
+    const w::GraphPin out1[] = {{"Out", 1}};
+    const u32 a = w::nodeGraphAddNode(ui, graph, "Noise", {20.f, 20.f}, {}, out1);
+    const u32 b = w::nodeGraphAddNode(ui, graph, "Multiply", {220.f, 40.f}, in1, out1);
+    r = row();
+    const NodeHandle tl = w::timeline(ui, r, 10.f, "tl");
+    ui.setCss(tl, "width", "470px");
+    ui.setCss(tl, "height", "120px");
+    const u32 t0 = w::timelineAddTrack(ui, tl, "Camera");
+    const u32 t1 = w::timelineAddTrack(ui, tl, "Audio");
+    w::timelineAddClip(ui, tl, t0, 0.5f, 3.f, "Pan", Color::rgb(0x6BCB77));
+    w::timelineAddClip(ui, tl, t1, 2.f, 6.f, "Theme", Color::rgb(0x4D96FF));
+    const NodeHandle curve = w::curveEditor(ui, r, 0.f, 1.f, 0.f, 1.f, "curve");
+    ui.setCss(curve, "width", "300px");
+    ui.setCss(curve, "height", "120px");
+    w::curveAddKey(ui, curve, 0.f, 0.1f);
+    w::curveAddKey(ui, curve, 0.5f, 0.9f);
+    w::curveAddKey(ui, curve, 1.f, 0.3f);
+    r = row();
+    w::calendar(ui, r, 2026, 11, 13);
+    const NodeHandle col = w::panel(ui, r);
+    ui.setCss(col, "gap", "8px");
+    w::dateTimeEdit(ui, col, 2026, 11, 13, 9, 30);
+    ui.setCss(w::markdownView(ui, col, "## Markdown\nText with `code`.\n\n> a quote\n\n```\ncode block\n```"), "width", "300px");
+    ui.update();
+    UI_CHECK(w::nodeGraphConnect(ui, graph, a, 0, b, 0));
+    ui.pointerMove({815.f, 555.f});
+    settle(ui);
+    render(ui, img);
+}
+
 struct Scene { const char* name; void (*fn)(Image&); };
 const Scene kScenes[] = {{"containers", &sceneContainers}, {"text", &sceneText}, {"dialogs", &sceneDialogs},
                          {"wizard", &sceneWizard},
                          {"mainwindow", &sceneMainWindow},
                          {"spinmenu", &sceneSpinMenu},
+                         {"controls", &sceneControls},
+                         {"editors", &sceneEditors},
 #if FUSE_UI_GOLDEN_HAVE_GAME
                          {"hud", &sceneHud},
 #endif
 };
 
 void compare(const Scene& s, const char* outDir) {
+    const char* theme = gTheme == w::ThemeVariant::Light ? "_light" : gTheme == w::ThemeVariant::HighContrast ? "_contrast" : "";
 #if FUSE_UI_TEST_TEXT_FULL
-    const std::string golden = std::string("golden/widgets_") + s.name + "_full.png"; // FreeType coverage differs from stb_truetype
+    const std::string golden = std::string("golden/widgets_") + s.name + theme + "_full.png"; // FreeType coverage differs from stb_truetype
 #else
-    const std::string golden = std::string("golden/widgets_") + s.name + ".png";
+    const std::string golden = std::string("golden/widgets_") + s.name + theme + ".png";
 #endif
     Image img;
     s.fn(img);
-    if (outDir) stbi_write_png((std::string(outDir) + "/widgets_" + s.name + ".png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
+    if (outDir) stbi_write_png((std::string(outDir) + "/widgets_" + s.name + theme + ".png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
     if (std::getenv("FUSE_UI_UPDATE_GOLDEN")) {
         stbi_write_png(golden.c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
         std::printf("golden written: %s\n", golden.c_str());
@@ -454,6 +578,8 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (std::strncmp(argv[i], "--scene=", 8) == 0) only = argv[i] + 8;
         else if (std::strncmp(argv[i], "--out=", 6) == 0) outDir = argv[i] + 6;
+        else if (std::strcmp(argv[i], "--theme=light") == 0) gTheme = w::ThemeVariant::Light;
+        else if (std::strcmp(argv[i], "--theme=contrast") == 0) gTheme = w::ThemeVariant::HighContrast;
     }
     bool ran = false;
     for (const Scene& s : kScenes)

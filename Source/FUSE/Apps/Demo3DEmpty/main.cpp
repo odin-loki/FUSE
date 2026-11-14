@@ -6,7 +6,9 @@
 #include <fuse/frame/frame_ctx.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/log/logger.hpp>
+#include <fuse/ecs/components/mesh.hpp>
 #include <fuse/project/loader.hpp>
+#include <fuse/project/world_converter.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
@@ -17,8 +19,130 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
+#include <vector>
+
+#if defined(FUSE_HAS_VULKAN_RHI)
+namespace {
+
+/// Every pixel of the last headless frame (r, g, b per pixel).
+std::vector<fuse::u8> readbackImage(const fuse::hybrid::HybridSceneRenderer& gpu) {
+    std::vector<fuse::u8> out(static_cast<std::size_t>(gpu.width()) * gpu.height() * 3u, 0u);
+    for (fuse::u32 y = 0; y < gpu.height(); ++y) {
+        for (fuse::u32 x = 0; x < gpu.width(); ++x) {
+            (void)fuse::hybrid::readbackPixel(gpu, x, y, &out[(static_cast<std::size_t>(y) * gpu.width() + x) * 3u]);
+        }
+    }
+    return out;
+}
+
+/// Asset plan 4a: TSStatic shapes draw. A mission with two TSStatics (unit_cube.dts through the in-house DTS reader,
+/// carwheel.dae through assimp) converts, its shapes cook to game:/cooked/, World3D resolves the entities' mesh ids,
+/// the hybrid renderer uploads the meshes and binds ecs::Mesh::vertex_buffer, and hiding the TSStatics changes the
+/// rendered pixels (headless GPU readback, Lavapipe in CI). The shape sources are the project's own (shapes/<Module>/,
+/// Torque module + ShapeAsset layout), so a packaged / relocated player (any working directory, no source tree) finds
+/// them through the project root like the rest of its content.
+void tsStaticStage(fuse::world3d::World3D& world, fuse::hybrid::HybridComposer& composer,
+                   fuse::hybrid::HybridRendererBootstrap& runtime, fuse::frame::FrameCtx& ctx,
+                   const std::string& projectRoot) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const std::vector<std::string> shapeRoots = {fs::absolute(fs::path(projectRoot) / "shapes", ec).generic_string()};
+    const fs::path stage = fs::temp_directory_path(ec) / "fuse_demo_3d_empty_tsstatic";
+    fs::remove_all(stage, ec);
+    fs::create_directories(stage / "worlds", ec);
+    const fs::path mission = stage / "worlds" / "shapes.mis";
+    {
+        std::ofstream out(mission, std::ios::binary);
+        out << "new Scene(ShapeLevel) {\n"
+               "   new GroundPlane(Floor) { position = \"0 0 0\"; };\n"
+               "   new TSStatic(Cube) { position = \"0 5 1\"; rotation = \"0 0 1 30\"; "
+               "shapeAsset = \"Core_GameObjects:unit_cube\"; };\n"
+               "   new TSStatic(Wheel) { position = \"2 7 0.6\"; shapeAsset = \"Prototyping:carwheel_shape\"; };\n"
+               "};\n";
+    }
+    const std::string level = (stage / "worlds" / "shapes.fuselevel").generic_string();
+    const fuse::project::ConvertResult converted = fuse::project::convertT3DMissionToFuselevel(mission.string(), level);
+    fuse::demo::check(converted.status == fuse::project::ConvertStatus::Ok, "TSStatic mission converts");
+    const fuse::project::T3DShapeCookResult shapes =
+        fuse::project::cookT3DMissionShapes(mission.string(), (stage / "cooked").string(), shapeRoots);
+    fuse::log::info("demo_3d_empty: %s", shapes.note.c_str());
+#if defined(FUSE_HAS_ASSIMP)
+    const fuse::u32 expected = 2u;
+#else
+    const fuse::u32 expected = 1u; // carwheel.dae needs assimp
+#endif
+    fuse::demo::check(shapes.cooked == expected, "TSStatic shapes cook (.dts in-house, .dae via assimp)");
+    bool fromProject = !shapes.entries.empty();
+    for (const fuse::project::T3DShapeCookEntry& entry : shapes.entries) {
+        fromProject = fromProject && fs::path(entry.sourcePath).generic_string().rfind(shapeRoots.front() + "/", 0) == 0;
+    }
+    fuse::demo::check(fromProject, "TSStatic shape sources resolve inside the project (shapes/)");
+
+    (void)world.exitPlayMode();
+    const fuse::world3d::World3DLevelLoadResult loaded = world.loadWorldFromFuselevel(level); // root: <stage>/cooked
+    fuse::demo::check(loaded.ok && loaded.cookedMeshes == expected, "TSStatic mesh ids resolve to the cooked meshes");
+    const float toSun[3] = {0.45f, 0.8f, 0.4f};
+    const float sunColor[3] = {1.f, 0.95f, 0.85f};
+    (void)world.spawnDirectionalLight(toSun, sunColor, 2.5f);
+    fuse::world3d::RenderCamera3D camera{};
+    camera.eye[0] = 0.5f;
+    camera.eye[1] = 2.5f;
+    camera.eye[2] = 0.f;
+    camera.target[0] = 1.f;
+    camera.target[1] = 0.6f;
+    camera.target[2] = -6.f;
+    camera.valid = true;
+    world.setCamera(camera);
+
+    auto frames = [&](int count) {
+        for (int i = 0; i < count; ++i) {
+            ctx.dt = 1.f / 60.f;
+            ++ctx.frameIndex;
+            runtime.runFrame(ctx);
+        }
+    };
+    fuse::hybrid::HybridSceneRenderer& gpu = *composer.gpuScene();
+    frames(3);
+    fuse::demo::check(gpu.waitIdle(), "TSStatic frames retired");
+    fuse::u32 bound = 0;
+    world.registry().each<fuse::ecs::MeshAssets, fuse::ecs::Mesh>(
+        [&](fuse::ecs::EntityID, fuse::ecs::MeshAssets& assets, fuse::ecs::Mesh& mesh) {
+            bound += assets.mesh.valid() && mesh.vertex_buffer.isValid() ? 1u : 0u;
+        });
+    fuse::log::info("demo_3d_empty: TSStatic: %u cooked mesh(es) uploaded, %u entity vertex buffer(s) bound, %u instances",
+                    gpu.cookedMeshCount(), bound, gpu.lastFrame().instances);
+    fuse::demo::check(gpu.cookedMeshCount() >= expected && bound == expected,
+                      "TSStatic ecs::Mesh::vertex_buffer non-null (cooked mesh uploaded)");
+    const std::vector<fuse::u8> shown = readbackImage(gpu);
+
+    world.registry().each<fuse::ecs::MeshAssets, fuse::ecs::Mesh>(
+        [&](fuse::ecs::EntityID, fuse::ecs::MeshAssets& assets, fuse::ecs::Mesh& mesh) {
+            if (assets.mesh.valid()) {
+                mesh.visible = false;
+            }
+        });
+    frames(3);
+    fuse::demo::check(gpu.waitIdle(), "hidden-TSStatic frames retired");
+    const std::vector<fuse::u8> hidden = readbackImage(gpu);
+    fuse::u32 changed = 0;
+    for (std::size_t p = 0; p + 2u < shown.size() && p + 2u < hidden.size(); p += 3u) {
+        const int d = std::abs(int(shown[p]) - int(hidden[p])) + std::abs(int(shown[p + 1u]) - int(hidden[p + 1u])) +
+                      std::abs(int(shown[p + 2u]) - int(hidden[p + 2u]));
+        changed += d > 24 ? 1u : 0u;
+    }
+    const fuse::u32 total = gpu.width() * gpu.height();
+    fuse::log::info("demo_3d_empty: TSStatic pixels changed: %u of %u", changed, total);
+    fuse::demo::check(changed * 100u >= total, "TSStatic shapes change >= 1% of the frame's pixels (GPU readback)");
+    const fuse::renderer::VulkanValidationCounters validation = fuse::renderer::vulkanValidationCounters();
+    fuse::demo::check(validation.errors == 0u && validation.warnings == 0u, "0 Vulkan validation messages with TSStatics");
+    fs::remove_all(stage, ec);
+}
+
+} // namespace
+#endif
 
 int main(int argc, char** argv) {
     fuse::core::initialize();
@@ -151,6 +275,9 @@ int main(int argc, char** argv) {
         fuse::demo::check(validation.errors == 0u && validation.warnings == 0u,
                           "0 Vulkan validation messages over 30 frames");
         fuse::demo::check(composer->renderer().pixelCount() == 0u, "PlaceholderRenderer off on the GPU path");
+        if (gpu.readbackFrames() != 0u && gpuRuntime != nullptr) {
+            tsStaticStage(world3D, *composer, *gpuRuntime, ctx, project.manifest.projectRoot);
+        }
         fuse::log::info("demo_3d_empty: GPU path (%ux%u)", gpu.width(), gpu.height());
         if (presentGameWindow && gpuRuntime != nullptr) {
             fuse::demo::check(fuse::demo::present::realPresentCallCount(*gpuRuntime) >= 1u,

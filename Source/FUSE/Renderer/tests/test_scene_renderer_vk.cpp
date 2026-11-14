@@ -61,6 +61,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------
@@ -241,8 +242,7 @@ int setup(Context& ctx, bool validation, bool t2) {
             return kSkip;
         }
         setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         setenv("VK_INSTANCE_LAYERS", "", 1);
@@ -1355,11 +1355,14 @@ int runFuseUi(Context& ctx, SceneTier tier) {
 // path through TAAU; one composites a dense FUSE UI each frame, the other has no UI stage. Every frame's HUD-less image
 // (and so the upscaler history the next frame reads) must be bit-identical between them, while the UI rig's output
 // differs where the UI is drawn. A UI pixel leaking into history would show up from the second frame on.
+// A control pass (no UI, twice) must also be bit-identical: each rig reuses the memory the previous one freed, so a
+// read of stale memory or a missing barrier (e.g. a same-pass read-A / write-B buffer hazard) shows up here first.
 int runHudlessInvariant(Context& ctx, SceneTier tier) {
     constexpr u32 kFrames = 6u;
     std::vector<std::vector<u8>> ref(kFrames);
-    u32 diffOut = 0, badHud = 0;
-    for (int pass = 0; pass < 2; ++pass) {
+    u32 diffOut = 0, badHud = 0, badCtl = 0;
+    // Pass 0: reference, no UI. Pass 1: control, no UI again (driver determinism). Pass 2: with the UI stage.
+    for (int pass = 0; pass < 3; ++pass) {
         SceneRig rig;
         if (const int rc = initRig(ctx, rig, tier); rc != 0) {
             return rc;
@@ -1370,7 +1373,7 @@ int runHudlessInvariant(Context& ctx, SceneTier tier) {
         }
         fuse::ui::render::UiFrameSource ui;
         fuse::ui::DrawList list;
-        if (pass == 1) {
+        if (pass == 2) {
             if (!ui.init(ctx.device.get())) {
                 std::printf("SKIP: ui.draw_list kernel not available\n");
                 return kSkip;
@@ -1399,18 +1402,32 @@ int runHudlessInvariant(Context& ctx, SceneTier tier) {
             std::vector<u8> hud = bytesAt(ctx, oHud, n);
             if (pass == 0) {
                 ref[f] = std::move(hud);
+            } else if (pass == 1) {
+                if (hud != ref[f]) {
+                    ++badCtl;
+                    u32 nd = 0, md = 0;
+                    for (u64 b = 0; b < n; ++b) {
+                        const u32 d = hud[b] > ref[f][b] ? hud[b] - ref[f][b] : ref[f][b] - hud[b];
+                        nd += d ? 1u : 0u;
+                        md = std::max(md, d);
+                    }
+                    std::printf("control frame %u: %u / %llu bytes differ (max byte delta %u)\n", f, nd,
+                                static_cast<unsigned long long>(n), md);
+                }
             } else {
                 badHud += hud == ref[f] ? 0u : 1u;
                 diffOut += bytesAt(ctx, oOut, n) != ref[f] ? 1u : 0u;
             }
         }
-        if (pass == 1) {
+        if (pass == 2) {
             rig.renderer.setUiSource({});
             ui.destroy();
         }
     }
+    std::printf("hudless_invariant: control (no UI twice) %u / %u frames differ\n", badCtl, kFrames);
     std::printf("hudless_invariant: %u / %u frames with a HUD-less mismatch, UI visible in %u frames\n", badHud,
                 kFrames, diffOut);
+    expect(badCtl == 0u, "renderer deterministic run to run (control: no UI in both rigs, bit-identical)");
     expect(badHud == 0u, "HUD-less image / temporal history identical with and without the UI stage");
     expect(diffOut == kFrames, "the UI is visible in every composited output");
     return 0;

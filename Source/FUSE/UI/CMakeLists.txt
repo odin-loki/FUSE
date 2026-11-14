@@ -20,23 +20,102 @@ option(FUSE_BUILD_UI_GAME "Build fuse_ui_game (UI7: HUD, world-space UI, gamepad
 option(FUSE_BUILD_APP "Build fuse_app (application framework; UI9, not yet)" OFF)
 option(FUSE_BUILD_UI_DESIGNER "Build fuse_ui_designer (UI8 prototype: library, gate and app)" ON)
 option(FUSE_UI_ACCESSIBILITY "Accessibility tree (AccessKit bridge later, D7)" ON)
-set(FUSE_UI_TEXT "MINIMAL" CACHE STRING "Text profile: FULL (HarfBuzz + FreeType, fetched), MINIMAL (stb_truetype), COOKED (not yet)")
+set(FUSE_UI_TEXT "MINIMAL" CACHE STRING "Text profile: FULL (HarfBuzz + FreeType, fetched), MINIMAL (stb_truetype), COOKED (.fusefont packs only)")
 set_property(CACHE FUSE_UI_TEXT PROPERTY STRINGS FULL MINIMAL COOKED)
 set(FUSE_UI_PROFILE "app" CACHE STRING "UI profile: hud, app, editor")
-if(FUSE_UI_TEXT STREQUAL "COOKED")
-    message(STATUS "FUSE UI: text profile COOKED not implemented yet — using MINIMAL")
-endif()
 
 # ---- fuse_text ----
-add_library(fuse_text STATIC Text/src/text.cpp Text/src/font_family.cpp Text/src/i18n.cpp)
+# Every profile: UTF-8 / grapheme tables, layout, atlas, families and the installed-font list, PNG codec, the
+# enable* switches. FUSE_UI_TEXT_RASTER_SRC are the opt-in rasterisers (enableColorGlyphs / enableMsdf), font variations
+# (enableVariableFonts) and the font cooker: reached only through hooks, so a static link pulls them into a binary only
+# when it calls the matching enable function. COOKED builds leave them out (the packs hold their output).
+set(FUSE_UI_TEXT_CORE_SRC Text/src/text.cpp Text/src/font_family.cpp Text/src/font_scripts.cpp Text/src/text_io.cpp
+    Text/src/paint_enable.cpp Text/src/png_codec.cpp Text/src/i18n.cpp)
+set(FUSE_UI_TEXT_RASTER_SRC Text/src/colr_paint.cpp Text/src/path_raster.cpp Text/src/color_bitmap.cpp Text/src/msdf.cpp
+    Text/src/font_var.cpp Text/src/font_cook.cpp)
+
+# fuse_text_cook (every profile): TrueType / OpenType -> .fusefont, built over a MINIMAL fuse_text so cooked glyphs are
+# byte-identical to MINIMAL at the cooked sizes (fuse/text/font_cook.hpp).
+add_library(fuse_text_cook_lib STATIC ${FUSE_UI_TEXT_CORE_SRC} ${FUSE_UI_TEXT_RASTER_SRC})
+target_include_directories(fuse_text_cook_lib PUBLIC Text/include)
+target_include_directories(fuse_text_cook_lib SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb")
+target_compile_features(fuse_text_cook_lib PUBLIC cxx_std_23)
+add_executable(fuse_text_cook Text/tools/fuse_text_cook.cpp)
+target_include_directories(fuse_text_cook PRIVATE Text/tools)
+target_link_libraries(fuse_text_cook PRIVATE fuse_text_cook_lib)
+if(WIN32)
+    target_link_libraries(fuse_text_cook_lib PRIVATE advapi32) # registry font lists
+endif()
+
+# options of the bundled UI font's pack (also the fuse_text_cooked gate's determinism cook). Besides the whole sizes:
+# 10.5 and 11.25 (0.8 x the 13 / 14 px theme sizes: chart and axis labels), 12.5 (pack sizes are quarter pixels: the
+# strike the 12.6 px of calendar day numbers and code editor line numbers, 0.9 x 14 px, resolves to), the 1.25 / 1.5
+# scale sizes of the gates.
+set(FUSE_TEXT_UI_COOK_ARGS "--sizes=8-40,10.5,11.25,12.5,17.5,21,22.5,26.25,42,45,48,56,64,72" --msdf)
+if(FUSE_UI_TEXT STREQUAL "COOKED")
+    # The bundled fonts cooked at build time (sizes the UI and its gates use; MSDFs for the Latin / RTL / Indic faces,
+    # any other size of those is drawn from them; the big emoji and CJK faces keep a few strikes, resampled otherwise).
+    # The cooker runs on the build machine: a cross build needs an emulator or a host-built cooker
+    # (-DFUSE_TEXT_COOK_HOST=<path to a host fuse_text_cook>).
+    set(FUSE_TEXT_COOK_HOST "" CACHE FILEPATH "Host-built fuse_text_cook for cross-compiled COOKED builds")
+    if(FUSE_TEXT_COOK_HOST)
+        set(_fuse_text_cook_cmd "${FUSE_TEXT_COOK_HOST}")
+        set(_fuse_text_cook_dep "${FUSE_TEXT_COOK_HOST}")
+    elseif(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
+        message(FATAL_ERROR "FUSE_UI_TEXT=COOKED cooks the bundled fonts at build time: when cross-compiling pass "
+                            "-DFUSE_TEXT_COOK_HOST=<path to a fuse_text_cook built for the build machine>.")
+    else()
+        set(_fuse_text_cook_cmd ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:fuse_text_cook>)
+        set(_fuse_text_cook_dep fuse_text_cook)
+    endif()
+    set(FUSE_TEXT_COOK_COMMAND "${_fuse_text_cook_cmd}" CACHE INTERNAL "command line prefix that runs fuse_text_cook")
+    set(FUSE_TEXT_COOK_DEPENDS "${_fuse_text_cook_dep}" CACHE INTERNAL "what a rule running fuse_text_cook depends on")
+    set(FUSE_TEXT_COOKED_FONT_DIR "${CMAKE_CURRENT_BINARY_DIR}/fonts" CACHE INTERNAL "cooked bundled fonts (build output)")
+    set(_fuse_text_fonts_out "")
+    function(fuse_text_cook_font src out)
+        set(_out "${FUSE_TEXT_COOKED_FONT_DIR}/${out}")
+        get_filename_component(_dir "${_out}" DIRECTORY)
+        add_custom_command(OUTPUT "${_out}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${_dir}"
+            COMMAND ${FUSE_TEXT_COOK_COMMAND} "--out=${_out}" ${ARGN} "${src}"
+            DEPENDS ${FUSE_TEXT_COOK_DEPENDS} "${src}" COMMENT "fuse_text_cook ${out}" VERBATIM)
+        set(_fuse_text_fonts_out ${_fuse_text_fonts_out} "${_out}" PARENT_SCOPE)
+    endfunction()
+    set(_vf "${FUSE_UI_REPO_ROOT}/vendor/fonts")
+    set(_fb_sizes "--sizes=10-32,17.5,21,22.5,26.25")
+    fuse_text_cook_font("${_vf}/opensans/OpenSans.ttf" opensans/OpenSans.fusefont ${FUSE_TEXT_UI_COOK_ARGS}
+                        "--reference=${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.reference")
+    foreach(_f NotoSansHebrew-Regular NotoSansArabic-Regular NotoSansDevanagari-Regular NotoSansSymbols2-Regular
+               NotoSansThai-Regular)
+        fuse_text_cook_font("${_vf}/noto/${_f}.ttf" noto/${_f}.fusefont ${_fb_sizes} --msdf)
+    endforeach()
+    fuse_text_cook_font("${_vf}/twemoji/TwemojiMozilla.ttf" twemoji/TwemojiMozilla.fusefont "--sizes=13,14,15,16,17.5,20,21,28")
+    fuse_text_cook_font("${_vf}/noto/NotoSansCJKsc-Subset.otf" noto/NotoSansCJKsc-Subset.fusefont
+                        "--sizes=12,13,14,15,16,17.5,20,21,28")
+    add_custom_target(fuse_text_fonts ALL DEPENDS ${_fuse_text_fonts_out})
+
+    add_library(fuse_text STATIC ${FUSE_UI_TEXT_CORE_SRC} Text/src/text_cooked.cpp)
+    target_compile_definitions(fuse_text PUBLIC FUSE_TEXT_COOKED=1)
+    target_compile_definitions(fuse_text PRIVATE
+        FUSE_TEXT_BUNDLED_FONT="${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.fusefont"
+        FUSE_TEXT_FONT_DIR="${FUSE_TEXT_COOKED_FONT_DIR}")
+    add_dependencies(fuse_text fuse_text_fonts)
+    set(_fuse_embed_font_src "${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.fusefont")
+else()
+    add_library(fuse_text STATIC ${FUSE_UI_TEXT_CORE_SRC} ${FUSE_UI_TEXT_RASTER_SRC})
+    target_compile_definitions(fuse_text PRIVATE
+        FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf"
+        FUSE_TEXT_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
+    set(_fuse_embed_font_src "${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf")
+endif()
+if(WIN32)
+    target_link_libraries(fuse_text PRIVATE advapi32) # registry font lists
+endif()
 target_include_directories(fuse_text PUBLIC Text/include)
-target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb")
-target_compile_definitions(fuse_text PRIVATE
-    FUSE_TEXT_BUNDLED_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf"
-    FUSE_TEXT_FONT_DIR="${FUSE_UI_REPO_ROOT}/vendor/fonts")
+target_include_directories(fuse_text SYSTEM PRIVATE "${FUSE_UI_REPO_ROOT}/vendor/stb") # stb_truetype; png_codec.cpp (every profile)
 target_compile_features(fuse_text PUBLIC cxx_std_23)
 # Android / iOS apps have no build-tree font directory at run time: embed the default UI face in the binary
-# (fallback faces come from APK assets / the app bundle through fuse::text::setFontDataSource).
+# (fallback faces come from APK assets / the app bundle through fuse::text::setFontDataSource). COOKED: its pack.
 if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(_fuse_embed_font_default ON)
 else()
@@ -47,11 +126,11 @@ if(FUSE_TEXT_EMBED_FONT)
     set(_font_gen "${CMAKE_CURRENT_BINARY_DIR}/text_gen")
     file(MAKE_DIRECTORY "${_font_gen}")
     add_custom_command(OUTPUT "${_font_gen}/fuse_embedded_font.h"
-        COMMAND "${CMAKE_COMMAND}" -DIN=${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf
+        COMMAND "${CMAKE_COMMAND}" -DIN=${_fuse_embed_font_src}
                 -DOUT=${_font_gen}/fuse_embedded_font.h -DNAME=kFuseEmbeddedFont
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/Text/cmake/embed_bin.cmake"
-        DEPENDS "${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf" "${CMAKE_CURRENT_SOURCE_DIR}/Text/cmake/embed_bin.cmake"
-        COMMENT "Embedding OpenSans.ttf" VERBATIM)
+        DEPENDS "${_fuse_embed_font_src}" "${CMAKE_CURRENT_SOURCE_DIR}/Text/cmake/embed_bin.cmake"
+        COMMENT "Embedding the bundled UI font" VERBATIM)
     target_sources(fuse_text PRIVATE "${_font_gen}/fuse_embedded_font.h")
     target_include_directories(fuse_text PRIVATE "${_font_gen}")
     target_compile_definitions(fuse_text PRIVATE FUSE_TEXT_EMBEDDED_FONT=1)
@@ -102,9 +181,10 @@ if(FUSE_UI_TEXT STREQUAL "FULL")
 endif()
 
 # ---- fuse_ui_core ----
-add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp
+add_library(fuse_ui_core STATIC Core/src/style.cpp Core/src/style_values.cpp Core/src/style_parser.cpp Core/src/style_sheets.cpp Core/src/draw_list.cpp Core/src/ui.cpp Core/src/immediate.cpp
     Core/src/interaction.cpp Core/src/actions.cpp
-    Core/src/path.cpp Core/src/draw_vector.cpp Core/src/painter.cpp Core/src/svg.cpp Core/src/icons.cpp)
+    Core/src/path.cpp Core/src/draw_vector.cpp Core/src/painter.cpp Core/src/svg.cpp Core/src/icons.cpp
+    Core/src/icon_set.cpp)
 target_include_directories(fuse_ui_core PUBLIC Core/include)
 target_link_libraries(fuse_ui_core PUBLIC fuse_text)
 if(FUSE_UI_ACCESSIBILITY)
@@ -115,6 +195,111 @@ if(FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_widgets STATIC Widgets/src/widgets.cpp Widgets/src/widgets_tier_b.cpp Widgets/src/widgets_tier_b2.cpp Widgets/src/widgets_tier_cd.cpp Widgets/src/widgets_tier_d2.cpp Widgets/src/widgets_tier_b3.cpp Widgets/src/widgets_svg.cpp Widgets/src/widgets_interaction.cpp Widgets/src/widgets_modelview.cpp Widgets/src/widgets_models.cpp Widgets/src/platform_feel.cpp Widgets/src/theme.cpp Widgets/src/inspector.cpp)
     target_include_directories(fuse_ui_widgets PUBLIC Widgets/include)
     target_link_libraries(fuse_ui_widgets PUBLIC fuse_ui_core)
+    # Widget port (docs/ui/archive/PORT_gui_framework.md §3.7 / §3.12): Qt-parity options and the extras widgets
+    target_sources(fuse_ui_widgets PRIVATE Widgets/src/widgets_lineedit.cpp Widgets/src/line_regex.cpp Widgets/src/completer.cpp
+        Widgets/src/widgets_spinbox.cpp Widgets/src/widgets_tabs.cpp Widgets/src/widgets_extra.cpp Widgets/src/widgets_buttonbox.cpp)
+endif()
+
+# ---- icons: SVG -> .fuseicons cooker (the module's own SVG parser) + the starter pack cooked at build time ----
+# fuse_ui_icon_cook_lib / fuse_ui_icon_cook turn SVG files into a pack of parsed vector icons (fuse/ui/icon_set.hpp)
+# that IconSet loads without any XML parsing. The starter pack is the vendored Lucide subset (vendor/icons/lucide, ISC
+# licence in that directory and THIRD_PARTY.md). Cross builds without an emulator build the tool but not the pack.
+option(FUSE_BUILD_UI_ICONS "Build fuse_ui_icon_cook and cook the starter icon pack (vendor/icons/lucide)" ON)
+if(FUSE_BUILD_UI_ICONS)
+    add_library(fuse_ui_icon_cook_lib STATIC Icons/src/icon_cook.cpp)
+    target_include_directories(fuse_ui_icon_cook_lib PUBLIC Icons/include)
+    target_link_libraries(fuse_ui_icon_cook_lib PUBLIC fuse_ui_core)
+    add_executable(fuse_ui_icon_cook Icons/tools/fuse_ui_icon_cook.cpp)
+    target_link_libraries(fuse_ui_icon_cook PRIVATE fuse_ui_icon_cook_lib)
+    if(EXISTS "${FUSE_UI_REPO_ROOT}/vendor/icons/lucide" AND (NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR))
+        set(FUSE_UI_ICON_SVG_DIR "${FUSE_UI_REPO_ROOT}/vendor/icons/lucide" CACHE INTERNAL "starter icon sources")
+        set(FUSE_UI_ICON_PACK "${CMAKE_CURRENT_BINARY_DIR}/icons/fuse_ui_icons.fuseicons" CACHE INTERNAL "starter icon pack (build output)")
+        file(GLOB _fuse_ui_svgs CONFIGURE_DEPENDS "${FUSE_UI_ICON_SVG_DIR}/*.svg")
+        add_custom_command(OUTPUT "${FUSE_UI_ICON_PACK}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/icons"
+            COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:fuse_ui_icon_cook> "--out=${FUSE_UI_ICON_PACK}" "${FUSE_UI_ICON_SVG_DIR}"
+            DEPENDS fuse_ui_icon_cook ${_fuse_ui_svgs}
+            COMMENT "fuse_ui_icon_cook: starter icon pack" VERBATIM)
+        add_custom_target(fuse_ui_icons ALL DEPENDS "${FUSE_UI_ICON_PACK}")
+    endif()
+endif()
+
+# ---- fuse_ui_os + fuse_ui_extras (from the gui-framework branch; docs/ui/archive/PORT_gui_framework.md) ----
+# fuse_ui_os is the fuse::ui::os seam (Os/include/fuse/ui/os.hpp) that fuse_ui_extras reaches files, the environment,
+# dynamic libraries and helper processes through. Backends:
+#   std    (default) Os/src/os_std.cpp: C++ standard library + POSIX / Win32, no third-party code.
+#   forge  Os/src/os_forge.cpp on the FORGE library the branch used. FORGE is NOT part of this repository (repository
+#          policy: no new git submodules) and nothing is fetched: pass -DFUSE_FORGE_DIR=<your FORGE checkout>.
+#   custom your own translation unit(s) in FUSE_UI_OS_SOURCES.
+# fuse_ui_extras builds the modules of the branch's Extras/ that compile against main's core API: undo framework,
+# declarative properties / state machines, PDF writer, desktop integration, D-Bus client, tray icon + global menu,
+# system web view, charts library and 3D data visualisation, and (ported since) the rich text editor, the audio level
+# meter and the gesture recogniser. The other Extras sources stay in the tree unbuilt (i18n, SVG documents, media,
+# the Objective-C++ backends). The branch's extra widgets and dialog button box are part of fuse_ui_widgets now
+# (Widgets/src/widgets_extra.cpp, widgets_buttonbox.cpp).
+# Verified on Linux, Android (NDK) and FreeBSD. Off by default on Windows and Apple platforms: os_std.cpp and the
+# Win32 backends compile with MinGW-w64 but were not built with MSVC, and no Apple build was possible.
+if(WIN32 OR APPLE)
+    set(_fuse_ui_extras_default OFF)
+else()
+    set(_fuse_ui_extras_default ON)
+endif()
+option(FUSE_BUILD_UI_EXTRAS "Build fuse_ui_os + fuse_ui_extras (undo, declarative, PDF, desktop, tray, web view, charts, 3D dataviz)" ${_fuse_ui_extras_default})
+set(FUSE_UI_OS_BACKEND "std" CACHE STRING "OS layer behind fuse::ui::os: std (standard library + POSIX / Win32), forge (needs FUSE_FORGE_DIR) or custom")
+set_property(CACHE FUSE_UI_OS_BACKEND PROPERTY STRINGS std forge custom)
+set(FUSE_UI_OS_SOURCES "" CACHE STRING "custom backend: source file(s) implementing fuse/ui/os.hpp")
+if(FUSE_BUILD_UI_EXTRAS AND FUSE_BUILD_UI_WIDGETS)
+    if(FUSE_UI_OS_BACKEND STREQUAL "forge")
+        include("${FUSE_UI_REPO_ROOT}/cmake/FuseForge.cmake")
+        fuse_add_forge() # FATAL_ERROR with instructions when FUSE_FORGE_DIR is not a FORGE checkout
+        add_library(fuse_ui_os STATIC Os/src/os_forge.cpp)
+        target_link_libraries(fuse_ui_os PRIVATE fuse_forge)
+    elseif(FUSE_UI_OS_BACKEND STREQUAL "custom")
+        if(NOT FUSE_UI_OS_SOURCES)
+            message(FATAL_ERROR "FUSE_UI_OS_BACKEND=custom needs FUSE_UI_OS_SOURCES")
+        endif()
+        add_library(fuse_ui_os STATIC ${FUSE_UI_OS_SOURCES})
+    elseif(FUSE_UI_OS_BACKEND STREQUAL "std")
+        add_library(fuse_ui_os STATIC Os/src/os_std.cpp)
+        target_link_libraries(fuse_ui_os PRIVATE ${CMAKE_DL_LIBS})
+    else()
+        message(FATAL_ERROR "FUSE_UI_OS_BACKEND must be std, forge or custom (got '${FUSE_UI_OS_BACKEND}')")
+    endif()
+    if(WIN32 AND NOT FUSE_UI_OS_BACKEND STREQUAL "custom")
+        target_sources(fuse_ui_os PRIVATE Os/src/file_dialog_win32.cpp)
+        target_link_libraries(fuse_ui_os PRIVATE ole32 shell32 uuid)
+    endif()
+    target_include_directories(fuse_ui_os PUBLIC Os/include)
+    target_compile_features(fuse_ui_os PUBLIC cxx_std_23)
+
+    # (explicit list, not a glob: Extras/src also holds the parked sources)
+    add_library(fuse_ui_extras STATIC Extras/src/undo.cpp Extras/src/declarative.cpp Extras/src/pdf.cpp
+        Extras/src/desktop.cpp Extras/src/dbus.cpp
+        Extras/src/tray.cpp Extras/src/tray_sni.cpp Extras/src/tray_win32.cpp Extras/src/tray_none.cpp
+        Extras/src/webview.cpp Extras/src/webview_gtk.cpp Extras/src/webview_win32.cpp Extras/src/webview_none.cpp
+        Extras/src/charts.cpp Extras/src/charts_simd.cpp Extras/src/datavis3d.cpp Extras/src/richtext.cpp
+        Extras/src/audio_meter.cpp Extras/src/gesture.cpp)
+    target_include_directories(fuse_ui_extras PUBLIC Extras/include)
+    target_link_libraries(fuse_ui_extras PUBLIC fuse_ui_widgets fuse_ui_os)
+    # the branch's code uses partial designated initialisers throughout; in tree that warns under -Wextra
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(fuse_ui_extras PRIVATE -Wno-missing-field-initializers)
+    endif()
+    if(WIN32)
+        target_link_libraries(fuse_ui_extras PUBLIC shell32 user32 gdi32 ole32)
+    endif()
+    # The branch's AVX2 / NEON min-max kernels for charts (Extras/src/charts_simd_{avx2,neon}.cpp) take their vector
+    # type and CPU detection from FORGE's lane layer; they are built only on the forge backend.
+    if(TARGET fuse_forge_lane)
+        target_link_libraries(fuse_ui_extras PRIVATE fuse_forge fuse_forge_lane)
+        target_compile_definitions(fuse_ui_extras PRIVATE FUSE_UI_CHARTS_LANE=1)
+        fuse_target_is_x86_64(_ux_x64)
+        if(_ux_x64)
+            target_sources(fuse_ui_extras PRIVATE Extras/src/charts_simd_avx2.cpp)
+            fuse_simd_flags(_ux_avx2 avx2)
+            set_source_files_properties(Extras/src/charts_simd_avx2.cpp PROPERTIES COMPILE_OPTIONS "${_ux_avx2}")
+        endif()
+    endif()
 endif()
 
 # ---- fuse_ui_doc: .fuseui JSON documents, binding model and expression bytecode ----
@@ -154,6 +339,19 @@ if(FUSE_UI_ACCESSIBILITY)
     endif()
 endif()
 
+# ---- fuse_ui_l10n_lib: CLDR plural rules, ICU-style messages, locale number / date / time / currency formatting and
+# string tables (standard library only). fuse_ui_game's StringTable formats with it; widgets reach it through
+# UiContext::setLocale hooks (fuse/ui/l10n/ui_locale.hpp), so binaries that never localise do not link the tables.
+add_library(fuse_ui_l10n_lib STATIC L10n/src/plural.cpp L10n/src/format.cpp L10n/src/message.cpp L10n/src/table.cpp
+    L10n/src/po.cpp
+    L10n/src/text_i18n.cpp) # text_i18n.cpp: fuse/text/i18n.hpp's plural / number functions on these tables
+target_include_directories(fuse_ui_l10n_lib PUBLIC L10n/include)
+target_include_directories(fuse_ui_l10n_lib PRIVATE Text/include) # header-only fuse/text/from_chars.hpp; no link to fuse_text
+target_compile_features(fuse_ui_l10n_lib PUBLIC cxx_std_23)
+# fuse/text/i18n.hpp (a fuse_text header) is implemented here: every fuse_text user links it. fuse_ui_l10n_lib itself
+# depends on nothing (it only includes header-only fuse/text files), so fuse_text still does not depend on the UI.
+target_link_libraries(fuse_text PUBLIC fuse_ui_l10n_lib)
+
 option(FUSE_BUILD_UI_DOC "Build fuse_ui_doc (.fuseui documents + bindings)" ON)
 if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_doc STATIC Doc/src/json.cpp Doc/src/document.cpp Doc/src/cook.cpp Doc/src/hot_reload.cpp
@@ -163,6 +361,9 @@ if(FUSE_BUILD_UI_DOC AND FUSE_BUILD_UI_WIDGETS)
     # UI8 cooker: .fuseui / .fusestyle -> cooked blobs + generated widget-registration list
     add_executable(fuse_ui_cook Doc/tools/fuse_ui_cook.cpp)
     target_link_libraries(fuse_ui_cook PRIVATE fuse_ui_doc)
+    # string extraction: tr("...") in C++ and translatable .fuseui text -> merged string-table file
+    add_executable(fuse_ui_extract_strings Doc/tools/fuse_ui_extract_strings.cpp)
+    target_link_libraries(fuse_ui_extract_strings PRIVATE fuse_ui_doc fuse_ui_l10n_lib)
 endif()
 
 # ---- fuse_ui_script: Lua bindings (vendored Lua 5.2, the fuse_script backend) ----
@@ -315,7 +516,7 @@ endif()
 if(FUSE_BUILD_UI_GAME AND FUSE_BUILD_UI_WIDGETS)
     add_library(fuse_ui_game STATIC Game/src/game_ui.cpp Game/src/game_extras.cpp)
     target_include_directories(fuse_ui_game PUBLIC Game/include)
-    target_link_libraries(fuse_ui_game PUBLIC fuse_ui_widgets)
+    target_link_libraries(fuse_ui_game PUBLIC fuse_ui_widgets fuse_ui_l10n_lib)
     # engine bridges (in tree only): UiSurface as an ECS component, theme sounds through fuse_audio
     if(TARGET fuse_ecs)
         add_library(fuse_ui_game_ecs STATIC Game/src/ecs_surface.cpp)
@@ -367,7 +568,7 @@ if(TARGET fuse_app_native AND FUSE_BUILD_APP_SAMPLES)
                 add_test(NAME fuse_app_game_menu_sample COMMAND game_menu --screenshot=${CMAKE_CURRENT_BINARY_DIR}/game_menu.png)
                 set_tests_properties(fuse_app_game_menu_sample PROPERTIES LABELS "fuse_ui;gate")
             else()
-                foreach(p RANGE 0 6)
+                foreach(p RANGE 0 7) # 7 = the "More" page (ported options and extra widgets)
                     add_test(NAME fuse_app_widget_gallery_page${p}
                              COMMAND widget_gallery --page=${p} --screenshot=${CMAKE_CURRENT_BINARY_DIR}/widget_gallery_${p}.png)
                     set_tests_properties(fuse_app_widget_gallery_page${p} PROPERTIES LABELS "fuse_ui;gate")
@@ -400,4 +601,24 @@ if(FUSE_BUILD_UI_TESTS AND TARGET fuse_app)
              COMMAND ${CMAKE_COMMAND} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/assets_gate -DUI_DIR=${CMAKE_CURRENT_SOURCE_DIR}/App/samples/ui
                      -DFONTS_DIR=${FUSE_UI_REPO_ROOT}/vendor/fonts -DCHECK=1 -P ${CMAKE_CURRENT_SOURCE_DIR}/App/cmake/fuse_app_stage_assets.cmake)
     set_tests_properties(fuse_app_stage_assets PROPERTIES LABELS "fuse_ui;gate")
+endif()
+
+# ---- fuse::gui: one umbrella header (<fuse/gui.hpp>, Public/include) and one target for programs in this build ------
+# (from the gui-framework branch; outside this build, find_package(FuseUI) and its per-library targets stay the way in)
+if(TARGET fuse_app_native AND TARGET fuse_ui_doc)
+    add_library(fuse_gui INTERFACE)
+    add_library(fuse::gui ALIAS fuse_gui)
+    target_include_directories(fuse_gui INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/Public/include)
+    target_link_libraries(fuse_gui INTERFACE fuse_app_native fuse_ui_doc fuse_ui_widgets)
+    if(TARGET fuse_ui_extras)
+        target_link_libraries(fuse_gui INTERFACE fuse_ui_extras)
+    endif()
+    if(FUSE_BUILD_APP_SAMPLES AND NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        add_executable(gui_quickstart Public/examples/gui_quickstart.cpp)
+        target_link_libraries(gui_quickstart PRIVATE fuse::gui)
+        if(FUSE_BUILD_UI_TESTS AND NOT CMAKE_CROSSCOMPILING)
+            add_test(NAME fuse_gui_quickstart COMMAND gui_quickstart --screenshot=${CMAKE_CURRENT_BINARY_DIR}/gui_quickstart.png)
+            set_tests_properties(fuse_gui_quickstart PROPERTIES LABELS "fuse_ui;gate")
+        endif()
+    endif()
 endif()

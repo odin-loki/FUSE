@@ -1,5 +1,6 @@
 #include "fuse/text/text.hpp"
 
+#if !FUSE_TEXT_COOKED
 #define STBTT_STATIC
 #define STB_TRUETYPE_IMPLEMENTATION
 #if defined(__GNUC__) || defined(__clang__)
@@ -16,6 +17,7 @@
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
+#endif
 
 #include <algorithm>
 #include <array>
@@ -29,8 +31,16 @@
 #include <memory>
 
 #include "sfnt_info.hpp"
+#include "font_var.hpp"
+#include "glyph_paint.hpp"
+#include "text_internal.hpp"
+
 #if FUSE_TEXT_FULL
 #include "text_full.hpp"
+#endif
+#if FUSE_TEXT_COOKED
+#include "fusefont.hpp"
+#include "text_cooked.hpp"
 #endif
 
 #if defined(FUSE_TEXT_EMBEDDED_FONT)
@@ -40,7 +50,9 @@
 namespace fuse::text {
 
 TextProfile textProfile() {
-#if FUSE_TEXT_FULL
+#if FUSE_TEXT_COOKED
+    return TextProfile::Cooked;
+#elif FUSE_TEXT_FULL
     return TextProfile::Full;
 #else
     return TextProfile::Minimal;
@@ -114,121 +126,39 @@ std::size_t nextCodepoint(std::string_view s, std::size_t i) {
 
 // ---- UAX #29 grapheme clusters -------------------------------------------------------------------------------------
 namespace {
-struct CpRange { char32_t lo, hi; };
-template <std::size_t N> bool inRanges(const CpRange (&r)[N], char32_t c) {
+using GB = GraphemeBreak;
+enum class Incb : std::uint8_t { None, Linker, Consonant, Extend };
+struct GbRange {
+    char32_t lo, hi;
+    GB v;
+};
+struct IncbRange {
+    char32_t lo, hi;
+    Incb v;
+};
+#include "unicode_tables.inc" // generated from the UCD by Text/tools/gen_unicode_tables.py
+template <class R, std::size_t N> auto lookup(const R (&r)[N], char32_t c, decltype(R::v) none) {
     std::size_t a = 0, b = N;
     while (a < b) {
         const std::size_t m = (a + b) / 2;
         if (c < r[m].lo) b = m;
         else if (c > r[m].hi) a = m + 1;
-        else return true;
+        else return r[m].v;
     }
-    return false;
+    return none;
 }
-// Grapheme_Cluster_Break=Extend (main blocks; sorted)
-constexpr CpRange kExtend[] = {
-    {0x0300, 0x036F}, {0x0483, 0x0489}, {0x0591, 0x05BD}, {0x05BF, 0x05BF}, {0x05C1, 0x05C2}, {0x05C4, 0x05C5},
-    {0x05C7, 0x05C7}, {0x0610, 0x061A}, {0x064B, 0x065F}, {0x0670, 0x0670}, {0x06D6, 0x06DC}, {0x06DF, 0x06E4},
-    {0x06E7, 0x06E8}, {0x06EA, 0x06ED}, {0x0711, 0x0711}, {0x0730, 0x074A}, {0x07A6, 0x07B0}, {0x07EB, 0x07F3},
-    {0x0816, 0x0819}, {0x081B, 0x0823}, {0x0825, 0x0827}, {0x0829, 0x082D}, {0x0859, 0x085B}, {0x0898, 0x089F},
-    {0x08CA, 0x08E1}, {0x08E3, 0x0902}, {0x093A, 0x093A}, {0x093C, 0x093C}, {0x0941, 0x0948}, {0x094D, 0x094D},
-    {0x0951, 0x0957}, {0x0962, 0x0963}, {0x0981, 0x0981}, {0x09BC, 0x09BC}, {0x09BE, 0x09BE}, {0x09C1, 0x09C4},
-    {0x09CD, 0x09CD}, {0x09D7, 0x09D7}, {0x09E2, 0x09E3}, {0x0A01, 0x0A02}, {0x0A3C, 0x0A3C}, {0x0A41, 0x0A51},
-    {0x0A70, 0x0A71}, {0x0A75, 0x0A75}, {0x0A81, 0x0A82}, {0x0ABC, 0x0ABC}, {0x0AC1, 0x0AC8}, {0x0ACD, 0x0ACD},
-    {0x0AE2, 0x0AE3}, {0x0B01, 0x0B01}, {0x0B3C, 0x0B3C}, {0x0B3E, 0x0B3F}, {0x0B41, 0x0B44}, {0x0B4D, 0x0B4D},
-    {0x0B55, 0x0B57}, {0x0B62, 0x0B63}, {0x0B82, 0x0B82}, {0x0BBE, 0x0BBE}, {0x0BC0, 0x0BC0}, {0x0BCD, 0x0BCD},
-    {0x0BD7, 0x0BD7}, {0x0C00, 0x0C00}, {0x0C04, 0x0C04}, {0x0C3C, 0x0C3C}, {0x0C3E, 0x0C40}, {0x0C46, 0x0C56},
-    {0x0C62, 0x0C63}, {0x0C81, 0x0C81}, {0x0CBC, 0x0CBC}, {0x0CBF, 0x0CBF}, {0x0CC2, 0x0CC2}, {0x0CC6, 0x0CC6},
-    {0x0CCC, 0x0CCD}, {0x0CD5, 0x0CD6}, {0x0CE2, 0x0CE3}, {0x0D00, 0x0D01}, {0x0D3B, 0x0D3C}, {0x0D3E, 0x0D3E},
-    {0x0D41, 0x0D44}, {0x0D4D, 0x0D4D}, {0x0D57, 0x0D57}, {0x0D62, 0x0D63}, {0x0D81, 0x0D81}, {0x0DCA, 0x0DCA},
-    {0x0DCF, 0x0DCF}, {0x0DD2, 0x0DD6}, {0x0DDF, 0x0DDF}, {0x0E31, 0x0E31}, {0x0E34, 0x0E3A}, {0x0E47, 0x0E4E},
-    {0x0EB1, 0x0EB1}, {0x0EB4, 0x0EBC}, {0x0EC8, 0x0ECE}, {0x0F18, 0x0F19}, {0x0F35, 0x0F35}, {0x0F37, 0x0F37},
-    {0x0F39, 0x0F39}, {0x0F71, 0x0F7E}, {0x0F80, 0x0F84}, {0x0F86, 0x0F87}, {0x0F8D, 0x0FBC}, {0x0FC6, 0x0FC6},
-    {0x102D, 0x1030}, {0x1032, 0x1037}, {0x1039, 0x103A}, {0x103D, 0x103E}, {0x1058, 0x1059}, {0x105E, 0x1060},
-    {0x1071, 0x1074}, {0x1082, 0x1082}, {0x1085, 0x1086}, {0x108D, 0x108D}, {0x109D, 0x109D}, {0x135D, 0x135F},
-    {0x1712, 0x1714}, {0x1732, 0x1733}, {0x1752, 0x1753}, {0x1772, 0x1773}, {0x17B4, 0x17B5}, {0x17B7, 0x17BD},
-    {0x17C6, 0x17C6}, {0x17C9, 0x17D3}, {0x17DD, 0x17DD}, {0x180B, 0x180D}, {0x180F, 0x180F}, {0x1885, 0x1886},
-    {0x18A9, 0x18A9}, {0x1920, 0x1922}, {0x1927, 0x1928}, {0x1932, 0x1932}, {0x1939, 0x193B}, {0x1A17, 0x1A18},
-    {0x1A1B, 0x1A1B}, {0x1A56, 0x1A56}, {0x1A58, 0x1A60}, {0x1A62, 0x1A62}, {0x1A65, 0x1A6C}, {0x1A73, 0x1A7F},
-    {0x1AB0, 0x1ACE}, {0x1B00, 0x1B03}, {0x1B34, 0x1B3D}, {0x1B42, 0x1B44}, {0x1B6B, 0x1B73}, {0x1B80, 0x1B81},
-    {0x1BA2, 0x1BA5}, {0x1BA8, 0x1BAD}, {0x1BE6, 0x1BE6}, {0x1BE8, 0x1BE9}, {0x1BED, 0x1BED}, {0x1BEF, 0x1BF3},
-    {0x1C2C, 0x1C33}, {0x1C36, 0x1C37}, {0x1CD0, 0x1CD2}, {0x1CD4, 0x1CE0}, {0x1CE2, 0x1CE8}, {0x1CED, 0x1CED},
-    {0x1CF4, 0x1CF4}, {0x1CF8, 0x1CF9}, {0x1DC0, 0x1DFF}, {0x200C, 0x200C}, {0x20D0, 0x20F0}, {0x2CEF, 0x2CF1},
-    {0x2D7F, 0x2D7F}, {0x2DE0, 0x2DFF}, {0x302A, 0x302F}, {0x3099, 0x309A}, {0xA66F, 0xA672}, {0xA674, 0xA67D},
-    {0xA69E, 0xA69F}, {0xA6F0, 0xA6F1}, {0xA802, 0xA802}, {0xA806, 0xA806}, {0xA80B, 0xA80B}, {0xA825, 0xA826},
-    {0xA82C, 0xA82C}, {0xA8C4, 0xA8C5}, {0xA8E0, 0xA8F1}, {0xA8FF, 0xA8FF}, {0xA926, 0xA92D}, {0xA947, 0xA951},
-    {0xA980, 0xA982}, {0xA9B3, 0xA9B3}, {0xA9B6, 0xA9B9}, {0xA9BC, 0xA9BD}, {0xA9E5, 0xA9E5}, {0xAA29, 0xAA2E},
-    {0xAA31, 0xAA32}, {0xAA35, 0xAA36}, {0xAA43, 0xAA43}, {0xAA4C, 0xAA4C}, {0xAA7C, 0xAA7C}, {0xAAB0, 0xAAB0},
-    {0xAAB2, 0xAAB4}, {0xAAB7, 0xAAB8}, {0xAABE, 0xAABF}, {0xAAC1, 0xAAC1}, {0xAAEC, 0xAAED}, {0xAAF6, 0xAAF6},
-    {0xABE5, 0xABE5}, {0xABE8, 0xABE8}, {0xABED, 0xABED}, {0xFB1E, 0xFB1E}, {0xFE00, 0xFE0F}, {0xFE20, 0xFE2F},
-    {0xFF9E, 0xFF9F}, {0x101FD, 0x101FD}, {0x102E0, 0x102E0}, {0x10376, 0x1037A}, {0x10A01, 0x10A0F},
-    {0x10A38, 0x10A3F}, {0x10AE5, 0x10AE6}, {0x10D24, 0x10D27}, {0x10EAB, 0x10EAC}, {0x10F46, 0x10F50},
-    {0x11001, 0x11001}, {0x11038, 0x11046}, {0x1107F, 0x11081}, {0x110B3, 0x110B6}, {0x110B9, 0x110BA},
-    {0x11100, 0x11102}, {0x11127, 0x1112B}, {0x1112D, 0x11134}, {0x1D165, 0x1D165}, {0x1D167, 0x1D169},
-    {0x1D16E, 0x1D172}, {0x1D17B, 0x1D182}, {0x1D185, 0x1D18B}, {0x1D1AA, 0x1D1AD}, {0x1E8D0, 0x1E8D6},
-    {0x1E944, 0x1E94A}, {0x1F3FB, 0x1F3FF}, {0xE0020, 0xE007F}, {0xE0100, 0xE01EF},
-};
-constexpr CpRange kSpacingMark[] = {
-    {0x0903, 0x0903}, {0x093B, 0x093B}, {0x093E, 0x0940}, {0x0949, 0x094C}, {0x094E, 0x094F}, {0x0982, 0x0983},
-    {0x09BF, 0x09C0}, {0x09C7, 0x09C8}, {0x09CB, 0x09CC}, {0x0A03, 0x0A03}, {0x0A3E, 0x0A40}, {0x0A83, 0x0A83},
-    {0x0ABE, 0x0AC0}, {0x0AC9, 0x0AC9}, {0x0ACB, 0x0ACC}, {0x0B02, 0x0B03}, {0x0B40, 0x0B40}, {0x0B47, 0x0B48},
-    {0x0B4B, 0x0B4C}, {0x0BBF, 0x0BBF}, {0x0BC1, 0x0BC2}, {0x0BC6, 0x0BC8}, {0x0BCA, 0x0BCC}, {0x0C01, 0x0C03},
-    {0x0C41, 0x0C44}, {0x0C82, 0x0C83}, {0x0CBE, 0x0CBE}, {0x0CC0, 0x0CC1}, {0x0CC3, 0x0CC4}, {0x0CC7, 0x0CC8},
-    {0x0CCA, 0x0CCB}, {0x0D02, 0x0D03}, {0x0D3F, 0x0D40}, {0x0D46, 0x0D48}, {0x0D4A, 0x0D4C}, {0x0D82, 0x0D83},
-    {0x0DD0, 0x0DD1}, {0x0DD8, 0x0DDE}, {0x0DF2, 0x0DF3}, {0x0E33, 0x0E33}, {0x0EB3, 0x0EB3}, {0x0F3E, 0x0F3F},
-    {0x0F7F, 0x0F7F}, {0x1031, 0x1031}, {0x103B, 0x103C}, {0x1056, 0x1057}, {0x1084, 0x1084}, {0x17B6, 0x17B6},
-    {0x17BE, 0x17C5}, {0x17C7, 0x17C8}, {0x1923, 0x1926}, {0x1929, 0x192B}, {0x1930, 0x1931}, {0x1933, 0x1938},
-    {0x1A19, 0x1A1A}, {0x1A55, 0x1A55}, {0x1A57, 0x1A57}, {0x1A6D, 0x1A72}, {0x1B04, 0x1B04}, {0x1B3E, 0x1B41},
-    {0x1B82, 0x1B82}, {0x1BA1, 0x1BA1}, {0x1BA6, 0x1BA7}, {0x1BE7, 0x1BE7}, {0x1BEA, 0x1BEC}, {0x1BEE, 0x1BEE},
-    {0x1C24, 0x1C2B}, {0x1C34, 0x1C35}, {0x1CE1, 0x1CE1}, {0x1CF7, 0x1CF7}, {0xA823, 0xA824}, {0xA827, 0xA827},
-    {0xA880, 0xA881}, {0xA8B4, 0xA8C3}, {0xA952, 0xA952}, {0xA983, 0xA983}, {0xA9B4, 0xA9B5}, {0xA9BA, 0xA9BB},
-    {0xA9BE, 0xA9BF}, {0xAA2F, 0xAA30}, {0xAA33, 0xAA34}, {0xAA4D, 0xAA4D}, {0xAAEB, 0xAAEB}, {0xAAEE, 0xAAEF},
-    {0xAAF5, 0xAAF5}, {0xABE3, 0xABE4}, {0xABE6, 0xABE7}, {0xABE9, 0xABEA}, {0xABEC, 0xABEC},
-};
-constexpr CpRange kPrepend[] = {
-    {0x0600, 0x0605}, {0x06DD, 0x06DD}, {0x070F, 0x070F}, {0x0890, 0x0891}, {0x08E2, 0x08E2}, {0x0D4E, 0x0D4E},
-    {0x110BD, 0x110BD}, {0x110CD, 0x110CD}, {0x111C2, 0x111C3}, {0x1193F, 0x1193F}, {0x11941, 0x11941},
-    {0x11A3A, 0x11A3A}, {0x11A84, 0x11A89}, {0x11D46, 0x11D46},
-};
-constexpr CpRange kExtPict[] = {
-    {0x00A9, 0x00A9}, {0x00AE, 0x00AE}, {0x203C, 0x203C}, {0x2049, 0x2049}, {0x2122, 0x2122}, {0x2139, 0x2139},
-    {0x2194, 0x2199}, {0x21A9, 0x21AA}, {0x231A, 0x231B}, {0x2328, 0x2328}, {0x2388, 0x2388}, {0x23CF, 0x23CF},
-    {0x23E9, 0x23F3}, {0x23F8, 0x23FA}, {0x24C2, 0x24C2}, {0x25AA, 0x25AB}, {0x25B6, 0x25B6}, {0x25C0, 0x25C0},
-    {0x25FB, 0x25FE}, {0x2600, 0x2605}, {0x2607, 0x2612}, {0x2614, 0x2685}, {0x2690, 0x2705}, {0x2708, 0x2712},
-    {0x2714, 0x2714}, {0x2716, 0x2716}, {0x271D, 0x271D}, {0x2721, 0x2721}, {0x2728, 0x2728}, {0x2733, 0x2734},
-    {0x2744, 0x2744}, {0x2747, 0x2747}, {0x274C, 0x274C}, {0x274E, 0x274E}, {0x2753, 0x2755}, {0x2757, 0x2757},
-    {0x2763, 0x2767}, {0x2795, 0x2797}, {0x27A1, 0x27A1}, {0x27B0, 0x27B0}, {0x27BF, 0x27BF}, {0x2934, 0x2935},
-    {0x2B05, 0x2B07}, {0x2B1B, 0x2B1C}, {0x2B50, 0x2B50}, {0x2B55, 0x2B55}, {0x3030, 0x3030}, {0x303D, 0x303D},
-    {0x3297, 0x3297}, {0x3299, 0x3299}, {0x1F000, 0x1F0FF}, {0x1F10D, 0x1F10F}, {0x1F12F, 0x1F12F},
-    {0x1F16C, 0x1F171}, {0x1F17E, 0x1F17F}, {0x1F18E, 0x1F18E}, {0x1F191, 0x1F19A}, {0x1F1AD, 0x1F1E5},
-    {0x1F201, 0x1F20F}, {0x1F21A, 0x1F21A}, {0x1F22F, 0x1F22F}, {0x1F232, 0x1F23A}, {0x1F23C, 0x1F23F},
-    {0x1F249, 0x1F3FA}, {0x1F400, 0x1F53D}, {0x1F546, 0x1F64F}, {0x1F680, 0x1F6FF}, {0x1F774, 0x1F77F},
-    {0x1F7D5, 0x1F7FF}, {0x1F80C, 0x1F80F}, {0x1F848, 0x1F84F}, {0x1F85A, 0x1F85F}, {0x1F888, 0x1F88F},
-    {0x1F8AE, 0x1F8FF}, {0x1F90C, 0x1F93A}, {0x1F93C, 0x1F945}, {0x1F947, 0x1FAFF}, {0x1FC00, 0x1FFFD},
-};
-using GB = GraphemeBreak;
+Incb incbProperty(char32_t c) { return c < 0x0300 ? Incb::None : lookup(kIncb, c, Incb::None); }
+
 struct ClusterState {
     GB prev = GB::Control;
     bool first = true;
-    std::uint32_t riRun = 0;        // regional indicators since the last non-RI
-    bool pictSeq = false; // ExtPict Extend* seen (GB11 left side)
-    bool pictZwj = false; // ... followed by ZWJ
-    std::uint8_t incb = 0; // GB9c: 1 after InCB=Consonant [Extend Linker]*, 2 once a Linker was seen
-};
-// Indic_Conjunct_Break (Unicode 15.1, DerivedCoreProperties): Linkers are the viramas of Devanagari, Bengali,
-// Gujarati, Oriya, Telugu and Malayalam; Consonants are those scripts' consonant letters.
-bool incbLinker(char32_t c) {
-    return c == 0x094D || c == 0x09CD || c == 0x0ACD || c == 0x0B4D || c == 0x0C4D || c == 0x0D4D;
-}
-constexpr CpRange kIncbConsonant[] = {
-    {0x0915, 0x0939}, {0x0958, 0x095F}, {0x0978, 0x097F}, {0x0995, 0x09A8}, {0x09AA, 0x09B0}, {0x09B2, 0x09B2},
-    {0x09B6, 0x09B9}, {0x09DC, 0x09DD}, {0x09DF, 0x09DF}, {0x09F0, 0x09F1}, {0x0A95, 0x0AA8}, {0x0AAA, 0x0AB0},
-    {0x0AB2, 0x0AB3}, {0x0AB5, 0x0AB9}, {0x0AF9, 0x0AF9}, {0x0B15, 0x0B28}, {0x0B2A, 0x0B30}, {0x0B32, 0x0B33},
-    {0x0B35, 0x0B39}, {0x0B5C, 0x0B5D}, {0x0B5F, 0x0B5F}, {0x0B71, 0x0B71}, {0x0C15, 0x0C28}, {0x0C2A, 0x0C39},
-    {0x0C58, 0x0C5A}, {0x0D15, 0x0D3A},
+    std::uint32_t riRun = 0; // regional indicators since the last non-RI
+    bool pictSeq = false;    // ExtPict Extend* seen (GB11 left side)
+    bool pictZwj = false;    // ... followed by ZWJ
+    std::uint8_t incb = 0;   // GB9c: 1 after InCB=Consonant [Extend Linker]*, 2 once a Linker was seen
 };
 // true when there is a boundary before `cur` given the state after the previous code point
-bool breakBefore(const ClusterState& st, GB cur, char32_t cp) {
+bool breakBefore(const ClusterState& st, GB cur, Incb incb) {
     if (st.first) return true;                                         // GB1
     const GB p = st.prev;
     if (p == GB::CR && cur == GB::LF) return false;                     // GB3
@@ -240,15 +170,15 @@ bool breakBefore(const ClusterState& st, GB cur, char32_t cp) {
     if (cur == GB::Extend || cur == GB::ZWJ) return false;             // GB9
     if (cur == GB::SpacingMark) return false;                          // GB9a
     if (p == GB::Prepend) return false;                                // GB9b
-    if (st.incb == 2 && inRanges(kIncbConsonant, cp)) return false;     // GB9c
+    if (st.incb == 2 && incb == Incb::Consonant) return false;         // GB9c
     if (p == GB::ZWJ && cur == GB::ExtPict && st.pictZwj) return false; // GB11
     if (p == GB::RegionalIndicator && cur == GB::RegionalIndicator && (st.riRun % 2) == 1) return false; // GB12/13
     return true;                                                       // GB999
 }
-void advance(ClusterState& st, GB cur, char32_t cp) {
-    if (inRanges(kIncbConsonant, cp)) st.incb = 1;
-    else if (st.incb && incbLinker(cp)) st.incb = 2;
-    else if (!(st.incb && (cur == GB::Extend || cur == GB::ZWJ))) st.incb = 0;
+void advance(ClusterState& st, GB cur, Incb incb) {
+    if (incb == Incb::Consonant) st.incb = 1;
+    else if (st.incb && incb == Incb::Linker) st.incb = 2;
+    else if (!(st.incb && incb == Incb::Extend)) st.incb = 0;
     st.riRun = cur == GB::RegionalIndicator ? st.riRun + 1 : 0;
     if (cur == GB::ExtPict) { st.pictSeq = true; st.pictZwj = false; }
     else if (cur == GB::Extend && st.pictSeq) {}
@@ -265,25 +195,10 @@ std::size_t lineStart(std::string_view s, std::size_t i) {
 } // namespace
 
 GraphemeBreak graphemeBreakProperty(char32_t c) {
-    if (c == '\r') return GB::CR;
-    if (c == '\n') return GB::LF;
-    if (c == 0x200D) return GB::ZWJ;
-    if (c < 0x20 || (c >= 0x7F && c <= 0x9F) || c == 0x00AD) return GB::Control;
-    if (c == 0x200B || c == 0x2028 || c == 0x2029 || c == 0xFEFF || (c >= 0x200E && c <= 0x200F) || (c >= 0x202A && c <= 0x202E) ||
-        (c >= 0x2060 && c <= 0x206F) || (c >= 0xFFF0 && c <= 0xFFFB) || (c >= 0xE0000 && c <= 0xE001F))
-        return GB::Control;
-    if (c < 0x0300) return (c == 0xA9 || c == 0xAE) ? GB::ExtPict : GB::Other;
-    if (c >= 0x1F1E6 && c <= 0x1F1FF) return GB::RegionalIndicator;
-    if ((c >= 0x1100 && c <= 0x115F) || (c >= 0xA960 && c <= 0xA97C)) return GB::L;
-    if ((c >= 0x1160 && c <= 0x11A7) || (c >= 0xD7B0 && c <= 0xD7C6)) return GB::V;
-    if ((c >= 0x11A8 && c <= 0x11FF) || (c >= 0xD7CB && c <= 0xD7FB)) return GB::T;
     if (c >= 0xAC00 && c <= 0xD7A3) return (c - 0xAC00) % 28 == 0 ? GB::LV : GB::LVT;
-    if (inRanges(kExtend, c)) return GB::Extend;
-    if (inRanges(kSpacingMark, c)) return GB::SpacingMark;
-    if (inRanges(kPrepend, c)) return GB::Prepend;
-    if (inRanges(kExtPict, c)) return GB::ExtPict;
-    return GB::Other;
+    return lookup(kGraphemeBreak, c, GB::Other);
 }
+const char* unicodeVersion() { return kUnicodeVersion; }
 
 std::size_t nextBoundary(std::string_view s, std::size_t i) {
     if (i >= s.size()) return s.size();
@@ -294,8 +209,9 @@ std::size_t nextBoundary(std::string_view s, std::size_t i) {
         std::size_t nx = at;
         const char32_t cp = decodeUtf8(s, nx);
         const GB g = graphemeBreakProperty(cp);
-        if (at > i && breakBefore(st, g, cp)) return at;
-        advance(st, g, cp);
+        const Incb ic = incbProperty(cp);
+        if (at > i && breakBefore(st, g, ic)) return at;
+        advance(st, g, ic);
         at = nx;
     }
     return s.size();
@@ -312,8 +228,9 @@ std::size_t prevBoundary(std::string_view s, std::size_t i) {
         std::size_t nx = at;
         const char32_t cp = decodeUtf8(s, nx);
         const GB g = graphemeBreakProperty(cp);
-        if (breakBefore(st, g, cp)) last = at;
-        advance(st, g, cp);
+        const Incb ic = incbProperty(cp);
+        if (breakBefore(st, g, ic)) last = at;
+        advance(st, g, ic);
         at = nx;
     }
     return last;
@@ -325,47 +242,292 @@ std::size_t graphemeCount(std::string_view s) {
     for (std::size_t at = 0; at < s.size();) {
         const char32_t cp = decodeUtf8(s, at);
         const GB g = graphemeBreakProperty(cp);
-        if (breakBefore(st, g, cp)) ++n;
-        advance(st, g, cp);
+        const Incb ic = incbProperty(cp);
+        if (breakBefore(st, g, ic)) ++n;
+        advance(st, g, ic);
     }
     return n;
+}
+
+// ---- Line breaking and bidi ----------------------------------------------------------------------------------------
+void lineBreaks(std::string_view s, std::vector<LineBreak>& out, LineBreakStyle style) {
+#if FUSE_TEXT_FULL
+    detail::fullLineBreaks(s, out, style == LineBreakStyle::Strict);
+#else
+    (void)style;
+    out.assign(s.size(), LineBreak::None);
+    for (std::size_t i = 0; i < s.size();) {
+        const std::size_t at = i;
+        decodeUtf8(s, i);
+        for (std::size_t k = at; k + 1 < i; ++k) out[k] = LineBreak::Inside;
+        if (s[at] == '\n') out[i - 1] = LineBreak::Must;
+        else if (s[at] == ' ' && i < s.size() && s[i] != ' ' && s[i] != '\n') out[i - 1] = LineBreak::Allow;
+    }
+    if (!s.empty()) out.back() = LineBreak::Must;
+#endif
+}
+
+bool hasRtlText(std::string_view s) {
+    for (std::size_t i = 0; i + 1 < s.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(s[i]), d = static_cast<unsigned char>(s[i + 1]);
+        if (c >= 0xD6 && c <= 0xDF) return true;               // U+0580..U+07FF
+        if (c == 0xE0 && d >= 0xA0 && d <= 0xA3) return true;  // U+0800..U+08FF
+        if (c == 0xEF && d >= 0xAC && d <= 0xBB) return true;  // U+FB00..U+FEFF
+        if (c == 0xE2 && d == 0x80 && i + 2 < s.size()) {
+            const unsigned char e = static_cast<unsigned char>(s[i + 2]);
+            if (e == 0x8F || e == 0xAB || e == 0xAE) return true; // RLM, RLE, RLO
+        }
+        if (c == 0xF0 && d >= 0x90 && d <= 0x9E && i + 2 < s.size()) { // U+10800..U+10FFF, U+1E800..U+1EFFF
+            const unsigned char e = static_cast<unsigned char>(s[i + 2]);
+            if ((d == 0x90 && e >= 0xA0) || (d == 0x9E && e >= 0xA0)) return true;
+        }
+    }
+    return false;
+}
+
+bool bidiLevels(std::string_view s, BaseDirection base, std::vector<std::uint8_t>& levels, std::uint8_t& paraLevel) {
+#if FUSE_TEXT_FULL
+    detail::fullBidiLevels(s, int(base), levels, paraLevel);
+    return true;
+#else
+    paraLevel = base == BaseDirection::Rtl ? 1 : 0;
+    levels.assign(s.size(), paraLevel);
+    return false;
+#endif
+}
+
+void reorderVisual(std::span<const std::uint8_t> levels, std::vector<std::uint32_t>& out) {
+    const std::size_t n = levels.size();
+    out.resize(n);
+    for (std::size_t k = 0; k < n; ++k) out[k] = std::uint32_t(k);
+    std::uint8_t hi = 0, loOdd = 0xFF;
+    for (const std::uint8_t l : levels) {
+        hi = std::max(hi, l);
+        if (l & 1) loOdd = std::min(loOdd, l);
+    }
+    // From the highest level down to the lowest odd one, reverse every maximal run at or above that level.
+    for (int lv = hi; loOdd != 0xFF && lv >= loOdd; --lv)
+        for (std::size_t k = 0; k < n;) {
+            if (levels[out[k]] < lv) { ++k; continue; }
+            std::size_t m = k;
+            while (m < n && levels[out[m]] >= lv) ++m;
+            std::reverse(out.begin() + std::ptrdiff_t(k), out.begin() + std::ptrdiff_t(m));
+            k = m;
+        }
 }
 
 // ---- Font ----------------------------------------------------------------------------------------------------------
 using FontBytes = std::shared_ptr<std::vector<std::uint8_t>>;
 struct Font::State {
-    FontBytes bytes;             // the file; shared with synthetic variants
+    FontBytes bytes;             // the file (or .fusefont pack); shared with synthetic variants
     int faceIndex = 0;
     detail::FaceInfo face;       // family / style / weight / slant / decoration geometry
     float embolden = 0.f;        // synthetic: stem growth as a fraction of the em
     float slant = 0.f;           // synthetic: shear (x per unit of height)
+#if FUSE_TEXT_COOKED
+    std::shared_ptr<detail::MappedFile> map; // the pack when loaded with fromFile (shared with synthetic variants)
+    detail::CookedFace* cooked = nullptr;    // owned; a view over `bytes` or `map`
+#else
     stbtt_fontinfo info{};
+#endif
+    // Variations: `file` is `bytes`, or the owner's for an instance (which shares the owner's fallback chain).
+    std::span<const std::uint8_t> file;
+    const State* owner = nullptr;
+    std::uint32_t fvar = 0;          // fvar table offset (0: not a variable font)
+    detail::VarState* var = nullptr; // owned (font_var.cpp); made on first use of the variation API
+    bool varied = false;             // coordinates are not the default: metrics / advances / outlines vary
+    std::span<const std::int16_t> coords; // normalised coordinates when varied (owned by `var`)
+    float dAscent = 0.f, dDescent = 0.f, dLineGap = 0.f; // MVAR deltas (font units)
+    bool ownVar = true;              // false for feature variants: they borrow their source's variation state
+    const State* featureSource = nullptr; // feature variant: the state it was made from
+    struct FeatureVariant {
+        std::array<FontFeature, 8> key{};
+        std::size_t count = 0;
+        std::unique_ptr<Font> font;
+    };
+    std::vector<FeatureVariant> variants; // withFeatures (owned)
+    // ---- weight-following fallbacks ----
+    int weightCache = -1;                    // weight(): computed on first use
+    const Font* boldFace = nullptr;          // setBoldFace
+    std::unique_ptr<Font> emboldenedFont;    // emboldened() (owned)
+    std::vector<const Font*> boldChain;      // chain() with each face replaced by its bold form (bold fonts only)
+    std::uint32_t boldChainGen = 0;          // g_chainGen it was built at
+    const std::vector<const Font*>& chain() const { return owner ? owner->fallbacks : fallbacks; }
+    ~State() {
+        variants.clear();
+        emboldenedFont.reset();
+        if (var && ownVar) detail::varHooks().destroy(var); // instances first: they point into this state
+#if FUSE_TEXT_COOKED
+        detail::cookedDestroy(cooked);
+#endif
+#if FUSE_TEXT_FULL
+        detail::fullDestroy(full);
+#endif
+    }
     float unitsPerPixelScale1 = 0.f; // stbtt_ScaleForPixelHeight(info, 1)
     float emPerPixelSize = 1.f;      // em size in pixels for pixelSize 1 (pixel sizes are ascent-to-descent)
     std::vector<const Font*> fallbacks;
+    // Direct-mapped lookup caches (layout asks for the same code points and pairs over and over; GPOS kerning and
+    // fallback cmap probes are the MINIMAL hot spots). cmap: cp << 32 | glyph; kerning: (l << 16 | r) << 32 | units.
+    std::array<std::uint64_t, 1024> cmapCache = filledCache();
+    std::array<std::uint64_t, 2048> kernCache = filledCache<2048>();
+    template <std::size_t N = 1024> static std::array<std::uint64_t, N> filledCache() {
+        std::array<std::uint64_t, N> a;
+        a.fill(~std::uint64_t(0));
+        return a;
+    }
     std::vector<ColorLayer> layers;                       // COLRv0 layer records with CPAL palette 0 resolved
     std::vector<std::array<std::uint32_t, 3>> colorBase; // (glyph, first layer, layer count), sorted by glyph
+    // image colour glyphs: COLRv1 graphs without a v0 record, bitmap strikes (sorted glyph ids, one image layer each)
+    std::uint32_t colr = 0, cpal = 0, cblc = 0, cbdt = 0, sbix = 0;
+    std::uint16_t unitsPerEm = 1000, numGlyphs = 0;
+    std::vector<ColorLayer> v1Images, bitmapImages;
 #if FUSE_TEXT_FULL
     detail::FullFace* full = nullptr; // owned; HarfBuzz + FreeType over `bytes`
-    ~State() { detail::fullDestroy(full); }
 #endif
-    static State* make(const FontBytes& shared, int faceIndex);
+    /// `map` (COOKED): the mapped pack to use instead of `shared`.
+    static State* make(const FontBytes& shared, int faceIndex, const std::shared_ptr<detail::MappedFile>& map = {});
 };
 
 namespace {
 std::atomic<std::uint32_t> g_fontIds{1};
+// Bumped whenever a fallback chain, a bold face or a pinned variation changes: bold fonts rebuild their bold chain.
+std::atomic<std::uint32_t> g_chainGen{1};
 
 std::uint16_t be16(const std::uint8_t* p) { return std::uint16_t((p[0] << 8) | p[1]); }
 std::uint32_t be32(const std::uint8_t* p) { return (std::uint32_t(p[0]) << 24) | (std::uint32_t(p[1]) << 16) | (std::uint32_t(p[2]) << 8) | p[3]; }
 
-// COLR version 0 + CPAL palette 0. Bounds-checked: a malformed table leaves the font without colour glyphs.
+std::uint32_t be24(const std::uint8_t* p) { return (std::uint32_t(p[0]) << 16) | (std::uint32_t(p[1]) << 8) | p[2]; }
+
+// COLRv1 paint graphs flattened to solid layers (see Font::colorLayers). Every read is bounds-checked; a malformed
+// graph just yields fewer layers.
+struct ColrV1 {
+    const std::uint8_t* d;
+    std::size_t n;
+    std::uint32_t baseList = 0, layerList = 0; // absolute offsets (0: absent)
+    std::uint32_t numBase = 0, numLayers = 0;
+    // CPAL palette 0
+    std::uint32_t recOff = 0;
+    std::uint16_t first = 0, numEntries = 0, numRecords = 0;
+    std::vector<ColorLayer>* out = nullptr;
+    int budget = 4096; // paint nodes visited per glyph (cycles, huge graphs)
+
+    bool ok(std::uint64_t off, std::uint64_t len) const { return off + len <= n; }
+    ColorLayer colour(std::uint16_t pi, float alpha) const {
+        ColorLayer cl;
+        if (pi == 0xFFFFu || pi >= numEntries || std::uint32_t(first) + pi >= numRecords) {
+            cl.foreground = true;
+            cl.a = std::uint8_t(std::clamp(alpha, 0.f, 1.f) * 255.f + 0.5f);
+            return cl;
+        }
+        const std::uint8_t* c = d + recOff + (std::uint32_t(first) + pi) * 4; // B G R A
+        cl.b = c[0];
+        cl.g = c[1];
+        cl.r = c[2];
+        cl.a = std::uint8_t(float(c[3]) * std::clamp(alpha, 0.f, 1.f) + 0.5f);
+        return cl;
+    }
+    static float f2dot14(const std::uint8_t* p) { return float(std::int16_t(be16(p))) / 16384.f; }
+    // Mean colour of a (Var)ColorLine: gradients become one solid fill.
+    bool colorLine(std::uint32_t at, bool var, ColorLayer& cl) const {
+        if (!ok(at, 3)) return false;
+        const std::uint16_t stops = be16(d + at + 1);
+        const std::uint32_t size = var ? 10 : 6;
+        if (stops == 0 || !ok(at + 3, std::uint64_t(stops) * size)) return false;
+        float r = 0, g = 0, b = 0, a = 0;
+        bool fg = false;
+        for (std::uint32_t k = 0; k < stops; ++k) {
+            const std::uint8_t* s = d + at + 3 + k * size;
+            const ColorLayer c = colour(be16(s + 2), f2dot14(s + 4));
+            fg |= c.foreground;
+            r += c.r;
+            g += c.g;
+            b += c.b;
+            a += c.a;
+        }
+        cl = {};
+        cl.foreground = fg;
+        cl.r = std::uint8_t(r / stops + 0.5f);
+        cl.g = std::uint8_t(g / stops + 0.5f);
+        cl.b = std::uint8_t(b / stops + 0.5f);
+        cl.a = std::uint8_t(a / stops + 0.5f);
+        return true;
+    }
+    // Fill of the paint under a PaintGlyph: solid, or a gradient's mean colour; transforms and nested glyph clips
+    // are looked through.
+    bool fill(std::uint32_t p, ColorLayer& cl, int depth) {
+        if (depth > 16 || --budget < 0 || !ok(p, 1)) return false;
+        const std::uint8_t f = d[p];
+        switch (f) {
+        case 2:
+        case 3: return ok(p, 5) && (cl = colour(be16(d + p + 1), f2dot14(d + p + 3)), true);
+        case 4: case 5: case 6: case 7: case 8: case 9:
+            return ok(p, 4) && colorLine(p + be24(d + p + 1), (f & 1) != 0, cl);
+        case 10:
+            return ok(p, 4) && fill(p + be24(d + p + 1), cl, depth + 1);
+        case 32: // composite: the source's fill
+            return ok(p, 4) && fill(p + be24(d + p + 1), cl, depth + 1);
+        default:
+            if (f >= 12 && f <= 31) return ok(p, 4) && fill(p + be24(d + p + 1), cl, depth + 1);
+            return false;
+        }
+    }
+    // Appends the layers painted by paint `p`.
+    void paint(std::uint32_t p, int depth) {
+        if (depth > 16 || --budget < 0 || !ok(p, 1)) return;
+        const std::uint8_t f = d[p];
+        if (f == 1) { // PaintColrLayers
+            if (!ok(p, 6) || !layerList) return;
+            const std::uint32_t count = d[p + 1], firstLayer = be32(d + p + 2);
+            for (std::uint32_t k = 0; k < count; ++k) {
+                if (firstLayer + k >= numLayers) break;
+                paint(layerList + be32(d + layerList + 4 + (firstLayer + k) * 4), depth + 1);
+            }
+        } else if (f == 10) { // PaintGlyph: the glyph's outline filled by the child paint
+            if (!ok(p, 6)) return;
+            ColorLayer cl;
+            if (fill(p + be24(d + p + 1), cl, depth + 1)) {
+                cl.glyph = be16(d + p + 4);
+                out->push_back(cl);
+            }
+        } else if (f == 11) { // PaintColrGlyph: another base glyph's graph
+            if (ok(p, 3))
+                if (const std::uint32_t q = basePaint(be16(d + p + 1))) paint(q, depth + 1);
+        } else if (f == 32) { // PaintComposite: backdrop, then source (blend modes are not modelled)
+            if (!ok(p, 8)) return;
+            paint(p + be24(d + p + 5), depth + 1);
+            paint(p + be24(d + p + 1), depth + 1);
+        } else if (f >= 12 && f <= 31) { // transforms: painted untransformed
+            if (ok(p, 4)) paint(p + be24(d + p + 1), depth + 1);
+        }
+        // gradients / solids outside a PaintGlyph fill the whole clip box: not representable as glyph layers
+    }
+    std::uint32_t basePaint(std::uint16_t glyph) const {
+        std::uint32_t lo = 0, hi = numBase;
+        while (lo < hi) { // records are sorted by glyph id
+            const std::uint32_t m = (lo + hi) / 2;
+            const std::uint8_t* r = d + baseList + 4 + m * 6;
+            const std::uint16_t g = be16(r);
+            if (g == glyph) return baseList + be32(r + 2);
+            if (g < glyph) lo = m + 1;
+            else hi = m;
+        }
+        return 0;
+    }
+};
+
+#if !FUSE_TEXT_COOKED
+// COLR (version 0 layers, plus version 1 paint graphs flattened to solid layers) + CPAL palette 0. Bounds-checked: a
+// malformed table leaves the font without colour glyphs.
 void loadColr(std::vector<std::uint8_t>& bytes, std::vector<ColorLayer>& layers,
-              std::vector<std::array<std::uint32_t, 3>>& colorBase, std::uint32_t fontStart) {
+              std::vector<std::array<std::uint32_t, 3>>& colorBase, std::uint32_t fontStart,
+              std::vector<ColorLayer>& v1Images) {
     std::uint8_t* d = bytes.data();
     const std::size_t n = bytes.size();
     const std::uint32_t colr = stbtt__find_table(d, fontStart, "COLR");
     const std::uint32_t cpal = stbtt__find_table(d, fontStart, "CPAL");
     if (!colr || !cpal || colr + 14 > n || cpal + 12 > n) return;
+    const std::uint16_t version = be16(d + colr);
     const std::uint16_t numBase = be16(d + colr + 2), numLayers = be16(d + colr + 12);
     const std::uint32_t baseOff = colr + be32(d + colr + 4), layerOff = colr + be32(d + colr + 8);
     const std::uint16_t numEntries = be16(d + cpal + 2), numPalettes = be16(d + cpal + 4), numRecords = be16(d + cpal + 6);
@@ -397,9 +559,49 @@ void loadColr(std::vector<std::uint8_t>& bytes, std::vector<ColorLayer>& layers,
         if (firstLayer + count <= numLayers && count > 0) colorBase.push_back({be16(b), firstLayer, count});
     }
     std::sort(colorBase.begin(), colorBase.end());
+
+    // COLRv1: glyphs without a v0 record get their paint graph flattened (v0 stays exact where both exist).
+    if (version < 1 || colr + 34 > n) return;
+    ColrV1 v1{d, n};
+    const std::uint32_t bl = be32(d + colr + 14), ll = be32(d + colr + 18);
+    if (bl && colr + std::uint64_t(bl) + 4 <= n) {
+        v1.baseList = colr + bl;
+        v1.numBase = be32(d + v1.baseList);
+        if (!v1.ok(v1.baseList + 4, std::uint64_t(v1.numBase) * 6)) return;
+    }
+    if (ll && colr + std::uint64_t(ll) + 4 <= n) {
+        v1.layerList = colr + ll;
+        v1.numLayers = be32(d + v1.layerList);
+        if (!v1.ok(v1.layerList + 4, std::uint64_t(v1.numLayers) * 4)) v1.layerList = 0;
+    }
+    v1.recOff = recOff;
+    v1.first = first;
+    v1.numEntries = numEntries;
+    v1.numRecords = numRecords;
+    v1.out = &layers;
+    const std::size_t v0Count = colorBase.size();
+    for (std::uint32_t i = 0; i < v1.numBase; ++i) {
+        const std::uint8_t* r = d + v1.baseList + 4 + i * 6;
+        const std::uint32_t glyph = be16(r);
+        const auto v0End = colorBase.begin() + std::ptrdiff_t(v0Count);
+        const auto it = std::lower_bound(colorBase.begin(), v0End, glyph,
+                                         [](const std::array<std::uint32_t, 3>& e, std::uint32_t g) { return e[0] < g; });
+        if (it != v0End && (*it)[0] == glyph) continue;
+        ColorLayer img;
+        img.glyph = glyph;
+        img.image = true;
+        v1Images.push_back(img);
+        const std::uint32_t start = std::uint32_t(layers.size());
+        v1.budget = 4096;
+        v1.paint(v1.baseList + be32(r + 2), 0);
+        if (layers.size() > start) colorBase.push_back({glyph, start, std::uint32_t(layers.size()) - start});
+    }
+    std::sort(colorBase.begin(), colorBase.end());
 }
+#endif
 } // namespace
 
+#if !FUSE_TEXT_COOKED
 namespace {
 bool readMem(void* user, std::uint64_t off, void* dst, std::size_t n) {
     const auto& v = *static_cast<const std::vector<std::uint8_t>*>(user);
@@ -408,6 +610,7 @@ bool readMem(void* user, std::uint64_t off, void* dst, std::size_t n) {
     return true;
 }
 } // namespace
+#endif
 
 std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> bytes, int faceIndex) {
     if (bytes.size() < 12 || faceIndex < 0) return std::unexpected(TextError::InvalidFont);
@@ -420,21 +623,65 @@ std::expected<Font, TextError> Font::fromBytes(std::span<const std::uint8_t> byt
     return f;
 }
 
-/// Builds the parsed state over shared file bytes (stb_truetype, COLR, the FULL backend). nullptr when not a font.
-Font::State* Font::State::make(const FontBytes& shared, int faceIndex) {
+/// Builds the parsed state over shared file bytes (stb_truetype, COLR, the FULL backend; COOKED: the pack view).
+/// nullptr when not a font.
+Font::State* Font::State::make(const FontBytes& shared, int faceIndex, const std::shared_ptr<detail::MappedFile>& map) {
     auto* st = new State;
     st->bytes = shared;
     st->faceIndex = faceIndex;
+#if FUSE_TEXT_COOKED
+    st->map = map; // a .fusefont pack holds one face: faceIndex is not used
+    st->file = map ? std::span<const std::uint8_t>(map->data(), map->size())
+                   : shared ? std::span<const std::uint8_t>(*shared) : std::span<const std::uint8_t>{};
+    st->cooked = detail::cookedCreate(st->file);
+    if (!st->cooked) {
+        delete st;
+        return nullptr;
+    }
+    const detail::CookedInfo& ci = detail::cookedInfo(st->cooked);
+    st->unitsPerPixelScale1 = ci.unitsPerPixelScale1;
+    st->emPerPixelSize = ci.emPerPixelSize;
+    st->unitsPerEm = ci.unitsPerEm;
+    st->numGlyphs = ci.numGlyphs;
+    detail::cookedColorTables(st->cooked, st->layers, st->colorBase, st->v1Images);
+#else
+    (void)map;
     std::vector<std::uint8_t>& data = *st->bytes;
     const int offset = stbtt_GetFontOffsetForIndex(data.data(), faceIndex);
     if (offset < 0 || !stbtt_InitFont(&st->info, data.data(), offset)) {
         delete st;
         return nullptr;
     }
+    st->file = data;
+    st->fvar = stbtt__find_table(data.data(), std::uint32_t(offset), "fvar");
     st->unitsPerPixelScale1 = stbtt_ScaleForPixelHeight(&st->info, 1.f);
     st->emPerPixelSize = st->unitsPerPixelScale1 / stbtt_ScaleForMappingEmToPixels(&st->info, 1.f);
-    loadColr(data, st->layers, st->colorBase, std::uint32_t(offset));
+    loadColr(data, st->layers, st->colorBase, std::uint32_t(offset), st->v1Images);
+    std::sort(st->v1Images.begin(), st->v1Images.end(), [](const ColorLayer& a, const ColorLayer& b) { return a.glyph < b.glyph; });
     detail::sfntFaceInfo({&data, readMem}, faceIndex, st->face); // a face without a name table keeps the defaults
+    {
+        std::uint8_t* d = data.data();
+        const std::size_t n = data.size();
+        st->colr = stbtt__find_table(d, std::uint32_t(offset), "COLR");
+        st->cpal = stbtt__find_table(d, std::uint32_t(offset), "CPAL");
+        st->cblc = stbtt__find_table(d, std::uint32_t(offset), "CBLC");
+        st->cbdt = stbtt__find_table(d, std::uint32_t(offset), "CBDT");
+        st->sbix = stbtt__find_table(d, std::uint32_t(offset), "sbix");
+        if (const std::uint32_t head = stbtt__find_table(d, std::uint32_t(offset), "head"); head && head + 20 <= n)
+            st->unitsPerEm = be16(d + head + 18);
+        if (const std::uint32_t maxp = stbtt__find_table(d, std::uint32_t(offset), "maxp"); maxp && maxp + 6 <= n)
+            st->numGlyphs = be16(d + maxp + 4);
+        if (((st->cblc && st->cbdt) || st->sbix) && detail::paintHooks().bitmapList) {
+            std::vector<std::uint32_t> ids;
+            detail::paintHooks().bitmapList({st->file, st->cblc, st->cbdt, st->sbix, st->unitsPerEm, st->numGlyphs}, ids);
+            for (const std::uint32_t g : ids) {
+                ColorLayer img;
+                img.glyph = g;
+                img.image = true;
+                st->bitmapImages.push_back(img);
+            }
+        }
+    }
 #if FUSE_TEXT_FULL
     st->full = detail::fullCreate(data, faceIndex);
     if (!st->full) {
@@ -442,25 +689,50 @@ Font::State* Font::State::make(const FontBytes& shared, int faceIndex) {
         return nullptr;
     }
 #endif
+#endif
     return st;
 }
 
 Font Font::synthesized(const Font& base, float embolden, float slant) {
     Font f;
     if (!base.m_state) return f;
-    State* st = State::make(base.m_state->bytes, base.m_state->faceIndex);
+    const State& src = *base.m_state;
+#if FUSE_TEXT_COOKED
+    State* st = State::make(src.bytes, src.faceIndex, src.map);
+#else
+    State* st = State::make(src.bytes, src.faceIndex);
+#endif
     if (!st) return f;
     st->embolden = std::clamp(embolden, 0.f, 0.25f);
     st->slant = std::clamp(slant, -1.f, 1.f);
-    st->fallbacks = base.m_state->fallbacks;
+    st->fallbacks = src.chain();
     f.m_state = st;
     f.m_id = g_fontIds.fetch_add(1);
+    if (src.varied) { // a variation instance keeps its coordinates
+        const auto ax = base.axes();
+        const auto co = base.variationCoords();
+        std::array<FontVariation, detail::kMaxAxes> v;
+        std::size_t n = 0;
+        for (; n < ax.size() && n < co.size() && n < v.size(); ++n) v[n] = {ax[n].tag, co[n]};
+        f.setVariation(std::span<const FontVariation>(v.data(), n));
+    }
     return f;
 }
 
 std::string_view Font::familyName() const { return m_state ? std::string_view(m_state->face.family) : std::string_view(); }
 std::string_view Font::styleName() const { return m_state ? std::string_view(m_state->face.style) : std::string_view(); }
-int Font::weight() const { return m_state ? m_state->face.weight : 400; }
+int Font::weight() const {
+    if (!m_state) return 400;
+    State& st = *m_state;
+    if (st.weightCache >= 0) return st.weightCache;
+    int w = st.face.weight;
+    const auto ax = axes(); // a variable font's wght coordinate (empty unless enableVariableFonts was called)
+    const auto co = variationCoords();
+    for (std::size_t k = 0; k < ax.size() && k < co.size(); ++k)
+        if (ax[k].tag == fontTag("wght")) w = std::clamp(int(std::lround(co[k])), 1, 1000);
+    st.weightCache = w;
+    return w;
+}
 bool Font::italic() const { return m_state && m_state->face.italic; }
 bool Font::monospace() const { return m_state && m_state->face.monospace; }
 float Font::syntheticEmbolden() const { return m_state ? m_state->embolden : 0.f; }
@@ -482,17 +754,20 @@ Font::DecorationMetrics Font::decorationMetrics(float px) const {
 }
 
 std::expected<Font, TextError> Font::fromFile(const std::string& path, int faceIndex) {
-    std::FILE* fp = std::fopen(path.c_str(), "rb");
-    if (!fp) return std::unexpected(TextError::InvalidFont);
+#if FUSE_TEXT_COOKED
+    auto map = std::make_shared<detail::MappedFile>(); // packs are mapped, not read: their pages load on first use
+    if (!map->open(path)) return std::unexpected(TextError::InvalidFont);
+    State* st = State::make({}, faceIndex, map);
+    if (!st) return std::unexpected(TextError::InvalidFont);
+    Font f;
+    f.m_state = st;
+    f.m_id = g_fontIds.fetch_add(1);
+    return f;
+#else
     std::vector<std::uint8_t> data;
-    std::uint8_t buf[16384];
-    for (;;) {
-        const std::size_t n = std::fread(buf, 1, sizeof buf, fp);
-        data.insert(data.end(), buf, buf + n);
-        if (n < sizeof buf) break;
-    }
-    std::fclose(fp);
+    if (!detail::readFile(path, data)) return std::unexpected(TextError::InvalidFont);
     return fromBytes(data, faceIndex);
+#endif
 }
 
 namespace {
@@ -516,7 +791,11 @@ std::expected<Font, TextError> bundledFace(const char* name) {
 void setFontDataSource(const FontDataSource& source) { g_fontSource = source; }
 
 std::expected<Font, TextError> Font::bundled() {
+#if FUSE_TEXT_COOKED
+    if (auto f = bundledFace("opensans/OpenSans.fusefont")) return f;
+#else
     if (auto f = bundledFace("opensans/OpenSans.ttf")) return f;
+#endif
 #if defined(FUSE_TEXT_BUNDLED_FONT)
     if (auto f = fromFile(FUSE_TEXT_BUNDLED_FONT)) return f;
 #endif
@@ -530,9 +809,17 @@ std::expected<Font, TextError> Font::bundled() {
 std::vector<Font> Font::bundledFallbacks() {
     std::vector<Font> out;
     // Emoji before Symbols 2 so emoji-presentation code points (U+2764 ...) come out in colour.
+#if FUSE_TEXT_COOKED // cooked at build time into the build tree (same names, .fusefont)
+    static const char* const kFiles[] = {"noto/NotoSansHebrew-Regular.fusefont", "noto/NotoSansArabic-Regular.fusefont",
+                                         "noto/NotoSansDevanagari-Regular.fusefont", "twemoji/TwemojiMozilla.fusefont",
+                                         "noto/NotoSansSymbols2-Regular.fusefont", "noto/NotoSansThai-Regular.fusefont",
+                                         "noto/NotoSansCJKsc-Subset.fusefont"};
+#else
     static const char* const kFiles[] = {"noto/NotoSansHebrew-Regular.ttf", "noto/NotoSansArabic-Regular.ttf",
                                          "noto/NotoSansDevanagari-Regular.ttf", "twemoji/TwemojiMozilla.ttf",
-                                         "noto/NotoSansSymbols2-Regular.ttf"};
+                                         "noto/NotoSansSymbols2-Regular.ttf", "noto/NotoSansThai-Regular.ttf",
+                                         "noto/NotoSansCJKsc-Subset.otf"};
+#endif
     for (const char* f : kFiles)
         if (auto font = bundledFace(f)) out.push_back(std::move(*font));
     return out;
@@ -542,16 +829,48 @@ void Font::setFallbacks(std::vector<const Font*> chain) {
     if (!m_state) return;
     std::erase_if(chain, [&](const Font* f) { return !f || !f->valid() || f == this; });
     m_state->fallbacks = std::move(chain);
+    g_chainGen.fetch_add(1, std::memory_order_relaxed);
 }
-std::size_t Font::faceCount() const { return m_state ? 1 + m_state->fallbacks.size() : 1; }
+void Font::setBoldFace(const Font* bold) {
+    if (!m_state || bold == this) return;
+    m_state->boldFace = bold && bold->valid() ? bold : nullptr;
+    g_chainGen.fetch_add(1, std::memory_order_relaxed);
+}
+const Font* Font::boldFace() const { return m_state ? m_state->boldFace : nullptr; }
+namespace {
+// The face fallback text of a primary at weight `w` (>= 600) uses: the face set with setBoldFace, else a variable
+// face's instance at that weight, else synthetic bold (colour fonts stay as they are).
+const Font& boldFallback(const Font& c, int w) {
+    if (const Font* b = c.boldFace()) return *b;
+    if (c.isVariable())
+        for (const VariationAxis& a : c.axes())
+            if (a.tag == fontTag("wght")) {
+                const FontVariation v{fontTag("wght"), float(w)};
+                return c.instance(std::span<const FontVariation>(&v, 1));
+            }
+    return c.emboldened();
+}
+} // namespace
+std::size_t Font::faceCount() const { return m_state ? 1 + m_state->chain().size() : 1; }
 const Font& Font::face(std::uint16_t i) const {
-    return (i == 0 || !m_state || i > m_state->fallbacks.size()) ? *this : *m_state->fallbacks[i - 1];
+    if (i == 0 || !m_state) return *this;
+    State& st = *m_state;
+    const auto& chain = st.chain();
+    if (i > chain.size()) return *this;
+    if (const std::uint32_t gen = g_chainGen.load(std::memory_order_relaxed); st.boldChainGen != gen) {
+        st.boldChain.clear();
+        if (const int w = weight(); w >= 600)
+            for (const Font* c : chain) st.boldChain.push_back(&boldFallback(*c, w));
+        st.boldChainGen = gen;
+    }
+    return st.boldChain.empty() ? *chain[i - 1] : *st.boldChain[i - 1];
 }
 std::uint16_t Font::faceFor(char32_t cp) const {
     if (!m_state) return 0;
     if (glyphIndex(cp)) return 0;
-    for (std::size_t k = 0; k < m_state->fallbacks.size(); ++k)
-        if (m_state->fallbacks[k]->glyphIndex(cp)) return std::uint16_t(k + 1);
+    const auto& chain = m_state->chain();
+    for (std::size_t k = 0; k < chain.size(); ++k)
+        if (chain[k]->glyphIndex(cp)) return std::uint16_t(k + 1);
     return 0;
 }
 float Font::facePixelSize(std::uint16_t i, float px) const {
@@ -559,14 +878,138 @@ float Font::facePixelSize(std::uint16_t i, float px) const {
     if (&f == this) return px;
     return px * m_state->emPerPixelSize / f.m_state->emPerPixelSize;
 }
-bool Font::hasColorGlyphs() const { return m_state && !m_state->colorBase.empty(); }
+bool Font::hasColorGlyphs() const {
+    return m_state && (!m_state->colorBase.empty() || !m_state->v1Images.empty() || !m_state->bitmapImages.empty());
+}
+namespace {
+const ColorLayer* findImage(const std::vector<ColorLayer>& v, std::uint32_t glyph) {
+    auto it = std::lower_bound(v.begin(), v.end(), glyph, [](const ColorLayer& e, std::uint32_t g) { return e.glyph < g; });
+    return it != v.end() && it->glyph == glyph ? &*it : nullptr;
+}
+} // namespace
 std::span<const ColorLayer> Font::colorLayers(std::uint32_t glyph) const {
-    if (!m_state || m_state->colorBase.empty()) return {};
+    if (!m_state) return {};
+    const detail::PaintHooks& hooks = detail::paintHooks();
+    if (hooks.colorEnabled) {
+        if (const ColorLayer* l = findImage(m_state->bitmapImages, glyph)) return {l, 1};
+        if (const ColorLayer* l = findImage(m_state->v1Images, glyph)) return {l, 1};
+    }
+    if (m_state->colorBase.empty()) return {};
     const auto& b = m_state->colorBase;
     auto it = std::lower_bound(b.begin(), b.end(), glyph, [](const auto& e, std::uint32_t g) { return e[0] < g; });
     if (it == b.end() || (*it)[0] != glyph) return {};
     return std::span<const ColorLayer>(m_state->layers.data() + (*it)[1], (*it)[2]);
 }
+
+// Variations go through varHooks() (font_var.cpp, installed by enableVariableFonts) so binaries that never enable
+// them do not link the glyf / gvar decoder. COOKED packs hold one instance: no variation data at run time.
+bool Font::isVariable() const { return m_state && m_state->fvar != 0; }
+std::span<const VariationAxis> Font::axes() const {
+    const auto fn = detail::varHooks().axes;
+    return fn && isVariable() ? fn(*this) : std::span<const VariationAxis>{};
+}
+std::span<const NamedInstance> Font::namedInstances() const {
+    const auto fn = detail::varHooks().named;
+    return fn && isVariable() ? fn(*this) : std::span<const NamedInstance>{};
+}
+std::span<const float> Font::variationCoords() const {
+    const auto fn = detail::varHooks().coords;
+    return fn && isVariable() ? fn(*this) : std::span<const float>{};
+}
+const Font& Font::instance(std::span<const FontVariation> settings) const {
+    const auto fn = detail::varHooks().instance;
+    return fn && isVariable() ? fn(*this, settings) : *this;
+}
+const Font& Font::namedInstance(std::size_t i) const {
+    const auto named = namedInstances();
+    const auto ax = axes();
+    if (i >= named.size()) return *this;
+    std::array<FontVariation, detail::kMaxAxes> s;
+    std::size_t n = 0;
+    for (; n < ax.size() && n < named[i].coords.size() && n < s.size(); ++n) s[n] = {ax[n].tag, named[i].coords[n]};
+    return instance(std::span<const FontVariation>(s.data(), n));
+}
+void Font::setVariation(std::span<const FontVariation> settings) {
+    if (const auto fn = detail::varHooks().setVariation; fn && isVariable()) {
+        fn(*this, settings);
+        m_state->weightCache = -1;
+        g_chainGen.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+bool variableFontsEnabled() { return detail::varHooks().instance != nullptr; }
+
+const Font& Font::withFeatures(std::span<const FontFeature> features) const {
+#if FUSE_TEXT_FULL
+    if (!m_state || !m_state->full) return *this;
+    State* src = const_cast<State*>(m_state->featureSource ? m_state->featureSource : m_state);
+    if (features.empty()) return *this;
+    const std::size_t n = std::min<std::size_t>(features.size(), 8);
+    for (const State::FeatureVariant& v : src->variants)
+        if (v.count == n && std::equal(features.begin(), features.begin() + std::ptrdiff_t(n), v.key.begin(),
+                                       [](const FontFeature& a, const FontFeature& b) { return a.tag == b.tag && a.value == b.value; }))
+            return *v.font;
+    if (src->variants.size() >= 64) return *src->variants.back().font;
+    State* st = detail::FontAccess::shareState(src);
+    st->var = src->var; // borrowed: same coordinates as the source
+    st->ownVar = false;
+    st->varied = src->varied;
+    st->coords = src->coords;
+    st->dAscent = src->dAscent;
+    st->dDescent = src->dDescent;
+    st->dLineGap = src->dLineGap;
+    st->featureSource = src;
+    st->embolden = src->embolden; // a synthetic variant keeps its style
+    st->slant = src->slant;
+    st->weightCache = src->weightCache;
+    detail::fullSetCoords(st->full, st->coords);
+    detail::fullSetFeatures(st->full, features.first(n));
+    State::FeatureVariant v;
+    std::copy(features.begin(), features.begin() + std::ptrdiff_t(n), v.key.begin());
+    v.count = n;
+    v.font = std::make_unique<Font>();
+    v.font->m_state = st;
+    v.font->m_id = g_fontIds.fetch_add(1);
+    src->variants.push_back(std::move(v));
+    return *src->variants.back().font;
+#else
+    (void)features; // no GSUB / GPOS shaping
+    return *this;
+#endif
+}
+const Font& Font::emboldened() const {
+#if FUSE_TEXT_COOKED
+    return *this; // packs are cooked at one instance
+#else
+    if (!m_state || m_state->embolden > 0.f || hasColorGlyphs() || weight() >= 600) return *this;
+    State* src = m_state;
+    if (!src->emboldenedFont) {
+        State* st = detail::FontAccess::shareState(src);
+        st->var = src->var; // borrowed: same coordinates as the source
+        st->ownVar = false;
+        st->varied = src->varied;
+        st->coords = src->coords;
+        st->dAscent = src->dAscent;
+        st->dDescent = src->dDescent;
+        st->dLineGap = src->dLineGap;
+        st->weightCache = 700;
+        st->embolden = 1.f / 24.f; // FreeType's FT_GlyphSlot_Embolden strength
+        st->slant = src->slant;
+#if FUSE_TEXT_FULL
+        detail::fullSetCoords(st->full, st->coords);
+#endif
+        auto f = std::make_unique<Font>();
+        f->m_state = st;
+        f->m_id = g_fontIds.fetch_add(1);
+        src->emboldenedFont = std::move(f);
+    }
+    return *src->emboldenedFont;
+#endif
+}
+float Font::syntheticBold(float px) const { return m_state ? m_state->embolden * m_state->emPerPixelSize * px : 0.f; }
+
+#if FUSE_TEXT_COOKED
+void enableVariableFonts() {}
+#endif
 
 Font::Font(Font&& o) noexcept : m_state(std::exchange(o.m_state, nullptr)), m_id(o.m_id) {}
 Font& Font::operator=(Font&& o) noexcept {
@@ -581,21 +1024,50 @@ Font::~Font() { delete m_state; }
 
 FontMetrics Font::metrics(float px) const {
     int a = 0, d = 0, g = 0;
+#if FUSE_TEXT_COOKED
+    const detail::CookedInfo& ci = detail::cookedInfo(m_state->cooked);
+    a = ci.ascent;
+    d = ci.descent;
+    g = ci.lineGap;
+#else
     stbtt_GetFontVMetrics(&m_state->info, &a, &d, &g);
+#endif
     const float s = m_state->unitsPerPixelScale1 * px;
-    return {float(a) * s, float(d) * s, float(g) * s};
+    return {(float(a) + m_state->dAscent) * s, (float(d) + m_state->dDescent) * s, (float(g) + m_state->dLineGap) * s};
 }
 namespace {
 /// Stem growth in pixels of a synthetic bold at this size.
 inline float emboldenPx(float embolden, float emPerPixelSize, float px) { return embolden * emPerPixelSize * px; }
 
-#if !FUSE_TEXT_FULL
-/// The outline of `glyph` sheared by `slant` (x += slant * y, font units, y up) and its pixel box at `scale`.
-/// Returns the vertex count (0: no outline); the caller frees `*verts` with stbtt_FreeShape.
-int shearedShape(const stbtt_fontinfo& info, std::uint32_t glyph, float slant, float scale, stbtt_vertex** verts, int& x0,
-                 int& y0, int& x1, int& y1) {
+#if !FUSE_TEXT_FULL && !FUSE_TEXT_COOKED
+/// The outline of `glyph` at the coordinates of a variation instance, as stb_truetype vertices (rounded to font
+/// units). Returns the vertex count; the caller frees `*verts` with stbtt_FreeShape.
+int variedShape(detail::VarState* var, std::uint32_t glyph, stbtt_vertex** verts) {
+    thread_local std::vector<detail::OutlineCmd> path;
+    *verts = nullptr;
+    if (!detail::varHooks().outline || !detail::varHooks().outline(var, glyph, path) || path.empty()) return 0;
+    auto* v = static_cast<stbtt_vertex*>(STBTT_malloc(path.size() * sizeof(stbtt_vertex), nullptr));
+    if (!v) return 0;
+    auto r = [](float f) { return short(std::clamp(std::lround(f), -32768l, 32767l)); };
+    for (std::size_t i = 0; i < path.size(); ++i) {
+        const detail::OutlineCmd& c = path[i];
+        v[i] = {};
+        v[i].type = c.kind == detail::OutlineCmd::Move ? STBTT_vmove : c.kind == detail::OutlineCmd::Line ? STBTT_vline
+                    : c.kind == detail::OutlineCmd::Quad ? STBTT_vcurve : STBTT_vcubic;
+        v[i].x = r(c.x);
+        v[i].y = r(c.y);
+        v[i].cx = r(c.cx);
+        v[i].cy = r(c.cy);
+        v[i].cx1 = r(c.cx1);
+        v[i].cy1 = r(c.cy1);
+    }
+    *verts = v;
+    return int(path.size());
+}
+/// Shears the `n` outline vertices by `slant` (x += slant * y, font units, y up) and gives the pixel box at `scale`.
+/// Returns n (0: no outline).
+int shearedShape(stbtt_vertex** verts, int n, float slant, float scale, int& x0, int& y0, int& x1, int& y1) {
     x0 = y0 = x1 = y1 = 0;
-    const int n = stbtt_GetGlyphShape(&info, int(glyph), verts);
     if (n <= 0) return 0;
     float minX = 1e9f, minY = 1e9f, maxX = -1e9f, maxY = -1e9f;
     auto shear = [&](short& x, short y) {
@@ -622,17 +1094,47 @@ int shearedShape(const stbtt_fontinfo& info, std::uint32_t glyph, float slant, f
 } // namespace
 
 std::uint32_t Font::glyphIndex(char32_t cp) const {
-    return std::uint32_t(stbtt_FindGlyphIndex(&m_state->info, int(cp)));
+    std::uint64_t& slot = m_state->cmapCache[(cp * 0x9E3779B1u) >> 22];
+    if (std::uint32_t(slot >> 32) == std::uint32_t(cp)) return std::uint32_t(slot);
+#if FUSE_TEXT_COOKED
+    const std::uint32_t g = detail::cookedGlyphIndex(m_state->cooked, cp);
+#else
+    const std::uint32_t g = std::uint32_t(stbtt_FindGlyphIndex(&m_state->info, int(cp)));
+#endif
+    slot = (std::uint64_t(cp) << 32) | g;
+    return g;
 }
 float Font::advance(std::uint32_t glyph, float px) const {
+    const float a = baseAdvance(glyph, px);
+    // a synthetic bold glyph is wider by its stem growth
+    return m_state->embolden > 0.f && a > 0.f ? a + emboldenPx(m_state->embolden, m_state->emPerPixelSize, px) : a;
+}
+float Font::baseAdvance(std::uint32_t glyph, float px) const {
+#if FUSE_TEXT_COOKED
+    const int adv = detail::cookedAdvance(m_state->cooked, glyph);
+#else
+    if (m_state->varied) return detail::varHooks().advance(m_state->var, glyph) * m_state->unitsPerPixelScale1 * px;
     int adv = 0, lsb = 0;
     stbtt_GetGlyphHMetrics(&m_state->info, int(glyph), &adv, &lsb);
-    if (m_state->embolden > 0.f && adv > 0) // a synthetic bold glyph is wider by its stem growth
-        return float(adv) * m_state->unitsPerPixelScale1 * px + emboldenPx(m_state->embolden, m_state->emPerPixelSize, px);
+#endif
     return float(adv) * m_state->unitsPerPixelScale1 * px;
 }
 float Font::kerning(std::uint32_t l, std::uint32_t r, float px) const {
-    return float(stbtt_GetGlyphKernAdvance(&m_state->info, int(l), int(r))) * m_state->unitsPerPixelScale1 * px;
+    // glyph ids are 16-bit; the all-ones key (65535, 65535) is the empty slot, so that pair is never cached
+    const std::uint32_t key = ((l & 0xFFFFu) << 16) | (r & 0xFFFFu);
+    std::uint64_t& slot = m_state->kernCache[(key * 0x9E3779B1u) >> 21];
+    int units = 0;
+    if (std::uint32_t(slot >> 32) == key && key != ~0u) {
+        units = int(std::int32_t(std::uint32_t(slot)));
+    } else {
+#if FUSE_TEXT_COOKED
+        units = detail::cookedKern(m_state->cooked, l, r);
+#else
+        units = stbtt_GetGlyphKernAdvance(&m_state->info, int(l), int(r));
+#endif
+        slot = (std::uint64_t(key) << 32) | std::uint32_t(units);
+    }
+    return float(units) * m_state->unitsPerPixelScale1 * px;
 }
 void Font::glyphBox(std::uint32_t glyph, float px, int& x0, int& y0, int& x1, int& y1) const {
     rawGlyphBox(glyph, px, x0, y0, x1, y1);
@@ -642,7 +1144,8 @@ void Font::glyphBox(std::uint32_t glyph, float px, int& x0, int& y0, int& x1, in
 void Font::rasterise(std::uint32_t glyph, float px, std::uint8_t* dst, int w, int h, int stride) const {
     if (m_state->embolden <= 0.f) return rawRasterise(glyph, px, dst, w, h, stride);
     // Synthetic bold: rasterise the (possibly sheared) outline, then smear the coverage to the right by the stem
-    // growth. It works on the coverage of either rasteriser, and the GPU glyph path samples the same atlas texels.
+    // growth. It works on the coverage of every rasteriser (stb_truetype, FreeType, a cooked strike), and the GPU glyph
+    // path samples the same atlas texels.
     int x0, y0, x1, y1;
     rawGlyphBox(glyph, px, x0, y0, x1, y1);
     const int bw = x1 - x0, bh = y1 - y0;
@@ -666,35 +1169,51 @@ void Font::rasterise(std::uint32_t glyph, float px, std::uint8_t* dst, int w, in
         }
     }
 }
-// The real outline, sheared when the font is a synthetic oblique (the shear is applied to the outline, before
-// rasterisation, so stems stay as sharp as the upright ones).
+// The real outline (a variation instance: at its coordinates), sheared when the font is a synthetic oblique (the shear
+// is applied to the outline, before rasterisation, so stems stay as sharp as the upright ones). COOKED packs hold
+// rasterised strikes: no shear.
 void Font::rawGlyphBox(std::uint32_t glyph, float px, int& x0, int& y0, int& x1, int& y1) const {
 #if FUSE_TEXT_FULL
     return detail::fullGlyphBox(m_state->full, glyph, m_state->emPerPixelSize * px, m_state->slant, x0, y0, x1, y1);
+#elif FUSE_TEXT_COOKED
+    return detail::cookedGlyphBox(m_state->cooked, glyph, px, x0, y0, x1, y1);
 #else
     const float s = m_state->unitsPerPixelScale1 * px;
-    if (m_state->slant == 0.f) return stbtt_GetGlyphBitmapBox(&m_state->info, int(glyph), s, s, &x0, &y0, &x1, &y1);
+    if (m_state->slant == 0.f) {
+        if (m_state->varied) return detail::varHooks().glyphBox(m_state->var, glyph, s, x0, y0, x1, y1);
+        return stbtt_GetGlyphBitmapBox(&m_state->info, int(glyph), s, s, &x0, &y0, &x1, &y1);
+    }
     stbtt_vertex* verts = nullptr;
-    if (shearedShape(m_state->info, glyph, m_state->slant, s, &verts, x0, y0, x1, y1) > 0) stbtt_FreeShape(&m_state->info, verts);
+    const int n = m_state->varied ? variedShape(m_state->var, glyph, &verts) : stbtt_GetGlyphShape(&m_state->info, int(glyph), &verts);
+    shearedShape(&verts, n, m_state->slant, s, x0, y0, x1, y1);
+    if (verts) stbtt_FreeShape(&m_state->info, verts);
 #endif
 }
 void Font::rawRasterise(std::uint32_t glyph, float px, std::uint8_t* dst, int w, int h, int stride) const {
 #if FUSE_TEXT_FULL
     return detail::fullRasterise(m_state->full, glyph, m_state->emPerPixelSize * px, m_state->slant, dst, w, h, stride);
+#elif FUSE_TEXT_COOKED
+    return detail::cookedRasterise(m_state->cooked, glyph, px, dst, w, h, stride);
 #else
     const float s = m_state->unitsPerPixelScale1 * px;
-    if (m_state->slant == 0.f) return stbtt_MakeGlyphBitmap(&m_state->info, dst, w, h, stride, s, s, int(glyph));
+    if (m_state->slant == 0.f) {
+        if (m_state->varied) return detail::varHooks().rasterise(m_state->var, glyph, s, dst, w, h, stride);
+        return stbtt_MakeGlyphBitmap(&m_state->info, dst, w, h, stride, s, s, int(glyph));
+    }
     stbtt_vertex* verts = nullptr;
     int x0, y0, x1, y1;
-    const int n = shearedShape(m_state->info, glyph, m_state->slant, s, &verts, x0, y0, x1, y1);
-    if (n <= 0) return;
-    stbtt__bitmap bm;
-    bm.w = w;
-    bm.h = h;
-    bm.stride = stride;
-    bm.pixels = dst;
-    if (w > 0 && h > 0) stbtt_Rasterize(&bm, 0.35f, verts, n, s, s, 0.f, 0.f, x0, y0, 1, m_state->info.userdata);
-    stbtt_FreeShape(&m_state->info, verts);
+    const int n = shearedShape(&verts, m_state->varied ? variedShape(m_state->var, glyph, &verts)
+                                                       : stbtt_GetGlyphShape(&m_state->info, int(glyph), &verts),
+                               m_state->slant, s, x0, y0, x1, y1);
+    if (n > 0 && w > 0 && h > 0) {
+        stbtt__bitmap bm;
+        bm.w = w;
+        bm.h = h;
+        bm.stride = stride;
+        bm.pixels = dst;
+        stbtt_Rasterize(&bm, 0.35f, verts, n, s, s, 0.f, 0.f, x0, y0, 1, m_state->info.userdata);
+    }
+    if (verts) stbtt_FreeShape(&m_state->info, verts);
 #endif
 }
 
@@ -726,6 +1245,236 @@ float MinimalShaper::shape(const Font& font, float px, std::string_view s, std::
 }
 
 float Font::unitScale(float px) const { return m_state->unitsPerPixelScale1 * px; }
+
+namespace detail {
+const Font::State* FontAccess::state(const Font& f) { return f.m_state; }
+VarState*& FontAccess::var(const Font& f) { return f.m_state->var; }
+std::span<const std::uint8_t> FontAccess::file(const Font& f) {
+    return f.m_state ? f.m_state->file : std::span<const std::uint8_t>{};
+}
+std::uint32_t FontAccess::fontStart(const Font& f) {
+#if FUSE_TEXT_COOKED
+    (void)f;
+    return 0;
+#else
+    return f.m_state ? std::uint32_t(f.m_state->info.fontstart) : 0;
+#endif
+}
+VarHooks& varHooks() {
+    static VarHooks hooks;
+    return hooks;
+}
+#if !FUSE_TEXT_COOKED
+void FontAccess::setVaried(const Font& f, std::span<const std::int16_t> coords, float dAscent, float dDescent, float dLineGap) {
+    Font::State& st = *f.m_state;
+    const bool varied = std::any_of(coords.begin(), coords.end(), [](std::int16_t c) { return c != 0; });
+    st.varied = varied;
+    st.coords = varied ? coords : std::span<const std::int16_t>{};
+    st.dAscent = dAscent;
+    st.dDescent = dDescent;
+    st.dLineGap = dLineGap;
+#if FUSE_TEXT_FULL
+    fullSetCoords(st.full, st.coords);
+#endif
+}
+// A state over `src`'s file (the owner's bytes), colour tables and fallback chain.
+Font::State* FontAccess::shareState(const Font::State* src) {
+    const Font::State* o = src->owner ? src->owner : src;
+    auto* st = new Font::State;
+    st->info = o->info; // points into the owner's bytes
+    st->file = o->file;
+    st->owner = o;
+    st->fvar = o->fvar;
+    st->unitsPerPixelScale1 = o->unitsPerPixelScale1; // pixel sizes keep the default instance's scale
+    st->emPerPixelSize = o->emPerPixelSize;
+    st->layers = o->layers;
+    st->colorBase = o->colorBase;
+    st->colr = o->colr;
+    st->cpal = o->cpal;
+    st->cblc = o->cblc;
+    st->cbdt = o->cbdt;
+    st->sbix = o->sbix;
+    st->unitsPerEm = o->unitsPerEm;
+    st->numGlyphs = o->numGlyphs;
+    st->face = o->face;
+    st->faceIndex = o->faceIndex;
+    st->bytes = o->bytes;
+    st->embolden = src->embolden; // a synthetic variant's instances keep its style
+    st->slant = src->slant;
+    st->v1Images = o->v1Images;
+    st->bitmapImages = o->bitmapImages;
+#if FUSE_TEXT_FULL
+    st->full = fullCreateInstance(o->full);
+#endif
+    return st;
+}
+
+std::unique_ptr<Font> FontAccess::makeInstance(const Font& from, VarState* v, std::span<const std::int16_t> coords,
+                                               float dAscent, float dDescent, float dLineGap) {
+    Font::State* st = shareState(from.m_state);
+    st->var = v;
+    auto f = std::make_unique<Font>();
+    f->m_state = st;
+    f->m_id = g_fontIds.fetch_add(1);
+    setVaried(*f, coords, dAscent, dDescent, dLineGap);
+    return f;
+}
+#endif
+
+PaintHooks& paintHooks() {
+    static PaintHooks hooks;
+    return hooks;
+}
+
+bool glyphOutline(const Font& font, std::uint32_t glyph, std::vector<OutlineCmd>& out) {
+    out.clear();
+    const auto* st = FontAccess::state(font);
+#if FUSE_TEXT_COOKED
+    (void)st;
+    (void)glyph;
+    return false; // cooked packs carry no outlines
+#else
+    if (!st) return false;
+    if (st->varied) return varHooks().outline(st->var, glyph, out);
+    stbtt_vertex* v = nullptr;
+    const int n = stbtt_GetGlyphShape(&st->info, int(glyph), &v);
+    out.reserve(std::size_t(std::max(n, 0)));
+    for (int i = 0; i < n; ++i) {
+        OutlineCmd c;
+        switch (v[i].type) {
+        case STBTT_vmove: c.kind = OutlineCmd::Move; break;
+        case STBTT_vline: c.kind = OutlineCmd::Line; break;
+        case STBTT_vcurve: c.kind = OutlineCmd::Quad; break;
+        default: c.kind = OutlineCmd::Cubic; break;
+        }
+        c.x = float(v[i].x);
+        c.y = float(v[i].y);
+        c.cx = float(v[i].cx);
+        c.cy = float(v[i].cy);
+        c.cx1 = float(v[i].cx1);
+        c.cy1 = float(v[i].cy1);
+        out.push_back(c);
+    }
+    stbtt_FreeShape(&st->info, v);
+    return !out.empty();
+#endif
+}
+} // namespace detail
+
+#if !FUSE_TEXT_COOKED
+// ---- what the font cooker (font_cook.cpp) reads ----
+namespace detail {
+CookSource cookSource(const Font& font) {
+    CookSource c;
+    const auto* st = FontAccess::state(font);
+    if (!st) return c;
+    stbtt_GetFontVMetrics(&st->info, &c.ascent, &c.descent, &c.lineGap);
+    c.ascent = int(std::lround(float(c.ascent) + st->dAscent));
+    c.descent = int(std::lround(float(c.descent) + st->dDescent));
+    c.lineGap = int(std::lround(float(c.lineGap) + st->dLineGap));
+    c.unitsPerPixelScale1 = st->unitsPerPixelScale1;
+    c.emPerPixelSize = st->emPerPixelSize;
+    c.unitsPerEm = st->unitsPerEm;
+    c.numGlyphs = st->numGlyphs;
+    return c;
+}
+int advanceUnits(const Font& font, std::uint32_t glyph) {
+    if (const auto* st = FontAccess::state(font); st->varied) return int(std::lround(varHooks().advance(st->var, glyph)));
+    int adv = 0, lsb = 0;
+    stbtt_GetGlyphHMetrics(&FontAccess::state(font)->info, int(glyph), &adv, &lsb);
+    return adv;
+}
+int kernUnits(const Font& font, std::uint32_t l, std::uint32_t r) {
+    return stbtt_GetGlyphKernAdvance(&FontAccess::state(font)->info, int(l), int(r));
+}
+bool hasKerning(const Font& font) {
+    const auto* st = FontAccess::state(font);
+    return st->info.kern != 0 || st->info.gpos != 0;
+}
+void rawColorTables(const Font& font, std::vector<ColorLayer>& layers, std::vector<std::array<std::uint32_t, 3>>& base) {
+    const auto* st = FontAccess::state(font);
+    layers = st->layers;
+    base = st->colorBase;
+}
+void imageGlyphs(const Font& font, std::vector<std::uint32_t>& out) {
+    const auto* st = FontAccess::state(font);
+    out.clear();
+    for (const ColorLayer& l : st->v1Images) out.push_back(l.glyph);
+    for (const ColorLayer& l : st->bitmapImages) out.push_back(l.glyph);
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+}
+} // namespace detail
+#endif
+
+bool Font::renderColor(std::uint32_t glyph, float px, std::uint32_t foreground, ColorImage& out) const {
+    out = {};
+    if (!m_state) return false;
+    const detail::PaintHooks& hooks = detail::paintHooks();
+    const State& st = *m_state;
+#if FUSE_TEXT_COOKED
+    (void)hooks;
+    return hooks.colorEnabled && detail::cookedColor(st.cooked, glyph, px, foreground, out);
+#else
+    if (hooks.bitmapRender && findImage(st.bitmapImages, glyph))
+        return hooks.bitmapRender({st.file, st.cblc, st.cbdt, st.sbix, st.unitsPerEm, st.numGlyphs}, glyph,
+                                  unitScale(px) * float(st.unitsPerEm), out);
+    if (hooks.colrRender && findImage(st.v1Images, glyph))
+        return hooks.colrRender({this, st.file, st.colr, st.cpal, unitScale(px), st.coords}, glyph,
+                                foreground, out);
+    return false;
+#endif
+}
+
+bool Font::renderMsdf(std::uint32_t glyph, float px, float range, ColorImage& out) const {
+    out = {};
+    const detail::PaintHooks& hooks = detail::paintHooks();
+#if FUSE_TEXT_COOKED
+    return m_state && hooks.msdfEnabled && detail::cookedMsdf(m_state->cooked, glyph, px, range, out);
+#else
+    if (!m_state || !hooks.msdf || !(range > 0.f)) return false;
+    thread_local std::vector<detail::OutlineCmd> path;
+    if (!detail::glyphOutline(*this, glyph, path)) return false;
+    int ux0 = 0, uy0 = 0, ux1 = 0, uy1 = 0;
+    if (m_state->varied) { // bounds of the varied outline (end and control points)
+        float b[4] = {1e30f, 1e30f, -1e30f, -1e30f};
+        for (const detail::OutlineCmd& c : path) {
+            const bool ctl = c.kind == detail::OutlineCmd::Quad || c.kind == detail::OutlineCmd::Cubic;
+            b[0] = std::min({b[0], c.x, ctl ? c.cx : c.x});
+            b[1] = std::min({b[1], c.y, ctl ? c.cy : c.y});
+            b[2] = std::max({b[2], c.x, ctl ? c.cx : c.x});
+            b[3] = std::max({b[3], c.y, ctl ? c.cy : c.y});
+        }
+        ux0 = int(std::floor(b[0]));
+        uy0 = int(std::floor(b[1]));
+        ux1 = int(std::ceil(b[2]));
+        uy1 = int(std::ceil(b[3]));
+    } else if (!stbtt_GetGlyphBox(&m_state->info, int(glyph), &ux0, &uy0, &ux1, &uy1)) {
+        return false;
+    }
+    const float s = unitScale(px);
+    const float pad = range * 0.5f + 1.f;
+    const float bold = syntheticBold(px); // synthetic bold: distances biased outward by half the strength, shifted right
+    ux1 += int(std::ceil(bold / s));
+    out.x0 = int(std::floor(float(ux0) * s - pad));
+    out.y0 = int(std::floor(-float(uy1) * s - pad));
+    out.w = int(std::ceil(float(ux1) * s + pad)) - out.x0;
+    out.h = int(std::ceil(-float(uy0) * s + pad)) - out.y0;
+    if (out.w <= 0 || out.h <= 0 || out.w > 2048 || out.h > 2048) return false;
+    out.rgba.assign(std::size_t(out.w) * std::size_t(out.h) * 4, 0);
+    detail::Affine m;
+    m.xx = s;
+    m.yy = -s;
+    m.dx = -float(out.x0) + bold * 0.5f;
+    m.dy = -float(out.y0);
+    hooks.msdf(path, m, range, out.rgba.data(), out.w, out.h, out.w * 4);
+    if (bold > 0.f) {
+        const int bias = int(std::lround(255.f * bold * 0.5f / range));
+        for (std::uint8_t& c : out.rgba) c = std::uint8_t(std::min(255, int(c) + bias));
+    }
+    return true;
+#endif
+}
 
 #if FUSE_TEXT_FULL
 float HarfBuzzShaper::shape(const Font& font, float px, std::string_view s, std::vector<ShapedGlyph>& out) const {
@@ -768,6 +1517,7 @@ namespace {
 // Code points that belong to the cluster before them keep its face (marks, ZWJ, emoji modifiers, VS16, tags, and
 // the pictographic after a ZWJ), so a grapheme is never split across faces.
 bool inheritsFace(char32_t cp, char32_t prev) {
+    if (cp < 0x300 && prev != 0x200D) return false; // no Extend / ZWJ / SpacingMark below U+0300
     const GraphemeBreak p = graphemeBreakProperty(cp);
     return p == GraphemeBreak::Extend || p == GraphemeBreak::ZWJ || p == GraphemeBreak::SpacingMark ||
            (prev == 0x200D && p == GraphemeBreak::ExtPict);
@@ -817,69 +1567,6 @@ float shapeWithFallback(const Font& font, const ITextShaper& shaper, float px, s
     });
     return pen;
 }
-#if FUSE_TEXT_FULL
-// FULL layout shapes with the primary face only (bidi + line breaking + run cache); fallback runs are then
-// re-shaped with their face per line and the rest of the line shifts by the width change.
-void applyFallbackPerLine(const Font& font, const ITextShaper& shaper, float px, std::string_view s,
-                          std::vector<ShapedGlyph>& g, std::vector<TextLine>& lines) {
-    if (!mayNeedFallback(font, s)) return;
-    struct Span {
-        std::uint32_t b, e;
-        std::uint16_t face;
-    };
-    thread_local std::vector<Span> spans;
-    spans.clear();
-    forEachFaceRun(font, s, [&](std::size_t b, std::size_t e, std::uint16_t f) {
-        if (f) spans.push_back({std::uint32_t(b), std::uint32_t(e), f});
-    });
-    if (spans.empty()) return;
-    auto spanOf = [&](const ShapedGlyph& x) -> int {
-        if (x.glyph == kInvisibleGlyph) return -1;
-        for (std::size_t k = 0; k < spans.size(); ++k)
-            if (x.cluster >= spans[k].b && x.cluster < spans[k].e) return int(k);
-        return -1;
-    };
-    thread_local std::vector<ShapedGlyph> outG, run;
-    outG.clear();
-    for (TextLine& ln : lines) {
-        const std::uint32_t first = std::uint32_t(outG.size());
-        const std::uint32_t end = ln.firstGlyph + ln.glyphCount;
-        float shift = 0.f;
-        for (std::uint32_t k = ln.firstGlyph; k < end;) {
-            const int sp = spanOf(g[k]);
-            if (sp < 0) {
-                ShapedGlyph x = g[k++];
-                x.x += shift;
-                outG.push_back(x);
-                continue;
-            }
-            std::uint32_t j = k, lo = g[k].cluster;
-            float oldAdv = 0.f;
-            for (; j < end && spanOf(g[j]) == sp; ++j) {
-                oldAdv += g[j].advance;
-                lo = std::min(lo, g[j].cluster);
-            }
-            const Span& span = spans[std::size_t(sp)];
-            std::uint32_t hi = span.e;
-            if (ln.byteEnd > lo && ln.byteEnd < hi) hi = ln.byteEnd;
-            const float x0 = g[k].x + shift;
-            const float w = shaper.shape(font.face(span.face), font.facePixelSize(span.face, px), s.substr(lo, hi - lo), run);
-            for (ShapedGlyph r : run) {
-                r.cluster += lo;
-                r.x += x0;
-                r.face = span.face;
-                outG.push_back(r);
-            }
-            shift += w - oldAdv;
-            k = j;
-        }
-        ln.firstGlyph = first;
-        ln.glyphCount = std::uint32_t(outG.size()) - first;
-        ln.width += shift;
-    }
-    g.swap(outG);
-}
-#endif
 } // namespace
 
 float shapeText(const Font& font, std::string_view s, float px, std::vector<ShapedGlyph>& out) {
@@ -917,10 +1604,27 @@ void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s,
 #endif
     if (full) {
 #if FUSE_TEXT_FULL
-        const float extra = desc.letterSpacing + emboldenPx(font.m_state->embolden, font.m_state->emPerPixelSize, desc.pixelSize);
-        detail::fullLayout(font.m_state->full, font.unitScale(desc.pixelSize), s, wrap ? desc.maxWidth : 0.f, lh,
-                           std::ceil(out.metrics.ascent) + lead, extra, g, out.lines);
-        applyFallbackPerLine(font, shaper, desc.pixelSize, s, g, out.lines);
+        // Fallback runs are shaped once, by their own face, inside the bidi / line-breaking pass.
+        thread_local std::vector<detail::FullRunFace> faces;
+        thread_local std::vector<detail::FullFaceSpan> spans;
+        const float px = desc.pixelSize;
+        faces.assign(1, {font.m_state->full, font.unitScale(px), font.syntheticBold(px)});
+        spans.clear();
+        if (mayNeedFallback(font, s)) {
+            forEachFaceRun(font, s, [&](std::size_t b, std::size_t e, std::uint16_t f) {
+                if (f) spans.push_back({std::uint32_t(b), std::uint32_t(e), f});
+            });
+            if (!spans.empty())
+                for (std::uint16_t k = 1; k < font.faceCount(); ++k) {
+                    const Font& fk = font.face(k);
+                    const float fpx = font.facePixelSize(k, px);
+                    faces.push_back({fk.m_state->full, fk.unitScale(fpx), fk.syntheticBold(fpx)});
+                }
+            std::erase_if(spans, [](const detail::FullFaceSpan& sp) { return !faces[sp.face].face; });
+        }
+        detail::fullLayout(faces, spans, s, wrap ? desc.maxWidth : 0.f, lh, std::ceil(out.metrics.ascent) + lead,
+                           desc.letterSpacing, g, out.lines,
+                           desc.base == BaseDirection::Ltr ? 0 : desc.base == BaseDirection::Rtl ? 1 : 2);
 #endif
     } else {
     shapeWithFallback(font, shaper, desc.pixelSize, s, out.glyphs);
@@ -1008,10 +1712,12 @@ void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s,
     out.width = 0.f;
     for (const auto& ln : out.lines) out.width = std::max(out.width, ln.width);
     const float alignW = desc.maxWidth > 0.f ? desc.maxWidth : out.width;
-    if (desc.align != TextAlign::Start || anyRtl) {
+    if (desc.align != TextAlign::Start || anyRtl || desc.rtl) {
         for (const auto& ln : out.lines) {
-            // Start / End follow the paragraph direction: Start is the right edge of an RTL line.
-            const bool toEnd = (desc.align == TextAlign::End) != ln.rtl;
+            // Start / End follow the paragraph (or base) direction: Start is the right edge of an RTL line.
+            const bool rtl = ln.rtl || desc.rtl;
+            const bool toEnd = desc.align == TextAlign::Right || (desc.align == TextAlign::End && !rtl) ||
+                               (desc.align == TextAlign::Start && rtl);
             if (desc.align != TextAlign::Center && !toEnd) continue;
             const float off = desc.align == TextAlign::Center ? std::floor((alignW - ln.width) * 0.5f) : alignW - ln.width;
             for (std::uint32_t k = ln.firstGlyph; k < ln.firstGlyph + ln.glyphCount; ++k) g[k].x += off;
@@ -1021,16 +1727,51 @@ void layoutText(const Font& font, const ITextShaper& shaper, std::string_view s,
 }
 
 // ---- Glyph atlas ---------------------------------------------------------------------------------------------------
-GlyphAtlas::GlyphAtlas(int size) : m_size(size), m_pixels(std::size_t(size) * std::size_t(size), 0), m_slots(4096) {}
+GlyphAtlas::GlyphAtlas(int size)
+    : m_size(size & ~1), m_pixels(std::size_t(size & ~1) * std::size_t(size & ~1) * 2, 0), m_slots(4096) {}
 
 void GlyphAtlas::clear() {
     std::fill(m_pixels.begin(), m_pixels.end(), std::uint8_t(0));
     for (auto& s : m_slots) s = Slot{};
     m_used = 0;
-    m_shelfX = 1;
-    m_shelfY = 1;
-    m_shelfH = 0;
+    m_shelf = {};
+    m_colorShelf = {};
     ++m_generation;
+}
+
+bool GlyphAtlas::find(std::uint64_t key, std::uint32_t aux, std::size_t& slot) const {
+    const std::size_t mask = m_slots.size() - 1;
+    for (std::size_t h = std::size_t(((key ^ aux) * 0x9E3779B97F4A7C15ull) >> 40) & mask;; h = (h + 1) & mask) {
+        const Slot& s = m_slots[h];
+        slot = h;
+        if (s.key == key && s.aux == aux) return true;
+        if (s.key == 0) return false;
+    }
+}
+
+// Shelf packing with a 1-texel gutter. False when the page is full (the caller resets the atlas).
+bool GlyphAtlas::place(Shelf& s, int page, int w, int h, int& u, int& v) {
+    if (w + 2 > page || h + 2 > page) return false;
+    if (s.x + w + 1 > page) {
+        s.x = 1;
+        s.y += s.h + 1;
+        s.h = 0;
+    }
+    if (s.y + h + 1 > page) return false;
+    u = s.x;
+    v = s.y;
+    s.x += w + 1;
+    s.h = std::max(s.h, h);
+    return true;
+}
+
+AtlasGlyph GlyphAtlas::store(std::uint64_t key, std::uint32_t aux, const AtlasGlyph& g) {
+    if (m_used * 4 >= m_slots.size() * 3) clear();
+    std::size_t h = 0;
+    find(key, aux, h);
+    m_slots[h] = {key, aux, g};
+    ++m_used;
+    return g;
 }
 
 AtlasGlyph GlyphAtlas::get(const Font& font, std::uint32_t glyph, float px) {
@@ -1039,19 +1780,10 @@ AtlasGlyph GlyphAtlas::get(const Font& font, std::uint32_t glyph, float px) {
     // (0 for a real face: regular keys are unchanged).
     const std::uint64_t synth = (font.syntheticEmbolden() > 0.f ? 1ull << 61 : 0ull) | (font.syntheticSlant() != 0.f ? 1ull << 62 : 0ull);
     const std::uint64_t key = (std::uint64_t(font.id()) << 44) ^ (std::uint64_t(q) << 24) ^ glyph ^ (1ull << 63) ^ synth;
-    const std::size_t mask = m_slots.size() - 1;
-    std::size_t h = std::size_t((key * 0x9E3779B97F4A7C15ull) >> 40) & mask;
-    for (;;) {
-        Slot& s = m_slots[h];
-        if (s.key == key) return s.g;
-        if (s.key == 0) break;
-        h = (h + 1) & mask;
-    }
+    std::size_t slot = 0;
+    if (find(key, 0, slot)) return m_slots[slot].g;
     ++m_misses;
-    if (m_used * 4 >= m_slots.size() * 3) {
-        clear();
-        return get(font, glyph, px);
-    }
+    if (m_used * 4 >= m_slots.size() * 3) clear();
     const float pxq = float(q) / 4.f;
     int x0, y0, x1, y1;
     font.glyphBox(glyph, pxq, x0, y0, x1, y1);
@@ -1060,28 +1792,125 @@ AtlasGlyph GlyphAtlas::get(const Font& font, std::uint32_t glyph, float px) {
     ag.x0 = std::int16_t(x0);
     ag.y0 = std::int16_t(y0);
     if (w > 0 && hh > 0) {
-        if (m_shelfX + w + 1 > m_size) {
-            m_shelfX = 1;
-            m_shelfY += m_shelfH + 1;
-            m_shelfH = 0;
-        }
-        if (m_shelfY + hh + 1 > m_size) {
+        int u = 0, v = 0;
+        if (!place(m_shelf, m_size, w, hh, u, v)) {
+            if (w + 2 > m_size || hh + 2 > m_size) return {};
             clear();
-            return get(font, glyph, px);
+            place(m_shelf, m_size, w, hh, u, v);
         }
-        font.rasterise(glyph, pxq, m_pixels.data() + std::size_t(m_shelfY) * std::size_t(m_size) + std::size_t(m_shelfX),
-                       w, hh, m_size);
-        ag.u = std::uint16_t(m_shelfX);
-        ag.v = std::uint16_t(m_shelfY);
+        font.rasterise(glyph, pxq, m_pixels.data() + std::size_t(v) * std::size_t(m_size) + std::size_t(u), w, hh, m_size);
+        ag.u = std::uint16_t(u);
+        ag.v = std::uint16_t(v);
         ag.w = std::uint16_t(w);
         ag.h = std::uint16_t(hh);
-        m_shelfX += w + 1;
-        m_shelfH = std::max(m_shelfH, hh);
     }
     ag.valid = true;
-    m_slots[h] = {key, ag};
-    ++m_used;
-    return ag;
+    return store(key, 0, ag);
+}
+
+AtlasGlyph GlyphAtlas::getColor(const Font& font, std::uint32_t glyph, float px, std::uint32_t foreground) {
+    const std::uint32_t q = std::uint32_t(std::lround(px * 4.f));
+    const std::uint64_t key = ((std::uint64_t(font.id()) << 44) ^ (std::uint64_t(q) << 24) ^ glyph ^ (1ull << 63)) | (1ull << 16);
+    // bitmap strikes ignore the text colour: one entry for every colour
+    const auto* st = detail::FontAccess::state(font);
+#if FUSE_TEXT_COOKED
+    const std::uint32_t aux = st && detail::cookedForeground(st->cooked, glyph) ? (foreground | 1u) : 0u;
+#else
+    const std::uint32_t aux = st && findImage(st->bitmapImages, glyph) ? 0u : (foreground | 1u);
+#endif
+    std::size_t slot = 0;
+    if (find(key, aux, slot)) return m_slots[slot].g;
+    ++m_misses;
+    thread_local ColorImage img;
+    AtlasGlyph g;
+    g.valid = true; // no image: remembered as an empty colour glyph
+    g.kind = AtlasKind::Color;
+    if (font.renderColor(glyph, float(q) / 4.f, foreground, img)) {
+        g = insertColor(0, img.rgba.data(), img.w, img.h, img.w * 4, img.x0, img.y0);
+        if (!g.valid) return g;
+    }
+    return store(key, aux, g);
+}
+
+AtlasGlyph GlyphAtlas::getMsdf(const Font& font, std::uint32_t glyph) {
+    const std::uint64_t key = ((std::uint64_t(font.id()) << 44) ^ glyph ^ (1ull << 63)) | (2ull << 16);
+    std::size_t slot = 0;
+    if (find(key, 0, slot)) return m_slots[slot].g;
+    ++m_misses;
+    thread_local ColorImage img;
+    AtlasGlyph g;
+    g.valid = true; // no outline: an empty MSDF glyph
+    g.kind = AtlasKind::Msdf;
+    if (font.renderMsdf(glyph, kMsdfPixelSize, kMsdfRange, img)) {
+        g = insertColor(0, img.rgba.data(), img.w, img.h, img.w * 4, img.x0, img.y0, AtlasKind::Msdf);
+        if (!g.valid) return g;
+    }
+    return store(key, 0, g);
+}
+
+bool GlyphAtlas::lookup(std::uint64_t key, AtlasGlyph& out) const {
+    std::size_t slot = 0;
+    if (!find(key, 0, slot)) return false;
+    out = m_slots[slot].g;
+    return true;
+}
+
+AtlasGlyph GlyphAtlas::insert(std::uint64_t key, const std::uint8_t* src, int w, int hh, int stride, int x0, int y0) {
+    if (AtlasGlyph g; lookup(key, g)) return g;
+    ++m_misses;
+    if (m_used * 4 >= m_slots.size() * 3) clear();
+    AtlasGlyph ag;
+    ag.x0 = std::int16_t(x0);
+    ag.y0 = std::int16_t(y0);
+    if (w > 0 && hh > 0) {
+        int u = 0, v = 0;
+        if (!place(m_shelf, m_size, w, hh, u, v)) {
+            if (w + 2 > m_size || hh + 2 > m_size) return {};
+            clear(); // full: start a new generation
+            place(m_shelf, m_size, w, hh, u, v);
+        }
+        for (int y = 0; y < hh; ++y)
+            std::memcpy(m_pixels.data() + std::size_t(v + y) * std::size_t(m_size) + std::size_t(u),
+                        src + std::size_t(y) * std::size_t(stride), std::size_t(w));
+        ag.u = std::uint16_t(u);
+        ag.v = std::uint16_t(v);
+        ag.w = std::uint16_t(w);
+        ag.h = std::uint16_t(hh);
+    }
+    ag.valid = true;
+    return store(key, 0, ag);
+}
+
+AtlasGlyph GlyphAtlas::insertColor(std::uint64_t key, const std::uint8_t* rgba, int w, int hh, int stride, int x0, int y0,
+                                   AtlasKind kind) {
+    if (key) {
+        if (AtlasGlyph g; lookup(key, g)) return g;
+        ++m_misses;
+    }
+    if (m_used * 4 >= m_slots.size() * 3) clear();
+    AtlasGlyph ag;
+    ag.x0 = std::int16_t(x0);
+    ag.y0 = std::int16_t(y0);
+    ag.kind = kind;
+    const int cs = colorSize();
+    if (w > 0 && hh > 0) {
+        int u = 0, v = 0;
+        if (!place(m_colorShelf, cs, w, hh, u, v)) {
+            if (w + 2 > cs || hh + 2 > cs) return {};
+            clear();
+            place(m_colorShelf, cs, w, hh, u, v);
+        }
+        std::uint8_t* page = m_pixels.data() + std::size_t(m_size) * std::size_t(m_size);
+        for (int y = 0; y < hh; ++y)
+            std::memcpy(page + (std::size_t(v + y) * std::size_t(cs) + std::size_t(u)) * 4,
+                        rgba + std::size_t(y) * std::size_t(stride), std::size_t(w) * 4);
+        ag.u = std::uint16_t(u);
+        ag.v = std::uint16_t(v);
+        ag.w = std::uint16_t(w);
+        ag.h = std::uint16_t(hh);
+    }
+    ag.valid = true;
+    return key ? store(key, 0, ag) : ag;
 }
 
 // ---- Editing -------------------------------------------------------------------------------------------------------
@@ -1130,6 +1959,10 @@ void TextEditBuffer::del() {
 void TextEditBuffer::moveLeft(bool sel) {
     if (!sel && hasSelection()) m_cursor = std::min(m_cursor, m_anchor);
     else m_cursor = prevBoundary(m_text, m_cursor);
+    if (!sel) m_anchor = m_cursor;
+}
+void TextEditBuffer::setCursor(std::size_t pos, bool sel) {
+    m_cursor = std::min(pos, m_text.size());
     if (!sel) m_anchor = m_cursor;
 }
 void TextEditBuffer::moveRight(bool sel) {

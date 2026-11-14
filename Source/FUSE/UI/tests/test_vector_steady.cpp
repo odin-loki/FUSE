@@ -125,7 +125,7 @@ int main() {
         g_counting = false;
         std::printf("allocations in 50 steady frames with vector ops (update + CPU raster): %ld; paths per frame %zu\n",
                     g_allocs.load(), ui.drawList().paths().size());
-        UI_CHECK_EQ(g_allocs.load(), 0L);
+        UI_CHECK_NO_ALLOC(g_allocs.load());
         (void)label;
         (void)save;
     }

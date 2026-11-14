@@ -80,7 +80,10 @@ const Field kFields[] = {
     SX_FIELD(ssrMaxDistance), SX_FIELD(ssrFadeEdge), SX_FIELD(ssrContactDistance), SX_FIELD(ssrContactFloor),
     SX_FIELD(ssrContactExponent), SX_FIELD(reserved3), SX_FIELD(giSampleSqrt), SX_FIELD(giBounces),
     SX_FIELD(giMaxSteps), SX_FIELD(giRefineSteps), SX_FIELD(giStride), SX_FIELD(giThickness), SX_FIELD(giMaxDistance),
-    SX_FIELD(giIntensity),
+    SX_FIELD(giIntensity), SX_FIELD(hiz), SX_FIELD(aoBlurred), SX_FIELD(aoDenoised), SX_FIELD(aoHistoryIn),
+    SX_FIELD(aoHistoryOut), SX_FIELD(motion), SX_FIELD(aoFinal), SX_FIELD(ssrSteps), SX_FIELD(hizLevels),
+    SX_FIELD(aoHistoryValid), SX_FIELD(aoBlurDepth), SX_FIELD(aoBlurNormal), SX_FIELD(aoTemporalAlpha),
+    SX_FIELD(aoTemporalDepthReject), SX_FIELD(reserved4), SX_FIELD(reserved5), SX_FIELD(hizOffset),
 };
 #undef SX_FIELD
 
@@ -126,7 +129,7 @@ bool parseShaderStruct(const std::string& path, std::vector<size_t>& offsets, si
 }
 
 void testLayout() {
-    expect(sizeof(SsfxFrameConstants) == 592u, "SsfxFrameConstants is 592 bytes");
+    expect(sizeof(SsfxFrameConstants) == 720u, "SsfxFrameConstants is 720 bytes");
     expect(sizeof(SsfxPush) == 32u, "SsfxPush is 32 bytes (<= 128 guaranteed push-constant bytes)");
     expect(kSsfxMaxSlices == ssfx::gtao_kernel::kMaxSlices, "slice table size == gtao_kernel::kMaxSlices");
     const size_t fieldCount = sizeof(kFields) / sizeof(kFields[0]);
@@ -161,7 +164,9 @@ void testLayout() {
         };
         const Section sections[] = {{l.prepared, n * 16}, {l.normals, n * 16}, {l.radiance, n * 16}, {l.albedo, n * 16},
                                     {l.diffuse, n * 16},  {l.ao, n * 4},       {l.ssr, n * 16},      {l.gi, n * 16},
-                                    {l.bounce[0], n * 16}, {l.bounce[1], n * 16}};
+                                    {l.bounce[0], n * 16}, {l.bounce[1], n * 16}, {l.hiz, l.hizBytes},
+                                    {l.aoBlurred, n * 4},  {l.aoDenoised, n * 4}, {l.aoHistory[0], n * 8},
+                                    {l.aoHistory[1], n * 8}, {l.ssrSteps, n * 8}};
         bool ok = true;
         const usize count = sizeof(sections) / sizeof(sections[0]);
         for (usize i = 0; i < count; ++i) {

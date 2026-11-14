@@ -345,6 +345,9 @@ void themeRestyle() {
     UI_CHECK(app::schemeFromGtkTheme("Adwaita:dark") == app::ColorScheme::Dark);
     UI_CHECK(app::schemeFromGtkTheme("Adwaita") == app::ColorScheme::Light);
     UI_CHECK(app::schemeFromGtkTheme("") == app::ColorScheme::Unknown);
+    UI_CHECK(app::schemeFromGtkTheme("HighContrastInverse") == app::ColorScheme::Dark);
+    UI_CHECK(app::highContrastFromGtkTheme("HighContrast") && app::highContrastFromGtkTheme("Breeze-High-Contrast"));
+    UI_CHECK(!app::highContrastFromGtkTheme("Adwaita-dark") && !app::highContrastFromGtkTheme(""));
     UI_CHECK(app::schemeFromGsettings("'prefer-dark'\n") == app::ColorScheme::Dark);
     UI_CHECK(app::schemeFromGsettings("'default'\n") == app::ColorScheme::Light);
     UI_CHECK(app::schemeFromGsettings("No such schema") == app::ColorScheme::Unknown);

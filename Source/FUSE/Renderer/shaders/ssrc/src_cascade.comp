@@ -34,15 +34,16 @@ SrcRay src_ray_setup(vec3 o, vec3 d) {
     }
     float len = F.maxDistance;
     if (d.z < 0.0) {
-        precise float toNear = (o.z - nearLimit) / (-d.z);
+        precise float toNearN = o.z - nearLimit;
+        const float toNear = fuse_div_rn(toNearN, -d.z);
         len = min(len, toNear);
     }
     if (!(len > 1e-4)) {
         return r;
     }
     const vec3 e = src_add(o, src_scale(d, len));
-    precise float kO = 1.0 / o.z;
-    precise float kE = 1.0 / e.z;
+    const float kO = fuse_div_rn(1.0, o.z);
+    const float kE = fuse_div_rn(1.0, e.z);
     r.kO = kO;
     r.kE = kE;
     r.qO = src_scale(o, kO);
@@ -53,7 +54,8 @@ SrcRay src_ray_setup(vec3 o, vec3 d) {
     precise float ey = F.fy * r.qE.y + F.cy;
     precise float dx = ex - ox;
     precise float dy = ey - oy;
-    precise float l = sqrt(dx * dx + dy * dy);
+    precise float l2 = dx * dx + dy * dy;
+    const float l = fuse_sqrt_rn(l2);
     r.len = l;
     r.valid = true;
     return r;
@@ -61,7 +63,7 @@ SrcRay src_ray_setup(vec3 o, vec3 d) {
 
 vec3 src_point_at(SrcRay r, float f) {
     precise float k = r.kO + (r.kE - r.kO) * f;
-    precise float inv = 1.0 / k;
+    const float inv = fuse_div_rn(1.0, k);
     precise float qx = r.qO.x + (r.qE.x - r.qO.x) * f;
     precise float qy = r.qO.y + (r.qE.y - r.qO.y) * f;
     precise float qz = r.qO.z + (r.qE.z - r.qO.z) * f;
@@ -85,11 +87,11 @@ bool src_interval(SrcRay r, uint ci, out float fA, out float fB, out bool ended)
     if (tS > 0.0 && !(r.len > tS)) {
         return false;
     }
-    precise float a = tS / r.len;
+    const float a = fuse_div_rn(tS, r.len);
     fA = a;
     ended = !(tE < r.len);
     if (!ended) {
-        precise float b = tE / r.len;
+        const float b = fuse_div_rn(tE, r.len);
         fB = b;
     }
     return true;
@@ -137,13 +139,15 @@ float src_proj(float f, float p, float k, float c) {
 // Depth of a pixel's surfel (tangent plane through its centre point: depth zc, normal n, nd = n . centre ray) on the
 // view ray through screen point (x, y); the ratio to zc clamped to [0.5, 2] (patchDepth).
 float src_patch_depth(float zc, float nd, vec3 n, float x, float y) {
-    precise float rx = (x - F.cx) / F.fx;
-    precise float ry = (y - F.cy) / F.fy;
+    precise float rxn = x - F.cx;
+    precise float ryn = y - F.cy;
+    const float rx = fuse_div_rn(rxn, F.fx);
+    const float ry = fuse_div_rn(ryn, F.fy);
     const float nr = src_dot(n, vec3(rx, ry, 1.0));
     if (!(abs(nr) >= 1e-6)) {
         return zc;
     }
-    precise float q = nd / nr;
+    const float q = fuse_div_rn(nd, nr);
     float qc = q;
     if (!(qc > 0.5)) {
         qc = 0.5;
@@ -156,8 +160,8 @@ float src_patch_depth(float zc, float nd, vec3 n, float x, float y) {
 }
 
 vec4 src_trace(vec3 a, vec3 b, uint startPixel) {
-    precise float ka = 1.0 / a.z;
-    precise float kb = 1.0 / b.z;
+    const float ka = fuse_div_rn(1.0, a.z);
+    const float kb = fuse_div_rn(1.0, b.z);
     const float ax = src_proj(F.fx, a.x, ka, F.cx);
     const float ay = src_proj(F.fy, a.y, ka, F.cy);
     const float bx = src_proj(F.fx, b.x, kb, F.cx);
@@ -168,10 +172,10 @@ vec4 src_trace(vec3 a, vec3 b, uint startPixel) {
     if (!(len >= 1e-3)) {
         return vec4(0.0, 0.0, 0.0, 1.0);
     }
-    precise float q = len / F.stride;
+    const float q = fuse_div_rn(len, F.stride);
     const float n = min(ceil(q), 1048576.0);
     const uint steps = uint(n);
-    precise float fStep = F.stride / len;
+    const float fStep = fuse_div_rn(F.stride, len);
     const float fw = float(F.width);
     const float fh = float(F.height);
     float prevZ = a.z;
@@ -188,7 +192,7 @@ vec4 src_trace(vec3 a, vec3 b, uint startPixel) {
             return vec4(0.0, 0.0, 0.0, 2.0);
         }
         precise float den = ka + kd * f;
-        precise float rayZ = 1.0 / den;
+        const float rayZ = fuse_div_rn(1.0, den);
         const uint hx = uint(sx);
         const uint hy = uint(sy);
         const uint pixel = hy * F.width + hx;
@@ -259,10 +263,10 @@ vec4 src_child_average(uint ci, uint ux, uint uy, uint k, vec3 n) {
         }
     }
     if (sw > 0.0) {
-        precise vec4 m = vec4(sr / sw, sg / sw, sb / sw, sv / sw);
+        const vec4 m = vec4(fuse_div_rn(sr, sw), fuse_div_rn(sg, sw), fuse_div_rn(sb, sw), fuse_div_rn(sv, sw));
         return m;
     }
-    precise vec4 m = vec4(ar / aw, ag / aw, ab / aw, av / aw);
+    const vec4 m = vec4(fuse_div_rn(ar, aw), fuse_div_rn(ag, aw), fuse_div_rn(ab, aw), fuse_div_rn(av, aw));
     return m;
 }
 
@@ -353,7 +357,7 @@ void main() {
                     bool toParent = false;
                     const SrcRay qr = src_ray_setup(qs[j].o, d);
                     if (qr.valid && qr.len >= 1e-3 && F.tEnd[ci] < qr.len) {
-                        precise float ft = F.tEnd[ci] / qr.len;
+                        const float ft = fuse_div_rn(F.tEnd[ci], qr.len);
                         target = src_point_at(qr, ft);
                         toParent = true;
                     }
@@ -373,10 +377,10 @@ void main() {
                     sw = sw + wj;
                 }
                 if (sw > 0.0) {
-                    precise float fr = sr / sw;
-                    precise float fg = sg / sw;
-                    precise float fb = sb / sw;
-                    precise float fv = sv / sw;
+                    const float fr = fuse_div_rn(sr, sw);
+                    const float fg = fuse_div_rn(sg, sw);
+                    const float fb = fuse_div_rn(sb, sw);
+                    const float fv = fuse_div_rn(sv, sw);
                     r = fr;
                     g = fg;
                     b = fb;
@@ -416,10 +420,10 @@ void main() {
                         sw = sw + wj;
                     }
                     if (sw > 0.0) {
-                        precise float fr = sr / sw;
-                        precise float fg = sg / sw;
-                        precise float fb = sb / sw;
-                        precise float fv = sv / sw;
+                        const float fr = fuse_div_rn(sr, sw);
+                        const float fg = fuse_div_rn(sg, sw);
+                        const float fb = fuse_div_rn(sb, sw);
+                        const float fv = fuse_div_rn(sv, sw);
                         r = fr;
                         g = fg;
                         b = fb;

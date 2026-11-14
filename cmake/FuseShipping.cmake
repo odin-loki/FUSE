@@ -1,5 +1,7 @@
-# FUSE Track A P6 shipping gate — game runtime without Qt, editor shell, or
-# legacy engine GUI. Editor remains a separate target (FUSE_BUILD_EDITOR).
+# FUSE Track A P6 shipping gate — game runtime without the editor shell or legacy engine GUI.
+# Editor remains a separate target (FUSE_BUILD_EDITOR). The P6 Qt ban below predates the switch to
+# the FUSE UI editor shell; with Qt gone from the build it guards against Qt coming back into the
+# runtime graph (the editor-shell lint, fuse_lint_editor_shell_fuse_ui, covers every fuse_* target).
 
 function(fuse_shipping_force_options)
     if(NOT FUSE_SHIPPING)
@@ -8,14 +10,14 @@ function(fuse_shipping_force_options)
 
     get_property(_fuse_shipping_logged GLOBAL PROPERTY FUSE_SHIPPING_FORCE_LOGGED)
     if(NOT _fuse_shipping_logged)
-        message(STATUS "FUSE_SHIPPING=ON — forcing editor and Qt present OFF")
+        message(STATUS "FUSE_SHIPPING=ON — forcing editor and editor viewport present OFF")
         set_property(GLOBAL PROPERTY FUSE_SHIPPING_FORCE_LOGGED TRUE)
     endif()
 
     set(FUSE_BUILD_EDITOR OFF CACHE BOOL
-        "Build fuse_editor Qt 6 desktop shell (requires Qt6; desktop-only)" FORCE)
-    set(FUSE_ENABLE_QT_PRESENT OFF CACHE BOOL
-        "Allow vkQueuePresentKHR when display+Qt Vulkan surface available (OFF for headless CI)" FORCE)
+        "Build the FUSE editor: the FUSE UI shell fuse_editor_fuse + fuse_editor_ui_* gates (needs FUSE_BUILD_UI; desktop-only)" FORCE)
+    set(FUSE_ENABLE_EDITOR_PRESENT OFF CACHE BOOL
+        "Allow vkQueuePresentKHR on an editor-provided external surface when a display is available (OFF for headless CI)" FORCE)
 
     if(DEFINED FUSE_BUILD_COMPAT_TS)
         set(FUSE_BUILD_COMPAT_TS OFF CACHE BOOL
@@ -77,18 +79,17 @@ endforeach()
         COMMAND ${CMAKE_COMMAND} -P "${_fuse_qt_ban_script}")
 endfunction()
 
-# Configure-time Qt ban for shipping / non-editor product graphs, plus a
-# generate-time ctest that expands LINK_LIBRARIES genex without compiling Qt.
+# Configure-time Qt ban for the runtime product graphs, plus a generate-time ctest that expands
+# LINK_LIBRARIES genex.
 function(fuse_shipping_assert_runtime_targets)
     fuse_shipping_force_options()
 
-    if(FUSE_SHIPPING OR NOT FUSE_BUILD_EDITOR)
-        if(TARGET fuse_runtime_smoke)
-            fuse_assert_target_not_qt(fuse_runtime_smoke)
-        endif()
-        if(TARGET fuse_core)
-            fuse_assert_target_not_qt(fuse_core)
-        endif()
+    # Every configuration (the editor no longer brings Qt in).
+    if(TARGET fuse_runtime_smoke)
+        fuse_assert_target_not_qt(fuse_runtime_smoke)
+    endif()
+    if(TARGET fuse_core)
+        fuse_assert_target_not_qt(fuse_core)
     endif()
 
     fuse_shipping_add_qt_ban_cmake_test()

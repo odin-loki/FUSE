@@ -24,7 +24,7 @@ f32 lineH(const UiContext& ui, NodeHandle n) {
     const f32 px = ui.computed(n).fontSize;
     return std::ceil(ui.font() ? ui.font()->metrics(px).lineHeight() : px * 1.25f);
 }
-Color accentOf(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)); }
+Color accentOf(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD)); }
 NodeHandle nthChild(const UiContext& ui, NodeHandle n, u32 i) {
     NodeHandle c = ui.firstChild(n);
     while (i-- && ui.alive(c)) c = ui.nextSibling(c);
@@ -147,8 +147,8 @@ struct GridView {
         if (rt > vis) {
             const Rect tr{c.right() - kBar, c.y, kBar, c.h};
             const f32 tl = std::max(16.f, tr.h * f32(vis) / f32(rt));
-            dl.rect(tr, pc.tint(Color::rgb(0x000000, 0.15f)), kBar * 0.5f);
-            dl.rect({tr.x, tr.y + (tr.h - tl) * f32(s->first) / f32(rt - vis), kBar, tl}, pc.tint(Color::rgb(0x8A8A96, 0.85f)), kBar * 0.5f);
+            dl.rect(tr, pc.tint(themed(pc, tok::view_scroll_track, 0x000000, 0.15f)), kBar * 0.5f);
+            dl.rect({tr.x, tr.y + (tr.h - tl) * f32(s->first) / f32(rt - vis), kBar, tl}, pc.tint(themedA(pc, tok::scroll_thumb, 0x8A8A96, 0.85f)), kBar * 0.5f);
         }
         dl.popClip();
     }
@@ -277,24 +277,24 @@ struct ColorPickerW {
         const Hsva h = unpack(pc.ui.userData(pc.node));
         const Geo g = geo(pc.content);
         const Color hueCol = hsvToRgb(h.h, 1.f, 1.f);
-        dl.gradientRect(g.sq, pc.tint(Color::rgb(0xFFFFFF)), pc.tint(hueCol), false, {3.f, 3.f, 3.f, 3.f});
-        dl.gradientRect(g.sq, pc.tint(Color::rgb(0x000000, 0.f)), pc.tint(Color::rgb(0x000000)), true, {3.f, 3.f, 3.f, 3.f});
+        dl.gradientRect(g.sq, pc.tint(Color::rgb(0xFFFFFF)), pc.tint(hueCol), false, {3.f, 3.f, 3.f, 3.f}); // theme-exempt: colour picker data
+        dl.gradientRect(g.sq, pc.tint(Color::rgb(0x000000, 0.f)), pc.tint(Color::rgb(0x000000)), true, {3.f, 3.f, 3.f, 3.f}); // theme-exempt: colour picker data
         for (int i = 0; i < 6; ++i) {
             const Rect seg{g.hue.x, g.hue.y + g.hue.h * f32(i) / 6.f, g.hue.w, g.hue.h / 6.f + 0.5f};
             dl.gradientRect(seg, pc.tint(hsvToRgb(f32(i) / 6.f, 1.f, 1.f)), pc.tint(hsvToRgb(f32(i + 1) / 6.f, 1.f, 1.f)), true);
         }
         const Color rgb = hsvToRgb(h.h, h.s, h.v);
         for (int i = 0; i < int(g.alpha.w / 7.f); ++i) // checker under the alpha ramp
-            dl.rect({g.alpha.x + f32(i) * 7.f, g.alpha.y + ((i & 1) ? 0.f : 7.f), 7.f, 7.f}, pc.tint(Color::rgb(0x55555F)));
+            dl.rect({g.alpha.x + f32(i) * 7.f, g.alpha.y + ((i & 1) ? 0.f : 7.f), 7.f, 7.f}, pc.tint(themed(pc, tok::grid_line, 0x55555F)));
         dl.gradientRect(g.alpha, pc.tint(rgb.withAlpha(0.f)), pc.tint(rgb), false, {3.f, 3.f, 3.f, 3.f});
         dl.rect(g.swatch, pc.tint(hsvToRgb(h.h, h.s, h.v, h.a)), 3.f);
         auto ring = [&](Vec2 p) {
-            dl.roundedRect({p.x - 6.f, p.y - 6.f, 12.f, 12.f}, {}, {6.f, 6.f, 6.f, 6.f}, pc.tint(Color::rgb(0x000000, 0.8f)), 3.f);
-            dl.roundedRect({p.x - 5.f, p.y - 5.f, 10.f, 10.f}, {}, {5.f, 5.f, 5.f, 5.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f);
+            dl.roundedRect({p.x - 6.f, p.y - 6.f, 12.f, 12.f}, {}, {6.f, 6.f, 6.f, 6.f}, pc.tint(Color::rgb(0x000000, 0.8f)), 3.f); // theme-exempt: colour picker data
+            dl.roundedRect({p.x - 5.f, p.y - 5.f, 10.f, 10.f}, {}, {5.f, 5.f, 5.f, 5.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f); // theme-exempt: colour picker data
         };
         ring({g.sq.x + h.s * g.sq.w, g.sq.y + (1.f - h.v) * g.sq.h});
-        dl.roundedRect({g.hue.x - 2.f, g.hue.y + h.h * g.hue.h - 3.f, g.hue.w + 4.f, 6.f}, {}, {2.f, 2.f, 2.f, 2.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f);
-        dl.roundedRect({g.alpha.x + h.a * g.alpha.w - 3.f, g.alpha.y - 2.f, 6.f, g.alpha.h + 4.f}, {}, {2.f, 2.f, 2.f, 2.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f);
+        dl.roundedRect({g.hue.x - 2.f, g.hue.y + h.h * g.hue.h - 3.f, g.hue.w + 4.f, 6.f}, {}, {2.f, 2.f, 2.f, 2.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f); // theme-exempt: colour picker data
+        dl.roundedRect({g.alpha.x + h.a * g.alpha.w - 3.f, g.alpha.y - 2.f, 6.f, g.alpha.h + 4.f}, {}, {2.f, 2.f, 2.f, 2.f}, pc.tint(Color::rgb(0xFFFFFF)), 1.5f); // theme-exempt: colour picker data
         if (pc.states & kStateFocus) dl.roundedRect(pc.rect, {}, {5.f, 5.f, 5.f, 5.f}, accentOf(pc), 1.f);
     }
     static void apply(UiContext& ui, NodeHandle n, Vec2 p) {
@@ -353,7 +353,14 @@ struct CalendarW {
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) { return {7.f * 34.f, lineH(ui, n) + 8.f + 7.f * 26.f}; }
-    static i32 shownMonth(const UiContext& ui, NodeHandle n) { return i32(ui.userData(n)) - 1000000; } // y * 12 + (m - 1)
+    /// y * 12 + (m - 1). A node made by class name (`ui.create("calendar")`, a document) has no shown month yet: it
+    /// shows the month of its value.
+    static i32 shownMonth(const UiContext& ui, NodeHandle n) {
+        if (const u64 ud = ui.userData(n); ud != 0) return i32(ud) - 1000000;
+        int y, m, d;
+        civilFromDays(i32(ui.value(n)), y, m, d);
+        return y * 12 + m - 1;
+    }
     static void setShown(UiContext& ui, NodeHandle n, i32 ym) { ui.setUserData(n, u64(ym + 1000000)); ui.invalidate(n); }
     struct Geo { Rect head, prev, next; f32 cellW, cellH, gridY; };
     static Geo geo(const UiContext& ui, NodeHandle n) {
@@ -368,9 +375,20 @@ struct CalendarW {
         g.gridY = c.y + hh + g.cellH; // first week row (below the weekday names)
         return g;
     }
-    static i32 firstCellDay(i32 ym) { // day number of the grid's top-left cell
+    /// The locale data (UiContext::setLocale hooks), or null for English / Monday first.
+    static const LocaleHooks* hooks(const UiContext& ui) {
+        const LocaleHooks* h = ui.localeHooks();
+        return h && !ui.locale().empty() ? h : nullptr;
+    }
+    /// First column's ISO weekday (1 = Monday).
+    static int firstDay(const UiContext& ui) {
+        const LocaleHooks* h = hooks(ui);
+        const int d = h && h->firstDayOfWeek ? h->firstDayOfWeek(ui.locale()) : 1;
+        return d >= 1 && d <= 7 ? d : 1;
+    }
+    static i32 firstCellDay(const UiContext& ui, i32 ym) { // day number of the grid's top-left cell
         const i32 first = daysFromCivil(ym / 12, ym % 12 + 1, 1);
-        return first - weekday(first);
+        return first - (weekday(first) - (firstDay(ui) - 1) + 7) % 7;
     }
     static void select(UiContext& ui, NodeHandle n, i32 z) {
         int y, m, d;
@@ -385,18 +403,26 @@ struct CalendarW {
         const Color text = pc.tint(pc.style.color), dim = pc.tint(pc.style.color.withAlpha(pc.style.color.a * 0.38f)), acc = accentOf(pc);
         const f32 fs = pc.style.fontSize;
         char b[48];
-        std::snprintf(b, sizeof b, "%s %d", kMonths[ym % 12], ym / 12);
-        ui.paintString(dl, b, g.head, text, fs, TextAlignment::Center, pc.node.index);
+        const LocaleHooks* lh = hooks(ui);
+        std::string head;
+        if (lh && lh->monthYear) head = lh->monthYear(ui.locale(), ym / 12, ym % 12 + 1);
+        else std::snprintf(b, sizeof b, "%s %d", kMonths[ym % 12], ym / 12);
+        ui.paintString(dl, lh && lh->monthYear ? std::string_view(head) : std::string_view(b), g.head, text, fs,
+                       TextAlignment::Center, pc.node.index);
         for (int side = 0; side < 2; ++side) { // chevrons
             const Rect r = side ? g.next : g.prev;
             const f32 cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f, d = side ? 3.f : -3.f;
             dl.line({cx - d, cy - 5.f}, {cx + d, cy}, text, 1.5f);
             dl.line({cx + d, cy}, {cx - d, cy + 5.f}, text, 1.5f);
         }
-        for (int k = 0; k < 7; ++k)
-            ui.paintString(dl, kDays[k], {g.head.x + f32(k) * g.cellW, g.head.bottom(), g.cellW, g.cellH}, k >= 5 ? dim : text,
+        for (int k = 0; k < 7; ++k) {
+            const int iso = (firstDay(ui) - 1 + k) % 7 + 1;
+            const std::string_view name =
+                lh && lh->weekdayShort ? lh->weekdayShort(ui.locale(), iso) : std::string_view(kDays[iso - 1]);
+            ui.paintString(dl, name, {g.head.x + f32(k) * g.cellW, g.head.bottom(), g.cellW, g.cellH}, iso >= 6 ? dim : text,
                            fs * 0.85f, TextAlignment::Center, pc.node.index);
-        const i32 z0 = firstCellDay(ym);
+        }
+        const i32 z0 = firstCellDay(ui, ym);
         for (int i = 0; i < 42; ++i) {
             const i32 z = z0 + i;
             int y, m, d;
@@ -405,7 +431,7 @@ struct CalendarW {
             const bool inMonth = y * 12 + m - 1 == ym;
             if (z == sel) dl.rect({cell.x + 2.f, cell.y + 1.f, cell.w - 4.f, cell.h - 2.f}, acc, 4.f);
             std::snprintf(b, sizeof b, "%d", d);
-            ui.paintString(dl, b, cell, z == sel ? pc.tint(Color::rgb(0xFFFFFF)) : inMonth ? text : dim, fs * 0.9f, TextAlignment::Center,
+            ui.paintString(dl, b, cell, z == sel ? pc.tint(themed(pc, tok::on_accent, 0xFFFFFF)) : inMonth ? text : dim, fs * 0.9f, TextAlignment::Center,
                            pc.node.index);
         }
         if (pc.states & kStateFocus) dl.roundedRect(pc.rect, {}, {5.f, 5.f, 5.f, 5.f}, acc.withAlpha(acc.a * 0.6f), 1.f);
@@ -427,7 +453,7 @@ struct CalendarW {
             if (g.next.contains(e.pos)) { pageMonth(ui, ec.node, 1, false); return true; }
             if (e.pos.y >= g.gridY) {
                 const i32 row = i32((e.pos.y - g.gridY) / g.cellH), col = i32((e.pos.x - g.head.x) / g.cellW);
-                if (row >= 0 && row < 6 && col >= 0 && col < 7) select(ui, ec.node, firstCellDay(shownMonth(ui, ec.node)) + row * 7 + col);
+                if (row >= 0 && row < 6 && col >= 0 && col < 7) select(ui, ec.node, firstCellDay(ui, shownMonth(ui, ec.node)) + row * 7 + col);
             }
             return true;
         }
@@ -536,12 +562,12 @@ struct ChartW {
             const Rect r = flameRect(ui, pc.node, s, i);
             const Rect bar{r.x, r.y, std::max(1.f, r.w - 1.f), std::max(1.f, r.h - 1.f)};
             const Color col = flameColor(s.flame[i]);
-            dl.roundedRect(bar, pc.tint(col), {2.f, 2.f, 2.f, 2.f}, i32(i) == hov ? pc.tint(Color::rgb(0xFFFFFF)) : Color{}, i32(i) == hov ? 1.f : 0.f);
+            dl.roundedRect(bar, pc.tint(col), {2.f, 2.f, 2.f, 2.f}, i32(i) == hov ? pc.tint(themed(pc, tok::chart_line, 0xFFFFFF)) : Color{}, i32(i) == hov ? 1.f : 0.f);
             if (bar.w < 14.f) continue; // too narrow for a label
             // dark text on the (warm, light) bars; the label never leaves its bar
             const f32 lum = 0.299f * col.r + 0.587f * col.g + 0.114f * col.b;
             dl.pushClip(bar);
-            ui.paintString(dl, s.flame[i].name, {bar.x + 4.f, bar.y, bar.w - 6.f, bar.h}, pc.tint(Color::rgb(lum > 0.5f ? 0x14141A : 0xFFFFFF)), fs,
+            ui.paintString(dl, s.flame[i].name, {bar.x + 4.f, bar.y, bar.w - 6.f, bar.h}, pc.tint(Color::rgb(lum > 0.5f ? 0x14141A : 0xFFFFFF)), fs, // theme-exempt: text over a flame bar's data colour
                            TextAlignment::Start, pc.node.index);
             dl.popClip();
         }
@@ -571,7 +597,7 @@ struct ChartW {
         char b[32];
         for (int i = 0; i <= 4; ++i) {
             const f32 v = lo + (hi - lo) * f32(i) / 4.f, y = std::round(yOf(v));
-            dl.rect({p.x, y, p.w, 1.f}, pc.tint(Color::rgb(0xFFFFFF, i == 0 ? 0.25f : 0.07f)));
+            dl.rect({p.x, y, p.w, 1.f}, pc.tint(themedA(pc, tok::chart_line, 0xFFFFFF, i == 0 ? 0.25f : 0.07f)));
             std::snprintf(b, sizeof b, "%.4g", double(v));
             ui.paintString(dl, b, {c.x, y - 8.f, 36.f, 16.f}, dim, fs, TextAlignment::End, pc.node.index);
         }
@@ -623,7 +649,7 @@ struct ChartW {
         const i32 hov = i32(ui.value(pc.node));
         if (hov >= 0 && u32(hov) < n) {
             const f32 x = std::round(xAt(p, u32(hov), n, bars));
-            dl.rect({x, p.y, 1.f, p.h}, pc.tint(Color::rgb(0xFFFFFF, 0.3f)));
+            dl.rect({x, p.y, 1.f, p.h}, pc.tint(themedA(pc, tok::chart_line, 0xFFFFFF, 0.3f)));
             std::string r = "#" + std::to_string(hov);
             for (const Series& se : s->series)
                 if (u32(hov) < se.v.size()) { std::snprintf(b, sizeof b, "  %s %.4g", se.name.c_str(), double(se.v[hov])); r += b; }

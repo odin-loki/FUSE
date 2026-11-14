@@ -120,6 +120,7 @@ bool isBinding(const JsonValue& v) { return v.isString() && v.string.find('{') !
 struct Walk {
     std::vector<std::string> bindings;
     std::set<std::string> classes;
+    std::set<std::string> icons; // names in "icon" keys and inline `icon` styles
     u32 nodes = 0;
     bool walk(const JsonValue& n, u32 depth) {
         if (!n.isObject() || depth > kMaxDepth) return false;
@@ -128,6 +129,9 @@ struct Walk {
         classes.insert(c && c->isString() ? c->string : std::string("panel"));
         if (n.get("tooltip")) classes.insert("tooltip");
         if (n.get("contextMenu")) classes.insert("menu");
+        if (const JsonValue* ic = n.get("icon"); ic && ic->isString()) icons.insert(ic->string);
+        if (const JsonValue* st = n.get("style"); st && st->isObject())
+            if (const JsonValue* ic = st->get("icon"); ic && ic->isString() && ic->string != "none") icons.insert(ic->string);
         for (const auto& [k, v] : n.object)
             if (!structuralKey(k) && isBinding(v) &&
                 std::find(bindings.begin(), bindings.end(), v.string) == bindings.end())
@@ -156,11 +160,17 @@ void writeValue(Writer& w, const PropValue& v) {
     w.f32_(v.num);
     w.f32_(v.color.r); w.f32_(v.color.g); w.f32_(v.color.b); w.f32_(v.color.a);
     w.u8_(v.trackCount);
-    for (u8 i = 0; i < v.trackCount; ++i) writeLength(w, v.tracks[i]);
+    for (u8 i = 0; i < v.trackCount && i < kMaxGridTracks; ++i) writeLength(w, v.tracks[i]);
+    w.u8_(v.fCount);
+    w.u32_(v.fPct);
+    if (v.type == PropType::Raw) // the whole payload: what fCount counts differs by property
+        for (f32 x : v.f) w.f32_(x);
+    if (v.type == PropType::FontSettings || v.type == PropType::Ident) // the tag of each entry / the name hash
+        for (u8 i = 0; i < v.trackCount && i < kMaxGridTracks; ++i) w.u32_(v.tags[i]);
 }
 bool readValue(Reader& r, PropValue& v) {
     const u8 t = r.u8_();
-    if (t > u8(PropType::Tracks)) return r.ok = false;
+    if (t > u8(PropType::Ident)) return r.ok = false;
     v.type = PropType(t);
     v.b = r.u8_() != 0;
     v.e = r.u8_();
@@ -170,6 +180,59 @@ bool readValue(Reader& r, PropValue& v) {
     v.trackCount = r.u8_();
     if (v.trackCount > kMaxGridTracks) return r.ok = false;
     for (u8 i = 0; i < v.trackCount && r.ok; ++i) readLength(r, v.tracks[i]);
+    v.fCount = r.u8_();
+    v.fPct = u16(r.u32_());
+    if (v.fCount > v.f.size()) return r.ok = false;
+    if (v.type == PropType::Raw)
+        for (f32& x : v.f) x = r.f32_();
+    if (v.type == PropType::FontSettings || v.type == PropType::Ident)
+        for (u8 i = 0; i < v.trackCount && r.ok; ++i) v.tags[i] = r.u32_();
+    return r.ok;
+}
+void writeSelector(Writer& w, const SimpleSelector& sel) {
+    w.u32_(sel.typeHash);
+    w.u32_(sel.idHash);
+    w.u8_(sel.classCount);
+    for (u8 i = 0; i < sel.classCount; ++i) w.u32_(sel.classes[i]);
+    w.u32_(sel.states);
+    w.u8_(u8(sel.combinator));
+    w.u32_(u32(sel.firstPart) | (u32(sel.partCount) << 16));
+}
+bool readSelector(Reader& r, SimpleSelector& sel) {
+    sel.typeHash = r.u32_();
+    sel.idHash = r.u32_();
+    sel.classCount = r.u8_();
+    if (sel.classCount > sel.classes.size()) return r.ok = false;
+    for (u8 i = 0; i < sel.classCount; ++i) sel.classes[i] = r.u32_();
+    sel.states = r.u32_();
+    const u8 c = r.u8_();
+    if (c > u8(SimpleSelector::Combinator::LaterSibling)) return r.ok = false;
+    sel.combinator = SimpleSelector::Combinator(c);
+    const u32 parts = r.u32_();
+    sel.firstPart = u16(parts & 0xFFFFu);
+    sel.partCount = u16(parts >> 16);
+    return r.ok;
+}
+void writeDecls(Writer& w, const std::vector<Declaration>& decls) {
+    w.u32_(u32(decls.size()));
+    for (const Declaration& d : decls) {
+        w.u32_(u32(d.prop));
+        w.u32_(d.customHash);
+        writeValue(w, d.value);
+        w.str(d.raw);
+    }
+}
+bool readDecls(Reader& r, std::vector<Declaration>& decls) {
+    decls.resize(r.count(46));
+    for (Declaration& d : decls) {
+        const u32 p = r.u32_();
+        if (p > u32(Prop::Count)) return r.ok = false;
+        d.prop = Prop(p);
+        d.customHash = r.u32_();
+        readValue(r, d.value);
+        d.raw = r.str();
+        if (!r.ok) return false;
+    }
     return r.ok;
 }
 void writeSheet(Writer& w, const StyleSheet& s) {
@@ -181,24 +244,60 @@ void writeSheet(Writer& w, const StyleSheet& s) {
         w.u32_(rule.order);
         w.u8_(rule.root ? 1 : 0);
         w.u32_(u32(rule.chain.size()));
-        for (const SimpleSelector& sel : rule.chain) {
-            w.u32_(sel.typeHash);
-            w.u32_(sel.idHash);
-            w.u8_(sel.classCount);
-            for (u8 i = 0; i < sel.classCount; ++i) w.u32_(sel.classes[i]);
-            w.u32_(sel.states);
-            w.u8_(u8(sel.combinator));
+        for (const SimpleSelector& sel : rule.chain) writeSelector(w, sel);
+        writeDecls(w, rule.decls);
+        // extended selectors, conditions, layer, scope
+        w.u32_(u32(rule.parts.size()));
+        for (const SelectorPart& part : rule.parts) {
+            w.u8_(u8(part.kind));
+            w.u8_(u8(part.attrOp));
+            w.u8_(part.noCase ? 1 : 0);
+            w.i32_(part.a);
+            w.i32_(part.b);
+            w.u32_(part.name);
+            w.u32_(part.text);
+            w.u32_(part.textLen);
+            w.u32_(part.firstList);
+            w.u32_(part.listCount);
         }
-        w.u32_(u32(rule.decls.size()));
-        for (const Declaration& d : rule.decls) {
-            w.u32_(u32(d.prop));
-            w.u32_(d.customHash);
-            writeValue(w, d.value);
-            w.str(d.raw);
-        }
+        w.u32_(u32(rule.sub.size()));
+        for (const SimpleSelector& sel : rule.sub) writeSelector(w, sel);
+        w.u32_(u32(rule.lists.size()));
+        for (const SelectorRange& range : rule.lists) { w.u32_(range.first); w.u32_(range.count); w.u8_(u8(range.lead)); }
+        w.str(rule.strings);
+        w.i32_(rule.cond);
+        w.u32_(rule.layer);
+        w.u8_(rule.scoped ? 1 : 0);
+        w.u32_(rule.scopeFirst); w.u32_(rule.scopeCount); w.u32_(rule.limitFirst); w.u32_(rule.limitCount);
     }
     w.u32_(u32(s.tokens().size()));
-    for (const auto& [h, text] : s.tokens()) { w.u32_(h); w.str(text); }
+    for (std::size_t i = 0; i < s.tokens().size(); ++i) {
+        w.u32_(s.tokens()[i].first);
+        w.str(s.tokens()[i].second);
+        w.i32_(i < s.tokenConds().size() ? s.tokenConds()[i] : -1); // the @media block it was defined in
+    }
+    w.u32_(u32(s.conditions().size()));
+    for (const StyleCondition& c : s.conditions()) {
+        w.u8_(u8(c.kind));
+        w.i32_(c.parent);
+        w.u32_(c.containerName);
+        w.u8_(c.needsHeight ? 1 : 0);
+        w.u32_(u32(c.program.size()));
+        for (const QueryTerm& t : c.program) { w.u8_(u8(t.op)); w.u8_(u8(t.feature)); w.u8_(u8(t.cmp)); w.f32_(t.value); }
+    }
+    w.u32_(u32(s.layers().size()));
+    for (const std::string& l : s.layers()) w.str(l);
+    w.u32_(u32(s.keyframes().size()));
+    for (const KeyframesRule& k : s.keyframes()) {
+        w.u32_(k.name);
+        w.u32_(u32(k.frames.size()));
+        for (const KeyframeBlock& f : k.frames) {
+            w.f32_(f.offset);
+            w.u8_(f.hasEase ? 1 : 0);
+            w.u8_(u8(f.ease));
+            writeDecls(w, f.decls);
+        }
+    }
 }
 std::expected<StyleSheet, std::string> readSheet(Reader& r) {
     if (!r.magic(kStyleMagic)) return std::unexpected("not a cooked style (bad magic / version)");
@@ -207,34 +306,105 @@ std::expected<StyleSheet, std::string> readSheet(Reader& r) {
         rule.specificity = r.u32_();
         rule.order = r.u32_();
         rule.root = r.u8_() != 0;
-        rule.chain.resize(r.count(14));
-        for (SimpleSelector& sel : rule.chain) {
-            sel.typeHash = r.u32_();
-            sel.idHash = r.u32_();
-            sel.classCount = r.u8_();
-            if (sel.classCount > sel.classes.size()) return std::unexpected("cooked style: bad selector");
-            for (u8 i = 0; i < sel.classCount; ++i) sel.classes[i] = r.u32_();
-            sel.states = r.u32_();
-            const u8 c = r.u8_();
-            if (c > u8(SimpleSelector::Combinator::Child)) return std::unexpected("cooked style: bad combinator");
-            sel.combinator = SimpleSelector::Combinator(c);
-        }
+        rule.chain.resize(r.count(18));
+        for (SimpleSelector& sel : rule.chain)
+            if (!readSelector(r, sel)) return std::unexpected("cooked style: bad selector");
         if (rule.chain.empty() && !rule.root && r.ok) return std::unexpected("cooked style: empty selector");
-        rule.decls.resize(r.count(40));
-        for (Declaration& d : rule.decls) {
-            const u32 p = r.u32_();
-            if (p > u32(Prop::Count)) return std::unexpected("cooked style: bad property");
-            d.prop = Prop(p);
-            d.customHash = r.u32_();
-            readValue(r, d.value);
-            d.raw = r.str();
+        if (!readDecls(r, rule.decls)) return std::unexpected("cooked style: bad declaration");
+        rule.parts.resize(r.count(31));
+        for (SelectorPart& part : rule.parts) {
+            const u8 kind = r.u8_(), op = r.u8_();
+            if (kind > u8(SelectorPart::Kind::Root) || op > u8(AttrOp::Substring)) return std::unexpected("cooked style: bad selector part");
+            part.kind = SelectorPart::Kind(kind);
+            part.attrOp = AttrOp(op);
+            part.noCase = r.u8_() != 0;
+            part.a = r.i32_();
+            part.b = r.i32_();
+            part.name = r.u32_();
+            part.text = r.u32_();
+            part.textLen = r.u32_();
+            part.firstList = r.u32_();
+            part.listCount = r.u32_();
+        }
+        rule.sub.resize(r.count(18));
+        for (SimpleSelector& sel : rule.sub)
+            if (!readSelector(r, sel)) return std::unexpected("cooked style: bad selector");
+        rule.lists.resize(r.count(9));
+        for (SelectorRange& range : rule.lists) {
+            range.first = r.u32_();
+            range.count = r.u32_();
+            const u8 lead = r.u8_();
+            if (lead > u8(SimpleSelector::Combinator::LaterSibling)) return std::unexpected("cooked style: bad combinator");
+            range.lead = SimpleSelector::Combinator(lead);
+        }
+        rule.strings = r.str();
+        rule.cond = r.i32_();
+        rule.layer = u16(r.u32_());
+        rule.scoped = r.u8_() != 0;
+        rule.scopeFirst = r.u32_(); rule.scopeCount = r.u32_(); rule.limitFirst = r.u32_(); rule.limitCount = r.u32_();
+        if (!r.ok) break;
+        // the matcher indexes these: every reference has to stay inside the rule
+        auto inside = [](u64 first, u64 count, std::size_t size) { return first + count <= size; };
+        bool sane = inside(rule.scopeFirst, rule.scopeCount, rule.lists.size()) && inside(rule.limitFirst, rule.limitCount, rule.lists.size());
+        for (const SelectorPart& part : rule.parts)
+            sane = sane && inside(part.firstList, part.listCount, rule.lists.size()) && inside(part.text, part.textLen, rule.strings.size());
+        for (const SelectorRange& range : rule.lists) sane = sane && inside(range.first, range.count, rule.sub.size());
+        for (const SimpleSelector& sel : rule.chain) sane = sane && inside(sel.firstPart, sel.partCount, rule.parts.size());
+        for (const SimpleSelector& sel : rule.sub) sane = sane && inside(sel.firstPart, sel.partCount, rule.parts.size());
+        if (!sane) return std::unexpected("cooked style: selector reference out of range");
+    }
+    std::vector<std::pair<u32, std::string>> tokens(r.count(12));
+    std::vector<i32> tokenConds(tokens.size(), -1);
+    for (std::size_t i = 0; i < tokens.size() && r.ok; ++i) {
+        tokens[i].first = r.u32_();
+        tokens[i].second = r.str();
+        tokenConds[i] = r.i32_();
+    }
+    std::vector<StyleCondition> conditions(r.count(14));
+    for (std::size_t i = 0; i < conditions.size() && r.ok; ++i) {
+        StyleCondition& c = conditions[i];
+        const u8 kind = r.u8_();
+        if (kind > u8(StyleCondition::Kind::Container)) return std::unexpected("cooked style: bad condition");
+        c.kind = StyleCondition::Kind(kind);
+        c.parent = r.i32_();
+        if (c.parent < -1 || c.parent >= i32(i)) return std::unexpected("cooked style: bad condition parent");
+        c.containerName = r.u32_();
+        c.needsHeight = r.u8_() != 0;
+        c.program.resize(r.count(7));
+        for (QueryTerm& t : c.program) {
+            const u8 op = r.u8_(), feature = r.u8_(), cmp = r.u8_();
+            if (op > u8(QueryTerm::Op::False) || feature > u8(QueryTerm::Feature::PrefersContrast) || cmp > u8(QueryTerm::Cmp::Ge))
+                return std::unexpected("cooked style: bad query");
+            t.op = QueryTerm::Op(op);
+            t.feature = QueryTerm::Feature(feature);
+            t.cmp = QueryTerm::Cmp(cmp);
+            t.value = r.f32_();
+        }
+    }
+    std::vector<std::string> layers(r.count(4));
+    for (std::string& l : layers) l = r.str();
+    std::vector<KeyframesRule> keyframes(r.count(8));
+    for (KeyframesRule& k : keyframes) {
+        k.name = r.u32_();
+        k.frames.resize(r.count(10));
+        for (KeyframeBlock& f : k.frames) {
+            f.offset = r.f32_();
+            f.hasEase = r.u8_() != 0;
+            const u8 ease = r.u8_();
+            if (ease > u8(Easing::Out)) return std::unexpected("cooked style: bad easing");
+            f.ease = Easing(ease);
+            if (!readDecls(r, f.decls)) return std::unexpected("cooked style: bad keyframe");
         }
         if (!r.ok) break;
     }
-    std::vector<std::pair<u32, std::string>> tokens(r.count(8));
-    for (auto& [h, text] : tokens) { h = r.u32_(); text = r.str(); }
     if (!r.ok) return std::unexpected("cooked style: truncated or corrupt");
-    return StyleSheet::fromParts(std::move(rules), std::move(tokens));
+    for (const StyleRule& rule : rules)
+        if (rule.cond < -1 || rule.cond >= i32(conditions.size()) || rule.layer > layers.size())
+            return std::unexpected("cooked style: rule reference out of range");
+    for (const i32 c : tokenConds)
+        if (c < -1 || c >= i32(conditions.size())) return std::unexpected("cooked style: token reference out of range");
+    return StyleSheet::fromParts(std::move(rules), std::move(tokens), std::move(conditions), std::move(layers), std::move(keyframes),
+                                 std::move(tokenConds));
 }
 } // namespace
 
@@ -314,13 +484,14 @@ struct CookAccess {
         return r.ok;
     }
     static std::expected<std::unique_ptr<Document>, DocError> load(UiContext& ui, std::span<const u8> bytes,
-                                                                   Model* model, NodeHandle parent) {
+                                                                   Model* model, NodeHandle parent, Translator translate) {
         Reader r{bytes};
         auto bad = [](std::string m) { return std::unexpected(DocError{{}, std::move(m)}); };
         if (!r.magic(kDocMagic)) return bad("not a cooked document (bad magic / version)");
         JsonValue tree;
         if (!readJson(r, tree, 0)) return bad("cooked document: corrupt tree");
         std::unique_ptr<Document> d(new Document(ui, model, parent.valid() ? parent : ui.root()));
+        d->m_translate = translate;
         // variable names -> model slots
         const u32 nNames = r.count(4);
         std::vector<std::string> names(nNames);
@@ -356,8 +527,9 @@ struct CookAccess {
 };
 
 std::expected<std::unique_ptr<Document>, DocError> Document::loadCooked(UiContext& ui, std::span<const u8> cooked,
-                                                                        Model* model, NodeHandle parent) {
-    return CookAccess::load(ui, cooked, model, parent);
+                                                                        Model* model, NodeHandle parent,
+                                                                        Translator translate) {
+    return CookAccess::load(ui, cooked, model, parent, translate);
 }
 
 std::expected<std::vector<u8>, DocError> cookDocument(std::string_view json, CookInfo* info) {
@@ -409,6 +581,7 @@ std::expected<std::vector<u8>, DocError> cookDocument(std::string_view json, Coo
         info->bindings = u32(walk.bindings.size());
         info->instructions = instructions;
         info->classes.assign(walk.classes.begin(), walk.classes.end());
+        info->icons.assign(walk.icons.begin(), walk.icons.end());
     }
     return std::move(w.b);
 }
@@ -462,7 +635,9 @@ const std::vector<std::string>& builtClasses(const std::string& name) {
     static const bool installed = (widgets::install(scratch), true);
     (void)installed;
     std::vector<std::string> out;
-    const NodeHandle host = name == "dock" ? widgets::dockArea(scratch, scratch.root()) : widgets::panel(scratch, scratch.root());
+    const NodeHandle host = name == "dock" ? widgets::dockArea(scratch, scratch.root())
+                          : name == "mdiwindow" ? widgets::mdiArea(scratch, scratch.root()) // (a sub-window lives in an MDI area)
+                          : widgets::panel(scratch, scratch.root());
     JsonValue node;
     node.type = JsonValue::Type::Object;
     if (detail::make(scratch, name, host, {}, node).valid()) {

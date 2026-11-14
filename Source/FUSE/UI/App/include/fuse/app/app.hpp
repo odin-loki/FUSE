@@ -64,6 +64,9 @@ public:
     void set(std::string_view key, double value);
     void remove(std::string_view key);
     u32 size() const { return u32(m_items.size()); }
+    const std::vector<std::pair<std::string, std::string>>& items() const { return m_items; }
+    std::string toText() const;           ///< the `key=value` lines save() writes
+    void fromText(std::string_view text); ///< replaces the store with the parsed lines (left clean)
     /// Platform config directory for an app: <dataRoot()>/<app> when a data root is set (mobile), else
     /// $XDG_CONFIG_HOME/<app> (~/.config/<app>), ~/Library/Application Support/<app> (macOS), %APPDATA%\<app>.
     static std::string defaultDir(std::string_view app);
@@ -82,6 +85,9 @@ struct WindowDesc {
     /// width x scale by height x scale pixels. NativePlatform::show replaces it with the display's scale on macOS /
     /// iOS / Android (see NativeOptions::scale).
     f32 dpiScale = 1.f;
+    /// OS frame (services.hpp WindowFrame). Borderless / Custom windows draw their own title bar (chrome.hpp).
+    WindowFrame frame = WindowFrame::System;
+    f32 resizeBorder = 6.f; ///< Custom frame: thickness of the resize edges (logical px)
 };
 enum class RedrawPolicy : fuse::ui::u8 {
     OnDemand,   ///< update + present only when the UI needs it (default)
@@ -97,6 +103,9 @@ struct Presenter {
     void* user = nullptr;
     bool (*present)(void* user, AppWindow& w, fuse::ui::Rect damage) = nullptr;
     void (*destroy)(void* user) = nullptr; ///< called when the window closes
+    /// True when present() waits for the display (a FIFO swapchain): the display paces the window, and
+    /// AppWindow::setMaxFrameRate is not applied.
+    bool vsynced = false;
 };
 
 class AppWindow {
@@ -107,6 +116,7 @@ public:
     AppWindow& operator=(const AppWindow&) = delete;
 
     fuse::ui::UiContext& ui() { return m_ui; }
+    const fuse::ui::UiContext& ui() const { return m_ui; }
     Application& app() { return m_app; }
     u32 id() const { return m_id; }
     const std::string& title() const { return m_title; }
@@ -134,6 +144,11 @@ public:
     void setPresenter(const Presenter& p);
     /// Frames presented so far (the idle gate checks this stays flat).
     u64 framesPresented() const { return m_frames; }
+    /// Frame pacing for presenters that do not wait for the display (Presenter::vsynced false): at most `hz` frames
+    /// per second on the app clock; a Continuous window then sleeps between frames instead of spinning. 0 (the
+    /// default) = unlimited. A forced redraw (resize, requestRedraw) is paced too.
+    void setMaxFrameRate(f32 hz) { m_maxRate = hz > 0.f ? hz : 0.f; }
+    f32 maxFrameRate() const { return m_maxRate; }
     /// Closes unconditionally (programmatic). The user's close (title-bar button, Alt+F4, Cmd+W) goes through
     /// tryClose(), which asks the close guard first.
     void requestClose() { m_closing = true; }
@@ -186,6 +201,7 @@ public:
     void setPosition(fuse::ui::Vec2 p);
     fuse::ui::Vec2 position() const { return m_position; }
     fuse::ui::Vec2 requestedPosition() const { return m_wantPosition; }
+    bool positionRequested() const { return m_positionAsked; } ///< setPosition was called (show() then places the window)
     void activate(); ///< raise + keyboard focus
     bool active() const { return m_active; }
     void setEventHandler(const WindowEventHandler& h) { m_events = h; }
@@ -194,8 +210,27 @@ public:
     bool tryClose();
     /// Follow the system light / dark preference and accent: applyTheme() now (when known) and on every change.
     void setFollowSystemTheme(bool on);
-    /// Re-colours the default widget theme (themeTokensCss) by adding a token override sheet; restyles the window.
+    bool followsSystemTheme() const { return m_followTheme; }
+    /// Re-colours the default widget theme with one token override sheet (themeTokensCss; light / dark / high
+    /// contrast from widgets::themeTokensCss), replaced in place on every call; restyles the window.
     void applyTheme(const SystemTheme& t);
+
+    // ---- client-side chrome (chrome.hpp) and saved state
+    WindowChrome& chrome() { return m_chrome; }
+    const WindowChrome& chrome() const { return m_chrome; }
+    /// What the title-bar buttons do: minimize(), maximise or restore, tryClose() (the close guard may veto).
+    void command(WindowCommand c);
+    /// UI state of the nodes that have an id, as `<prefix><kind>.<id>` keys: the focused node, text-field text,
+    /// values (tab bars, sliders, combo and spin boxes, dials), check states and scroll offsets. Restoring emits
+    /// TextChanged / ValueChanged / Toggled so app code follows; scroll offsets are applied after the next layout.
+    void saveUiState(Settings& out, std::string_view prefix = {}) const;
+    void restoreUiState(const Settings& in, std::string_view prefix = {});
+    /// The window's geometry as `<prefix>x / y / w / h / mode` (position and size in logical units, taken while the
+    /// window is Normal; a maximised / fullscreen window keeps the last normal geometry it saved before).
+    /// restoreWindowState resizes, moves and re-enters the mode (Minimized is restored as Normal); false when
+    /// `in` holds no size for the prefix. Call it before or after NativePlatform::show.
+    void saveWindowState(Settings& out, std::string_view prefix = "window.") const;
+    bool restoreWindowState(const Settings& in, std::string_view prefix = "window.");
 
     // ---- menu bar (plan UI10): one description, the native bar on macOS, the in-window widgets::menuBar elsewhere
     /// Installs the menu. In-window: a menu bar is created as the first child of `parent` (the root when invalid).
@@ -248,11 +283,26 @@ private:
     fuse::ui::Vec2 m_position, m_wantPosition;
     WindowMode m_mode = WindowMode::Normal, m_wantMode = WindowMode::Normal, m_restoreMode = WindowMode::Normal;
     bool m_visible = true, m_wantVisible = true, m_active = false, m_followTheme = false, m_nativeMenu = false;
+    fuse::ui::u32 m_themeOverride = 0; ///< applyTheme's token override sheet (UiContext::addStyleSheetTracked handle)
     MenuDesc m_menu;
     MenuHandler m_menuHandler;
     fuse::ui::NodeHandle m_menuBar, m_menuParent;
     std::vector<fuse::ui::NodeHandle> m_menuButtons;
     std::vector<std::vector<fuse::ui::u32>> m_menuLines; ///< per top-level menu: item id of each line
+    WindowChrome m_chrome;
+    bool m_positionAsked = false;
+    f32 m_maxRate = 0.f;
+    double m_nextFrame = -1.0; ///< app-clock time the next paced frame may present
+    std::vector<std::pair<std::string, fuse::ui::Vec2>> m_pendingScroll; ///< restored, applied after layout
+    bool paced() const { return !m_presenter.vsynced && m_maxRate > 0.f; }
+};
+
+/// Saved state across process death: the OS may end a background process and recreate the app later (Android).
+/// `save` adds app state to what Application::saveState collects; `restore` gets the state a previous process saved.
+struct StateHooks {
+    void* user = nullptr;
+    void (*save)(void* user, Application& app, Settings& out) = nullptr;
+    void (*restore)(void* user, Application& app, const Settings& in) = nullptr;
 };
 
 // ---- application ---------------------------------------------------------------------------------------------------
@@ -317,6 +367,20 @@ public:
     const SystemTheme& systemTheme() const { return m_theme; }
     void setSystemTheme(const SystemTheme& t);
 
+    // ---- saved state (process death / session restore)
+    /// saveState() collects every window's UI state (AppWindow::saveUiState, keys "w<index>.") and geometry
+    /// ("w<index>.window.") plus what StateHooks::save adds, as Settings text; the next process passes it to
+    /// restoreState(), which restores the windows that exist (by index) and calls StateHooks::restore. Keep it small
+    /// (Android keeps it in the activity's saved-instance state). saveStateTo / restoreStateFrom do the same through
+    /// a file (desktop session restore); restoreStateFrom is false when the file is missing.
+    void setStateHooks(const StateHooks& h) { m_stateHooks = h; }
+    std::string saveState();
+    void restoreState(std::string_view bytes);
+    bool saveStateTo(const std::string& path);
+    bool restoreStateFrom(const std::string& path);
+    bool restored() const { return m_restoredSeen; } ///< restoreState ran with state from a previous process
+    const Settings& restoredState() const { return m_restored; }
+
 private:
     std::string m_name;
     CommandLine m_args;
@@ -331,6 +395,9 @@ private:
     int m_exit = 0;
     bool m_quit = false, m_primary = true;
     SystemTheme m_theme;
+    StateHooks m_stateHooks;
+    Settings m_restored;
+    bool m_restoredSeen = false;
 };
 
 /// Per-user data root for platforms without XDG / %APPDATA% conventions (Android: the activity's internal data path;

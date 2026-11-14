@@ -6,6 +6,7 @@
 #include <fuse/renderer/visbuffer/visbuffer.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/pipeline_batch.hpp>
 
 #include <cstring>
 #include <initializer_list>
@@ -125,6 +126,7 @@ void MaterialResolve::destroy() {
     if (!m_initialized) {
         return;
     }
+    waitPipelineBuilds(this); // builds queued on a PipelineBatch write the pipeline members
 #if defined(FUSE_VULKAN_BACKEND)
     collectRetired(~0ull);
     destroyTargets(m_targets);
@@ -210,7 +212,9 @@ bool MaterialResolve::createPipelines() {
         !makeLayout(VK_SHADER_STAGE_COMPUTE_BIT, m_computeLayout)) {
         return false;
     }
-    auto module = [&](const Code& c) {
+    // Every build below runs on the open PipelineBatch's workers when there is one (FrameComposer::init), so the
+    // lambdas own copies of what they read.
+    auto module = [device](const Code& c) {
         VkShaderModuleCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         info.codeSize = c.bytes;
@@ -221,26 +225,12 @@ bool MaterialResolve::createPipelines() {
     };
     const VkPipelineCreateFlags createFlags = static_cast<VkPipelineCreateFlags>(m_desc.bindless->pipelineCreateFlags());
     auto compute = [&](const Code& c, void*& out) {
-        VkShaderModule m = module(c);
-        if (m == VK_NULL_HANDLE) {
-            return false;
-        }
-        VkComputePipelineCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-        info.flags = createFlags;
-        info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-        info.stage.module = m;
-        info.stage.pName = "main";
-        info.layout = static_cast<VkPipelineLayout>(m_computeLayout);
-        VkPipeline pipeline = VK_NULL_HANDLE;
-        const VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
-        vkDestroyShaderModule(device, m, nullptr);
-        out = pipeline;
-        return result == VK_SUCCESS;
+        return buildComputePipeline(this, device, c.words, c.bytes, m_computeLayout, createFlags, &out);
     };
+    void* const graphicsLayout = m_graphicsLayout;
     // Resolve (7 colour attachments, no depth, specialised by bin) or forward (8 + D32, LESS).
-    auto graphics = [&](const Code& vsCode, const Code& fsCode, const u32* bin, bool forward, void*& out) {
+    auto createGraphics = [device, module, createFlags, graphicsLayout](const Code& vsCode, const Code& fsCode,
+                                                                        const u32* bin, bool forward, void** out) {
         VkShaderModule vs = module(vsCode);
         VkShaderModule fs = module(fsCode);
         if (vs == VK_NULL_HANDLE || fs == VK_NULL_HANDLE) {
@@ -325,13 +315,21 @@ bool MaterialResolve::createPipelines() {
         info.pDepthStencilState = &depth;
         info.pColorBlendState = &blend;
         info.pDynamicState = &dynamic;
-        info.layout = static_cast<VkPipelineLayout>(m_graphicsLayout);
+        info.layout = static_cast<VkPipelineLayout>(graphicsLayout);
         VkPipeline pipeline = VK_NULL_HANDLE;
         const VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
         vkDestroyShaderModule(device, vs, nullptr);
         vkDestroyShaderModule(device, fs, nullptr);
-        out = pipeline;
+        *out = pipeline;
         return result == VK_SUCCESS;
+    };
+    // bin points into the static kBins below.
+    auto graphics = [&](const Code& vsCode, const Code& fsCode, const u32* bin, bool forward, void*& out) {
+        return buildPipeline(
+            this, [createGraphics, vsCode, fsCode, bin, forward, target = &out] {
+                return createGraphics(vsCode, fsCode, bin, forward, target);
+            },
+            vsCode.bytes + fsCode.bytes);
     };
     if (!compute(k.classify, m_classifyPipeline) || !compute(k.attributes, m_attributesPipeline)) {
         return false;

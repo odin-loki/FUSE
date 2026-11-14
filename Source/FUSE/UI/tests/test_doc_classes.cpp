@@ -219,6 +219,8 @@ void gateEveryClass() {
         // a dock lives in a dock area; everything else stands alone
         const std::string json = name == "dock"
             ? "{\"fuseui\":1,\"root\":{\"class\":\"dockarea\",\"children\":[{\"class\":\"dock\",\"id\":\"it\",\"text\":\"D\"}]}}"
+            : name == "mdiwindow" // an MDI sub-window lives in an MDI area
+            ? "{\"fuseui\":1,\"root\":{\"class\":\"mdiarea\",\"children\":[{\"class\":\"mdiwindow\",\"id\":\"it\",\"text\":\"W\"}]}}"
             : "{\"fuseui\":1,\"root\":{\"class\":\"" + name + "\",\"id\":\"it\"}}";
         auto doc = Document::load(ui, json, &model);
         if (!doc) std::fprintf(stderr, "  %s: %s\n", name.c_str(), doc.error().message.c_str());
@@ -446,9 +448,11 @@ void gateMergedClasses() {
     w::viewCancelEdit(trimmed, ct);
     // a cooked blob of another format version is refused (the version moves with the property set)
     std::vector<u8> old(cooked->begin(), cooked->end());
-    UI_CHECK(kCookedVersion == 3u && old.size() > 8 && old[4] == 3u);
-    old[4] = 2;
-    UI_CHECK(!Document::loadCooked(trimmed, old, &model).has_value());
+    UI_CHECK(kCookedVersion == 5u && old.size() > 8 && old[4] == 5u);
+    for (u8 v : {u8(3), u8(4), u8(6)}) { // 4: the style engine port alone, before the text / icon properties
+        old[4] = v;
+        UI_CHECK(!Document::loadCooked(trimmed, old, &model).has_value());
+    }
 }
 } // namespace
 

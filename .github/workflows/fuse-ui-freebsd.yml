@@ -46,4 +46,4 @@ jobs:
             c++ --version
             cmake -S Source/FUSE/UI -B build-ui-freebsd -G Ninja -DCMAKE_BUILD_TYPE=Release
             cmake --build build-ui-freebsd
-            ctest --test-dir build-ui-freebsd -LE "vulkan|perf" --output-on-failure
+            ctest --test-dir build-ui-freebsd --no-tests=error -LE "vulkan|perf" --output-on-failure

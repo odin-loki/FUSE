@@ -33,6 +33,9 @@ uint fuseVsmrIndex(uint handle) { return handle & 0xFFFFFu; }
 
 // --- vertices -------------------------------------------------------------------------------------
 float3 fuseVsmrMeshPosition(GpuMesh mesh, uint vertex) {
+    if ((mesh.flags & kFuseMeshFloatPositions) != 0u) {
+        return ((float4*)mesh.positions)[vertex].xyz; // skinned row: f32x4 current position
+    }
     uint* words = (uint*)mesh.positions;
     const uint xy = words[vertex * 2u];
     const uint zw = words[vertex * 2u + 1u];

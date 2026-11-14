@@ -53,15 +53,14 @@ if(FUSE_GLSLANG_VALIDATOR)
 endif()
 
 # ---- tests --------------------------------------------------------------------------------------
-set(_fuse_rp_harness_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+set(_fuse_rp_harness_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 set(FUSE_RP_GOLDEN_DIR "${CMAKE_SOURCE_DIR}/Tests/golden/renderer")
 set(FUSE_RP_HARNESS_ARTIFACT_DIR "${CMAKE_BINARY_DIR}/rp_harness_artifacts")
 
 # Synchronization validation for every renderer/golden Vulkan test (Khronos layer settings env).
 set(_fuse_rp_harness_validation_env
-    "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    "${FUSE_VULKAN_LVP_ENV}"
     "VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
-    "VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT"
     "VK_KHRONOS_VALIDATION_DEBUG_ACTION=VK_DBG_LAYER_ACTION_CALLBACK")
 
 add_executable(fuse_rp_harness_image_io ${_fuse_rp_harness_dir}/test_rp_harness_image_io.cpp)
@@ -98,7 +97,7 @@ function(fuse_rp_add_golden_test name)
     if(NOT ARG_TIMEOUT)
         set(ARG_TIMEOUT 600)
     endif()
-    add_test(NAME ${name} COMMAND "${_fuse_rp_harness_lock}" "$<TARGET_FILE:fuse_rp_harness_golden>" ${ARG_ARGS})
+    add_test(NAME ${name} COMMAND ${_fuse_rp_harness_lock} "$<TARGET_FILE:fuse_rp_harness_golden>" ${ARG_ARGS})
     set_tests_properties(${name} PROPERTIES
         ENVIRONMENT "${_fuse_rp_harness_validation_env}"
         RUN_SERIAL TRUE

@@ -1,79 +1,73 @@
 # Editor
 
-The editor is a **desktop** Qt 6 application. Mobile builds ship `fuse_runtime` only.
+The editor is a **desktop** application. Its chrome is built with FUSE UI (`Source/FUSE/EditorShell`). Mobile builds ship `fuse_runtime` only.
+
+> **2026-11-14: Qt removed.** The editor used a Qt 6 Widgets shell until this date. On the owner's decision the Qt shell, its tests and the `fuse_editor_qt_*` gates were deleted, and the FUSE UI shell became the only editor. See [FUSE_EDITOR_QT_FIRST_PLAN.md](plans/FUSE_EDITOR_QT_FIRST_PLAN.md) §12 and the historical gate record in [editor/QT_PARITY.md](editor/QT_PARITY.md).
 
 ## Pieces
 
 | Target | Role |
 |--------|------|
-| `fuse_editor_api` | Qt-free boundary: `CommandQueue`, `EditorHost` |
-| `fuse_editor` | Qt 6 Widgets shell (optional binary) |
+| `fuse_editor_api` | Editor boundary library: `CommandQueue`, `EditorHost`, undo, scene files, PIE, gizmos, panel models |
+| `fuse_editor_controller` | `EditorController`, the action table and theme tokens (`EditorShell/Controller`, links only `fuse_editor_api`) |
+| `fuse_editor_scene_host` | `SceneViewportHost`: renders the `EditorHost` scene for the viewport (`EditorShell/SceneHost`) |
+| `fuse_editor_fuse` | The FUSE UI shell library and the editor binary (`EditorShell/Fuse`) |
+| `fuse_editor_ui_gates` | Gate harness for `ctest -L fuse_editor_ui` |
 
-**Locked rule:** the UI thread **posts** `EditorCommand` envelopes; the game thread **drains** them in `EditorHost::gameTick()`. No raw scene pointers cross that boundary — only `fuse::Handle<T>` in payloads.
+**Locked rule:** the UI thread **posts** `EditorCommand` envelopes; the game thread **drains** them in `EditorHost::gameTick()`. No raw scene pointers cross that boundary — only `fuse::Handle<T>` in payloads. The shell talks only to `EditorController`.
 
-Engine libraries must not `#include` Qt headers.
+The editor-shell lint `fuse_lint_editor_shell_fuse_ui` checks that no editor target links or includes Qt (or Dear ImGui).
 
 ## Platform policy
 
 | Platform | Ships |
 |----------|-------|
-| Windows, Linux, macOS | Runtime + optional editor |
+| Windows, Linux | Runtime + optional editor |
+| macOS | Runtime + editor, not verified. `fuse_app_native` has a Cocoa backend (`native_apple.mm`), but it has never run ([ui/KNOWN_GAPS.md](ui/KNOWN_GAPS.md)); there is no NSAccessibility gate |
 | iOS, Android | Runtime only |
 
 `FUSE_BUILD_EDITOR` is ignored (CMake warning) when `FUSE_PLATFORM_MOBILE` is set.
 
-## Build with Qt 6
+## Build
 
-Requires Qt 6.5+ Widgets.
-
-### Linux
+No third-party UI toolkit is needed. Turn the editor on with `FUSE_BUILD_EDITOR=ON`. It needs `FUSE_BUILD_UI` (ON by default):
 
 ```bash
-sudo apt-get install -y qt6-base-dev
-
 cmake -B build-editor -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_EDITOR_API=ON \
   -DFUSE_BUILD_EDITOR=ON
 
-cmake --build build-editor --target fuse_editor
-./build-editor/Source/FUSE/Editor/fuse_editor --samples Samples/unification
+cmake --build build-editor --target fuse_editor_fuse_app fuse_editor_ui_gates
+./build-editor/Source/FUSE/EditorShell/fuse_editor_fuse
 ```
 
-### Windows / macOS
+The binary is named `fuse_editor_fuse` (CMake target `fuse_editor_fuse_app`). Useful flags: `--gpu-viewport` (live zero-copy viewport), `--font-scale`, `--screenshot`.
 
-Install Qt 6 Widgets. Pass `CMAKE_PREFIX_PATH` or `Qt6_DIR` if CMake cannot find it, then use the same flags.
+On Linux, `fuse_app_native` loads libX11, libXrandr, libXcursor, libxkbcommon and libdbus-1 at run time; no X11 headers are needed to build. The gates run under Xvfb (`xvfb`, `xauth`) when there is no display. To run every `fuse_editor_ui` test, build the whole tree: the tests span several executables. CI: the `fuse-editor-ui` job in `fuse-umbrella-linux.yml` — see [building.md](building.md#editor-gates-local-playbook).
 
-When Qt is absent, sources still ship. CI runs the headless host tests only (`FUSE_BUILD_EDITOR=OFF`).
+## Tests
 
-## Headless tests (no Qt)
+| CTest | Purpose |
+|-------|---------|
+| `fuse_editor_command_queue` | Post / drain (`fuse_editor_api_tests`) |
+| `fuse_editor_host` | `EditorHost` game tick, no window |
+| `fuse_editor_controller_api` | `EditorController` on scripted services |
+| `fuse_editor_panel_models` | `EditorPanels` models |
+| `fuse_editor_ui_<gate>` | Shell gates: startup, layout, theme, fonts, panels, viewport, PIE, frame budgets, accessibility, … |
 
-| CTest | Binary | Purpose |
-|-------|--------|---------|
-| `fuse_editor_command_queue` | `fuse_editor_api_tests` | Post / drain |
-| `fuse_editor_host` | `fuse_editor_host_tests` | `EditorHost` game-tick without Qt |
+Run all of them with `ctest -L fuse_editor_ui`. The GPU gates (`live_present`, `scene_viewport`, `gpu_viewport`, `present_adopt`) exit 77 (skipped) without a Vulkan device or display. `ui_frame` and `idle_frames` enforce budgets only in Release.
 
-## Intended chrome
+## Chrome
 
-Track B panels (in progress): project hub, viewport, gizmos, hierarchy, inspector, material editor, SDF sculpt, asset browser, profiler, console, play mode. Viewport embeds the renderer via a native window container; gizmos draw into the viewport, not a third-party immediate-mode UI.
+Menus and a toolbar come from the action table. Docks hold tabs and can split into several tab stacks per side. Panels: Hierarchy, Inspector, Console, Project Hub, Asset Browser, Material Editor, SDF Sculpt, Profiler, Sequencer, Timeline, Lighting. The New Project wizard, project settings, preferences and Build / Package dialogs are in the shell. Gizmos draw into the viewport as a vector overlay in the UI draw list.
 
-Current tree: a project hub, the embedded Vulkan viewport (software placeholder as headless fallback), and command drain.
+## Viewport
 
-### Embedded Vulkan viewport
+`SceneViewportHost` creates the engine Vulkan instance and device and a `HybridSceneRenderer`. It renders the scene from the viewport camera into a headless RGBA8 target, only when the camera, size or scene changes (every frame while playing).
 
-The live editor presents its viewport through a native Vulkan child window (`ViewportVulkanWindow`, `surfaceType() == VulkanSurface`) embedded with `QWidget::createWindowContainer`:
+With `--gpu-viewport`, the FUSE UI presenter adopts that device and samples the frame in place as an external texture (zero-copy). Without a GPU-drawn window (`--screenshot`, CPU presenter), the host reads the frame back into the viewport image. Without a device, the shell shows a software grid viewport.
 
-1. Before the game thread starts, `ViewportPlaceholderWidget::enableEmbeddedVulkanViewport` asks `RuntimeViewportHook::requestWindowSystemPresent` for an instance with the Qt platform's WSI extensions (`VK_KHR_surface` + `VK_KHR_xcb_surface` / `_wayland_surface` / `_win32_surface`).
-2. The game thread's first tick creates the viewport renderer (`HybridRendererBootstrap` → `RhiContext`) on that instance and publishes the `VkInstance` (`windowPresentInstance()`, state `InstanceReady`).
-3. The UI thread adopts it (`QVulkanInstance::setVkInstance`), embeds the child window, creates the surface (`QVulkanInstance::surfaceForWindow`) and posts `viewport.vk_surface_adopted`.
-4. The game thread builds a real `VkSwapchainKHR` on that surface (`SurfaceWired`) and every tick runs fence wait → acquire → render/submit → `vkQueuePresentKHR`. Viewport resizes rebuild the swapchain (GPU drained first).
-5. Key / mouse / wheel / focus events that land on the child window are forwarded to the viewport widget, so fly camera (RMB + WASDQE, wheel = dolly / fly speed), picking and the entity context menu behave as before.
+Gates: `scene_viewport` (readback path, re-render on change, idle when unchanged, 0 validation errors) and `gpu_viewport` (adopted device, window pixels match the engine frame, 0 validation errors).
 
-Teardown (`MainWindow::~MainWindow`): stop the game thread → `releaseWindowSurface()` (drain, swapchain replaced by a headless one) → `releaseVulkanViewport()` (child window + Qt surface, then the adopted `QVulkanInstance`) → the FUSE `VkInstance` goes with `EditorHost`.
-
-Fallback: without a display, an xcb/wayland/windows platform, a Vulkan device with WSI, or with `FUSE_EDITOR_HEADLESS_VIEWPORT=1`, the viewport stays on the headless render path and paints the software placeholder. `FUSE_EDITOR_VK_VALIDATION=1` enables `VK_LAYER_KHRONOS_validation` on the viewport instance.
-
-**Track B gate.** `vkQueuePresentKHR` is Track B production (`productionPresentAllowed()`, compile-time `FUSE_TRACK_B_UNLOCK`). The editor does not flip that global unlock: once its surface is wired it sets the host-scoped runtime flag `fuse::core::TrackBHostFeature::EditorViewportPresent` for its own process, which also satisfies the Qt present gate (`desktopQtPresentRuntimeReady`) without `FUSE_ENABLE_QT_PRESENT`. The game runtime never sets it; shipping builds ignore it.
-
-Gate: `fuse_editor_qt_live_present` (labels `gate;qt;xvfb`) drives the real `MainWindow` with the game thread running and checks acquire / present counts, screen pixels (rendered frame, not the placeholder), resize → swapchain recreate, forwarded input, 0 validation messages and a clean teardown.

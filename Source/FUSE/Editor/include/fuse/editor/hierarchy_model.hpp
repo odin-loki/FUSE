@@ -20,7 +20,7 @@ struct HierarchyNode {
     u32 depth = 0;
 };
 
-/// Qt-free scene tree model over fuse::Object parent/child links, or runtime
+/// toolkit-free scene tree model over fuse::Object parent/child links, or runtime
 /// `scene::Scene` entities when no Object root is set.
 class HierarchyModel {
 public:

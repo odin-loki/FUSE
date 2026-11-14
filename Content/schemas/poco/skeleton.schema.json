@@ -1,0 +1,34 @@
+{
+  "$id": "fuse.poco/1/skeleton.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Kind 'skeleton' payload.",
+  "properties": {
+    "inverseBind": {
+      "oneOf": [
+        {
+          "$ref": "blob_ref.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "joints": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "parents": {
+      "items": {
+        "maximum": 2147483647,
+        "minimum": -2147483648,
+        "type": "integer"
+      },
+      "type": "array"
+    }
+  },
+  "title": "skeleton",
+  "type": "object"
+}

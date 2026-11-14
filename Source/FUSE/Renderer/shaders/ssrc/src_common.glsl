@@ -92,6 +92,11 @@ layout(push_constant) uniform SrcPush {
 // The frame constants: every F.field is a load through the frame's BDA (uniform, cached).
 #define F (SrcFrameRef(pc.frame).f)
 
+// Correctly rounded division / square root (fuse_div_rn / fuse_sqrt_rn, common/exact_math.glsl): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but the march positions and the pixels they truncate to must be
+// the oracle's (SsrcCpuSolver).
+#include "../common/exact_math.glsl"
+
 #ifdef SRC_MATH
 // --- f16 records (ssrc::f32ToF16 / f16ToF32) ------------------------------------------------------------
 uint src_f32_to_f16(float v) {
@@ -157,17 +162,17 @@ vec3 src_sub(vec3 a, vec3 b) {
     return r;
 }
 vec3 src_normalize(vec3 v) {
-    precise float len = sqrt(src_dot(v, v));
+    const float len = fuse_sqrt_rn(src_dot(v, v));
     if (len < 1e-8) {
         return vec3(0.0);
     }
-    precise float inv = 1.0 / len;
+    const float inv = fuse_div_rn(1.0, len);
     return src_scale(v, inv);
 }
 // ((p + 0.5) - c) / f: the view ray (z = 1) through a pixel centre.
 float src_ray_coord(uint p, float c, float f) {
-    precise float r = ((float(p) + 0.5) - c) / f;
-    return r;
+    precise float n = (float(p) + 0.5) - c;
+    return fuse_div_rn(n, f);
 }
 
 uint src_clamp_index(int v, uint count) {
@@ -181,8 +186,10 @@ uint src_clamp_index(int v, uint count) {
 // Bilinear neighbours of p on a probe grid of `spacing`: xy = (x0, x1), zw = (y0, y1); weights in w
 // ((x0, y0), (x1, y0), (x0, y1), (x1, y1)).
 uvec4 src_bilinear(float px, float py, float spacing, uint countX, uint countY, out vec4 w) {
-    precise float u = px / spacing - 0.5;
-    precise float v = py / spacing - 0.5;
+    const float uq = fuse_div_rn(px, spacing);
+    const float vq = fuse_div_rn(py, spacing);
+    precise float u = uq - 0.5;
+    precise float v = vq - 0.5;
     const float fu = floor(u);
     const float fv = floor(v);
     precise float ax = u - fu;

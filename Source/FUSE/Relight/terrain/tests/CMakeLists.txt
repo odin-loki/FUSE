@@ -28,19 +28,18 @@ add_executable(fuse_relight_terrain_vk_tests test_terrain_vk.cpp)
 target_link_libraries(fuse_relight_terrain_vk_tests PRIVATE fuse_relight_terrain_gpu fuse_rhi)
 _rl_terrain_cxx23(fuse_relight_terrain_vk_tests)
 if(NOT CMAKE_CROSSCOMPILING)
-    set(_rl_tb_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
     set(_rl_tb_vk_tests "")
     foreach(_lang slang glsl)
-        if(EXISTS "${_rl_tb_lock}")
+        if(EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
             add_test(NAME rl_terrain_vk_${_lang}
-                     COMMAND "${_rl_tb_lock}" "$<TARGET_FILE:fuse_relight_terrain_vk_tests>" --language ${_lang})
+                     COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_relight_terrain_vk_tests>" --language ${_lang})
         else()
             add_test(NAME rl_terrain_vk_${_lang} COMMAND fuse_relight_terrain_vk_tests --language ${_lang})
         endif()
         list(APPEND _rl_tb_vk_tests rl_terrain_vk_${_lang})
     endforeach()
     set_tests_properties(${_rl_tb_vk_tests} PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 900 LABELS "gate;vulkan;relight")
     return()
 endif()
@@ -62,7 +61,7 @@ if(EXISTS "/usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json" O
              COMMAND "${_rl_tb_runner}" "${_rl_tb_prefix}" "$<TARGET_FILE:fuse_relight_terrain_vk_tests>"
                      --external-validation)
     set_tests_properties(rl_pe.terrain_vk_validation PROPERTIES
-        ENVIRONMENT "VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation;VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
+        ENVIRONMENT "VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
         LABELS "relight;wine;renderer_pe;vulkan;gate" SKIP_RETURN_CODE 77 RESOURCE_LOCK fuse_relight_renderer_pe
         TIMEOUT 900)
 endif()

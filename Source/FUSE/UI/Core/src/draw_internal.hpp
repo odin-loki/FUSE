@@ -82,4 +82,8 @@ void drawPatchCmd(const RasterEnv& env, const DrawList& list, const DrawCmd& c, 
 std::size_t drawGroup(const RasterEnv& env, const DrawList& list, std::size_t i, std::size_t last, const Clip& clip,
                       const Surface& surf, int level, bool opacityOne);
 
+/// Renders the effect group that starts at `i` (PushTransform / PushFilter / PushMask); returns the index of its PopClip.
+std::size_t drawFxGroup(const RasterEnv& env, const DrawList& list, std::size_t i, std::size_t last, const Clip& clip,
+                        const Surface& surf, int level);
+
 } // namespace fuse::ui::detail

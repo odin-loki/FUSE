@@ -1,0 +1,28 @@
+{
+  "$id": "fuse.poco/1/level.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Kind 'level' payload.",
+  "properties": {
+    "entities": {
+      "items": {
+        "$ref": "entity.schema.json"
+      },
+      "type": "array"
+    },
+    "lightIds": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "lookId": {
+      "type": "string"
+    },
+    "skyId": {
+      "type": "string"
+    }
+  },
+  "title": "level",
+  "type": "object"
+}

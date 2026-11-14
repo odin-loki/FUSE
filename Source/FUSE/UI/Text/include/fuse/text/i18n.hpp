@@ -2,6 +2,14 @@
 //
 // Built-in tables only (no ICU, no CLDR data files): cardinal plural rules for the common CLDR rule families, the
 // grouping / decimal separators of a table of common locales, and a pseudo-localisation transform for layout testing.
+//
+// One implementation with fuse_ui_l10n (fuse/ui/l10n/l10n.hpp): the plural rules and the number-symbol table are
+// l10n's (L10n/src/plural.cpp, format.cpp); the functions below are the small-footprint front end to them (integer
+// plurals, "one {..} other {..}" patterns, fixed-fraction numbers) and live in fuse_ui_l10n_lib, which fuse_text
+// links. For ICU-style messages, ordinals, dates, times and currencies use l10n directly. The two differ only where
+// documented: pluralCategory falls back to English rules for a language without rules (l10n::pluralCardinal: the
+// CLDR root rule, other), and formatNumber here rounds half away from zero at a fixed number of decimals with an
+// ASCII minus (l10n::formatNumber: half-even, the locale's minus sign).
 // Locales are BCP 47 / POSIX tags ("en", "en-GB", "pt_BR", "ru-RU"); an unknown region falls back to its language and
 // an unknown language to English rules. Digits are always Western (0-9): Arabic-Indic and other native digit sets
 // are not produced.

@@ -10,8 +10,32 @@ function(fuse_ui_test name src)
     set_tests_properties(${name} PROPERTIES LABELS fuse_ui)
     if(FUSE_UI_TEXT STREQUAL "FULL")
         target_compile_definitions(${name} PRIVATE FUSE_UI_TEST_TEXT_FULL=1)
+    elseif(FUSE_UI_TEXT STREQUAL "COOKED")
+        target_compile_definitions(${name} PRIVATE FUSE_UI_TEST_TEXT_COOKED=1
+                                   FUSE_UI_TEST_COOKED_FONTS="${CMAKE_CURRENT_BINARY_DIR}/fonts")
+        add_dependencies(${name} fuse_ui_test_fonts)
     endif()
 endfunction()
+
+# COOKED: the test-data fonts cooked at the sizes their gates draw (colour images included)
+if(FUSE_UI_TEXT STREQUAL "COOKED")
+    set(_tf "${CMAKE_CURRENT_BINARY_DIR}/fonts")
+    set(_tf_out "")
+    foreach(spec "colrv1_test|--sizes=30,32,45,48,56|--msdf"
+                 "bitmap_cbdt_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100"
+                 "bitmap_sbix_test|--sizes=20|--color-sizes=8,12,16,20,32,40,64,100"
+                 "variable_test|--sizes=24,100|--variation=wght:700")
+        string(REPLACE "|" ";" _spec "${spec}")
+        list(POP_FRONT _spec _name)
+        add_custom_command(OUTPUT "${_tf}/${_name}.fusefont"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${_tf}"
+            COMMAND ${FUSE_TEXT_COOK_COMMAND} "--out=${_tf}/${_name}.fusefont" ${_spec}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/data/${_name}.ttf"
+            DEPENDS ${FUSE_TEXT_COOK_DEPENDS} "${CMAKE_CURRENT_SOURCE_DIR}/data/${_name}.ttf" COMMENT "fuse_text_cook ${_name}" VERBATIM)
+        list(APPEND _tf_out "${_tf}/${_name}.fusefont")
+    endforeach()
+    add_custom_target(fuse_ui_test_fonts DEPENDS ${_tf_out})
+endif()
 
 fuse_ui_test(fuse_ui_layout_conformance test_layout_conformance.cpp)
 fuse_ui_test(fuse_ui_style_cascade test_style_cascade.cpp)
@@ -26,6 +50,7 @@ fuse_ui_test(fuse_ui_a11y_tree_dump test_a11y_tree_dump.cpp)
 fuse_ui_test(fuse_ui_text_basics test_text_basics.cpp)
 fuse_ui_test(fuse_text_edit_ops test_text_edit_ops.cpp)
 fuse_ui_test(fuse_text_fallback test_text_fallback.cpp)
+set_tests_properties(fuse_text_fallback PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}) # data/variable_test.ttf
 fuse_ui_test(fuse_ui_widget_interaction test_widget_interaction.cpp)
 fuse_ui_test(fuse_ui_touch_scroll test_touch_scroll.cpp)
 
@@ -99,6 +124,11 @@ if(TARGET fuse_ui_script)
     fuse_ui_test(fuse_ui_lua_bindings test_lua.cpp)
     target_link_libraries(fuse_ui_lua_bindings PRIVATE fuse_ui_script)
     target_compile_definitions(fuse_ui_lua_bindings PRIVATE FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
+    # UI8 gate: the whole `ui` table (coverage of every function, errors, signals, handler lifetime, steady frames)
+    fuse_ui_test(fuse_ui_script_bind test_script_bind.cpp)
+    target_link_libraries(fuse_ui_script_bind PRIVATE fuse_ui_script)
+    target_compile_definitions(fuse_ui_script_bind PRIVATE FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
+    set_tests_properties(fuse_ui_script_bind PROPERTIES LABELS "fuse_ui;gate")
 endif()
 
 add_executable(fuse_ui_sample sample_main.cpp)
@@ -264,6 +294,25 @@ if(TARGET fuse_ui_game)
     target_compile_definitions(fuse_ui_widget_golden PRIVATE FUSE_UI_GOLDEN_HAVE_GAME=1)
     add_test(NAME fuse_ui_widget_golden_hud COMMAND fuse_ui_widget_golden --scene=hud)
     set_tests_properties(fuse_ui_widget_golden_hud PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    # localisation: plural rules, messages, number / date formatting, StringTable tr, fuse_ui_extract_strings
+    if(TARGET fuse_ui_extract_strings AND NOT CMAKE_CROSSCOMPILING)
+        fuse_ui_test(fuse_ui_l10n test_l10n.cpp)
+        target_link_libraries(fuse_ui_l10n PRIVATE fuse_ui_game fuse_ui_doc)
+        add_dependencies(fuse_ui_l10n fuse_ui_extract_strings)
+        target_compile_definitions(fuse_ui_l10n PRIVATE FUSE_UI_EXTRACT_EXE="$<TARGET_FILE:fuse_ui_extract_strings>"
+                                   FUSE_UI_TEST_OUT="${CMAKE_CURRENT_BINARY_DIR}")
+        set_tests_properties(fuse_ui_l10n PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endif()
+    # plan §6 HUD budget: ~300-node HUD animated as in play, UI CPU per frame median <= 0.5 ms (the scene is shared
+    # with Game/samples/hud_bench.cpp, the Android bench app that is not built yet: docs/ui/archive/PORT_magical_bassi.md)
+    # Registered since StyleEngine's style hash covers placement and all colour channels: before that every style a HUD
+    # animates (anchored / absolute offsets, fades) landed in one probe chain and main measured 0.57-0.76 ms; now
+    # ~0.10 ms on the same machine (docs/ui/BASELINES.md).
+    add_executable(fuse_ui_bench_hud test_bench_hud.cpp)
+    target_link_libraries(fuse_ui_bench_hud PRIVATE fuse_ui_game)
+    target_include_directories(fuse_ui_bench_hud PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB} ${CMAKE_CURRENT_SOURCE_DIR}/../Game/samples)
+    add_test(NAME fuse_ui_bench_hud COMMAND fuse_ui_bench_hud)
+    set_tests_properties(fuse_ui_bench_hud PROPERTIES LABELS "fuse_ui;gate;perf" RUN_SERIAL TRUE) # timing budget
     if(TARGET fuse_ui_game_ecs)
         fuse_ui_test(fuse_ui_ecs_surface test_game_bridges.cpp)
         target_link_libraries(fuse_ui_ecs_surface PRIVATE fuse_ui_game_ecs)
@@ -333,6 +382,10 @@ if(TARGET fuse_ui_doc AND NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS") 
     fuse_ui_test(fuse_ui_hot_reload_file test_hot_reload_file.cpp)
     target_link_libraries(fuse_ui_hot_reload_file PRIVATE fuse_ui_doc)
     set_tests_properties(fuse_ui_hot_reload_file PROPERTIES LABELS "fuse_ui;gate")
+    # style sheet hot reload (StyleSheetFileWatcher: replaced in place by handle)
+    fuse_ui_test(fuse_ui_hot_reload_style test_hot_reload.cpp)
+    target_link_libraries(fuse_ui_hot_reload_style PRIVATE fuse_ui_doc)
+    set_tests_properties(fuse_ui_hot_reload_style PROPERTIES LABELS "fuse_ui;gate")
 endif()
 # Golden of the interaction visuals (action menu with shortcut texts; list drag ghost + insertion line). The image was
 # rendered with the MINIMAL text profile; there is no FULL-profile golden, so the gate exists for MINIMAL only.
@@ -373,7 +426,7 @@ endforeach()
 add_executable(fuse_ui_vector_golden test_vector_golden.cpp)
 target_link_libraries(fuse_ui_vector_golden PRIVATE fuse_ui_widgets)
 target_include_directories(fuse_ui_vector_golden PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
-foreach(g paths icons)
+foreach(g paths icons effects)
     add_test(NAME fuse_ui_vector_golden_${g} COMMAND fuse_ui_vector_golden --scene=${g})
     set_tests_properties(fuse_ui_vector_golden_${g} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endforeach()
@@ -381,10 +434,72 @@ endforeach()
 # the kernel's Image op; the kernel itself is covered by fuse_ui_vk_parity where a Vulkan device exists)
 fuse_ui_test(fuse_ui_gpu_pack_vector test_gpu_pack_vector.cpp)
 target_link_libraries(fuse_ui_gpu_pack_vector PRIVATE fuse_ui_render)
-set_tests_properties(fuse_ui_gpu_pack_vector PROPERTIES LABELS "fuse_ui;gate")
+# (run from the tests directory: the colour-glyph case loads data/colrv1_test.ttf)
+set_tests_properties(fuse_ui_gpu_pack_vector PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Dock drag and drop, catalogue coverage / extra goldens, accessibility families, sample and packaging gates
 include(${CMAKE_CURRENT_SOURCE_DIR}/finishing.cmake)
+
+# ---- gates from the gui-framework branch (docs/ui/archive/PORT_gui_framework.md) ----
+# Key-code table of the branch's Cocoa backend (App/src/cocoa_map.hpp, a plain header; the backend itself is parked)
+add_executable(fuse_app_cocoa_map test_cocoa_map.cpp)
+target_link_libraries(fuse_app_cocoa_map PRIVATE fuse_ui_core)
+add_test(NAME fuse_app_cocoa_map COMMAND fuse_app_cocoa_map)
+set_tests_properties(fuse_app_cocoa_map PROPERTIES LABELS "fuse_ui;gate")
+
+if(TARGET fuse_ui_os)
+    # the fuse::ui::os seam on the configured backend (std by default)
+    add_executable(fuse_ui_os_seam test_os_seam.cpp)
+    target_link_libraries(fuse_ui_os_seam PRIVATE fuse_ui_os)
+    target_include_directories(fuse_ui_os_seam PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+    target_link_libraries(fuse_ui_os_seam PRIVATE fuse_ui_widgets) # test_util.hpp (font helpers)
+    add_test(NAME fuse_ui_os_seam COMMAND fuse_ui_os_seam)
+    set_tests_properties(fuse_ui_os_seam PROPERTIES LABELS "fuse_ui;gate")
+endif()
+
+# fuse_ui_extras: one ctest per gate of the modules main builds. The gates of the parked modules (i18n widget_pdf svg
+# charts media) are in test_extras.cpp behind FUSE_UI_EXTRAS_ALL and are not registered. (The widget gates of the
+# branch - containers dialogs lcd_keyseq mdi completer graphics vkeyboard - are live in fuse_ui_widgets:
+# tests/port_widgets.cmake; rich text, gesture and the audio meter have their own gates below: test_richtext.cpp,
+# test_extras_small.cpp.)
+if(TARGET fuse_ui_extras)
+    add_executable(fuse_ui_extras_tests test_extras.cpp)
+    find_package(Threads REQUIRED) # the tray gate serves D-Bus from a std::thread
+    target_link_libraries(fuse_ui_extras_tests PRIVATE fuse_ui_extras Threads::Threads)
+    target_include_directories(fuse_ui_extras_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+    target_compile_definitions(fuse_ui_extras_tests PRIVATE FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
+    foreach(g undo desktop pdf tray declarative dataviz3d dataviz3d_bsp)
+        add_test(NAME fuse_ui_extras_${g} COMMAND fuse_ui_extras_tests --gate=${g})
+        set_tests_properties(fuse_ui_extras_${g} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+    # charts library (fuse::ui::charts) and the 3D data visualisation behind it
+    add_executable(fuse_ui_charts_tests test_charts.cpp)
+    target_link_libraries(fuse_ui_charts_tests PRIVATE fuse_ui_extras)
+    target_include_directories(fuse_ui_charts_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+    foreach(g series axes decimation ring hit widget model export bench demo 3d 3d_large demo3d mesh3d mesh3d_large beyond transition demo_beyond)
+        add_test(NAME fuse_ui_charts_${g} COMMAND fuse_ui_charts_tests --gate=${g})
+        set_tests_properties(fuse_ui_charts_${g} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang") # partial designated initialisers in the branch's tests and in stb
+        target_compile_options(fuse_ui_extras_tests PRIVATE -Wno-missing-field-initializers)
+        target_compile_options(fuse_ui_charts_tests PRIVATE -Wno-missing-field-initializers)
+    endif()
+    # system web engine (WebKitGTK, loaded at run time): needs a display, so Linux / BSD runs it on its own Xvfb
+    find_program(FUSE_XVFB_RUN Xvfb)
+    if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT CMAKE_CROSSCOMPILING AND FUSE_XVFB_RUN)
+        add_test(NAME fuse_ui_extras_webview
+                 COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_isolated_x.sh -- $<TARGET_FILE:fuse_ui_extras_tests> --gate=webview)
+        set_tests_properties(fuse_ui_extras_webview PROPERTIES LABELS "fuse_ui;gate" TIMEOUT 120
+            ENVIRONMENT "WEBKIT_DISABLE_COMPOSITING_MODE=1;LIBGL_ALWAYS_SOFTWARE=1")
+    endif()
+    # Win32 tray + HMENU global menu bar (the branch ran it under Wine; not run on main)
+    if(WIN32)
+        add_executable(fuse_ui_tray_win32 test_tray_win32.cpp)
+        target_link_libraries(fuse_ui_tray_win32 PRIVATE fuse_ui_extras)
+        add_test(NAME fuse_ui_tray_win32 COMMAND fuse_ui_tray_win32)
+        set_tests_properties(fuse_ui_tray_win32 PROPERTIES RUN_SERIAL TRUE TIMEOUT 120 LABELS "fuse_ui;gate")
+    endif()
+endif()
 
 # Wall-clock budget gates also carry the label `perf`: their thresholds assume a quiet machine, so CI on shared or
 # nested VMs (FreeBSD VM, macOS runners) runs `ctest -LE "vulkan|perf"`. That also leaves out what else these gates
@@ -396,3 +511,353 @@ foreach(t fuse_ui_bench_10k fuse_ui_modelview_1m_rows fuse_ui_mv_selection_1m fu
         set_tests_properties(${t} PROPERTIES LABELS "${_fuse_ui_labels};perf")
     endif()
 endforeach()
+
+# fuse_app platform layer, the parts that need no display (docs/ui/archive/PORT_magical_bassi.md 3.5 / 3.7,
+# PORT_gui_framework.md 3.1 / 3.5): saved state, client-side window chrome, the window-less dialog helpers, the PNG
+# clipboard codec, frame pacing and the tool-window surfaces of floating docks. The OS side (XDND, clipboard formats,
+# tool windows, chrome drags, saved-state restore on real windows) is in fuse_app_native_services above.
+if(TARGET fuse_app)
+    add_executable(fuse_app_platform test_app_platform.cpp)
+    target_link_libraries(fuse_app_platform PRIVATE fuse_app)
+    target_include_directories(fuse_app_platform PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    foreach(g saved_state window_chrome dialog_helpers clipboard_png frame_pacing tool_surfaces)
+        add_test(NAME fuse_app_${g} COMMAND fuse_app_platform --gate=${g} --out=${CMAKE_CURRENT_BINARY_DIR})
+        set_tests_properties(fuse_app_${g} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+endif()
+
+# Native desktop notifications (desktop::Notifier, TrayIcon::showMessage; PORT_magical_bassi.md 3.8): a private
+# dbus-daemon with an in-process org.freedesktop.Notifications service. Passes with a "skipped" line without libdbus.
+if(TARGET fuse_ui_extras_tests)
+    add_test(NAME fuse_ui_extras_notify COMMAND fuse_ui_extras_tests --gate=notify)
+    set_tests_properties(fuse_ui_extras_notify PROPERTIES LABELS "fuse_ui;gate" TIMEOUT 120)
+endif()
+
+# ---- Wayland backend of fuse_app_native (Linux / BSD; port list mb 3.6 + gf 3.2) ----
+# fuse_app_wayland: protocol tables / keymaps / backend selection without a compositor, then real windows under a
+# headless weston the gate starts itself (found in PATH or $FUSE_TEST_WESTON at run time; exit 77 without one or
+# without libwayland-client). fuse_app_wayland_seat: the seat (pointer, keyboard, touch, scroll, clipboard, drops,
+# IME, fractional scale) against a small compositor the test runs in-process on libwayland-server (exit 77 without it).
+if(TARGET fuse_app_native AND UNIX AND NOT APPLE AND NOT ANDROID)
+    find_package(Threads REQUIRED)
+    foreach(g fuse_app_wayland fuse_app_wayland_seat)
+        if(g STREQUAL "fuse_app_wayland")
+            add_executable(${g} test_app_wayland.cpp)
+        else()
+            add_executable(${g} test_app_wayland_seat.cpp)
+        endif()
+        target_link_libraries(${g} PRIVATE fuse_app_native fuse_ui_widgets Threads::Threads ${CMAKE_DL_LIBS})
+        target_include_directories(${g} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME ${g} COMMAND ${g})
+        set_tests_properties(${g} PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300 LABELS "fuse_ui;gate"
+            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+    endforeach()
+    # Every other gate keeps testing what it was written for: on a developer's Wayland session NativePlatform would
+    # pick Wayland ($WAYLAND_DISPLAY), so they pin X11. Deferred to the end of this directory so that gates added
+    # below this block are covered too.
+    function(fuse_ui_pin_x11_gates)
+        get_property(_all DIRECTORY PROPERTY TESTS)
+        foreach(t IN LISTS _all)
+            if(NOT t MATCHES "^fuse_app_wayland")
+                set_property(TEST ${t} APPEND PROPERTY ENVIRONMENT "FUSE_UI_BACKEND=x11")
+            endif()
+        endforeach()
+    endfunction()
+    cmake_language(DEFER CALL fuse_ui_pin_x11_gates)
+endif()
+
+# ---- themes: light / high contrast token sets, sheets by handle, contrast and focus-ring gates -----------------------
+add_executable(fuse_ui_themes test_themes.cpp)
+target_link_libraries(fuse_ui_themes PRIVATE fuse_ui_widgets)
+target_include_directories(fuse_ui_themes PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+target_compile_definitions(fuse_ui_themes PRIVATE FUSE_UI_WIDGETS_SRC="${CMAKE_CURRENT_SOURCE_DIR}/../Widgets/src")
+target_compile_definitions(fuse_ui_themes PRIVATE FUSE_UI_APP_SRC="${CMAKE_CURRENT_SOURCE_DIR}/../App/src")
+foreach(g sheet_handles token_only contrast focus_ring paint_literals)
+    add_test(NAME fuse_ui_theme_${g} COMMAND fuse_ui_themes --gate=${g})
+    set_tests_properties(fuse_ui_theme_${g} PROPERTIES LABELS "fuse_ui;gate")
+endforeach()
+# Golden images of the widget gallery scenes (test_widget_golden.cpp) in the light and high-contrast themes, and of the
+# controls / editors scenes in all three. MINIMAL text profile only: the FULL-profile twins need the fetched text stack
+# to be rendered and are not checked in.
+if(NOT FUSE_UI_TEXT STREQUAL "FULL")
+    foreach(g controls editors)
+        add_test(NAME fuse_ui_widget_golden_${g} COMMAND fuse_ui_widget_golden --scene=${g})
+        set_tests_properties(fuse_ui_widget_golden_${g} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endforeach()
+    # (not the hud scene: the game HUD widgets of fuse_ui_game draw over a game frame in their own colours and do not
+    # follow the widget theme)
+    set(_fuse_ui_theme_scenes containers text dialogs wizard mainwindow spinmenu controls editors)
+    foreach(t light contrast)
+        foreach(g ${_fuse_ui_theme_scenes})
+            add_test(NAME fuse_ui_theme_golden_${t}_${g} COMMAND fuse_ui_widget_golden --scene=${g} --theme=${t})
+            set_tests_properties(fuse_ui_theme_golden_${t}_${g} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        endforeach()
+    endforeach()
+endif()
+if(TARGET fuse_app)
+    add_executable(fuse_app_theme_sheets test_theme_app.cpp)
+    target_link_libraries(fuse_app_theme_sheets PRIVATE fuse_app)
+    target_include_directories(fuse_app_theme_sheets PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME fuse_app_theme_sheets COMMAND fuse_app_theme_sheets)
+    set_tests_properties(fuse_app_theme_sheets PROPERTIES LABELS "fuse_ui;gate")
+endif()
+
+# ---- Extras rich text editor on main's text stack (Extras/src/richtext.cpp) ---------------------------------------
+if(TARGET fuse_ui_extras)
+    add_executable(fuse_ui_richtext_tests test_richtext.cpp)
+    target_link_libraries(fuse_ui_richtext_tests PRIVATE fuse_ui_extras)
+    target_include_directories(fuse_ui_richtext_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+    foreach(g model undo widget view)
+        add_test(NAME fuse_ui_extras_richtext_${g} COMMAND fuse_ui_richtext_tests --gate=${g})
+        set_tests_properties(fuse_ui_extras_richtext_${g} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+    # The golden is rendered with the MINIMAL text profile. FULL rasterises with FreeType; COOKED has one face per
+    # pack and no synthetic oblique, so the bold / italic faces the scene is about are not what it draws.
+    if(FUSE_UI_TEXT STREQUAL "MINIMAL")
+        add_test(NAME fuse_ui_extras_richtext_golden COMMAND fuse_ui_richtext_tests --gate=golden)
+        set_tests_properties(fuse_ui_extras_richtext_golden PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endif()
+endif()
+
+# ---- binary size (plan section 6: measure, then hold within +10 %) -----------------------------------------------
+# fuse_app_binary_size: the stripped hello_app. The budget is per toolchain: baseline + 10 %. Linux x86-64, GCC 13.3,
+# Release, MINIMAL text, standalone UI tree. Other toolchains / build types report the size and skip (77) until
+# -DFUSE_APP_BINARY_BUDGET=<bytes> is set. Re-measure when the widget library grows on purpose (docs/ui/BASELINES.md).
+# Measured 2026-11-13:
+#   1,936,432 B  main before the platform layer (first baseline, budget 2,130,000)
+#   2,282,064 B  + app platform layer and Wayland backend (+345,632: both backends are linked into every app)
+#   2,675,312 B  + widget port (+393,248: widgets::install registers the ported widgets and options - line edit
+#                options / validators / masks, completer, editable combo, spin box and tab options, the extras widgets,
+#                dock splits - so they are linked into every app that calls install)
+#   2,683,504 B  + theme tokens for those widgets, title bar tokens, X11 high-contrast detection (+8,192)
+#                (budget then: 2,951,000)
+#   2,974,320 B  + style engine and drawing core port (+290,816: selectors level 4, at-rules, keyframe animations,
+#                positioning, transform / filter / mask / clip-path values, the effect groups of the CPU rasteriser;
+#                all of it is reachable from StyleSheet::parse and UiContext::update, so every app links it)
+#   3,424,968 B  + text / icon port and the merge of the two (+450,648: MSDF generation, COLRv1 / CBDT / sbix colour
+#                glyphs with their PNG decoder, variable fonts, the system font catalogue and script tables, IconSet,
+#                font-settings / icon properties; reachable from Font loading and the text paint path)
+# Budget = 3,424,968 + 10 % = 3,767,464 -> 3,767,000.
+if(TARGET hello_app AND NOT CMAKE_CROSSCOMPILING)
+    set(_fuse_app_budget 0)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64" AND FUSE_UI_TEXT STREQUAL "MINIMAL"
+       AND CMAKE_BUILD_TYPE STREQUAL "Release" AND CMAKE_STRIP AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+       AND CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR) # the standalone UI tree
+        set(_fuse_app_budget 3767000)
+    endif()
+    if(FUSE_APP_BINARY_BUDGET)
+        set(_fuse_app_budget ${FUSE_APP_BINARY_BUDGET})
+    endif()
+    set(_fuse_app_bin $<TARGET_FILE:hello_app>)
+    add_executable(fuse_app_binary_size test_app_binary_size.cpp)
+    if(NOT MSVC AND CMAKE_STRIP)
+        set(_fuse_app_bin ${CMAKE_CURRENT_BINARY_DIR}/hello_app.stripped)
+        add_custom_target(fuse_app_hello_stripped ALL
+            COMMAND ${CMAKE_STRIP} -o ${_fuse_app_bin} $<TARGET_FILE:hello_app> DEPENDS hello_app VERBATIM)
+        add_dependencies(fuse_app_binary_size fuse_app_hello_stripped)
+    endif()
+    add_test(NAME fuse_app_binary_size COMMAND fuse_app_binary_size --file=${_fuse_app_bin} --budget=${_fuse_app_budget}
+             "--profile=${CMAKE_CXX_COMPILER_ID} ${CMAKE_BUILD_TYPE}, text ${FUSE_UI_TEXT}")
+    set_tests_properties(fuse_app_binary_size PROPERTIES SKIP_RETURN_CODE 77 LABELS "fuse_ui;gate;perf")
+endif()
+
+# ---- project.json schema 2 + AppPresent + the minimal init path (in tree: fuse_app_project needs fuse_project) ------
+# fuse_project_schema2: schema 1 files unchanged, schema 2 round trip and validation, the Application template, an app
+# project through ProjectHost (headless), ui.theme. With the engine game side (fuse_app_project_hybrid) also the
+# deferred game side of a hybrid project; its GPU viewport and the --native run need a Vulkan device.
+if(TARGET fuse_app_project)
+    add_executable(fuse_project_schema2 test_project_schema2.cpp)
+    target_compile_definitions(fuse_project_schema2 PRIVATE FUSE_REPO_ROOT="${FUSE_UI_REPO_ROOT}")
+    if(TARGET fuse_app_project_hybrid)
+        target_link_libraries(fuse_project_schema2 PRIVATE fuse_app_project_hybrid fuse_core)
+        target_compile_definitions(fuse_project_schema2 PRIVATE FUSE_PROJECT_SCHEMA2_HYBRID=1)
+    else()
+        target_link_libraries(fuse_project_schema2 PRIVATE fuse_app_project fuse_core)
+    endif()
+    add_test(NAME fuse_project_schema2 COMMAND fuse_project_schema2)
+    set_tests_properties(fuse_project_schema2 PROPERTIES LABELS "fuse_ui;gate;project" TIMEOUT 300 RUN_SERIAL TRUE)
+    add_test(NAME fuse_project_schema2_native COMMAND fuse_project_schema2 --native)
+    set_tests_properties(fuse_project_schema2_native PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300
+        LABELS "fuse_ui;gate;project;vulkan")
+endif()
+
+# ---- Extras PDF: vector paths of a draw list as PDF path operators --------------------------------------------------
+if(TARGET fuse_ui_extras)
+    fuse_ui_test(fuse_ui_extras_pdf_paths test_pdf_paths.cpp)
+    target_link_libraries(fuse_ui_extras_pdf_paths PRIVATE fuse_ui_extras)
+    set_tests_properties(fuse_ui_extras_pdf_paths PROPERTIES LABELS "fuse_ui;gate")
+endif()
+
+# ---- small self-contained Extras modules: audio level meter widget, stand-alone gesture recogniser -------------------
+if(TARGET fuse_ui_extras)
+    add_executable(fuse_ui_extras_small test_extras_small.cpp)
+    target_link_libraries(fuse_ui_extras_small PRIVATE fuse_ui_extras)
+    target_include_directories(fuse_ui_extras_small PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+    foreach(g audio_meter gesture)
+        add_test(NAME fuse_ui_extras_${g} COMMAND fuse_ui_extras_small --gate=${g})
+        set_tests_properties(fuse_ui_extras_${g} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+endif()
+
+# ---- gettext .po catalogues as string-table entries (fuse_ui_l10n_lib: parsePo) --------------------------------------
+add_executable(fuse_ui_l10n_po test_l10n_po.cpp)
+target_link_libraries(fuse_ui_l10n_po PRIVATE fuse_ui_l10n_lib)
+target_include_directories(fuse_ui_l10n_po PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(TARGET fuse_ui_game)
+    target_link_libraries(fuse_ui_l10n_po PRIVATE fuse_ui_game)
+    target_compile_definitions(fuse_ui_l10n_po PRIVATE FUSE_UI_L10N_PO_HAVE_GAME=1)
+endif()
+add_test(NAME fuse_ui_l10n_po COMMAND fuse_ui_l10n_po)
+set_tests_properties(fuse_ui_l10n_po PROPERTIES LABELS "fuse_ui;gate")
+# Widget port gates (dock splits, tree line geometry, timeline clip drag, Qt-parity widget options, extras widgets)
+include(${CMAKE_CURRENT_SOURCE_DIR}/port_widgets.cmake)
+# ---- style engine + drawing core port (gui-framework 3.8 / 3.9): selectors, at-rules, keyframe animations,
+# positioning, transform / filter / mask / clip-path, the effect groups of the draw list, the parser fuzz ----
+fuse_ui_test(fuse_ui_css_selectors4 test_css_selectors4.cpp)
+fuse_ui_test(fuse_ui_style_invalidation test_style_invalidation.cpp)
+fuse_ui_test(fuse_ui_css_animations test_css_animations.cpp)
+fuse_ui_test(fuse_ui_web_animations test_web_animations.cpp)
+fuse_ui_test(fuse_ui_css_position test_css_position.cpp)
+fuse_ui_test(fuse_ui_transform_affine test_transform_affine.cpp)
+fuse_ui_test(fuse_ui_css_masking test_css_masking.cpp)
+fuse_ui_test(fuse_ui_css_gradient test_css_gradient.cpp)
+fuse_ui_test(fuse_ui_draw_fx_groups test_draw_fx_groups.cpp)
+foreach(t fuse_ui_css_selectors4 fuse_ui_style_invalidation fuse_ui_css_animations fuse_ui_web_animations fuse_ui_css_position
+          fuse_ui_transform_affine fuse_ui_css_masking fuse_ui_css_gradient fuse_ui_draw_fx_groups)
+    set_tests_properties(${t} PROPERTIES LABELS "fuse_ui;gate")
+endforeach()
+if(TARGET fuse_ui_doc) # these also cook and load what they parse
+    fuse_ui_test(fuse_ui_css_cascade test_css_cascade.cpp)
+    fuse_ui_test(fuse_ui_style_fuzz test_style_fuzz.cpp)
+    foreach(t fuse_ui_css_cascade fuse_ui_style_fuzz)
+        target_link_libraries(${t} PRIVATE fuse_ui_doc)
+        set_tests_properties(${t} PROPERTIES LABELS "fuse_ui;gate")
+    endforeach()
+    set_tests_properties(fuse_ui_style_fuzz PROPERTIES TIMEOUT 300)
+endif()
+# ---- Text stack gates ported from the magical-bassi branch (docs/ui/archive/PORT_magical_bassi.md §3.1) ----
+# UI3 text gates: Unicode conformance files (tests/data/unicode), per-script goldens, system fonts, zero-alloc, DPI.
+foreach(g grapheme linebreak bidi)
+    fuse_ui_test(fuse_text_${g}_conformance test_text_conformance.cpp)
+    target_compile_definitions(fuse_text_${g}_conformance PRIVATE FUSE_TEXT_CONFORMANCE_GATE="${g}"
+                               FUSE_UI_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data")
+    set_tests_properties(fuse_text_${g}_conformance PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77)
+endforeach()
+foreach(g shaping_scripts system_fonts cache_zero_alloc colrv1 dpi_1 dpi_1_25 dpi_1_5 dpi_2)
+    fuse_ui_test(fuse_text_${g} test_text_ui3.cpp)
+    target_compile_definitions(fuse_text_${g} PRIVATE FUSE_TEXT_GATE="${g}")
+    set_tests_properties(fuse_text_${g} PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
+                         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endforeach()
+
+# Shaping / layout throughput over a ~1 MB mixed-script document (timing budgets: run alone).
+fuse_ui_test(fuse_text_bench_layout test_text_bench_layout.cpp)
+set_tests_properties(fuse_text_bench_layout PROPERTIES LABELS "fuse_ui;gate;text;perf" RUN_SERIAL TRUE)
+
+# COOKED profile: cooker determinism (every profile), cooked layout / renders against the MINIMAL reference (COOKED)
+fuse_ui_test(fuse_text_cooked test_text_cooked.cpp)
+string(REPLACE ";" " " _cook_args "${FUSE_TEXT_UI_COOK_ARGS}")
+target_include_directories(fuse_text_cooked PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Text/tools)
+target_compile_definitions(fuse_text_cooked PRIVATE
+    FUSE_TEXT_TEST_FONT="${FUSE_UI_REPO_ROOT}/vendor/fonts/opensans/OpenSans.ttf" FUSE_TEXT_TEST_COOK_ARGS="${_cook_args}"
+    FUSE_TEXT_TEST_OUT_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+if(NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR) # the gate runs the tool; cross builds call cookFont()
+    target_compile_definitions(fuse_text_cooked PRIVATE FUSE_TEXT_COOK_EXE="$<TARGET_FILE:fuse_text_cook>")
+endif()
+add_dependencies(fuse_text_cooked fuse_text_cook)
+if(FUSE_UI_TEXT STREQUAL "COOKED")
+    target_compile_definitions(fuse_text_cooked PRIVATE
+        FUSE_TEXT_COOKED_PACK="${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.fusefont"
+        FUSE_TEXT_COOKED_REFERENCE="${FUSE_TEXT_COOKED_FONT_DIR}/opensans/OpenSans.reference")
+endif()
+set_tests_properties(fuse_text_cooked PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77)
+
+# Variable fonts: data/variable_test.ttf (make_variable_test_font.py) + Segoe UI Variable / Bahnschrift when installed;
+# COOKED: the pack cooked at wght 700.
+fuse_ui_test(fuse_text_variable test_text_variable.cpp)
+set_tests_properties(fuse_text_variable PROPERTIES LABELS "fuse_ui;gate;text" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+# OpenType features (font-feature-settings; FULL: HarfBuzz, other profiles skip with 77): data/features_test.ttf
+# (make_features_test_font.py).
+fuse_ui_test(fuse_text_features test_text_features.cpp)
+set_tests_properties(fuse_text_features PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
+                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Colour glyphs (CBDT / sbix strikes) and MSDF glyphs (quality, UI threshold). CPU rasteriser only: the GPU packer
+# skips colour-image and MSDF glyph commands (draw_list.hpp).
+foreach(g bitmap_emoji msdf)
+    fuse_ui_test(fuse_text_${g} test_text_color.cpp)
+    target_compile_definitions(fuse_text_${g} PRIVATE FUSE_TEXT_GATE="${g}")
+    set_tests_properties(fuse_text_${g} PROPERTIES LABELS "fuse_ui;gate;text" SKIP_RETURN_CODE 77
+                         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endforeach()
+
+# ---- Icon gates (docs/ui/archive/PORT_magical_bassi.md §3.3): fuse_ui_icon_cook (cooker determinism, pack round trip,
+# cooked == parsed, errors, fuzzed packs, the tool) and fuse_ui_icon_render (the `icon` widget / style property /
+# setIcon by name / document key, tinting, goldens tests/golden/icons.png + icons_color.png).
+# The cook gate's executable is fuse_ui_icon_cook_gate (fuse_ui_icon_cook is the tool).
+if(TARGET fuse_ui_icons)
+    # multi-colour icon test pack (tests/data/icons_color), cooked by the tool like the starter pack
+    set(FUSE_UI_ICON_COLOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/data/icons_color")
+    set(FUSE_UI_ICON_COLOR_PACK "${CMAKE_CURRENT_BINARY_DIR}/icons_color.fuseicons")
+    file(GLOB _fuse_ui_color_svgs CONFIGURE_DEPENDS "${FUSE_UI_ICON_COLOR_DIR}/*.svg")
+    add_custom_command(OUTPUT "${FUSE_UI_ICON_COLOR_PACK}"
+        COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:fuse_ui_icon_cook> "--out=${FUSE_UI_ICON_COLOR_PACK}" "${FUSE_UI_ICON_COLOR_DIR}"
+        DEPENDS fuse_ui_icon_cook ${_fuse_ui_color_svgs}
+        COMMENT "fuse_ui_icon_cook: multi-colour test icons" VERBATIM)
+    add_custom_target(fuse_ui_icons_color DEPENDS "${FUSE_UI_ICON_COLOR_PACK}")
+    foreach(pair "cook=fuse_ui_icon_cook=fuse_ui_icon_cook_gate" "render=fuse_ui_icon_render=fuse_ui_icon_render")
+        string(REPLACE "=" ";" kv ${pair})
+        list(GET kv 0 g)
+        list(GET kv 1 name)
+        list(GET kv 2 t)
+        add_executable(${t} test_icons.cpp)
+        target_include_directories(${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+        add_test(NAME ${name} COMMAND ${t})
+        target_link_libraries(${t} PRIVATE fuse_ui_widgets fuse_ui_icon_cook_lib)
+        add_dependencies(${t} fuse_ui_icons fuse_ui_icons_color)
+        target_compile_definitions(${t} PRIVATE FUSE_UI_ICON_GATE="${g}" FUSE_UI_ICON_PACK="${FUSE_UI_ICON_PACK}"
+                                   FUSE_UI_ICON_SVG_DIR="${FUSE_UI_ICON_SVG_DIR}"
+                                   FUSE_UI_ICON_COLOR_PACK="${FUSE_UI_ICON_COLOR_PACK}"
+                                   FUSE_UI_ICON_COLOR_DIR="${FUSE_UI_ICON_COLOR_DIR}")
+        if(TARGET fuse_ui_doc)
+            target_link_libraries(${t} PRIVATE fuse_ui_doc)
+            target_compile_definitions(${t} PRIVATE FUSE_UI_ICON_HAVE_DOC=1)
+        endif()
+        if(g STREQUAL "cook" AND NOT CMAKE_CROSSCOMPILING) # runs the tool
+            target_compile_definitions(${t} PRIVATE FUSE_UI_ICON_COOK_EXE="$<TARGET_FILE:fuse_ui_icon_cook>")
+        endif()
+        if(FUSE_UI_TEXT STREQUAL "FULL")
+            target_compile_definitions(${t} PRIVATE FUSE_UI_TEST_TEXT_FULL=1)
+        elseif(FUSE_UI_TEXT STREQUAL "COOKED")
+            target_compile_definitions(${t} PRIVATE FUSE_UI_TEST_TEXT_COOKED=1)
+        endif()
+        set_tests_properties(${name} PROPERTIES LABELS "fuse_ui;gate" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endforeach()
+endif()
+
+# COOKED text profile: gates about real font files (face names, outline shear, installed fonts) skip with 77
+set_property(TEST fuse_text_font_styles PROPERTY SKIP_RETURN_CODE 77)
+
+# ---- the ports together: style engine x text / icons x themes (test_port_merge.cpp) ----------------------------------
+# registry: one property registry and the cooked sheet format 5 (Raw payloads, FontSettings / Ident tags, tokens with
+# their @media block). style_rules: icon / icon-size / font-stretch under @media, @layer, @container, nesting,
+# keyframes and transitions; the widget theme's token sheets with @layer and prefers-color-scheme / prefers-contrast.
+# glyph_fx: MSDF and colour-image glyphs inside transform / filter / mask groups on the CPU rasteriser.
+# shell_core: unconsumed keys on the root's Event signal, hover without touching shared ancestors, Tab out of a viewport.
+if(TARGET fuse_ui_doc)
+    add_executable(fuse_ui_port_merge test_port_merge.cpp)
+    target_link_libraries(fuse_ui_port_merge PRIVATE fuse_ui_widgets fuse_ui_doc)
+    target_include_directories(fuse_ui_port_merge PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${FUSE_UI_STB})
+    if(FUSE_UI_TEXT STREQUAL "FULL")
+        target_compile_definitions(fuse_ui_port_merge PRIVATE FUSE_UI_TEST_TEXT_FULL=1)
+    elseif(FUSE_UI_TEXT STREQUAL "COOKED")
+        target_compile_definitions(fuse_ui_port_merge PRIVATE FUSE_UI_TEST_TEXT_COOKED=1
+                                   FUSE_UI_TEST_COOKED_FONTS="${CMAKE_CURRENT_BINARY_DIR}/fonts")
+        add_dependencies(fuse_ui_port_merge fuse_ui_test_fonts)
+    endif()
+    foreach(g registry style_rules glyph_fx shell_core)
+        add_test(NAME fuse_ui_merge_${g} COMMAND fuse_ui_port_merge --gate=${g})
+        set_tests_properties(fuse_ui_merge_${g} PROPERTIES LABELS "fuse_ui;gate" SKIP_RETURN_CODE 77
+                             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endforeach()
+endif()

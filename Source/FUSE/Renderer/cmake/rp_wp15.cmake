@@ -97,7 +97,8 @@ set(_fuse_wp15_header "${_fuse_wp15_gen}/material_resolve_spv.h")
 add_custom_target(fuse_material_resolve_kernels)
 set(_fuse_wp15_embed_args "")
 set(_fuse_wp15_embed_deps "")
-file(GLOB _fuse_wp15_glsl_includes "${_fuse_wp15_shd}/*.glsl" "${_fuse_wp15_vis_shd}/*.glsl" "${_fuse_wp15_ml_shd}/*.glsl")
+file(GLOB _fuse_wp15_glsl_includes "${_fuse_wp15_shd}/*.glsl" "${_fuse_wp15_vis_shd}/*.glsl" "${_fuse_wp15_ml_shd}/*.glsl"
+    "${_fuse_wp15_root}/shaders/common/exact_math.glsl")
 
 foreach(_row IN LISTS _fuse_wp15_kernels)
     string(REPLACE "|" ";" _entry "${_row}")
@@ -171,7 +172,7 @@ target_link_libraries(fuse_rp_material_resolve PRIVATE fuse_material_resolve)
 fuse_apply_cxx23(fuse_rp_material_resolve)
 
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-set(_fuse_wp15_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+set(_fuse_wp15_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 set(_fuse_wp15_vk_tests "")
 foreach(_case "parity;set" "parity;buffer" "parity_atomic;set" "multiframe;set" "multiframe;buffer" "zero_alloc;set")
     list(GET _case 0 _mode)
@@ -179,14 +180,14 @@ foreach(_case "parity;set" "parity;buffer" "parity_atomic;set" "multiframe;set" 
     set(_name "fuse_rp_material_resolve_vk_${_mode}_${_backend}")
     if(FUSE_VULKAN_BACKEND)
         add_test(NAME ${_name}
-                 COMMAND "${_fuse_wp15_lock}" "$<TARGET_FILE:fuse_rp_material_resolve>" --mode ${_mode} --backend ${_backend})
+                 COMMAND ${_fuse_wp15_lock} "$<TARGET_FILE:fuse_rp_material_resolve>" --mode ${_mode} --backend ${_backend})
     else()
         add_test(NAME ${_name} COMMAND fuse_rp_material_resolve --mode ${_mode} --backend ${_backend})
     endif()
     list(APPEND _fuse_wp15_vk_tests ${_name})
 endforeach()
 set_tests_properties(${_fuse_wp15_vk_tests} PROPERTIES
-    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
     TIMEOUT 900
@@ -220,14 +221,14 @@ foreach(_case "parity;set" "parity;buffer" "golden;set" "zero_alloc;set")
     set(_name "fuse_rp_material_resolve_layered_vk_${_mode}_${_backend}")
     if(FUSE_VULKAN_BACKEND)
         add_test(NAME ${_name}
-                 COMMAND "${_fuse_wp15_lock}" "$<TARGET_FILE:fuse_rp_material_resolve_layered>" --mode ${_mode} --backend ${_backend})
+                 COMMAND ${_fuse_wp15_lock} "$<TARGET_FILE:fuse_rp_material_resolve_layered>" --mode ${_mode} --backend ${_backend})
     else()
         add_test(NAME ${_name} COMMAND fuse_rp_material_resolve_layered --mode ${_mode} --backend ${_backend})
     endif()
     list(APPEND _fuse_wp15_layered_tests ${_name})
 endforeach()
 set_tests_properties(${_fuse_wp15_layered_tests} PROPERTIES
-    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
     TIMEOUT 900

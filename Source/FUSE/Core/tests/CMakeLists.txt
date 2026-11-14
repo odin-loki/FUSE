@@ -54,6 +54,8 @@ if(FUSE_CUDA_BACKEND)
     )
     target_link_libraries(fuse_cuda_shared_headers_gate PRIVATE fuse_core CUDA::cudart)
     fuse_apply_cxx23(fuse_cuda_shared_headers_gate)
+    # Alpha::blend is a multiply-add: no device FMA contraction, so the kernel rounds like the C++23 host
+    set_source_files_properties(cuda/test_cuda_shared_headers.cu PROPERTIES COMPILE_OPTIONS "-fmad=false")
     set_target_properties(fuse_cuda_shared_headers_gate PROPERTIES
         CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_EXTENSIONS OFF)
     add_test(NAME fuse_cuda_shared_headers_gate COMMAND fuse_cuda_shared_headers_gate)

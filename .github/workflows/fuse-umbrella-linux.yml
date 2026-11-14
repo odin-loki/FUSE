@@ -17,7 +17,9 @@ env:
   FUSE_APT_LINUX_BASE: ninja-build cmake g++-13
   FUSE_APT_LINUX_VULKAN: libvulkan-dev mesa-vulkan-drivers vulkan-tools vulkan-validationlayers glslang-tools spirv-tools
   FUSE_APT_LINUX_WORLDEXTRACT: python3-pip python3-venv libegl1
-  FUSE_APT_LINUX_QT_EDITOR: qt6-base-dev libgl-dev xvfb xauth libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0
+  # FUSE UI editor shell under Xvfb: fuse_app_native dlopens libX11 / libXrandr / libXcursor / libxkbcommon / libdbus-1
+  # at run time (no X11 headers at build time); dbus provides dbus-run-session for the a11y_linux gate.
+  FUSE_APT_LINUX_UI_EDITOR: xvfb xauth libx11-6 libxrandr2 libxcursor1 libxkbcommon0 libdbus-1-3 dbus
   # Lavapipe ICD + Khronos validation manifests (apt vulkan-validationlayers).
   FUSE_LINUX_VK_ICD: /usr/share/vulkan/icd.d/lvp_icd.json
   FUSE_LINUX_VK_LAYER_MANIFEST_DIR: /usr/share/vulkan/explicit_layer.d
@@ -29,7 +31,7 @@ jobs:
     concurrency:
       group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
       cancel-in-progress: false
-    # ubuntu-latest -> 26.04 (Oct 2026); stay on 24.04 for Lavapipe/Qt gates parity with docs.
+    # ubuntu-latest -> 26.04 (Oct 2026); stay on 24.04 for Lavapipe/editor gates parity with docs.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +69,7 @@ jobs:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
           # VK_ADD_LAYER_PATH only: VK_LAYER_PATH would hide FUSE test layers under build-fuse/.
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
-        run: ctest --test-dir build-fuse --output-on-failure --timeout 2400
+        run: ctest --test-dir build-fuse --no-tests=error --output-on-failure --timeout 2400
 
       - name: Run demo_hybrid_hud
         env:
@@ -102,7 +104,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
-          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }} ${{ env.FUSE_APT_LINUX_VULKAN }} xvfb xauth
+          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }} ${{ env.FUSE_APT_LINUX_VULKAN }} xvfb xauth libx11-dev libxi-dev
 
       - name: Configure (parity demos + X11 display wrapper)
         run: |
@@ -122,7 +124,7 @@ jobs:
       - name: Run U8 present ctests
         env:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
-        run: ctest --test-dir build-u8-present -L 'u8;present' --output-on-failure -j1 --timeout 1200
+        run: ctest --test-dir build-u8-present --no-tests=error -L '^u8$' -L '^present$' --output-on-failure -j1 --timeout 1200
 
   fuse-core-single-thread:
     name: fuse_core jobs (FUSE_JOBS_SINGLE_THREAD)
@@ -148,7 +150,7 @@ jobs:
 
       - name: Run single-thread CTest
         run: |
-          ctest --test-dir build-st --output-on-failure \
+          ctest --test-dir build-st --no-tests=error --output-on-failure \
             -R 'fuse_core_jobs|fuse_core_jobs_single_thread|fuse_core_worker_count|fuse_core_fiber'
 
   fuse-warnings-as-errors:
@@ -185,7 +187,7 @@ jobs:
 
       - name: Shipping binary inspection (no assert/profiler code or stripped strings)
         if: matrix.config == 'shipping'
-        run: ctest --test-dir build/fuse-werror-shipping --output-on-failure -R 'fuse_b7_shipping_binaries|fuse_core_b7_shipping_strip'
+        run: ctest --test-dir build/fuse-werror-shipping --no-tests=error --output-on-failure -R 'fuse_b7_shipping_binaries|fuse_core_b7_shipping_strip'
 
   fuse-smoke-asan:
     # Master plan: "ASan/UBSan clean on subsystem smoke" + "All unit tests pass
@@ -220,7 +222,7 @@ jobs:
         env:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
-        run: ctest --test-dir build/fuse-asan --output-on-failure -j1 --timeout 2400
+        run: ctest --test-dir build/fuse-asan --no-tests=error --output-on-failure -j1 --timeout 2400
 
       - name: U8 parity demos + editor PIE embed (ASan+UBSan)
         env:
@@ -229,7 +231,7 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/asan.supp
           LSAN_OPTIONS: suppressions=${{ github.workspace }}/cmake/sanitizers/lsan.supp
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/ubsan.supp
-        run: ctest --test-dir build/fuse-asan -L u8 --output-on-failure -j1 --timeout 1200
+        run: ctest --test-dir build/fuse-asan --no-tests=error -L u8 --output-on-failure -j1 --timeout 1200
 
       - name: Run fuse_runtime_smoke under ASan+UBSan
         env:
@@ -238,10 +240,11 @@ jobs:
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/ubsan.supp
         run: ./build/fuse-asan/Source/FUSE/Apps/RuntimeSmoke/fuse_runtime_smoke
 
-  fuse-editor-qt:
-    # B6 Qt 6 editor gates ("gate;qt"): the fuse_editor Qt host under Xvfb + Lavapipe. Release so the
-    # 2 ms UI-frame and idle-spike budgets are enforced (they skip with 77 in Debug).
-    name: Qt 6 editor gates (xvfb)
+  fuse-editor-ui:
+    # FUSE UI editor gates (ctest label fuse_editor_ui): the fuse_editor_fuse shell under Xvfb + Lavapipe
+    # (scene_viewport / gpu_viewport / live_present / present_adopt use Vulkan, 77 without a device). Release so
+    # the 2 ms UI-frame and idle-spike budgets are enforced (they skip with 77 in Debug).
+    name: FUSE UI editor gates (xvfb)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -250,25 +253,28 @@ jobs:
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
           sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }} ${{ env.FUSE_APT_LINUX_VULKAN }} \
-            ${{ env.FUSE_APT_LINUX_QT_EDITOR }}
+            ${{ env.FUSE_APT_LINUX_UI_EDITOR }}
 
       - name: Configure (Release, FUSE_BUILD_EDITOR=ON)
-        # Live viewport present uses EditorViewportPresent at runtime — FUSE_ENABLE_QT_PRESENT / FUSE_TRACK_B_UNLOCK not required.
         run: |
-          cmake -B build/editor-qt -G Ninja \
+          cmake -B build/editor-ui -G Ninja \
             -DCMAKE_CXX_COMPILER=g++-13 \
             -DCMAKE_BUILD_TYPE=Release \
             -DFUSE_BUILD_CORE=ON \
             -DFUSE_BUILD_CORE_TESTS=ON \
             -DFUSE_BUILD_VULKAN=ON \
             -DFUSE_BUILD_EDITOR=ON
-      - name: Build editor + Qt gates + lint
-        run: cmake --build build/editor-qt --target fuse_editor fuse_editor_qt_gates_all fuse_lint
+      - name: Build (editor shell + gate binaries + lint)
+        # Whole tree: the fuse_editor_ui tests span several executables (fuse_editor_ui_gates, *_parity_gates,
+        # *_panels2_gates, controller / panel-model tests, a11y gates) plus fuse_cook / demo players they launch.
+        run: cmake --build build/editor-ui
 
-      - name: Run Qt gates under xvfb-run
+      - name: Run FUSE UI editor gates under xvfb-run
         env:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
-          FUSE_QT_IDLE_DEBUG_FRAMES: 2000
         run: |
           xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" \
-            ctest --test-dir build/editor-qt -L qt --output-on-failure --timeout 2400
+            ctest --test-dir build/editor-ui -L fuse_editor_ui --output-on-failure --no-tests=error --timeout 2400
+
+      - name: Editor lint (link closure / includes)
+        run: ctest --test-dir build/editor-ui --no-tests=error -R "^fuse_lint_.*editor" --output-on-failure

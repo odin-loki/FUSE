@@ -123,7 +123,7 @@ int main() {
     layoutText(f, *fullShaper(), mixed, d, L);
     UI_CHECK(clusters(L.lines[0]) == before);
 #else
-    UI_CHECK(textProfile() == TextProfile::Minimal);
+    UI_CHECK(textProfile() == (FUSE_UI_TEST_TEXT_COOKED ? TextProfile::Cooked : TextProfile::Minimal));
     UI_CHECK(fullShaper() == nullptr);
     UI_CHECK(HarfBuzzShaper{}.shape(f, 16.f, "Hello", a) == MinimalShaper{}.shape(f, 16.f, "Hello", b));
 #endif

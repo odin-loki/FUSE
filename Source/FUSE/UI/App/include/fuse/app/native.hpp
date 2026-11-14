@@ -3,7 +3,10 @@
 // straight into a storage image (GpuDraw) or by the CPU rasteriser and uploaded (CpuUpload); either result is blitted
 // into the swapchain image and presented. Without a Vulkan device the CPU raster is shown by the OS: GDI on Win32
 // (StretchDIBits), a CALayer's contents on macOS / iOS, ANativeWindow_lock on Android, XPutImage on X11 (24 / 32 bit
-// TrueColor visuals; deeper or shallower ones keep the window but cannot draw it).
+// TrueColor visuals; deeper or shallower ones keep the window but cannot draw it), wl_shm buffers on Wayland.
+// Linux / BSD have two window systems, X11 and Wayland (a runtime-loaded libwayland-client), picked when the
+// NativePlatform is made: see NativeBackend. What Wayland cannot do by protocol (window position, activation, a
+// minimised state) is reported as "cannot"; docs/ui/README.md has the list.
 //
 // Mobile and macOS notes:
 //  - Android and iOS own the process entry point. Include fuse/app/main.hpp and define the entry as
@@ -29,6 +32,7 @@
 
 #include "fuse/app/app.hpp"
 
+#include <expected>
 #include <memory>
 #include <span>
 #include <vector>
@@ -66,19 +70,52 @@ struct ExternalTexture {
     void* view = nullptr;   ///< VkImageView, sampled usage
     unsigned layout = 0;    ///< its VkImageLayout when the UI frame is submitted; restored after the UI pass
 };
+/// The window system of a Linux / BSD desktop (the other platforms have one and ignore it).
+enum class NativeBackend : fuse::ui::u8 {
+    Auto,    ///< $FUSE_UI_BACKEND (x11 | wayland) if set; else Wayland when $WAYLAND_DISPLAY is set and libwayland-client
+             ///< loads and a compositor answers; else X11 ($DISPLAY)
+    X11,     ///< libX11 (also under XWayland)
+    Wayland, ///< libwayland-client: xdg-shell toplevels, wl_shm / VK_KHR_wayland_surface (see docs/ui/README.md)
+};
 struct NativeOptions {
     VulkanDeviceHandles adoptDevice{}; ///< instance + device set: present on that device (see VulkanDeviceHandles)
     bool vulkan = true;            ///< false: never create a Vulkan presenter
     VkDrawMode drawMode = VkDrawMode::Auto;
     bool vsync = true;             ///< FIFO (true) or MAILBOX / IMMEDIATE when available
     /// Popup menus / combo lists / submenus as their own borderless OS windows (Qt-style; may extend past the main
-    /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows.
+    /// window, clamp to the screen). X11: override-redirect windows; Win32: WS_POPUP + WS_EX_NOACTIVATE owned windows;
+    /// Wayland: xdg_popups placed relative to the window (the compositor keeps them on screen).
     bool osPopups = false;
     /// Logical-unit scale: UI units = display pixels / scale. 0 = the OS content scale (Android density / 160,
-    /// UIScreen / NSScreen scale, Win32 monitor DPI / 96, X11 $FUSE_UI_SCALE, else Xft.dpi / 96, else $GDK_SCALE,
-    /// else 1); 1 = work in physical pixels. The frame is always rendered at the display's pixel size (the window's
+    /// UIScreen / NSScreen scale, Win32 monitor DPI / 96, X11 $FUSE_UI_SCALE, else XSETTINGS Xft/DPI (followed
+    /// live: every window is re-scaled when it changes), else Xft.dpi / 96, else $GDK_SCALE, else 1; Wayland
+    /// $FUSE_UI_SCALE, else the compositor's preferred fractional scale, else the wl_output scale); 1 = work in
+    /// physical pixels. The frame is always rendered at the display's pixel size (the window's
     /// AppWindow::scale() is set to this).
     float scale = 0.f;
+    /// OS tool windows (UiContext::setOsWindows): overlay nodes with the class "os-window" - floating dock panels
+    /// (widgets::dockFloat) - each get their own borderless OS window owned by the main one, placed at window origin
+    /// + node rect, so a floated panel can leave the main window. Pointer input comes back in context coordinates,
+    /// keys keep going to the main window. X11: override-redirect utility windows; Win32: WS_EX_TOOLWINDOW owned
+    /// popups; macOS: borderless non-activating NSPanels added as child windows of the main one. Elsewhere (Wayland
+    /// included), and when off (the default), floating docks stay in-window panels.
+    bool osWindows = false;
+    /// OS drag and drop (X11: XDND v5; Win32: OLE; Wayland: drops in only). In: files / text dragged from another
+    /// application reach the window's drop targets through UiContext::dragExternalMove / dropExternal (DragData type
+    /// kDragFiles with LF-separated paths in `text`, or kDragText). Out (X11 / Win32): a drag started in the UI
+    /// (UiContext::beginDrag) whose data is kDragText / kDragFiles continues over other applications once the pointer
+    /// leaves the app's windows; the source gets DragEnd with what the other side did
+    /// (UiContext::dragFinishExternal).
+    bool dragAndDrop = true;
+    /// Linux / BSD: which window system to use. A forced backend (here or by $FUSE_UI_BACKEND) that cannot start
+    /// leaves the platform unavailable (headless) instead of falling back to the other one.
+    NativeBackend backend = NativeBackend::Auto;
+    /// Wayland: a WindowFrame::System window the compositor does not decorate (no xdg-decoration: GNOME, weston) gets
+    /// the client-side chrome of chrome.hpp when it is shown: the frame becomes WindowFrame::Custom (6 px resize
+    /// edges) and, unless AppWindow::chrome() already names a caption, titleBar() is added as the first child of the
+    /// root node (which should lay its children out in a column; the bar takes its 32 px from the window's size).
+    /// false: such windows stay bare surfaces.
+    bool clientDecorations = true;
 };
 
 #if defined(__ANDROID__)
@@ -99,6 +136,8 @@ public:
     /// True when an OS display connection is open (X11: $DISPLAY; Win32 / macOS: always; iOS: inside
     /// UIApplicationMain; Android: an android_app is set).
     bool available() const;
+    /// Linux / BSD: the window system in use (X11 or Wayland); Auto when none is open and on the other platforms.
+    NativeBackend backend() const;
     /// Opens an OS window for `w` (title / size from its WindowDesc) and installs the best presenter.
     PresenterKind show(AppWindow& w);
     PresenterKind kind(const AppWindow& w) const;
@@ -109,8 +148,9 @@ public:
     std::string_view lastError() const;
     /// Reads back what the OS shows in the window's client area (tests / screenshots of real windows).
     bool capture(const AppWindow& w, fuse::ui::Image& out);
-    /// Native handles: X11 Display* / Window, Win32 HINSTANCE / HWND, macOS NSApplication* / NSWindow*, iOS
-    /// UIApplication* / UIWindow*, Android android_app* / ANativeWindow* (0 when not shown).
+    /// Native handles: X11 Display* / Window, Wayland wl_display* / wl_surface*, Win32 HINSTANCE / HWND, macOS
+    /// NSApplication* / NSWindow*, iOS UIApplication* / UIWindow*, Android android_app* / ANativeWindow* (0 when not
+    /// shown).
     void* nativeDisplay() const;
     /// Binds `tex` to external slot `slot` (0..3) of the window's GPU draw kernel; images whose externalSlot == slot
     /// then show it. Re-set it whenever the image, view or its layout change (each engine frame). False when the
@@ -142,8 +182,26 @@ public:
     /// AppWindow::scale().
     float scale(const AppWindow& w) const;
     /// Posts a real left click to a native window (XSendEvent / PostMessage) at window-local `at` (window pixels); it
-    /// is then delivered by the normal event pump (tests drive popup windows this way).
+    /// is then delivered by the normal event pump (tests drive popup windows this way). Wayland has no way to post
+    /// input to a surface: the click is delivered inside the process, below the wl_pointer handlers (macOS too: the
+    /// click goes to the window's context; postPointerMove / postPointerButton post real NSEvents).
     bool postClick(unsigned long long nativeWin, fuse::ui::Vec2 at);
+    /// Posts a pointer move / a left button press or release / a close request (the title-bar close button) to a
+    /// native window at window-local device pixels `at`; delivered by the normal event pump. `at` may lie outside
+    /// the window (a drag that left it). Wayland: delivered inside the process, like postClick.
+    bool postPointerMove(unsigned long long nativeWin, fuse::ui::Vec2 at);
+    bool postPointerButton(unsigned long long nativeWin, fuse::ui::Vec2 at, bool down);
+    bool postClose(unsigned long long nativeWin);
+
+    /// OS tool windows (NativeOptions::osWindows): how many `w` shows now (back to front), each one's native handle,
+    /// its screen rect (physical px) and a read-back of its pixels. X11 / Win32 / macOS (borderless child panels); 0 / false elsewhere.
+    std::size_t toolWindowCount(const AppWindow& w) const;
+    unsigned long long toolWindow(const AppWindow& w, std::size_t i) const;
+    fuse::ui::Rect toolWindowScreenRect(const AppWindow& w, std::size_t i) const;
+    bool captureToolWindow(const AppWindow& w, std::size_t i, fuse::ui::Image& out);
+    /// True while a drag that started in this app is over, or being dropped on, another application
+    /// (NativeOptions::dragAndDrop). X11 / Win32; always false elsewhere (Wayland takes drops but starts no drag).
+    bool externalDragActive() const;
 
     // ---- platform services (plan §4.13). Window management itself is on AppWindow (setTitle, setMode, setVisible,
     // setPosition, activate, size limits, events, close guard, setMenu): show() connects it to the OS window.
@@ -159,12 +217,40 @@ public:
     /// manager); Win32: CF_UNICODETEXT. False when unavailable / empty.
     bool setClipboardText(std::string_view utf8);
     bool clipboardText(std::string& out);
+    /// Clipboard formats (services.hpp ClipboardItem): replaces the clipboard with `items`, one per format.
+    ///   X11: CLIPBOARD on the platform's connection: TARGETS, UTF8_STRING / text/plain(;charset=utf-8), image/png,
+    ///        custom MIME types as atoms of that name, INCR both ways for large data; lazy items are made when first
+    ///        pasted. Other clients can paste while this platform pumps events.
+    ///   Win32: CF_UNICODETEXT, CF_DIBV5, RegisterClipboardFormat(mime) for custom types (lazy items are made at once).
+    ///   Wayland: a wl_data_source offering every item's MIME type (text also as UTF8_STRING / text/plain ...); lazy
+    ///        items are made when first pasted. Setting it needs the serial of an input event: a compositor may ignore
+    ///        a set from a window that never had input.
+    ///   macOS / iOS / Android: text only (the other formats are refused).
+    bool setClipboard(std::vector<ClipboardItem> items);
+    bool setClipboardImage(const fuse::ui::Image& image);
+    bool clipboardImage(fuse::ui::Image& out);
+    /// Raw bytes of any format (text: UTF-8; images: the PNG file).
+    bool clipboardData(std::string_view mime, std::vector<fuse::ui::u8>& out);
+    /// MIME types offered now (kClipboardText / kClipboardImage for the OS text and image formats).
+    std::vector<std::string> clipboardFormats();
+    /// True while this platform owns the clipboard (another application has not replaced it since).
+    bool clipboardOwned() const;
+    /// The PRIMARY selection (select to copy, middle click to paste), text only: X11 PRIMARY, Wayland
+    /// zwp_primary_selection_v1 when the compositor has it. False elsewhere.
+    bool setPrimarySelectionText(std::string_view utf8);
+    bool primarySelectionText(std::string& out);
     /// Asks the OS for the light / dark preference and accent colour and stores it in Application::systemTheme()
     /// (windows get WindowEvent::ThemeChanged; AppWindow::setFollowSystemTheme restyles). Win32: registry
     /// (AppsUseLightTheme, DWM AccentColor) + change notification; macOS: effectiveAppearance / controlAccentColor +
     /// notification; iOS: UITraitCollection; Android: Configuration night mode (+ on configuration change);
-    /// X11: $GTK_THEME, else `gsettings` once, else Unknown - and no change notification.
+    /// X11: XSETTINGS (Net/ThemeName, Gtk/ApplicationPreferDarkTheme; followed live while the settings manager that
+    /// ran at start keeps running), else $GTK_THEME, else `gsettings` once, else Unknown.
     SystemTheme systemTheme();
+    /// X11: the size (px) themed cursors are loaded at: the XSETTINGS Gtk/CursorThemeSize when a settings manager
+    /// runs, else libXcursor's default (Xcursor.size / $XCURSOR_SIZE). Wayland: $XCURSOR_SIZE, else 24, when the
+    /// backend loads theme cursors itself; 0 when the compositor draws them (wp_cursor_shape_v1). 0 without
+    /// libXcursor / libwayland-cursor and on other platforms.
+    int cursorThemeSize() const;
     /// Connected displays (bounds / work area in physical pixels, scale, refresh rate where the platform tells).
     std::vector<DisplayInfo> displays() const;
     /// The platform's own file dialog, modal (blocks until answered). Win32: GetOpen/SaveFileNameW, SHBrowseForFolder;
@@ -186,5 +272,22 @@ private:
 bool openUrl(std::string_view url);
 /// Shows `path` in the file manager (Explorer / Finder select it; Linux / BSD open its folder). False on iOS / Android.
 bool revealFile(std::string_view path);
+
+// ---- window-less native dialogs (types in services.hpp). Modal: they block the calling (UI) thread until answered.
+//   Win32: IFileOpenDialog / IFileSaveDialog (FOS_PICKFOLDERS for folders), ChooseColorW, MessageBoxW.
+//   Linux / BSD: zenity, else kdialog (messageBox: zenity only); Unavailable when no helper is installed or there is
+//   no display.
+//   macOS: NSOpenPanel / NSSavePanel, NSColorPanel run modally with OK / Cancel; messageBox Unavailable.
+//   iOS / Android: Unavailable (use NativePlatform::fileDialog / the in-toolkit dialogs).
+/// Paths are UTF-8.
+std::expected<std::vector<std::string>, PlatformError> openFileDialog(const FileDialogDesc& d);
+std::expected<std::string, PlatformError> saveFileDialog(const FileDialogDesc& d);
+std::expected<std::string, PlatformError> pickFolderDialog(const FileDialogDesc& d);
+/// Colour picker. Alpha is passed through unchanged.
+std::expected<fuse::ui::Color, PlatformError> colorDialog(const ColorDialogDesc& d);
+std::expected<MessageResult, PlatformError> messageBox(std::string_view title, std::string_view text, MessageIcon icon = MessageIcon::Info,
+                                                       MessageButtons buttons = MessageButtons::Ok, unsigned long long owner = 0);
+/// revealFile with an error: Failed when `path` does not exist, Unavailable when the platform has no file manager hook.
+std::expected<void, PlatformError> revealInFileManager(std::string_view path);
 
 } // namespace fuse::app

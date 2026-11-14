@@ -3,8 +3,8 @@
 #
 # * install() rules, all in the single component "fuse" so vendored vendor subprojects that
 #   carry their own install() rules (zlib, SDL, assimp, ...) never leak into the FUSE package:
-#     bin/                               fuse_editor (when Qt 6 is configured), fuse_cook,
-#                                        fuse_convert, fuse_import
+#     bin/                               fuse_editor (the FUSE UI editor, fuse_editor_fuse_app, when
+#                                        FUSE_BUILD_EDITOR=ON), fuse_cook, fuse_convert, fuse_import
 #     share/applications/fuse.desktop    Linux desktop entry (Icon=fuse, Exec=fuse_editor)
 #     share/icons/hicolor/<N>x<N>/apps/fuse.png, .../scalable/apps/fuse.svg, share/pixmaps/fuse.png
 #     share/doc/fuse/                    LICENSE.md, THIRD_PARTY licences of vendored deps
@@ -16,9 +16,8 @@
 #   that no package metadata names Torque/T3D (cmake/FusePackageGate.cmake, self-validating).
 #   fuse_branding_icons_regen proves the committed icon files match gen_fuse_icons.py.
 #
-# The fuse_* tools and editor link fuse_* static libraries, so the package needs no RPATH fix-up;
-# fuse_editor relies on the system Qt 6 (DEB Depends) — Windows deployment of Qt DLLs
-# (windeployqt) is a release-pipeline step outside this file.
+# The fuse_* tools and editor link fuse_* static libraries, so the package needs no RPATH fix-up and
+# no toolkit runtime (the editor chrome is FUSE UI; the former Qt shell needed Qt 6 from the system).
 
 if(DEFINED _FUSE_PACKAGING_INCLUDED)
     return()
@@ -32,14 +31,26 @@ set(FUSE_PACKAGE_COMPONENT fuse)
 set(FUSE_ICON_SIZES 16 32 48 256)
 
 # ---- install rules -------------------------------------------------------------------------------
+# FUSE_PACKAGE_PROGRAMS: the program names in bin/ (the gate expects each one).
 set(FUSE_PACKAGE_PROGRAMS)
-foreach(_t fuse_editor fuse_cook fuse_convert fuse_import)
+set(_fuse_install_targets)
+if(TARGET fuse_editor_fuse_app)
+    # The editor executable builds as fuse_editor_fuse (beside the fuse_editor_fuse library); the package ships it as
+    # bin/fuse_editor, the name the desktop entry (Exec=fuse_editor) and the installer shortcuts launch.
+    install(PROGRAMS "$<TARGET_FILE:fuse_editor_fuse_app>" DESTINATION "${CMAKE_INSTALL_BINDIR}"
+        RENAME "fuse_editor${CMAKE_EXECUTABLE_SUFFIX}" COMPONENT ${FUSE_PACKAGE_COMPONENT})
+    list(APPEND FUSE_PACKAGE_PROGRAMS fuse_editor)
+endif()
+foreach(_t fuse_cook fuse_convert fuse_import)
     if(TARGET ${_t})
         list(APPEND FUSE_PACKAGE_PROGRAMS ${_t})
+        list(APPEND _fuse_install_targets ${_t})
     endif()
 endforeach()
-if(FUSE_PACKAGE_PROGRAMS)
-    install(TARGETS ${FUSE_PACKAGE_PROGRAMS}
+if(_fuse_install_targets)
+    # BUNDLE: on iOS (CMAKE_MACOSX_BUNDLE defaults ON there) every executable is a MACOSX_BUNDLE and
+    # install(TARGETS) refuses one without a BUNDLE DESTINATION; same rule as before the Qt removal.
+    install(TARGETS ${_fuse_install_targets}
         RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT ${FUSE_PACKAGE_COMPONENT}
         BUNDLE DESTINATION "." COMPONENT ${FUSE_PACKAGE_COMPONENT})
 endif()
@@ -81,12 +92,12 @@ set(CPACK_PACKAGE_CONTACT "FUSE maintainers <https://github.com/odin-loki/FUSE>"
 set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/odin-loki/FUSE")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "FUSE - Fast Unified Simulation Engine (editor and tools)")
 set(CPACK_PACKAGE_DESCRIPTION
-    "FUSE is a unified 2D/3D simulation and game engine. This package ships the FUSE Qt 6 editor and the fuse_cook / fuse_convert / fuse_import content tools.")
+    "FUSE is a unified 2D/3D simulation and game engine. This package ships the FUSE editor and the fuse_cook / fuse_convert / fuse_import content tools.")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "FUSE")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE.md")
 set(CPACK_PACKAGE_CHECKSUM SHA256)
-if(TARGET fuse_editor)
+if(TARGET fuse_editor_fuse_app)
     set(CPACK_PACKAGE_EXECUTABLES "fuse_editor;FUSE Editor")
 endif()
 # Only the FUSE component: vendored subprojects' own install() rules stay out of the package.
@@ -118,9 +129,6 @@ else()
     set(CPACK_DEBIAN_PACKAGE_SECTION "devel")
     set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
     set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "${CPACK_PACKAGE_HOMEPAGE_URL}")
-    if(TARGET fuse_editor)
-        set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6widgets6 | libqt6widgets6t64")
-    endif()
 endif()
 # Keep the archive rooted at the package name (fuse-<ver>-<sys>/bin/...).
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
@@ -142,11 +150,7 @@ endif()
 # Expected package payload (relative to the archive's top-level directory).
 set(_fuse_expected)
 foreach(_t IN LISTS FUSE_PACKAGE_PROGRAMS)
-    if(_t STREQUAL "fuse_editor" AND APPLE)
-        list(APPEND _fuse_expected "fuse_editor.app/Contents/MacOS/fuse_editor")
-    else()
-        list(APPEND _fuse_expected "${CMAKE_INSTALL_BINDIR}/${_t}${CMAKE_EXECUTABLE_SUFFIX}")
-    endif()
+    list(APPEND _fuse_expected "${CMAKE_INSTALL_BINDIR}/${_t}${CMAKE_EXECUTABLE_SUFFIX}")
 endforeach()
 foreach(_px IN LISTS FUSE_ICON_SIZES)
     list(APPEND _fuse_expected "${_fuse_data}/icons/hicolor/${_px}x${_px}/apps/fuse.png")
@@ -166,7 +170,7 @@ foreach(_entry IN LISTS FUSE_PACKAGE_THIRD_PARTY)
 endforeach()
 string(REPLACE ";" "|" _fuse_expected_arg "${_fuse_expected}")
 
-# Tools are required for the gate; fuse_editor is only expected when Qt 6 is configured.
+# Tools are required for the gate; fuse_editor is only expected when FUSE_BUILD_EDITOR=ON.
 set(_fuse_required_programs fuse_cook fuse_convert fuse_import)
 string(REPLACE ";" "|" _fuse_required_arg "${_fuse_required_programs}")
 string(REPLACE ";" "|" _fuse_programs_arg "${FUSE_PACKAGE_PROGRAMS}")

@@ -46,6 +46,7 @@
 @class FuseView;
 @class FuseWindowDelegate;
 @class FuseMenuTarget;
+@class FuseToolView;
 using FuseNativeWindow = NSWindow;
 #else
 @class FuseView;
@@ -73,6 +74,18 @@ struct NativePlatform::Impl {
 #if TARGET_OS_OSX
         FuseWindowDelegate* delegate = nil;
         FuseMenuTarget* menuTarget = nil; ///< target of this window's native menu items
+        /// OS tool windows (NativeOptions::osWindows): one borderless child panel per UiContext::windowSurfaces()
+        /// entry (a floated dock), back to front. Their pixels are the CPU raster of the surface's draw list.
+        struct Tool {
+            NodeHandle node{};
+            NSPanel* window = nil;
+            FuseToolView* view = nil;
+            Rect screen{};          ///< physical px, top-left origin (NativePlatform::displays space)
+            Rect rect{};            ///< context rect (UI units): input offset
+            u64 revision = ~0ull;
+            Image img;              ///< what the panel's layer shows (captureToolWindow reads it back)
+        };
+        std::vector<Tool> tools;
 #else
         FuseViewController* controller = nil;
 #endif
@@ -112,6 +125,26 @@ struct NativePlatform::Impl {
     void syncKeyboard(Rec& r);
     static bool windowRequest(void* user, AppWindow& w, WindowRequest what);
 #if TARGET_OS_OSX
+    bool postedLeftDown = false; ///< postPointerButton state: a posted move with the button held is a drag
+    /// The Dock icon setIcon built (every raster a representation); AppKit's applicationIconImage getter hands back
+    /// its own single-representation copy, so iconSizes reads this one.
+    NSImage* appIcon = nil;
+    /// Shows / moves / repaints / removes the tool windows after a present (the surfaces of the last update).
+    void syncTools(Rec& r);
+    void destroyTools(Rec& r);
+    void destroyTool(Rec::Tool& t);
+    Rec* findTool(unsigned long long h, std::size_t& idx) {
+        for (Rec* r : recs)
+            for (std::size_t i = 0; i < r->tools.size(); ++i)
+                if (r->tools[i].window && handleOf(r->tools[i].window) == h) {
+                    idx = i;
+                    return r;
+                }
+        return nullptr;
+    }
+    static unsigned long long handleOf(NSWindow* w) {
+        return static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>((__bridge void*)w));
+    }
     void applyCursor(Rec& r);
     /// NSApp.mainMenu = the application menu + `r`'s MenuDesc (null / empty: the application menu only).
     void setMainMenu(Rec* r);
@@ -207,6 +240,21 @@ WindowMode macMode(NSWindow* win) {
     if (win.styleMask & NSWindowStyleMaskFullScreen) return WindowMode::Fullscreen;
     if (win.miniaturized) return WindowMode::Minimized;
     return win.zoomed ? WindowMode::Maximized : WindowMode::Normal;
+}
+/// The global top-left-origin space of NativePlatform::displays(): y measured down from the top of the menu-bar
+/// screen, points x `backing` = physical px.
+CGFloat macScreenTop() {
+    NSArray<NSScreen*>* screens = NSScreen.screens;
+    return screens.count ? NSMaxY(screens[0].frame) : 0.0;
+}
+f32 macBacking(const Rec& r) { return r.window ? f32(r.window.backingScaleFactor) : 1.f; }
+/// Top-left of the content view in physical px (NativePlatform::screenOrigin; tool windows are placed from it).
+Vec2 macOriginPx(const Rec& r) {
+    NSView* view = r.window.contentView; // the FuseView (declared further down)
+    if (!r.window || !view) return {};
+    const NSRect inScreen = [r.window convertRectToScreen:[view convertRect:view.bounds toView:nil]];
+    const f32 k = macBacking(r);
+    return {f32(NSMinX(inScreen)) * k, f32(macScreenTop() - NSMaxY(inScreen)) * k};
 }
 /// Top-left of the content area in a top-left-origin screen space, UI units.
 Vec2 macOrigin(const Rec& r) {
@@ -584,6 +632,97 @@ static NativePlatform::Impl* g_macImpl = nullptr;
 }
 @end
 
+// ---- OS tool windows (NativeOptions::osWindows) --------------------------------------------------------------------
+// The view of a floated dock's panel: pointer input goes to the owner's context in context coordinates, through the
+// screen position (the panel moves under the pointer while its title is dragged). Keys stay with the main window.
+@interface FuseToolView : NSView {
+@public
+    FuseRec* rec;
+    NSTrackingArea* tracking;
+}
+@end
+@implementation FuseToolView
+- (BOOL)isFlipped { return YES; }
+- (BOOL)acceptsFirstResponder { return YES; }
+- (BOOL)acceptsFirstMouse:(NSEvent*)event { (void)event; return YES; }
+- (BOOL)isOpaque { return YES; }
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (tracking) [self removeTrackingArea:tracking];
+    tracking = [[NSTrackingArea alloc] initWithRect:NSZeroRect
+                                            options:NSTrackingMouseMoved | NSTrackingActiveAlways | NSTrackingInVisibleRect
+                                              owner:self
+                                           userInfo:nil];
+    [self addTrackingArea:tracking];
+}
+/// The event's position in the owner's context coordinates (UI units).
+- (fui::Vec2)contextPoint:(NSEvent*)event {
+    const NSPoint scr = event.window ? [event.window convertPointToScreen:event.locationInWindow] : NSEvent.mouseLocation;
+    const fui::f32 k = fuse::app::macBacking(*rec);
+    const fui::Vec2 o = fuse::app::macOriginPx(*rec);
+    const fui::f32 s = rec->scale > 0.f ? rec->scale : 1.f;
+    return {(fui::f32(scr.x) * k - o.x) / s, (fui::f32(fuse::app::macScreenTop() - scr.y) * k - o.y) / s};
+}
+- (void)pointer:(NSEvent*)event kind:(int)kind button:(fui::MouseButton)button {
+    if (!rec || !rec->win) return;
+    fui::UiContext& ui = rec->win->ui();
+    ui.setModifiers(macMods(event.modifierFlags));
+    const fui::Vec2 p = [self contextPoint:event];
+    if (kind == 1) {
+        ui.pointerMove(p);
+        ui.pointerDown(p, button);
+    } else if (kind == 2) {
+        ui.pointerUp(p, button);
+    } else {
+        ui.pointerMove(p);
+    }
+    rec->win->requestRedraw();
+}
+- (void)mouseDown:(NSEvent*)e { [self pointer:e kind:1 button:fui::MouseButton::Left]; }
+- (void)mouseUp:(NSEvent*)e { [self pointer:e kind:2 button:fui::MouseButton::Left]; }
+- (void)rightMouseDown:(NSEvent*)e { [self pointer:e kind:1 button:fui::MouseButton::Right]; }
+- (void)rightMouseUp:(NSEvent*)e { [self pointer:e kind:2 button:fui::MouseButton::Right]; }
+- (void)otherMouseDown:(NSEvent*)e { [self pointer:e kind:1 button:fui::MouseButton::Middle]; }
+- (void)otherMouseUp:(NSEvent*)e { [self pointer:e kind:2 button:fui::MouseButton::Middle]; }
+- (void)mouseMoved:(NSEvent*)e { [self pointer:e kind:0 button:fui::MouseButton::Left]; }
+- (void)mouseDragged:(NSEvent*)e { [self pointer:e kind:0 button:fui::MouseButton::Left]; }
+- (void)rightMouseDragged:(NSEvent*)e { [self pointer:e kind:0 button:fui::MouseButton::Right]; }
+- (void)otherMouseDragged:(NSEvent*)e { [self pointer:e kind:0 button:fui::MouseButton::Middle]; }
+- (void)scrollWheel:(NSEvent*)e {
+    if (!rec || !rec->win) return;
+    fui::UiContext& ui = rec->win->ui();
+    ui.setModifiers(macMods(e.modifierFlags));
+    const fui::f32 k = e.hasPreciseScrollingDeltas ? 0.1f : 1.f;
+    ui.wheel([self contextPoint:e], {fui::f32(-e.scrollingDeltaX) * k, fui::f32(e.scrollingDeltaY) * k});
+    rec->win->requestRedraw();
+}
+- (void)keyDown:(NSEvent*)e { // one focus for the whole context: the main window's view handles keys
+    if (rec && rec->view) [rec->view keyDown:e];
+}
+- (void)keyUp:(NSEvent*)e {
+    if (rec && rec->view) [rec->view keyUp:e];
+}
+@end
+
+// Modal colour picking (fuse::app::colorDialog): NSColorPanel is modeless, so the dialog runs it modally with an
+// OK / Cancel accessory row (as Qt's native QColorDialog on macOS); closing the panel cancels.
+@interface FuseColorPanelTarget : NSObject <NSWindowDelegate>
+@end
+@implementation FuseColorPanelTarget
+- (void)accept:(id)sender {
+    (void)sender;
+    [NSApp stopModalWithCode:NSModalResponseOK];
+}
+- (void)reject:(id)sender {
+    (void)sender;
+    [NSApp stopModalWithCode:NSModalResponseCancel];
+}
+- (void)windowWillClose:(NSNotification*)note {
+    (void)note;
+    if (NSApp.modalWindow == [NSColorPanel sharedColorPanel]) [NSApp stopModalWithCode:NSModalResponseCancel];
+}
+@end
+
 namespace fuse::app {
 
 void NativePlatform::Impl::layout(Rec& r, CGSize points) {
@@ -607,6 +746,109 @@ void NativePlatform::Impl::layout(Rec& r, CGSize points) {
     const Size px = r.win->pixelSize();
     if (u32(px.w) != pw || u32(px.h) != ph || r.win->scale() != r.scale) r.win->resizePixels(pw, ph, r.scale);
     r.win->requestRedraw();
+}
+
+void NativePlatform::Impl::destroyTool(Rec::Tool& t) {
+    if (t.view) t.view->rec = nullptr;
+    if (t.window) {
+        if (NSWindow* parent = t.window.parentWindow) [parent removeChildWindow:t.window];
+        [t.window orderOut:nil];
+        [t.window close];
+    }
+    t.window = nil;
+    t.view = nil;
+}
+void NativePlatform::Impl::destroyTools(Rec& r) {
+    for (Rec::Tool& t : r.tools) destroyTool(t);
+    r.tools.clear();
+}
+void NativePlatform::Impl::syncTools(Rec& r) {
+    if (!opts.osWindows || !r.window || !r.win) return;
+    @autoreleasepool {
+        UiContext& ui = r.win->ui();
+        const auto& surf = ui.windowSurfaces();
+        for (std::size_t i = r.tools.size(); i-- > 0;) { // windows whose node is gone (docked again, closed)
+            bool live = false;
+            for (const auto& ps : surf) live = live || ps.node == r.tools[i].node;
+            if (!live) {
+                destroyTool(r.tools[i]);
+                r.tools.erase(r.tools.begin() + std::ptrdiff_t(i));
+            }
+        }
+        const f32 s = r.scale, k = macBacking(r);
+        const Vec2 o = macOriginPx(r);
+        const CGFloat top = macScreenTop();
+        bool reordered = false;
+        for (std::size_t si = 0; si < surf.size(); ++si) {
+            const auto& ps = surf[si];
+            std::size_t at = 0;
+            while (at < r.tools.size() && r.tools[at].node != ps.node) ++at;
+            if (at == r.tools.size()) {
+                r.tools.emplace_back();
+                r.tools.back().node = ps.node;
+            }
+            if (at != si && si < r.tools.size()) { // keep the surfaces' order (back to front)
+                std::swap(r.tools[at], r.tools[si]);
+                reordered = true;
+                at = si;
+            }
+            Rec::Tool& t = r.tools[at];
+            const Rect scr{std::round(o.x + ps.rect.x * s), std::round(o.y + ps.rect.y * s), std::max(1.f, std::ceil(ps.rect.w * s)),
+                           std::max(1.f, std::ceil(ps.rect.h * s))};
+            const bool moved = scr.x != t.screen.x || scr.y != t.screen.y || scr.w != t.screen.w || scr.h != t.screen.h;
+            t.rect = ps.rect;
+            t.screen = scr;
+            // Cocoa frame: points, bottom-left origin
+            const NSRect frame = NSMakeRect(scr.x / k, top - (scr.y + scr.h) / k, scr.w / k, scr.h / k);
+            if (!t.window) {
+                NSPanel* panel = [[NSPanel alloc] initWithContentRect:frame
+                                                            styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
+                                                              backing:NSBackingStoreBuffered
+                                                                defer:NO];
+                if (!panel) {
+                    r.tools.erase(r.tools.begin() + std::ptrdiff_t(at));
+                    return;
+                }
+                panel.releasedWhenClosed = NO;
+                panel.hidesOnDeactivate = NO; // a floated dock stays up while another app is active
+                panel.becomesKeyOnlyIfNeeded = YES;
+                panel.acceptsMouseMovedEvents = YES;
+                panel.hasShadow = YES;
+                FuseToolView* view = [[FuseToolView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height)];
+                view->rec = &r;
+                view.wantsLayer = YES;
+                view.layer.contentsGravity = kCAGravityResize;
+                view.layer.contentsScale = k;
+                panel.contentView = view;
+                [panel makeFirstResponder:view];
+                [panel setFrame:frame display:NO];
+                [r.window addChildWindow:panel ordered:NSWindowAbove]; // above the editor, moves with it
+                [panel orderFront:nil];
+                t.window = panel;
+                t.view = view;
+                reordered = true;
+            } else if (moved) {
+                [t.window setFrame:frame display:NO];
+                t.view.layer.contentsScale = k;
+            }
+            if (moved || t.revision != ps.revision) {
+                t.revision = ps.revision;
+                u32 clear = 0xFF000000u; // the panel's own fill shows in the corners its radius leaves
+                for (const DrawCmd& c : ps.draw.cmds())
+                    if (c.op != DrawOp::Shadow && c.fill.a > 0.9f) { clear = packPremultiplied(c.fill) | 0xFF000000u; break; }
+                t.img.resize(int(scr.w), int(scr.h), clear);
+                CpuRasterizer rz = r.win->rasterizer(); // the window's images + the current glyph atlas
+                rz.setGlyphAtlas(ui.atlas().pixels(), ui.atlas().size());
+                rz.render(ps.draw, t.img); // device pixels, surface-local
+                showImage(t.view.layer, t.img);
+            }
+        }
+        if (reordered)
+            for (Rec::Tool& t : r.tools) { // back to front
+                [r.window removeChildWindow:t.window];
+                [r.window addChildWindow:t.window ordered:NSWindowAbove];
+            }
+    }
 }
 
 bool NativePlatform::Impl::createOsWindow(Rec& r) {
@@ -648,6 +890,7 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
 }
 void NativePlatform::Impl::destroyOsWindow(Rec& r) {
     @autoreleasepool {
+        destroyTools(r);
         if (r.view) r.view->rec = nullptr;
         if (r.delegate) r.delegate->rec = nullptr;
         if (r.menuTarget) { // its menu leaves the bar with the window
@@ -888,6 +1131,127 @@ bool revealFile(std::string_view path) {
     }
 }
 
+// ---- window-less dialogs (services.hpp): NSOpenPanel / NSSavePanel / NSColorPanel, application-modal ---------------
+namespace {
+NSString* nsString(std::string_view s) {
+    return [[NSString alloc] initWithBytes:s.data() length:s.size() encoding:NSUTF8StringEncoding] ?: @"";
+}
+/// "*.png;*.jpg" filters -> png, jpg; nil (no restriction) when a filter accepts every file ("*", "*.*") or none
+/// names a plain extension.
+NSArray<NSString*>* panelExtensions(std::span<const FileFilter> filters) {
+    NSMutableArray<NSString*>* exts = [NSMutableArray array];
+    for (const FileFilter& f : filters) {
+        for (std::size_t at = 0; at <= f.patterns.size();) {
+            const std::size_t e = std::min(f.patterns.find(';', at), f.patterns.size());
+            std::string_view pat = f.patterns.substr(at, e - at);
+            at = e + 1;
+            while (!pat.empty() && pat.front() == ' ') pat.remove_prefix(1);
+            while (!pat.empty() && pat.back() == ' ') pat.remove_suffix(1);
+            if (pat == "*" || pat == "*.*") return nil;
+            if (pat.size() > 2 && pat.substr(0, 2) == "*." && pat.find_first_of("*?", 2) == std::string_view::npos)
+                [exts addObject:nsString(pat.substr(2))];
+        }
+    }
+    return exts.count ? exts : nil;
+}
+NSWindow* ownerWindow(unsigned long long owner) {
+    if (!owner) return nil;
+    for (NSWindow* w in NSApp.windows) // only a window of this process (the handle may be stale)
+        if (static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>((__bridge void*)w)) == owner) return w;
+    return nil;
+}
+std::expected<std::vector<std::string>, PlatformError> runFilePanel(const FileDialogDesc& d, DialogKind kind) {
+    @autoreleasepool {
+        if (!NSApp) return std::unexpected(PlatformError::Unavailable);
+        NSSavePanel* panel = nil;
+        if (kind == DialogKind::Save) {
+            panel = [NSSavePanel savePanel];
+            panel.canCreateDirectories = YES;
+            if (!d.fileName.empty()) panel.nameFieldStringValue = nsString(d.fileName);
+        } else {
+            NSOpenPanel* open = [NSOpenPanel openPanel];
+            open.canChooseFiles = kind == DialogKind::Open;
+            open.canChooseDirectories = kind == DialogKind::Folder;
+            open.canCreateDirectories = kind == DialogKind::Folder;
+            open.allowsMultipleSelection = kind == DialogKind::Open && d.multiple;
+            panel = open;
+        }
+        if (!d.title.empty()) {
+            panel.title = nsString(d.title);
+            panel.message = nsString(d.title); // the title bar is hidden on recent macOS: the message shows it
+        }
+        if (!d.folder.empty()) panel.directoryURL = [NSURL fileURLWithPath:nsString(d.folder) isDirectory:YES];
+        if (kind != DialogKind::Folder)
+            if (NSArray<NSString*>* exts = panelExtensions(d.filters)) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+                panel.allowedFileTypes = exts; // allowedContentTypes needs macOS 11 + UniformTypeIdentifiers
+#pragma clang diagnostic pop
+                if (kind == DialogKind::Save) panel.allowsOtherFileTypes = YES;
+            }
+        NSWindow* owner = ownerWindow(d.owner);
+        const NSModalResponse r = [panel runModal];
+        if (owner) [owner makeKeyAndOrderFront:nil]; // focus back to the window the dialog belonged to
+        if (r != NSModalResponseOK) return std::unexpected(PlatformError::Cancelled);
+        std::vector<std::string> out;
+        if (kind == DialogKind::Open) {
+            for (NSURL* u in static_cast<NSOpenPanel*>(panel).URLs)
+                if (u.path) out.emplace_back(u.path.UTF8String);
+        } else if (panel.URL.path) {
+            out.emplace_back(panel.URL.path.UTF8String);
+        }
+        if (out.empty()) return std::unexpected(PlatformError::Failed);
+        return out;
+    }
+}
+} // namespace
+
+std::expected<std::vector<std::string>, PlatformError> openFileDialog(const FileDialogDesc& d) { return runFilePanel(d, DialogKind::Open); }
+std::expected<std::string, PlatformError> saveFileDialog(const FileDialogDesc& d) {
+    auto r = runFilePanel(d, DialogKind::Save);
+    if (!r) return std::unexpected(r.error());
+    return std::move(r->front());
+}
+std::expected<std::string, PlatformError> pickFolderDialog(const FileDialogDesc& d) {
+    auto r = runFilePanel(d, DialogKind::Folder);
+    if (!r) return std::unexpected(r.error());
+    return std::move(r->front());
+}
+std::expected<Color, PlatformError> colorDialog(const ColorDialogDesc& d) {
+    @autoreleasepool {
+        if (!NSApp) return std::unexpected(PlatformError::Unavailable);
+        NSColorPanel* panel = [NSColorPanel sharedColorPanel];
+        FuseColorPanelTarget* target = [[FuseColorPanelTarget alloc] init];
+        NSButton* cancel = [NSButton buttonWithTitle:@"Cancel" target:target action:@selector(reject:)];
+        cancel.keyEquivalent = @"\033";
+        NSButton* ok = [NSButton buttonWithTitle:@"OK" target:target action:@selector(accept:)];
+        ok.keyEquivalent = @"\r";
+        NSStackView* row = [NSStackView stackViewWithViews:@[cancel, ok]];
+        row.edgeInsets = NSEdgeInsetsMake(6, 6, 6, 6);
+        [row setFrameSize:row.fittingSize];
+        const id<NSWindowDelegate> oldDelegate = panel.delegate;
+        NSView* oldAccessory = panel.accessoryView;
+        const BOOL oldAlpha = panel.showsAlpha;
+        panel.showsAlpha = NO; // alpha is passed through (native.hpp)
+        panel.accessoryView = row;
+        panel.delegate = target;
+        if (!d.title.empty()) panel.title = nsString(d.title);
+        panel.color = [NSColor colorWithSRGBRed:std::clamp(d.initial.r, 0.f, 1.f) green:std::clamp(d.initial.g, 0.f, 1.f)
+                                           blue:std::clamp(d.initial.b, 0.f, 1.f) alpha:1.0];
+        NSWindow* owner = ownerWindow(d.owner);
+        const NSModalResponse r = [NSApp runModalForWindow:panel];
+        NSColor* picked = [panel.color colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
+        panel.delegate = oldDelegate;
+        panel.accessoryView = oldAccessory;
+        panel.showsAlpha = oldAlpha;
+        [panel orderOut:nil];
+        if (owner) [owner makeKeyAndOrderFront:nil];
+        if (r != NSModalResponseOK) return std::unexpected(PlatformError::Cancelled);
+        if (!picked) return std::unexpected(PlatformError::Failed);
+        return Color{f32(picked.redComponent), f32(picked.greenComponent), f32(picked.blueComponent), d.initial.a};
+    }
+}
+
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
     @autoreleasepool {
         installBundleReaders();
@@ -916,31 +1280,37 @@ bool NativePlatform::available() const { return true; }
 void* NativePlatform::nativeDisplay() const { return (__bridge void*)NSApp; }
 
 bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
-    // macOS has one icon per application (the Dock tile), not per window: the largest raster becomes it
+    // macOS has one icon per application (the Dock tile), not per window: every raster becomes a representation of
+    // it (AppKit draws the one that fits the tile), as _NET_WM_ICON / WM_SETICON carry them on X11 / Win32
     if (!m->find(w)) return false;
     const Image* best = nullptr;
+    auto valid = [](const Image& i) { return i.width > 0 && i.height > 0 && i.pixels.size() == std::size_t(i.width) * std::size_t(i.height); };
     for (const Image& i : sizes)
-        if (i.width > 0 && i.height > 0 && i.pixels.size() == std::size_t(i.width) * std::size_t(i.height) && (!best || i.width > best->width))
-            best = &i;
+        if (valid(i) && (!best || i.width > best->width)) best = &i;
     if (!best) return false;
     @autoreleasepool {
-        NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nullptr
-                                                                        pixelsWide:best->width
-                                                                        pixelsHigh:best->height
-                                                                     bitsPerSample:8
-                                                                   samplesPerPixel:4
-                                                                          hasAlpha:YES
-                                                                          isPlanar:NO
-                                                                    colorSpaceName:NSDeviceRGBColorSpace
-                                                                       bytesPerRow:best->width * 4
-                                                                      bitsPerPixel:32];
-        if (!rep || !rep.bitmapData) return false;
-        for (int y = 0; y < best->height; ++y)
-            std::memcpy(rep.bitmapData + std::size_t(y) * std::size_t(rep.bytesPerRow), best->pixels.data() + std::size_t(y) * std::size_t(best->width),
-                        std::size_t(best->width) * 4u);
         NSImage* icon = [[NSImage alloc] initWithSize:NSMakeSize(best->width, best->height)];
-        [icon addRepresentation:rep];
+        for (const Image& img : sizes) {
+            if (!valid(img)) continue;
+            NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nullptr
+                                                                            pixelsWide:img.width
+                                                                            pixelsHigh:img.height
+                                                                         bitsPerSample:8
+                                                                       samplesPerPixel:4
+                                                                              hasAlpha:YES
+                                                                              isPlanar:NO
+                                                                        colorSpaceName:NSDeviceRGBColorSpace
+                                                                           bytesPerRow:img.width * 4
+                                                                          bitsPerPixel:32];
+            if (!rep || !rep.bitmapData) return false;
+            for (int y = 0; y < img.height; ++y)
+                std::memcpy(rep.bitmapData + std::size_t(y) * std::size_t(rep.bytesPerRow), img.pixels.data() + std::size_t(y) * std::size_t(img.width),
+                            std::size_t(img.width) * 4u);
+            rep.size = NSMakeSize(best->width, best->height); // every representation draws at the icon's size
+            [icon addRepresentation:rep];
+        }
         NSApp.applicationIconImage = icon;
+        m->appIcon = icon;
     }
     return true;
 }
@@ -954,18 +1324,16 @@ bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned h
 std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
     std::vector<int> out;
     if (!m->find(w)) return out;
-    if (NSImage* icon = NSApp.applicationIconImage)
+    if (NSImage* icon = m->appIcon ?: NSApp.applicationIconImage) // what setIcon handed the Dock
         for (NSImageRep* rep in icon.representations) out.push_back(int(rep.pixelsWide));
     return out;
 }
 Vec2 NativePlatform::screenOrigin(const AppWindow& w) const {
     const Impl::Rec* r = m->find(w);
     if (!r || !r->window || !r->view) return {};
-    // top-left of the content view in a top-left-origin screen space (the UI's convention), in points
-    const NSRect inScreen = [r->window convertRectToScreen:[r->view convertRect:r->view.bounds toView:nil]];
-    const NSScreen* screen = r->window.screen ?: NSScreen.mainScreen;
-    const CGFloat top = screen ? NSMaxY(screen.frame) : NSMaxY(inScreen);
-    return {f32(NSMinX(inScreen)), f32(top - NSMaxY(inScreen))};
+    // top-left of the content view in physical px, in the top-left-origin space of displays() (from the top of the
+    // menu-bar screen), as on X11 / Win32
+    return macOriginPx(*r);
 }
 Rect NativePlatform::safeArea(const AppWindow& w) const {
     const Size s = w.size();
@@ -1348,11 +1716,18 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     Rec& r = *static_cast<Rec*>(user);
     @autoreleasepool {
         r.impl->syncKeyboard(r);
-        if (r.kind == PresenterKind::Vulkan) return detail::vkWinPresent(r.vk, w, damage);
-        const Image& img = w.rasterize(damage);
-        if (r.view) showImage(r.view.layer, img);
+        bool ok = true;
+        if (r.kind == PresenterKind::Vulkan) {
+            ok = detail::vkWinPresent(r.vk, w, damage);
+        } else {
+            const Image& img = w.rasterize(damage);
+            if (r.view) showImage(r.view.layer, img);
+        }
+#if TARGET_OS_OSX
+        r.impl->syncTools(r);
+#endif
+        return ok;
     }
-    return true;
 }
 
 void NativePlatform::Impl::destroy(void* user) {
@@ -1361,6 +1736,9 @@ void NativePlatform::Impl::destroy(void* user) {
     detail::vkWinDestroy(r->vk);
     r->vk = nullptr;
     m.destroyOsWindow(*r);
+#if TARGET_OS_OSX
+    if (r->win) r->win->ui().setOsWindows(false); // floating docks go back into the window
+#endif
     if (r->win) r->win->setWindowBackend({}); // a menu goes back into the window
     std::erase(m.recs, r);
     delete r;
@@ -1410,6 +1788,7 @@ PresenterKind NativePlatform::show(AppWindow& w) {
     w.setPresenter({r, &Impl::present, &Impl::destroy});
     w.setWindowBackend({r, &Impl::windowRequest}); // also moves an existing AppWindow menu into the menu bar (macOS)
 #if TARGET_OS_OSX
+    if (m->opts.osWindows) w.ui().setOsWindows(true); // floating docks ("os-window" nodes) get their own panels
     // what the app asked for before the window existed
     if (w.minimumSize().w > 0.f || w.minimumSize().h > 0.f || w.maximumSize().w > 0.f || w.maximumSize().h > 0.f)
         Impl::windowRequest(r, w, WindowRequest::SizeLimits);
@@ -1463,13 +1842,96 @@ unsigned long long NativePlatform::popupWindow(const AppWindow&, std::size_t) co
 Rect NativePlatform::popupScreenRect(const AppWindow&, std::size_t) const { return {}; }
 bool NativePlatform::capturePopup(const AppWindow&, std::size_t, Image&) { return false; }
 bool NativePlatform::postClick(unsigned long long nativeWin, Vec2 at) {
-    // no synthetic OS events: feed the click to the window's context (tests, automation)
+    // feed the click to the window's context (tests, automation); `at` is window-local device px
     for (Impl::Rec* r : m->recs)
         if (r->window && static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>((__bridge void*)r->window)) == nativeWin) {
-            r->win->click(at);
+            const f32 s = r->scale > 0.f ? r->scale : 1.f;
+            r->win->click({at.x / s, at.y / s});
+            return true;
+        }
+#if TARGET_OS_OSX
+    std::size_t i = 0;
+    if (Impl::Rec* r = m->findTool(nativeWin, i)) { // a tool window: context coordinates of its owner
+        const f32 s = r->scale > 0.f ? r->scale : 1.f;
+        r->win->click({r->tools[i].rect.x + at.x / s, r->tools[i].rect.y + at.y / s});
+        return true;
+    }
+#endif
+    return false;
+}
+
+#if TARGET_OS_OSX
+std::size_t NativePlatform::toolWindowCount(const AppWindow& w) const {
+    const Impl::Rec* r = m->find(w);
+    return r ? r->tools.size() : 0;
+}
+unsigned long long NativePlatform::toolWindow(const AppWindow& w, std::size_t i) const {
+    const Impl::Rec* r = m->find(w);
+    return r && i < r->tools.size() ? Impl::handleOf(r->tools[i].window) : 0;
+}
+Rect NativePlatform::toolWindowScreenRect(const AppWindow& w, std::size_t i) const {
+    const Impl::Rec* r = m->find(w);
+    return r && i < r->tools.size() ? r->tools[i].screen : Rect{};
+}
+bool NativePlatform::captureToolWindow(const AppWindow& w, std::size_t i, Image& out) {
+    const Impl::Rec* r = m->find(w);
+    if (!r || i >= r->tools.size() || r->tools[i].img.pixels.empty()) return false;
+    out = r->tools[i].img; // the frame handed to the panel's layer (as capture() for the main window)
+    return true;
+}
+namespace {
+/// A synthetic mouse event at window-local device px `at` (may lie outside the window), queued for the event pump.
+bool postMouse(NSWindow* win, NSView* view, Vec2 at, NSEventType type) {
+    if (!win || !view || win.windowNumber <= 0) return false;
+    const CGFloat k = win.backingScaleFactor > 0 ? win.backingScaleFactor : 1.0;
+    const NSPoint inWindow = [view convertPoint:NSMakePoint(at.x / k, at.y / k) toView:nil]; // the views are flipped
+    NSEvent* e = [NSEvent mouseEventWithType:type
+                                    location:inWindow
+                               modifierFlags:0
+                                   timestamp:NSProcessInfo.processInfo.systemUptime
+                                windowNumber:win.windowNumber
+                                     context:nil
+                                 eventNumber:0
+                                  clickCount:type == NSEventTypeLeftMouseDown || type == NSEventTypeLeftMouseUp ? 1 : 0
+                                    pressure:type == NSEventTypeLeftMouseDown || type == NSEventTypeLeftMouseDragged ? 1.f : 0.f];
+    if (!e) return false;
+    [NSApp postEvent:e atStart:NO];
+    return true;
+}
+} // namespace
+bool NativePlatform::postPointerMove(unsigned long long nativeWin, Vec2 at) {
+    @autoreleasepool {
+        const NSEventType type = m->postedLeftDown ? NSEventTypeLeftMouseDragged : NSEventTypeMouseMoved;
+        for (Impl::Rec* r : m->recs)
+            if (r->window && Impl::handleOf(r->window) == nativeWin) return postMouse(r->window, r->view, at, type);
+        std::size_t i = 0;
+        if (Impl::Rec* r = m->findTool(nativeWin, i)) return postMouse(r->tools[i].window, r->tools[i].view, at, type);
+        return false;
+    }
+}
+bool NativePlatform::postPointerButton(unsigned long long nativeWin, Vec2 at, bool down) {
+    @autoreleasepool {
+        const NSEventType type = down ? NSEventTypeLeftMouseDown : NSEventTypeLeftMouseUp;
+        bool ok = false;
+        for (Impl::Rec* r : m->recs)
+            if (r->window && Impl::handleOf(r->window) == nativeWin) ok = postMouse(r->window, r->view, at, type);
+        std::size_t i = 0;
+        if (!ok)
+            if (Impl::Rec* r = m->findTool(nativeWin, i)) ok = postMouse(r->tools[i].window, r->tools[i].view, at, type);
+        if (ok) m->postedLeftDown = down;
+        return ok;
+    }
+}
+bool NativePlatform::postClose(unsigned long long nativeWin) {
+    // what the title bar's close button does (the window delegate's close guard), from the event pump
+    for (Impl::Rec* r : m->recs)
+        if (r->window && Impl::handleOf(r->window) == nativeWin) {
+            NSWindow* win = r->window;
+            dispatch_async(dispatch_get_main_queue(), ^{ [win performClose:nil]; });
             return true;
         }
     return false;
 }
+#endif
 
 } // namespace fuse::app

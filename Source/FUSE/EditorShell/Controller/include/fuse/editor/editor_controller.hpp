@@ -1,11 +1,11 @@
 #pragma once
-// Q1 seam (FUSE_EDITOR_QT_FIRST_PLAN.md §3.1): EditorController + ShellServices, the one Qt-free facade both editor
-// shells call. It owns the scene mutex and the game-loop thread, runs the file / project flows (prompts through
+// Q1 seam (FUSE_EDITOR_QT_FIRST_PLAN.md §3.1): EditorController + ShellServices, the toolkit-free facade the editor
+// shell calls. It owns the scene mutex and the game-loop thread, runs the file / project flows (prompts through
 // ShellServices), keeps the unified undo journal (Q2), runs the action table (Q6) and publishes what panels show as
 // plain structs (EditorViewState, copied out under the lock; Q9 later swaps the lock for tick-published snapshots).
 //
-// First client: the FUSE UI shell (fuse_editor_fuse, FUSE_EDITOR_SHELL=fuse). The Qt shell (fuse_editor_qt) keeps its
-// own MainWindow logic until it is routed through here (Q1 in the Qt tree).
+// Client: the FUSE UI shell (fuse_editor_fuse), the editor since the Stage 3 switch (plan §8). Comments that name a Qt
+// class (MainWindow, HierarchyWidget, ...) point at the former Qt shell's code this logic was ported from.
 #include <fuse/editor/component_schema.hpp>
 #include <fuse/editor/console_panel.hpp>
 #include <fuse/editor/editor_actions.hpp>
@@ -37,7 +37,7 @@ struct Rgba {
     f32 r = 0.f, g = 0.f, b = 0.f, a = 1.f;
 };
 
-/// Dialogs and prompts the shell implements (Qt today, FUSE UI in fuse_editor_fuse, scripted in tests).
+/// Dialogs and prompts the shell implements (FUSE UI / OS dialogs in fuse_editor_fuse, scripted in tests).
 class ShellServices {
 public:
     virtual ~ShellServices() = default;
@@ -49,7 +49,7 @@ public:
     virtual std::optional<Rgba> pickColour(Rgba initial) = 0;
     virtual PromptAnswer askSaveDiscardCancel(std::string_view text) = 0;
     virtual void warn(std::string_view title, std::string_view text) = 0;
-    /// Opens a file in the system editor (Qt QDesktopServices::openUrl). False when the shell cannot.
+    /// Opens a file in the system editor (the system handler for the file). False when the shell cannot.
     virtual bool openExternal(std::string_view path) { (void)path; return false; }
 };
 
@@ -118,7 +118,7 @@ struct ViewportPointerEvent {
 };
 
 /// Edit > Preferences general options (Qt EditorPreferences: prefs/previewSun, cameraSpeed, lookSensitivity,
-/// restoreLayout). Qt-free; the FUSE shell persists them in the app settings file.
+/// restoreLayout). toolkit-free; the FUSE shell persists them in the app settings file.
 struct EditorPreferences {
     bool previewSun = true;
     f64 cameraSpeed = 10.0;
@@ -164,6 +164,9 @@ public:
     /// New Project wizard: also writes the module toggles to project.json and reopens it (Qt createProject).
     bool newProject(const std::string& directory, const std::string& name, u32 dimensionFlags,
                     const project::ModuleSettings& modules);
+    /// New Project wizard "Application (FUSE UI)": project.json schema 2 kind app + ui/main.fuseui
+    /// (project::createAppProject, Templates/FuseUIApp), then opens it.
+    bool newAppProject(const std::string& directory, const std::string& name);
     bool openProject(const std::string& directory);
     /// File > Recent Projects (Qt rebuildRecentProjectsMenu): reopen by index; missing project.json fails.
     bool openRecentProject(u32 index);
@@ -191,6 +194,9 @@ public:
     /// Entity menu / context-menu action on the current selection (create spawns at the origin). True on change.
     bool runEntityAction(ContextMenuAction action);
     [[nodiscard]] EntityRef lastCreated() const { return m_lastCreated; }
+    /// Hierarchy context menu "Create Child": a create action (CreateEmpty, CreateCube, ...) whose new entity is
+    /// parented under `parent` (at the parent's origin), selected, one undo step. Null parent: a top-level create.
+    bool createChild(ContextMenuAction action, EntityRef parent);
     /// Entity > Duplicate (Qt): whole subtrees with their display names, one undo step; the copies are selected.
     bool duplicateSelection();
     /// Entity > Group Selection / Ungroup (Qt, shared groupSelection / ungroupSelection; one undo step each).
@@ -201,6 +207,36 @@ public:
     [[nodiscard]] std::string selectedScriptPath();
     /// Entity > Open Script: ShellServices::openExternal on selectedScriptPath(). False when there is none.
     bool openScript();
+    /// Edit > Cut / Copy / Paste (Qt EntityClipboard: subtrees with names; cut and paste are one undo step each).
+    bool cutSelection();
+    bool copySelection();
+    bool pasteClipboard();
+    [[nodiscard]] bool clipboardEmpty() const;
+    /// Edit > Select All (every entity with a Transform) / Deselect All.
+    void selectAll();
+    void deselectAll();
+    /// Hierarchy rename (Qt F2 / row edit): one RenameEntityCommand undo step; "" clears the name.
+    bool renameEntity(EntityRef entity, std::string_view name);
+    /// Hierarchy double-click (Qt entityActivated): selects the entity and frames it.
+    bool activateEntity(EntityRef entity);
+    /// Qt HierarchyWidget::matchesSearch: every space-separated term must hit the label (case-insensitive), a
+    /// component name, or "#<index>".
+    [[nodiscard]] static bool hierarchyMatches(std::string_view label, std::span<const std::string> components, u32 index,
+                                               std::string_view query);
+    // ---- prefabs (Qt Entity menu; toolkit-free commands posted to the game thread) ----------------------------------
+    bool savePrefab(const std::string& path);        ///< selection -> .prefab
+    bool instantiatePrefab(const std::string& path);
+    bool prefabLinkAction(const std::string& op, const std::string& path = {}); ///< revert / apply / variant / reload / unlink
+    // ---- project tools (File menu) ---------------------------------------------------------------------------
+    [[nodiscard]] std::string projectRoot() const;
+    /// File > Import Asset: copies into assets/<kind>/ and cooks models / textures / audio with fuse_cook.
+    /// Returns the project-relative paths imported.
+    std::vector<std::string> importAssets(const std::vector<std::string>& files);
+    /// After Project Settings saved project.json: reopen the project (unsaved-changes prompt first).
+    bool reopenProject();
+    // ---- Play from Spawn Point (Qt Play menu) -----------------------------------------------------------------
+    void setPlayFromSpawn(bool on) { m_playFromSpawn = on; }
+    [[nodiscard]] bool playFromSpawn() const { return m_playFromSpawn; }
 
     // ---- console ----------------------------------------------------------------------------------------------
     [[nodiscard]] ConsolePanel& console() { return m_console; }
@@ -373,6 +409,12 @@ private:
     void addRecentProject_(const std::string& root);
     bool colliderPointer_(const ViewportPointerEvent& e);
     EditorPreferences m_prefs;
+    std::unique_ptr<class EntityClipboard> m_clipboard;
+    bool m_playFromSpawn = false;
+    bool m_spawnCameraSaved = false;
+    ViewportCamera m_spawnSavedCamera{};
+    TransportState m_lastTransport = TransportState::Stopped;
+    void playCameraTransition_(TransportState from, TransportState to);
     bool refreshGizmo_(); // m_mutex held
     bool gizmoPress_(f32 px, f32 py);
     void gizmoMove_(f32 px, f32 py);

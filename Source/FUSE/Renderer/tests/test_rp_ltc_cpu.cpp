@@ -155,7 +155,7 @@ void runArea(u32 type, const char* name, const AreaBudget& budget) {
 /// reference of the BRDF.
 void testIntegral() {
     std::mt19937 rng(5);
-    std::uniform_real_distribution<f32> u(0.f, 1.f);
+    const Uniform u{0.f, 1.f};
     f64 worstDisk = 0.0;
     f64 worstRect = 0.0;
     u32 disks = 0;
@@ -290,7 +290,7 @@ void testEncode() {
 // --- sun ------------------------------------------------------------------------------------------------
 void testSun() {
     std::mt19937 rng(9);
-    std::uniform_real_distribution<f32> u(0.f, 1.f);
+    const Uniform u{0.f, 1.f};
     Stats above[2], grazing[2];
     const f32 radii[2] = {0.0047f, 0.052f};
     for (u32 k = 0; k < 96u; ++k) {
@@ -317,7 +317,10 @@ void testSun() {
             if (l.z < 0.0 && dot(l, n) < 0.1) {
                 l = n;
             }
-            l = unit(add(l, mul(d3(randomUnit(rng)), 0.05 * u(rng))));
+            // Two draws in named order: function arguments are evaluated in an unspecified order.
+            const D3 jitter = d3(randomUnit(rng));
+            const f64 amount = 0.05 * u(rng);
+            l = unit(add(l, mul(jitter, amount)));
         } else {
             const f64 ph = 2.0 * ltc_test::kPi * u(rng);
             l = fr.toWorld({std::cos(elev) * std::cos(ph), std::cos(elev) * std::sin(ph), std::sin(elev)});
@@ -472,7 +475,7 @@ void testShade() {
     const SyntheticGBuffer g = makeGBuffer(cam, kW, kH);
     ClusterDesc desc{};
     std::mt19937 rng(21);
-    std::uniform_real_distribution<f32> u(-1.f, 1.f);
+    const Uniform u{-1.f, 1.f};
     std::vector<gpu_scene::GpuLight> lights;
     // Points, then area lights (clustered like points), then spots: oracle order == slot order.
     for (u32 i = 0; i < 200u; ++i) {

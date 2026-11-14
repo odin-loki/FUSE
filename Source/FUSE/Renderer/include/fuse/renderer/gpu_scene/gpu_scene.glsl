@@ -35,6 +35,11 @@
 #define FUSE_INSTANCE_STATIC 16u
 #define FUSE_INSTANCE_TRANSPARENT 32u
 
+// FuseGpuMesh::flags (GpuMeshFlag): f32x4 current + previous positions / f32x4 normals (GPU skinning rows).
+#define FUSE_MESH_FLOAT_POSITIONS 1u
+#define FUSE_MESH_FLOAT_NORMALS 2u
+#define FUSE_MESH_SKINNED 4u
+
 // FuseGpuMaterial::flags bit: layered material, FuseGpuMaterial::padding = its layered-table index (kGpuMaterialLayered).
 #define FUSE_GPU_MATERIAL_LAYERED 0x80000u
 

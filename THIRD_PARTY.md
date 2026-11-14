@@ -37,8 +37,36 @@ FUSE itself is AGPL-3.0 (see [`LICENSE.md`](LICENSE.md)).
 | RenderDoc in-app API | MIT (Baldur Karlsson) | Pin in [`vendor/renderdoc/VERSION`](vendor/renderdoc/VERSION) | headers-only | `vendor/renderdoc/include/renderdoc_app.h` | MIT text in [`vendor/renderdoc/include/renderdoc_app.h`](vendor/renderdoc/include/renderdoc_app.h) | Keep the copyright and permission notice in the header and in shipped notices if the API surface is redistributed. |
 | NVIDIA Streamline (public headers) | MIT (NVIDIA) | Pin in [`vendor/streamline/VERSION`](vendor/streamline/VERSION) | headers-only | `vendor/streamline` | [`vendor/streamline/LICENSE.txt`](vendor/streamline/LICENSE.txt) | Keep the MIT notice for vendored headers. Runtime DLLs are user-installed plugins (`docs/nvidia-plugin.md`); never committed. |
 | Tracy client | BSD-3-Clause (Bartosz Taudul) | Pin in [`vendor/tracy/VERSION`](vendor/tracy/VERSION) | vendored (optional, `-DFUSE_TRACY=ON`) | `vendor/tracy` | [`vendor/tracy/LICENSE`](vendor/tracy/LICENSE) | Keep the copyright and conditions when linking the Tracy client into profiler builds. |
-| Open Sans (font) | Apache-2.0 (Google) | Pin in [`vendor/fonts/opensans/VERSION`](vendor/fonts/opensans/VERSION) | vendored | `vendor/fonts/opensans` | [`vendor/fonts/opensans/LICENSE.txt`](vendor/fonts/opensans/LICENSE.txt) | Apache-2.0: ship licence text with font binaries (editor Qt resource). Shipped in CPack under `share/doc/fuse/vendor/opensans/`. |
+| nanosvg (`nanosvg.h` parser + `nanosvgrast.h` rasteriser) | Zlib (Mikko Mononen) | commit `239e102e` — pin in [`vendor/nanosvg/VERSION`](vendor/nanosvg/VERSION) | headers-only (tool time) | `vendor/nanosvg` | [`vendor/nanosvg/LICENSE.txt`](vendor/nanosvg/LICENSE.txt) | Keep the notice in source distributions; zlib clause 2: mark altered sources (vendored verbatim). Compiled only into the FUSE UI icon cooker (`fuse_ui_icon_cook_lib`); runtimes load cooked `.fuseicons` packs. |
+| Lucide icons (43-icon subset, FUSE UI starter icons) | ISC (Lucide Icons and Contributors); icons derived from Feather are also MIT (Cole Bemis) | 1.67.0 — pin in [`vendor/icons/lucide/VERSION`](vendor/icons/lucide/VERSION) | vendored (SVG, cooked at build time) | `vendor/icons/lucide` | [`vendor/icons/lucide/LICENSE`](vendor/icons/lucide/LICENSE) | Keep the copyright and permission notices (ISC + MIT text in `LICENSE`) with source and with shipped icon packs cooked from these SVGs. |
+| Open Sans (font) | Apache-2.0 (Google) | Pin in [`vendor/fonts/opensans/VERSION`](vendor/fonts/opensans/VERSION) | vendored | `vendor/fonts/opensans` | [`vendor/fonts/opensans/LICENSE.txt`](vendor/fonts/opensans/LICENSE.txt) | Apache-2.0: ship licence text with font binaries (FUSE UI and editor fonts). Shipped in CPack under `share/doc/fuse/vendor/opensans/`. |
+| Noto Sans Hebrew / Arabic / Devanagari / Symbols 2 / Thai, Noto Sans CJK SC subset (kana, Han, Hangul) (fonts) | SIL OFL 1.1 (Google / Adobe) | Pins + subset recipe in [`vendor/fonts/noto/VERSION`](vendor/fonts/noto/VERSION) ([`make_cjk_subset.py`](vendor/fonts/noto/make_cjk_subset.py)) | vendored | `vendor/fonts/noto` | [`vendor/fonts/noto/OFL.txt`](vendor/fonts/noto/OFL.txt) | OFL: ship the licence with the fonts; the CJK file is a modified (subset) version and keeps the Noto name only as permitted by the OFL reserved-name rules of the upstream release. |
+| Twemoji Mozilla (font) | Apache-2.0 (build code) + CC-BY-4.0 (artwork, Twitter / X Corp and contributors) | Pin in [`vendor/fonts/twemoji/VERSION`](vendor/fonts/twemoji/VERSION) | vendored | `vendor/fonts/twemoji` | [`vendor/fonts/twemoji/LICENSE.md`](vendor/fonts/twemoji/LICENSE.md) | CC-BY-4.0: attribute the Twemoji artwork where the emoji are shown or in the product credits. |
 | Khronos Vulkan headers (from SDL tree path) | Apache-2.0 OR MIT (Khronos) | Bundled under vendored SDL sources | headers-only | `vendor/sdl/src/video/khronos` | Copyright block in headers (e.g. `vulkan.h`); SDL itself is not built by FUSE | Used when no Vulkan SDK is found ([`cmake/FuseFindVulkan.cmake`](cmake/FuseFindVulkan.cmake), Relight MinGW). Keep Khronos licence terms if redistributing the headers. |
+
+### 1.1 Wayland protocol descriptions (FUSE UI Wayland backend)
+
+`Source/FUSE/UI/App/src/native_wayland.cpp` contains interface tables (interface, request and event names, argument
+signatures, opcode order) written by hand from the protocol descriptions below. No protocol XML and no
+`wayland-scanner` output is in the FUSE UI tree, and nothing of them is needed to build. The copyright and permission
+notices are reproduced in a comment next to the tables. `libwayland-client`, `libwayland-cursor` (MIT) and
+`libxkbcommon` (MIT) are not vendored, not linked and not shipped: the backend opens the system's copies with
+`dlopen` at run time and works without the last two. The test `fuse_app_wayland_seat` opens the system's
+`libwayland-server` (MIT) the same way.
+
+| Protocol | Licence | Copyright holders | Used for |
+|---|---|---|---|
+| `xdg-shell` (stable; version 1 messages) | MIT | Kristian Høgsberg (2008-2013), Rafael Antognolli (2013), Jasper St. Pierre (2013), Intel Corporation (2010-2013), Samsung Electronics Co., Ltd (2015-2017), Red Hat Inc. (2015-2017) | toplevel windows, popups |
+| `xdg-decoration-unstable-v1` | MIT | Simon Ser (2018) | server-side window frames |
+| `viewporter` | MIT | Collabora, Ltd. (2013-2016) | fractional scaling (buffer -> logical size) |
+| `fractional-scale-v1` | MIT | Kenny Levinsen (2022) | the compositor's preferred scale |
+| `cursor-shape-v1` | MIT | The Chromium Authors (2018), Simon Ser (2023) | cursor shapes drawn by the compositor |
+| `xdg-toplevel-icon-v1` | MIT | Matthias Klumpp (2023-2024), David Edmundson (2024) | window icons |
+| `primary-selection-unstable-v1` | MIT | Red Hat (2015, 2016) | primary selection |
+| `text-input-unstable-v3` | HPND-style permission notice (sell variant, as in the X.Org / Wayland licences) | Intel Corporation (2012, 2013), Jan Arne Petersen (2015, 2016), Red Hat, Inc. (2017, 2018), Purism SPC (2018) | IME pre-edit and commit |
+
+Obligation: keep the notices in `native_wayland.cpp` in source distributions. The upstream XML files themselves are in
+the tree only as part of the unused SDL copy (`vendor/sdl/wayland-protocols`, section 4).
 
 ## 2. Shared with FUSE Relight (see Relight doc for detail)
 

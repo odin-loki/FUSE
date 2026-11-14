@@ -12,6 +12,10 @@ static const uint kSxFlagSsrContact = 1u << 6;
 static const uint kSxFlagAoJitter = 1u << 7;
 static const uint kSxFlagSky = 1u << 8;
 static const uint kSxFlagSkyGi = 1u << 9;
+static const uint kSxFlagHiz = 1u << 10;
+static const uint kSxFlagAoBlur = 1u << 11;
+static const uint kSxFlagAoTemporal = 1u << 12;
+static const float kSxHizSky = 3.0e38;
 
 // SsfxFrameConstants, 592 bytes.
 struct SxFrame {
@@ -75,6 +79,23 @@ struct SxFrame {
     float giThickness;
     float giMaxDistance;
     float giIntensity;
+    uint64_t hiz;
+    uint64_t aoBlurred;
+    uint64_t aoDenoised;
+    uint64_t aoHistoryIn;
+    uint64_t aoHistoryOut;
+    uint64_t motion;
+    uint64_t aoFinal;
+    uint64_t ssrSteps;
+    uint hizLevels;
+    uint aoHistoryValid;
+    float aoBlurDepth;
+    float aoBlurNormal;
+    float aoTemporalAlpha;
+    float aoTemporalDepthReject;
+    uint reserved4;
+    uint reserved5;
+    uint hizOffset[8];
 };
 
 struct SxPush {
@@ -95,14 +116,21 @@ void sxBegin() { F = ((SxFrame*)pc.frame)[0]; }
 
 float4* sxTexels(uint64_t address) { return (float4*)address; }
 float* sxFloats(uint64_t address) { return (float*)address; }
+float2* sxVec2s(uint64_t address) { return (float2*)address; }
+uint2* sxUint2s(uint64_t address) { return (uint2*)address; }
 
 float4 sxFetch(uint handle, int2 p) { return fuse_sx_textures[handle & 0xFFFFFu].Load(int3(p, 0)); }
 
 // --- scalar / vector helpers ----------------------------------------------------------------------
 float sxSaturate(float v) { return max(0.0, min(1.0, v)); }
 float sxClamp(float v, float lo, float hi) { return v < lo ? lo : (hi < v ? hi : v); }
+
+// Correctly rounded division / square root (fuseDivRn / fuseSqrtRn, common/exact_math.slang): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but the GTAO / SSR march positions and the integer pixels they
+// truncate to must be the oracle's.
+#include "../common/exact_math.slang"
 float sxDot(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-float sxLength(float3 v) { return sqrt(sxDot(v, v)); }
+float sxLength(float3 v) { return fuseSqrtRn(sxDot(v, v)); }
 float3 sxScale(float3 v, float s) { return float3(v.x * s, v.y * s, v.z * s); }
 float3 sxAdd(float3 a, float3 b) { return float3(a.x + b.x, a.y + b.y, a.z + b.z); }
 float3 sxSub(float3 a, float3 b) { return float3(a.x - b.x, a.y - b.y, a.z - b.z); }
@@ -111,7 +139,7 @@ float3 sxNormalize(float3 v) {
     if (len < 1e-8) {
         return float3(0.0);
     }
-    return sxScale(v, 1.0 / len);
+    return sxScale(v, fuseDivRn(1.0, len));
 }
 float3 sxCross(float3 a, float3 b) {
     return float3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
@@ -124,7 +152,7 @@ float sxDepthAt(uint x, uint y) { return sxTexels(F.prepared)[sxIndex(x, y)].x; 
 float3 sxNormalAt(uint x, uint y) { return sxTexels(F.normals)[sxIndex(x, y)].xyz; }
 float3 sxColorAt(uint64_t address, uint i) { return sxTexels(address)[i].xyz; }
 
-float3 sxRayDirection(float px, float py) { return float3((px - F.cx) / F.fx, (py - F.cy) / F.fy, 1.0); }
+float3 sxRayDirection(float px, float py) { return float3(fuseDivRn(px - F.cx, F.fx), fuseDivRn(py - F.cy, F.fy), 1.0); }
 float3 sxUnproject(float px, float py, float viewZ) { return sxScale(sxRayDirection(px, py), viewZ); }
 float3 sxPositionAt(uint x, uint y) { return sxUnproject(float(x) + 0.5, float(y) + 0.5, sxDepthAt(x, y)); }
 bool sxProject(float3 p, out float px, out float py) {
@@ -133,8 +161,8 @@ bool sxProject(float3 p, out float px, out float py) {
     if (p.z < F.nearZ) {
         return false;
     }
-    px = F.fx * p.x / p.z + F.cx;
-    py = F.fy * p.y / p.z + F.cy;
+    px = fuseDivRn(F.fx * p.x, p.z) + F.cx;
+    py = fuseDivRn(F.fy * p.y, p.z) + F.cy;
     return true;
 }
 bool sxInside(float px, float py) { return px >= 0.0 && py >= 0.0 && px < float(F.width) && py < float(F.height); }

@@ -1,0 +1,20 @@
+{
+  "schema": "fuse.remaster-parity-trace/1",
+  "description": "W4.3 fixture trace for ShapeBaseData::onCollision / onImpact (shapebase_impact.tscript). Hand-authored; the expected log is derived from the original script's semantics.",
+  "behaviour": {"entity": 1, "props": {"min_impact_speed": 5, "collision_mul": 0.5, "impact_mul": 0.75}},
+  "entities": {
+    "1": {"position": [10, 0, 2], "velocity": [3, 4, 0], "alive": true, "fields": {"damage_state": "Enabled"}},
+    "2": {"position": [12, 0, 2], "velocity": [0, 0, 0], "alive": true, "fields": {"damage_state": "Enabled"}},
+    "3": {"position": [10, 8, 2], "velocity": [0, -6, 0], "alive": true, "fields": {"damage_state": "Enabled"}}
+  },
+  "steps": [
+    {"call": "on_collision", "args": [{"entity": 2}, {"vec3": [11, 0, 2]}]},
+    {"set": {"entity": 1, "velocity": [0, 0, -10]}},
+    {"call": "on_collision", "args": [{"entity": 2}, {"vec3": [10, 0, 1]}]},
+    {"call": "on_impact", "args": [{"entity": 3}, {"vec3": [0, -6, 0]}, 6]},
+    {"set": {"entity": 1, "fields": {"damage_state": "Destroyed"}}},
+    {"call": "on_collision", "args": [{"entity": 2}, {"vec3": [10, 0, 1]}]},
+    {"set": {"entity": 1, "alive": false, "fields": {"damage_state": "Enabled"}}},
+    {"call": "on_impact", "args": [{"entity": 3}, {"vec3": [0, -6, 0]}, 6]}
+  ]
+}

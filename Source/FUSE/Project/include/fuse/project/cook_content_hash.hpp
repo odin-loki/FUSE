@@ -60,6 +60,8 @@ struct CookHashPreflight {
 [[nodiscard]] u64 hash_texture_import(const TextureImportDesc& desc);
 [[nodiscard]] u64 hash_audio_import(const AudioImportDesc& desc);
 [[nodiscard]] u64 hash_shader_import(const ShaderImportDesc& desc);
+/// 4b: source bytes + every AnimImportDesc knob + the events sidecar's content (when present).
+[[nodiscard]] u64 hash_anim_import(const AnimImportDesc& desc);
 [[nodiscard]] u64 hash_manifest_entry(const CookManifestEntry& entry);
 
 const char* cookHashRejectReasonLabel(CookHashRejectReason reason);

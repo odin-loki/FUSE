@@ -43,7 +43,7 @@ void setEditorViewMode(EditorViewMode mode);
 
 class EditorHost;
 
-/// Editor-host request for a presenting viewport (fuse_editor Qt host). The game thread creates the
+/// Editor-host request for a presenting viewport (the editor shell). The game thread creates the
 /// viewport renderer's VkInstance with `instanceExtensions` (the UI toolkit's WSI extensions, e.g.
 /// VK_KHR_surface + VK_KHR_xcb_surface) and publishes it; the UI adopts it, creates the window
 /// surface on it and hands the surface back ("viewport.vk_surface_adopted").
@@ -70,7 +70,7 @@ struct WindowPresentStats {
     u32 height = 0;
 };
 
-/// Bridges the Qt viewport surface to the in-process runtime scene (U6).
+/// Bridges the editor viewport surface to the in-process runtime scene (U6).
 /// UI thread posts dimensions; game thread ticks the embedded viewport hook.
 /// Decodes a Material Editor texture (PNG / TGA / BMP / JPEG; relative paths resolve against `projectRoot`) into
 /// RGBA8 words r | g << 8 | b << 16 | a << 24 (the HybridSceneRenderer texture loader). False when it cannot be read.
@@ -100,7 +100,7 @@ public:
     void setProjectLabel(std::string label);
     void setProjectRoot(std::string root);
 
-    /// Queue an external `VkSurfaceKHR` for Track B `SwapchainDesc` wiring (Qt/U6 follow-up).
+    /// Queue an external `VkSurfaceKHR` for Track B `SwapchainDesc` wiring (U6 follow-up).
     void setExternalSurfaceHandle(void* vkSurface, u32 width, u32 height,
                                   const char* handoffSource = nullptr, bool qtStubSurface = false,
                                   bool qtRealSurface = false, void* qtVkInstance = nullptr);

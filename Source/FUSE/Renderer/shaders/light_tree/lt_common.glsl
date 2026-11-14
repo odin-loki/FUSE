@@ -98,10 +98,15 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Lt
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer LtEmittersRef { LtEmitter v[]; };
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer LtU32Ref { uint v[]; };
 
+// Correctly rounded division / square root (fuse_div_rn / fuse_sqrt_rn, common/exact_math.glsl): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but the sampler's decisions (u < p0, the rescaled u) must pick
+// the CPU kernel's branch.
+#include "../common/exact_math.glsl"
+
 float lt_min(float a, float b) { return b < a ? b : a; }
 float lt_max(float a, float b) { return a < b ? b : a; }
 float lt_safe_sqrt(float x) {
-    precise float r = sqrt(lt_max(x, 0.0));
+    precise float r = fuse_sqrt_rn(lt_max(x, 0.0));
     return r;
 }
 
@@ -142,10 +147,10 @@ float lt_importance(LtNode node, vec3 p, vec3 n, bool hasNormal) {
     precise float wy = 0.0;
     precise float wz = 0.0;
     if (dist2 > 0.0) {
-        precise float len = sqrt(dist2);
-        wx = dx / len;
-        wy = dy / len;
-        wz = dz / len;
+        precise float len = fuse_sqrt_rn(dist2);
+        wx = fuse_div_rn(dx, len);
+        wy = fuse_div_rn(dy, len);
+        wz = fuse_div_rn(dz, len);
     }
     precise float cosW = node.axis[0] * wx + node.axis[1] * wy + node.axis[2] * wz;
     if ((node.flags & LT_FLAG_TWO_SIDED) != 0u) {
@@ -156,10 +161,10 @@ float lt_importance(LtNode node, vec3 p, vec3 n, bool hasNormal) {
     precise float cosB = -1.0;
     precise float sinB = 0.0;
     if (dist2 > radius2) {
-        precise float sin2 = radius2 / dist2;
+        precise float sin2 = fuse_div_rn(radius2, dist2);
         precise float oneMinusB = 1.0 - sin2;
         cosB = lt_safe_sqrt(oneMinusB);
-        sinB = sqrt(sin2);
+        sinB = fuse_sqrt_rn(sin2);
     }
     const float cosX = lt_cos_sub_clamped(sinW, cosW, node.sinThetaO, node.cosThetaO);
     const float sinX = lt_sin_sub_clamped(sinW, cosW, node.sinThetaO, node.cosThetaO);
@@ -167,7 +172,7 @@ float lt_importance(LtNode node, vec3 p, vec3 n, bool hasNormal) {
     if (cosP <= node.cosThetaE) {
         return 0.0;
     }
-    precise float importance = node.phi * cosP / d2;
+    precise float importance = fuse_div_rn(node.phi * cosP, d2);
     if (hasNormal) {
         precise float cosI = abs(wx * n.x + wy * n.y + wz * n.z);
         precise float oneMinusI = 1.0 - cosI * cosI;
@@ -181,8 +186,8 @@ float lt_importance(LtNode node, vec3 p, vec3 n, bool hasNormal) {
 void lt_branch(float i0, float i1, out float p0, out float p1) {
     precise float sum = i0 + i1;
     if (sum > 0.0) {
-        precise float a = i0 / sum;
-        precise float b = i1 / sum;
+        precise float a = fuse_div_rn(i0, sum);
+        precise float b = fuse_div_rn(i1, sum);
         p0 = a;
         p1 = b;
     } else {
@@ -198,7 +203,7 @@ float lt_directional_probability(LtHeader t) {
     if (total == 0u) {
         return 0.0;
     }
-    precise float r = float(t.directionalCount) / float(total);
+    precise float r = fuse_div_rn(float(t.directionalCount), float(total));
     return r;
 }
 
@@ -232,13 +237,13 @@ void lt_concentric(float u1, float u2, out float x, out float y) {
         return;
     }
     if (abs(a) > abs(b)) {
-        precise float t = (b / a) * 0.78539816;
+        precise float t = (fuse_div_rn(b, a)) * 0.78539816;
         precise float rx = a * lt_cos_poly(t);
         precise float ry = a * lt_sin_poly(t);
         x = rx;
         y = ry;
     } else {
-        precise float t = (a / b) * 0.78539816;
+        precise float t = (fuse_div_rn(a, b)) * 0.78539816;
         precise float rx = b * lt_sin_poly(t);
         precise float ry = b * lt_cos_poly(t);
         x = rx;
@@ -251,7 +256,7 @@ void lt_sample_point(LtEmitter e, float u1, float u2, out vec3 position, out flo
     precise float b = 0.0;
     bool surface = true;
     if (e.kind == LT_KIND_TRIANGLE) {
-        precise float su = sqrt(u1);
+        precise float su = fuse_sqrt_rn(u1);
         a = su * (1.0 - u2);
         b = su * u2;
     } else if (e.kind == LT_KIND_RECT) {
@@ -276,7 +281,7 @@ void lt_sample_point(LtEmitter e, float u1, float u2, out vec3 position, out flo
     precise float py = e.p0[1] + e.e1[1] * a + e.e2[1] * b;
     precise float pz = e.p0[2] + e.e1[2] * a + e.e2[2] * b;
     position = vec3(px, py, pz);
-    precise float inv = 1.0 / e.area;
+    precise float inv = fuse_div_rn(1.0, e.area);
     pdfArea = e.area > 0.0 ? inv : 0.0;
 }
 
@@ -301,7 +306,7 @@ LtSampleResult lt_sample(uint64_t headerAddress, vec3 p, vec3 n, float u0, float
     uint light = LT_INVALID;
     precise float pmf = 0.0;
     if (u < pDir) {
-        precise float q = u / pDir;
+        precise float q = fuse_div_rn(u, pDir);
         u = lt_min(q, LT_ONE_MINUS_EPSILON);
         precise float scaled = u * float(t.directionalCount);
         uint k = uint(scaled);
@@ -309,33 +314,33 @@ LtSampleResult lt_sample(uint64_t headerAddress, vec3 p, vec3 n, float u0, float
             k = t.directionalCount - 1u;
         }
         light = LtU32Ref(t.directional).v[k];
-        pmf = pDir / float(t.directionalCount);
+        pmf = fuse_div_rn(pDir, float(t.directionalCount));
     } else {
         precise float pTree = 1.0 - pDir;
-        precise float q = (u - pDir) / pTree;
+        precise float q = fuse_div_rn((u - pDir), pTree);
         u = lt_min(q, LT_ONE_MINUS_EPSILON);
         pmf = pTree;
         uint node = 0u;
         for (uint level = 0u; level <= LT_MAX_DEPTH; ++level) {
-            const LtNode current = nodes.v[node];
-            if ((current.flags & LT_FLAG_LEAF) != 0u) {
-                light = current.childOrEmitter;
+            const uint currentFlags = nodes.v[node].flags; // the two words the descent reads, not the 64-byte node
+            if ((currentFlags & LT_FLAG_LEAF) != 0u) {
+                light = nodes.v[node].childOrEmitter;
                 break;
             }
             const uint c0 = node + 1u;
-            const uint c1 = current.childOrEmitter;
+            const uint c1 = nodes.v[node].childOrEmitter;
             const float i0 = lt_importance(nodes.v[c0], p, n, hasNormal);
             const float i1 = lt_importance(nodes.v[c1], p, n, hasNormal);
             float p0;
             float p1;
             lt_branch(i0, i1, p0, p1);
             if (u < p0) {
-                precise float r = u / p0;
+                precise float r = fuse_div_rn(u, p0);
                 u = lt_min(r, LT_ONE_MINUS_EPSILON);
                 pmf = pmf * p0;
                 node = c0;
             } else {
-                precise float r = (u - p0) / p1;
+                precise float r = fuse_div_rn((u - p0), p1);
                 u = lt_min(r, LT_ONE_MINUS_EPSILON);
                 pmf = pmf * p1;
                 node = c1;
@@ -367,7 +372,7 @@ float lt_pmf(uint64_t headerAddress, vec3 p, vec3 n, uint light) {
     const LtEmitter e = LtEmittersRef(t.emitters).v[light];
     const float pDir = lt_directional_probability(t);
     if (e.kind == LT_KIND_DIRECTIONAL) {
-        precise float r = pDir / float(t.directionalCount);
+        precise float r = fuse_div_rn(pDir, float(t.directionalCount));
         return t.directionalCount > 0u ? r : 0.0;
     }
     if (e.leafNode == LT_INVALID || t.nodeCount == 0u) {
@@ -378,9 +383,9 @@ float lt_pmf(uint64_t headerAddress, vec3 p, vec3 n, uint light) {
     precise float pmf = 1.0 - pDir;
     uint node = 0u;
     for (uint level = 0u; level < e.depth; ++level) {
-        const LtNode current = nodes.v[node];
+        // (the child link only, not the 64-byte node)
         const uint c0 = node + 1u;
-        const uint c1 = current.childOrEmitter;
+        const uint c1 = nodes.v[node].childOrEmitter;
         const float i0 = lt_importance(nodes.v[c0], p, n, hasNormal);
         const float i1 = lt_importance(nodes.v[c1], p, n, hasNormal);
         float p0;

@@ -41,10 +41,12 @@ bool desktopQtPresentEnabled();
 /// FUSE Track B: production `vkQueuePresentKHR` is allowed only when VulkanProduction is unlocked
 /// (compile-time, `FUSE_TRACK_B_UNLOCK`) or when the editor host opted in for its own viewport
 /// (`TrackBHostFeature::EditorViewportPresent`, set by fuse_editor once its Qt Vulkan surface is
-/// wired — never by the game runtime).
+/// wired — never by the game runtime), or when a FUSE UI app host opted in (`TrackBHostFeature::AppPresent`, set by
+/// fuse::app::ProjectHost for app / hybrid projects).
 [[nodiscard]] inline bool productionPresentAllowed() {
     return fuse::core::trackBFeatureEnabled(fuse::core::TrackBFeature::VulkanProduction) ||
-           fuse::core::trackBHostFeatureEnabled(fuse::core::TrackBHostFeature::EditorViewportPresent);
+           fuse::core::trackBHostFeatureEnabled(fuse::core::TrackBHostFeature::EditorViewportPresent) ||
+           fuse::core::trackBHostFeatureEnabled(fuse::core::TrackBHostFeature::AppPresent);
 }
 
 /// Runtime: display + GLFW WSI available and desktop present gate is ON.
@@ -53,7 +55,8 @@ bool desktopGlfwPresentRuntimeReady();
 /// Runtime: Win32 WSI available and desktop Win32 present gate is ON.
 bool desktopWin32PresentRuntimeReady();
 
-/// Runtime: display available and the Qt present gate is ON — compile-time `FUSE_ENABLE_QT_PRESENT`
+/// Runtime: display available and the editor present gate is ON (the "Qt" in the name is the former Qt shell's) —
+/// compile-time `FUSE_ENABLE_EDITOR_PRESENT`
 /// or the editor host's runtime opt-in (`TrackBHostFeature::EditorViewportPresent`).
 bool desktopQtPresentRuntimeReady();
 

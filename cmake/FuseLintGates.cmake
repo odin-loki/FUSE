@@ -6,7 +6,7 @@
 #   bad one before it scans the real tree (self-validating gates);
 # * writes ${CMAKE_BINARY_DIR}/fuse_lint/targets.manifest at the end of the top-level configure
 #   (cmake_language(DEFER)) with every fuse_* target's type, source dir, CXX_STANDARD and link
-#   libraries, so target-level rows (C++23, no ImGui/Qt links) are checked against the final graph;
+#   libraries, so target-level rows (C++23, no ImGui / Qt links) are checked against the final graph;
 # * registers ctest entries labelled "gate;lint".
 
 if(DEFINED _FUSE_LINT_GATES_INCLUDED)
@@ -120,9 +120,12 @@ _fuse_lint_add(fuse_lint_a_branding_ci_docs    branding       --repo "${CMAKE_SO
 # Appendix C — Phase 1 carry-forward.
 _fuse_lint_add(fuse_lint_c_cxx23_targets       cxx-standard   --manifest "${FUSE_LINT_MANIFEST}" --repo "${CMAKE_SOURCE_DIR}")
 _fuse_lint_add(fuse_lint_c_no_qt_in_core       qt-includes    --root "${_fuse_lint_src}" --manifest "${FUSE_LINT_MANIFEST}")
-# B6.1-B6.12 "Qt 6 only for editor chrome — no Dear ImGui": fuse_editor link closure + editor includes.
-# Skips (77) when fuse_editor is not configured (Qt6 not found / FUSE_BUILD_EDITOR=OFF).
-_fuse_lint_add(fuse_lint_b6_editor_qt6_only    editor-qt6     --root "${_fuse_lint_src}" --manifest "${FUSE_LINT_MANIFEST}")
+# Editor plan §8.5 (Stage 3; replaced B6.1-B6.12 "Qt 6 only for editor chrome", fuse_lint_b6_editor_qt6_only): no Qt in
+# Source/FUSE or Tools/FUSE sources, CMake files or fuse_* links; the editor (fuse_editor_fuse_app) links FUSE UI and no
+# ImGui; the shell includes FUSE UI, the editor model (Editor/, EditorShell/Controller, SceneHost) stays toolkit-free.
+# Always runs; the link-closure rows need FUSE_BUILD_EDITOR=ON.
+_fuse_lint_add(fuse_lint_editor_shell_fuse_ui  editor-shell   --root "${_fuse_lint_src}" --dir "${CMAKE_SOURCE_DIR}/Tools/FUSE"
+    --manifest "${FUSE_LINT_MANIFEST}")
 _fuse_lint_add(fuse_lint_c_doc_headings        doc-headings
     --plan "${CMAKE_SOURCE_DIR}/docs/plans/FUSE_MASTER_PLAN.md" --sources "${CMAKE_SOURCE_DIR}/docs/sources")
 # B1 gate: third-party dependencies build from vendored source with pinned commits.
@@ -152,7 +155,7 @@ get_property(_fuse_lint_all GLOBAL PROPERTY _FUSE_LINT_TESTS)
 set_tests_properties(${_fuse_lint_all} PROPERTIES LABELS "gate;lint" TIMEOUT 300)
 # torque-names walks the full Source/FUSE tree; MSVC Debug + sccache cold runs can exceed 300 s on CI.
 set_tests_properties(fuse_lint_a_log_mem_domains PROPERTIES TIMEOUT 600)
-set_tests_properties(fuse_lint_b6_editor_qt6_only PROPERTIES LABELS "gate;lint;qt" SKIP_RETURN_CODE 77)
+set_tests_properties(fuse_lint_editor_shell_fuse_ui PROPERTIES LABELS "gate;lint;fuse_editor_ui")
 # FUSE_ASSET_PLAN §2.4 / W0.5: Content/licences.lock.json covers every file under Content/ (labels lint;asset).
 add_test(NAME fuse_lint_asset_licences COMMAND fuse_lint asset-licences --root "${CMAKE_SOURCE_DIR}/Content"
          --scratch "${_fuse_lint_scratch}/fuse_lint_asset_licences")

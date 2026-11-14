@@ -117,19 +117,19 @@ target_compile_definitions(fuse_rp_ltc PRIVATE ${_fuse_wp22_probe_defs})
 add_dependencies(fuse_rp_ltc fuse_ltc_probe_kernels)
 fuse_apply_cxx23(fuse_rp_ltc)
 
-set(_fuse_wp22_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+set(_fuse_wp22_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 set(_fuse_wp22_vk_tests "")
 foreach(_lang slang glsl)
     set(_name "fuse_rp_ltc_vk_probe_${_lang}")
     if(FUSE_VULKAN_BACKEND)
-        add_test(NAME ${_name} COMMAND "${_fuse_wp22_lock}" "$<TARGET_FILE:fuse_rp_ltc>" --language ${_lang})
+        add_test(NAME ${_name} COMMAND ${_fuse_wp22_lock} "$<TARGET_FILE:fuse_rp_ltc>" --language ${_lang})
     else()
         add_test(NAME ${_name} COMMAND fuse_rp_ltc --language ${_lang})
     endif()
     list(APPEND _fuse_wp22_vk_tests ${_name})
 endforeach()
 set_tests_properties(${_fuse_wp22_vk_tests} PROPERTIES
-    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
     TIMEOUT 900

@@ -36,14 +36,13 @@ if(FUSE_BUILD_PARITY_DEMOS AND FUSE_BUILD_PROJECT)
         )
         # E03: demo_3d_empty / demo_2d_sprites render through the hybrid GPU scene path when Vulkan is present
         # (checked by GPU readback): they run on Lavapipe under the ICD lock like the other Vulkan gates.
-        set(_fuse_demo_icd_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
         foreach(_demo ${_fuse_parity_demo_tests})
             if(_demo MATCHES "^demo_(3d_empty|2d_sprites)$" AND FUSE_VULKAN_BACKEND AND NOT CMAKE_CROSSCOMPILING
-               AND EXISTS "${_fuse_demo_icd_lock}")
+               AND EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
                 add_test(NAME fuse_u8_${_demo}
-                    COMMAND "${_fuse_demo_icd_lock}" "$<TARGET_FILE:${_demo}>" "${_fuse_parity_demo_root}/${_demo}")
+                    COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:${_demo}>" "${_fuse_parity_demo_root}/${_demo}")
                 set_tests_properties(fuse_u8_${_demo} PROPERTIES
-                    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
+                    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV};VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
                     RUN_SERIAL TRUE)
             else()
                 # Target-name COMMAND so a cross build runs it through CMAKE_CROSSCOMPILING_EMULATOR.
@@ -64,17 +63,17 @@ if(FUSE_BUILD_PARITY_DEMOS AND FUSE_BUILD_PROJECT)
             demo_timeline
             demo_adventure_stub
         )
-        set(_fuse_u8_present_env "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+        set(_fuse_u8_present_env "${FUSE_VULKAN_LVP_ENV}")
         foreach(_demo ${_fuse_u8_present_demos})
             if(FUSE_VULKAN_BACKEND AND FUSE_PLATFORM_WINDOW_X11_ACTIVE AND FUSE_DISPLAY_TEST_WRAPPER
-               AND EXISTS "${_fuse_demo_icd_lock}")
+               AND EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
                 if(_demo STREQUAL "demo_hybrid_hud")
                     add_test(NAME fuse_u8_${_demo}_present
-                        COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" "${_fuse_demo_icd_lock}"
+                        COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" ${FUSE_VULKAN_TEST_LAUNCHER}
                                 "$<TARGET_FILE:${_demo}>" --present)
                 else()
                     add_test(NAME fuse_u8_${_demo}_present
-                        COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" "${_fuse_demo_icd_lock}"
+                        COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" ${FUSE_VULKAN_TEST_LAUNCHER}
                                 "$<TARGET_FILE:${_demo}>" --present "${_fuse_parity_demo_root}/${_demo}")
                 endif()
                 set_tests_properties(fuse_u8_${_demo}_present PROPERTIES

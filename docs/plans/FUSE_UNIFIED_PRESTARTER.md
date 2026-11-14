@@ -40,6 +40,8 @@ This pre-starter sits **in front of** (and feeds) the full [FUSE_MASTER_PLAN.md]
 | `fuse_runtime` / game player | Headless of editor chrome; loads FUSE projects (2D, 3D, or hybrid) |
 | `fuse_tools` | Cookers, asset converters, DTS/DIFF/T2D asset pipelines (CLI; optional Qt) |
 
+> 2026-11-14: Qt was removed. `fuse_editor` is now the FUSE UI shell `fuse_editor_fuse` ([../editor.md](../editor.md)).
+
 Shipping configs: `debug`, `release`, `profile`, `shipping` (from master plan). No separate “Torque2D.exe” / “Torque3D.exe” for end users.
 
 ### 1.2 Unified feature surface (what “all the features” means)
@@ -510,7 +512,15 @@ Mine each addon into a **FUSE module** with:
 - [x] U8 engineering exit (demos, present, ASan, sprites, PIE) — [docs/unification/U8-EXIT-SIGNOFF.md](../unification/U8-EXIT-SIGNOFF.md)  
 - [ ] Stakeholder agrees: “this is one program” (product milestone — §3 in sign-off doc)  
 
-**U8 wave 5 honest remainder:** GPU animated-sprite playback, real window present, full golden submodule corpus without bundled stubs, stakeholder sign-off.
+**U8 wave 5 honest remainder** *(updated 2026-11-05 against [U8-EXIT-SIGNOFF.md](../unification/U8-EXIT-SIGNOFF.md))*:
+- **Done:**
+  - Animated sprites plus `imageMap` (`fuse_world2d_sprite_image_map_tests`, `demo_2d_sprites`).
+  - Real swapchain present on Linux/Xvfb (`fuse_u8_<demo>_present`, the `fuse-u8-present` job).
+- **Still open:**
+  - Bindless GPU texture fetch for sprites. `imageMap` colours are still sampled on the CPU, and the hybrid path draws sprite-layer quads.
+  - macOS (Cocoa) present is not in parity CI.
+  - The golden corpus still falls back to bundled stubs when `third_party/Torque2D` is absent.
+  - Stakeholder sign-off: sign-off §3 has the "documented limits" and "this is one program" rows pending.
 
 After EXIT → continue FUSE_MASTER_PLAN Track A remainder / Track B (Vulkan, ECS, physics replacement, etc.) **on the unified spine**, not on raw T3D/T2D forever.
 
@@ -619,34 +629,36 @@ Track B: Vulkan, ECS, physics, advanced lighting, production…
 
 ## Appendix A — Capability checklist (unified product)
 
+> **Re-checked against the code 2026-11-05.** An item is ticked only where code and a registered ctest gate exist. Unticked items are partial, with the remainder named.
+
 ### Dimensions
 - [ ] World3D load/save/play — load + save done (UNI-U7-WORLD-1, E16): `World3D::loadWorldFromFuselevel` makes the level's v3 ECS block the world registry (runtime schedule + E03 render; physics from its Collider / RigidBody components, SceneObject3D mirrors), `saveWorld` writes v3 byte-identically after a load (`fuse_world3d_level_gates`); demo_3d_empty renders the converted mission on Lavapipe with 0 validation messages. Play (game mode / player spawn from SpawnMarker) not wired  
 - [ ] World2D load/save/play — load + save done (UNI-U7-WORLD-1, E16): `populateWorld2DFromFuselevel` reads v3 (physics settings from Collider / RigidBody), `saveWorld2DToFuselevel` writes v3, save / load / save byte-identical (`fuse_world3d_level_gates`). Play not wired  
-- [ ] Hybrid compose in one window  
+- [x] Hybrid compose in one window — 2026-11-05: `Source/FUSE/Hybrid` (`HybridComposer`). `Apps/HybridHud` (`demo_hybrid_hud`) presents 3D, 2D and HUD in one swapchain (`fuse_u8_demo_hybrid_hud_present`, `fuse_demo_hybrid_hud_ui`)  
 - [ ] Shared input/audio/net — input done (UNI-INPUT-1: action maps + gamepads shared by runtime / PIE via `PlayerController`); audio and net sharing still open  
 
 ### Features
-- [ ] Behavior trees (AI)  
-- [ ] Guide/action AI helpers  
-- [ ] AI starter templates  
-- [ ] Cinematic timeline  
-- [ ] Mechanics graph/interactables  
-- [ ] AFX-style FX  
-- [ ] Adventure inventory/interact  
+- [x] Behavior trees (AI) — 2026-11-05: `Modules/ai` (`behavior_tree`, `blackboard`, `behavior_runtime`, `tree_loader`). Gates `fuse_ai_behavior_tree` and `fuse_u8_demo_ai_bt` (`Apps/DemoAiBt`, one BT on both dimensions)  
+- [ ] Guide/action AI helpers — partial 2026-11-05: GuideBot is reduced to one `gb.action.move_toward` leaf, which the module calls a stub (`node_registry.cpp`), plus `nav_query` (`fuse_ai_nav_query`). The rest of the GuideBot action set is not ported  
+- [ ] AI starter templates — partial 2026-11-05: what exists is the UAISK hook mapping (`uaisk_template_hooks.hpp`), the `.cs` parser and codegen (`uaisk_cs_*`), and one text template (`Samples/Modules/ai/uaisk-templates/patrol_squad.bt`). There is no template library yet  
+- [x] Cinematic timeline — 2026-11-05: `Modules/cinematics` (timeline, tracks, playhead, `seq_import`). Gates `fuse_cinematics_tests` and `fuse_u8_demo_timeline` (`Apps/DemoTimeline`). The editor has `timeline_widget`  
+- [x] Mechanics graph/interactables — 2026-11-05: `Modules/mechanics` has GMK-style logic components wired by message, toggle and trigger links, plus `interactable` and `inventory_provider`. It has about 20 `fuse_mechanics_*` gates. There is no visual graph editor  
+- [x] AFX-style FX — 2026-11-05: `Modules/fx` (effect graph and timeline, spell and missile descriptors, AFX choreographer bridge, particle pool CPU / GPU). Gates `fuse_fx_runtime`, `fuse_fx_particle_pool_kernel_parity` and `fuse_u8_demo_fx` (`Apps/DemoFx`)  
+- [x] Adventure inventory/interact — 2026-11-05: `Modules/adventure` (inventory, interactables, interaction queue, doors, conversation VM). Gates `fuse_adventure_{inventory,interact,interaction_queue,vertical_slice,…}` and `fuse_u8_demo_adventure_stub` (`Apps/DemoAdventureStub`)  
 
 ### Tools
-- [ ] Qt project hub  
-- [ ] Dual-dimension editors  
-- [ ] Feature panes (BT, timeline, FX)  
-- [ ] Importers (T3D, T2D)  
-- [ ] Cookers  
+- [x] Qt project hub — 2026-11-05: `Editor/src/qt/project_hub_widget.*`, which is the `MainWindow::kProjectHubDock` dock, checked in `test_editor_qt_shell.cpp`  
+- [ ] Dual-dimension editors — partial 2026-11-05: the editor host opens and creates both `SceneDimension::World2D` and `World3D` scenes from the project flags, and uses a 2D camera for 2D (`editor_host.cpp`, `test_e15_scene_files.cpp`). It has no dedicated 2D tool set (sprite, tilemap, physics shapes)  
+- [ ] Feature panes (BT, timeline, FX) — partial 2026-11-05: the timeline has a Qt pane (`timeline_widget`, `seq_preview_pane_widget`). BT has only the headless UAISK / tree profile picker (`ai_tree_profile_picker.cpp`), not a graph pane. FX has no editor pane  
+- [x] Importers (T3D, T2D) — 2026-11-05: `Project` (`importer`, `world_converter`, `t3d_material_parse`, `t2d_module_bridge`) and `Tools/FUSE/fuse_import`. Gates `fuse_t3d_material_mission_gates`, `fuse_world3d_level_gates` and `fuse_world_converter`. T3D missions are not yet playable (§12.2)  
+- [x] Cookers — 2026-11-05: `Tools/FUSE/Cook` and `fuse_cook`, with the runtime readers in `fuse_asset`. Gates `fuse_cook_cache_b79`, `fuse_cook_dependency_graph_b79`, `fuse_cooked_assets_*` and `fuse_asset_runtime_cook`  
 
 ### Engineering
-- [ ] C++23 FUSE core  
-- [ ] Memory-safe handles/allocators for new code  
-- [ ] ASan CI smoke  
-- [ ] One CMake umbrella  
-- [ ] THIRD_PARTY / licenses  
+- [x] C++23 FUSE core — 2026-11-05: `Source/FUSE/CMakeLists.txt` sets `CMAKE_CXX_STANDARD 23` for the product, and `fuse_apply_cxx23` (`cmake/FuseCxx23.cmake`) raises individual targets to C++23. The root default of C++17 still covers `Tools/` and the vendored sub-builds  
+- [x] Memory-safe handles/allocators for new code — 2026-11-05: `Core` has `handle.hpp`, `handle_table.hpp` and `handle_map.hpp` (generation-checked) and `fuse/alloc/*` (frame, pool, ring, stack, free-list and size-class allocators, `new_ban`, `leak_detector`, domain budgets)  
+- [x] ASan CI smoke — 2026-11-05: the `fuse-asan` preset (ASan + UBSan) and the `fuse-smoke-asan` job in `fuse-umbrella-linux.yml` (`ctest -L u8`), plus an MSVC ASan spike workflow  
+- [x] One CMake umbrella — 2026-11-05: the root `CMakeLists.txt` adds `Source/FUSE` and `Tools/FUSE`, and every module, app, tool and test configures from it  
+- [x] THIRD_PARTY / licenses — 2026-11-05: root `THIRD_PARTY.md` and `LICENSE.md`; per-module notices such as `Source/FUSE/Relight/THIRD_PARTY.md`; vendored pins are linted (`fuse_lint_vendored_pins_*`)  
 
 ## Appendix B — Related docs
 

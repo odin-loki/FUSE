@@ -82,9 +82,14 @@ struct LtSampleResult {
     float evalPmf;
 };
 
+// Correctly rounded division / square root (fuseDivRn / fuseSqrtRn, common/exact_math.slang): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but the sampler's decisions (u < p0, the rescaled u) must pick
+// the CPU kernel's branch.
+#include "../common/exact_math.slang"
+
 float ltMin(float a, float b) { return b < a ? b : a; }
 float ltMax(float a, float b) { return a < b ? b : a; }
-float ltSafeSqrt(float x) { return sqrt(ltMax(x, 0.0)); }
+float ltSafeSqrt(float x) { return fuseSqrtRn(ltMax(x, 0.0)); }
 
 float ltCosSubClamped(float sinA, float cosA, float sinB, float cosB) {
     if (cosA > cosB) {
@@ -121,10 +126,10 @@ float ltImportance(LtNode node, float3 p, float3 n, bool hasNormal) {
     float wy = 0.0;
     float wz = 0.0;
     if (dist2 > 0.0) {
-        const float len = sqrt(dist2);
-        wx = dx / len;
-        wy = dy / len;
-        wz = dz / len;
+        const float len = fuseSqrtRn(dist2);
+        wx = fuseDivRn(dx, len);
+        wy = fuseDivRn(dy, len);
+        wz = fuseDivRn(dz, len);
     }
     float cosW = node.axis[0] * wx + node.axis[1] * wy + node.axis[2] * wz;
     if ((node.flags & kLtFlagTwoSided) != 0u) {
@@ -134,9 +139,9 @@ float ltImportance(LtNode node, float3 p, float3 n, bool hasNormal) {
     float cosB = -1.0;
     float sinB = 0.0;
     if (dist2 > radius2) {
-        const float sin2 = radius2 / dist2;
+        const float sin2 = fuseDivRn(radius2, dist2);
         cosB = ltSafeSqrt(1.0 - sin2);
-        sinB = sqrt(sin2);
+        sinB = fuseSqrtRn(sin2);
     }
     const float cosX = ltCosSubClamped(sinW, cosW, node.sinThetaO, node.cosThetaO);
     const float sinX = ltSinSubClamped(sinW, cosW, node.sinThetaO, node.cosThetaO);
@@ -144,7 +149,7 @@ float ltImportance(LtNode node, float3 p, float3 n, bool hasNormal) {
     if (cosP <= node.cosThetaE) {
         return 0.0;
     }
-    float importance = node.phi * cosP / d2;
+    float importance = fuseDivRn(node.phi * cosP, d2);
     if (hasNormal) {
         const float cosI = abs(wx * n.x + wy * n.y + wz * n.z);
         const float sinI = ltSafeSqrt(1.0 - cosI * cosI);
@@ -157,8 +162,8 @@ float ltImportance(LtNode node, float3 p, float3 n, bool hasNormal) {
 void ltBranch(float i0, float i1, out float p0, out float p1) {
     const float sum = i0 + i1;
     if (sum > 0.0) {
-        p0 = i0 / sum;
-        p1 = i1 / sum;
+        p0 = fuseDivRn(i0, sum);
+        p1 = fuseDivRn(i1, sum);
     } else {
         p0 = 0.5;
         p1 = 0.5;
@@ -172,7 +177,7 @@ float ltDirectionalProbability(LtHeader t) {
     if (total == 0u) {
         return 0.0;
     }
-    return float(t.directionalCount) / float(total);
+    return fuseDivRn(float(t.directionalCount), float(total));
 }
 
 float ltSinPoly(float t) {
@@ -203,11 +208,11 @@ void ltConcentric(float u1, float u2, out float x, out float y) {
         return;
     }
     if (abs(a) > abs(b)) {
-        const float t = (b / a) * 0.78539816;
+        const float t = (fuseDivRn(b, a)) * 0.78539816;
         x = a * ltCosPoly(t);
         y = a * ltSinPoly(t);
     } else {
-        const float t = (a / b) * 0.78539816;
+        const float t = (fuseDivRn(a, b)) * 0.78539816;
         x = b * ltSinPoly(t);
         y = b * ltCosPoly(t);
     }
@@ -218,7 +223,7 @@ void ltSamplePoint(LtEmitter e, float u1, float u2, out float3 position, out flo
     float b = 0.0;
     bool surface = true;
     if (e.kind == kLtKindTriangle) {
-        const float su = sqrt(u1);
+        const float su = fuseSqrtRn(u1);
         a = su * (1.0 - u2);
         b = su * u2;
     } else if (e.kind == kLtKindRect) {
@@ -239,7 +244,7 @@ void ltSamplePoint(LtEmitter e, float u1, float u2, out float3 position, out flo
     const float py = e.p0[1] + e.e1[1] * a + e.e2[1] * b;
     const float pz = e.p0[2] + e.e1[2] * a + e.e2[2] * b;
     position = float3(px, py, pz);
-    pdfArea = e.area > 0.0 ? 1.0 / e.area : 0.0;
+    pdfArea = e.area > 0.0 ? fuseDivRn(1.0, e.area) : 0.0;
 }
 
 LtSampleResult ltSample(uint64_t headerAddress, float3 p, float3 n, float u0, float u1, float u2) {
@@ -263,37 +268,37 @@ LtSampleResult ltSample(uint64_t headerAddress, float3 p, float3 n, float u0, fl
     uint light = kLtInvalid;
     float pmf = 0.0;
     if (u < pDir) {
-        u = ltMin(u / pDir, kLtOneMinusEpsilon);
+        u = ltMin(fuseDivRn(u, pDir), kLtOneMinusEpsilon);
         uint k = uint(u * float(t.directionalCount));
         if (k >= t.directionalCount) {
             k = t.directionalCount - 1u;
         }
         light = ((uint*)t.directional)[k];
-        pmf = pDir / float(t.directionalCount);
+        pmf = fuseDivRn(pDir, float(t.directionalCount));
     } else {
         const float pTree = 1.0 - pDir;
-        u = ltMin((u - pDir) / pTree, kLtOneMinusEpsilon);
+        u = ltMin(fuseDivRn((u - pDir), pTree), kLtOneMinusEpsilon);
         pmf = pTree;
         uint node = 0u;
         for (uint level = 0u; level <= kLtMaxDepth; ++level) {
-            const LtNode current = nodes[node];
-            if ((current.flags & kLtFlagLeaf) != 0u) {
-                light = current.childOrEmitter;
+            const uint currentFlags = nodes[node].flags; // the two words the descent reads, not the 64-byte node
+            if ((currentFlags & kLtFlagLeaf) != 0u) {
+                light = nodes[node].childOrEmitter;
                 break;
             }
             const uint c0 = node + 1u;
-            const uint c1 = current.childOrEmitter;
+            const uint c1 = nodes[node].childOrEmitter;
             const float i0 = ltImportance(nodes[c0], p, n, hasNormal);
             const float i1 = ltImportance(nodes[c1], p, n, hasNormal);
             float p0;
             float p1;
             ltBranch(i0, i1, p0, p1);
             if (u < p0) {
-                u = ltMin(u / p0, kLtOneMinusEpsilon);
+                u = ltMin(fuseDivRn(u, p0), kLtOneMinusEpsilon);
                 pmf = pmf * p0;
                 node = c0;
             } else {
-                u = ltMin((u - p0) / p1, kLtOneMinusEpsilon);
+                u = ltMin(fuseDivRn((u - p0), p1), kLtOneMinusEpsilon);
                 pmf = pmf * p1;
                 node = c1;
             }
@@ -324,7 +329,7 @@ float ltPmf(uint64_t headerAddress, float3 p, float3 n, uint light) {
     const LtEmitter e = ((LtEmitter*)t.emitters)[light];
     const float pDir = ltDirectionalProbability(t);
     if (e.kind == kLtKindDirectional) {
-        return t.directionalCount > 0u ? pDir / float(t.directionalCount) : 0.0;
+        return t.directionalCount > 0u ? fuseDivRn(pDir, float(t.directionalCount)) : 0.0;
     }
     if (e.leafNode == kLtInvalid || t.nodeCount == 0u) {
         return 0.0;
@@ -334,9 +339,9 @@ float ltPmf(uint64_t headerAddress, float3 p, float3 n, uint light) {
     float pmf = 1.0 - pDir;
     uint node = 0u;
     for (uint level = 0u; level < e.depth; ++level) {
-        const LtNode current = nodes[node];
+        // (the child link only, not the 64-byte node)
         const uint c0 = node + 1u;
-        const uint c1 = current.childOrEmitter;
+        const uint c1 = nodes[node].childOrEmitter;
         const float i0 = ltImportance(nodes[c0], p, n, hasNormal);
         const float i1 = ltImportance(nodes[c1], p, n, hasNormal);
         float p0;

@@ -18,7 +18,8 @@
 // its graphics queue, signalled through a timeline semaphore, verified byte-exact. With the Khronos
 // validation layer installed any validation warning or error fails the test.
 //
-// Exit 77 (skip) in the stub build, off Linux, or without the Lavapipe ICD.
+// Windows has no Lavapipe: the system driver's ICD (display adapter registry key) is registered twice instead.
+// Exit 77 (skip) in the stub build, off Linux / Windows, or when the ICD library cannot be resolved.
 #include <fuse/renderer/device_index.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
@@ -31,6 +32,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 #if defined(__linux__)
@@ -39,6 +41,15 @@
 #include <climits>
 #include <fstream>
 #include <sstream>
+#define FUSE_B2_SPOOF_HOST 1
+#elif defined(_WIN32)
+#include <fstream>
+#include <sstream>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#define FUSE_B2_SPOOF_HOST 1
 #endif
 
 namespace {
@@ -60,7 +71,7 @@ int testDeviceIndexOk() {
     return 1;
 }
 
-#if defined(FUSE_VULKAN_BACKEND) && defined(__linux__)
+#if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_B2_SPOOF_HOST)
 
 using fuse::u32;
 using fuse::u64;
@@ -114,20 +125,85 @@ std::string readFile(const std::string& path) {
     return buffer.str();
 }
 
-/// Absolute path of the ICD library named by the manifest `manifestPath` (loaded with the dynamic
-/// linker's own search rules, as the loader does). Empty when it cannot be resolved.
-std::string resolveIcdLibrary(const std::string& manifestPath) {
+void setEnv(const char* name, const char* value) { fuse::renderer::test::setProcessEnv(name, value); }
+
+void unsetEnv(const char* name) {
+#if defined(_WIN32)
+    _putenv_s(name, ""); // an empty value removes the variable
+#else
+    unsetenv(name);
+#endif
+}
+
+/// The manifest's "library_path" value (JSON escapes of '\\' and '/' undone). Empty when missing.
+std::string manifestLibraryPath(const std::string& manifestPath) {
     const std::string json = readFile(manifestPath);
     const size_t key = json.find("\"library_path\"");
     if (key == std::string::npos) {
         return {};
     }
     const size_t open = json.find('"', json.find(':', key) + 1);
-    const size_t close = open == std::string::npos ? std::string::npos : json.find('"', open + 1);
-    if (close == std::string::npos) {
+    std::string value;
+    for (size_t i = open == std::string::npos ? json.size() : open + 1; i < json.size() && json[i] != '"'; ++i) {
+        if (json[i] == '\\' && i + 1 < json.size()) {
+            ++i;
+        }
+        value += json[i];
+    }
+    return value;
+}
+
+#if defined(_WIN32)
+/// The ICD manifest of the first display adapter that names one (the display driver registers it as
+/// VulkanDriverName under its device class key); empty without one.
+std::string systemIcdManifest() {
+    const char* kClass = "SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}";
+    for (int i = 0; i < 16; ++i) {
+        char key[160];
+        std::snprintf(key, sizeof(key), "%s\\%04d", kClass, i);
+        char value[1024] = {};
+        DWORD size = sizeof(value);
+        if (RegGetValueA(HKEY_LOCAL_MACHINE, key, "VulkanDriverName", RRF_RT_REG_SZ | RRF_RT_REG_MULTI_SZ, nullptr, value,
+                         &size) == ERROR_SUCCESS &&
+            value[0] != '\0') {
+            return value; // the first string of a REG_MULTI_SZ
+        }
+    }
+    return {};
+}
+
+/// Absolute path of the ICD library named by the manifest (relative paths from the manifest's
+/// directory, bare names through the DLL search path, as the loader does). Empty when it is missing.
+std::string resolveIcdLibrary(const std::string& manifestPath) {
+    std::string library = manifestLibraryPath(manifestPath);
+    if (library.empty()) {
         return {};
     }
-    std::string library = json.substr(open + 1, close - open - 1);
+    char full[MAX_PATH] = {};
+    if (library.find_first_of("\\/") == std::string::npos) {
+        if (SearchPathA(nullptr, library.c_str(), nullptr, MAX_PATH, full, nullptr) == 0) {
+            return {};
+        }
+        return full;
+    }
+    if (!(library.size() > 1 && library[1] == ':') && library[0] != '\\' && library[0] != '/') {
+        const size_t slash = manifestPath.find_last_of("\\/");
+        library = (slash == std::string::npos ? std::string(".") : manifestPath.substr(0, slash)) + "\\" + library;
+    }
+    if (GetFullPathNameA(library.c_str(), MAX_PATH, full, nullptr) == 0 ||
+        GetFileAttributesA(full) == INVALID_FILE_ATTRIBUTES) {
+        return {};
+    }
+    return full;
+}
+#else
+/// Absolute path of the ICD library named by the manifest `manifestPath` (loaded with the dynamic
+/// linker's own search rules, as the loader does). Empty when it cannot be resolved.
+std::string resolveIcdLibrary(const std::string& manifestPath) {
+    std::string library = manifestLibraryPath(manifestPath);
+    if (library.empty()) {
+        return {};
+    }
     if (library.find('/') != std::string::npos && library[0] != '/') {
         const size_t slash = manifestPath.rfind('/');
         library = (slash == std::string::npos ? std::string(".") : manifestPath.substr(0, slash)) + "/" + library;
@@ -147,6 +223,19 @@ std::string resolveIcdLibrary(const std::string& manifestPath) {
     dlclose(handle);
     return resolved;
 }
+#endif
+
+/// `s` as a JSON string body ('\\' and '"' escaped).
+std::string jsonEscape(const std::string& s) {
+    std::string out;
+    for (const char c : s) {
+        if (c == '\\' || c == '"') {
+            out += '\\';
+        }
+        out += c;
+    }
+    return out;
+}
 
 /// Writes two ICD manifests for the same library under `dir` and points the loader at them.
 /// Returns 0, kSkip (library not resolvable) or 1 (write failure).
@@ -155,31 +244,36 @@ int registerIcdTwice(const std::string& dir) {
     if (icds == nullptr || icds[0] == '\0') {
         icds = std::getenv("VK_DRIVER_FILES");
     }
+#if defined(_WIN32)
+    // Windows: the system driver (no Lavapipe); its manifest comes from the display adapter's registry key.
+    std::string manifest = icds != nullptr && icds[0] != '\0' ? icds : systemIcdManifest();
+#else
     std::string manifest = icds != nullptr && icds[0] != '\0' ? icds : "/usr/share/vulkan/icd.d/lvp_icd.json";
-    manifest = manifest.substr(0, manifest.find(':'));
+#endif
+    manifest = manifest.substr(0, manifest.find(fuse::renderer::test::kLoaderListSeparator));
     const std::string library = resolveIcdLibrary(manifest);
     if (library.empty()) {
         std::printf("SKIP: cannot resolve the ICD library of %s\n", manifest.c_str());
         return kSkip;
     }
-    const size_t slash = library.rfind('/');
+    const size_t slash = library.find_last_of("\\/");
     // Same file, distinct path string: the loader registers a second ICD for it.
-    const std::string alias = library.substr(0, slash) + "/." + library.substr(slash);
+    const std::string alias = library.substr(0, slash + 1) + "." + library.substr(slash);
     const std::string paths[2] = {library, alias};
     std::string list;
     for (int i = 0; i < 2; ++i) {
         const std::string path = dir + "/fuse_spoof_icd_" + std::to_string(i) + ".json";
         std::ofstream out(path);
-        out << "{\n    \"file_format_version\": \"1.0.1\",\n    \"ICD\": {\n        \"library_path\": \"" << paths[i]
-            << "\",\n        \"api_version\": \"1.3.0\"\n    }\n}\n";
+        out << "{\n    \"file_format_version\": \"1.0.1\",\n    \"ICD\": {\n        \"library_path\": \""
+            << jsonEscape(paths[i]) << "\",\n        \"api_version\": \"1.3.0\"\n    }\n}\n";
         if (!out) {
             std::fprintf(stderr, "FAIL: cannot write %s\n", path.c_str());
             return 1;
         }
-        list += (i == 0 ? "" : ":") + path;
+        fuse::renderer::test::appendLoaderList(list, path);
     }
-    setenv("VK_ICD_FILENAMES", list.c_str(), 1);
-    unsetenv("VK_DRIVER_FILES");
+    setEnv("VK_ICD_FILENAMES", list.c_str());
+    unsetEnv("VK_DRIVER_FILES");
     std::printf("ICD %s registered twice (%s)\n", library.c_str(), list.c_str());
     return 0;
 }
@@ -345,7 +439,7 @@ bool exerciseDevice(const fuse::renderer::VulkanDevice& device, u32 pattern) {
 
 /// One fresh instance under `scenario.spec`. Returns false when the instance could not be created.
 bool runScenario(const Scenario& scenario, bool validation, u32 index) {
-    setenv("FUSE_MULTI_GPU_SPEC", scenario.spec, 1);
+    setEnv("FUSE_MULTI_GPU_SPEC", scenario.spec);
     const u32 messagesBefore = g_messages;
     std::printf("[%s] %s%s\n", scenario.spec, scenario.what, scenario.preferDiscrete ? "" : " (preferDiscreteGpu = false)");
 
@@ -431,25 +525,20 @@ int run(const char* layerDir) {
     if (const int status = registerIcdTwice(layerDir); status != 0) {
         return status;
     }
-    std::string path = layerDir;
-    const char* existing = std::getenv("VK_ADD_LAYER_PATH");
-    if (existing != nullptr && existing[0] != '\0') {
-        path += ":";
-        path += existing;
-    }
-    setenv("VK_ADD_LAYER_PATH", path.c_str(), 1);
+    const std::string path = fuse::renderer::test::prependEnvList("VK_ADD_LAYER_PATH", layerDir);
+    setEnv("VK_ADD_LAYER_PATH", path.c_str());
     // Mesa's implicit VK_LAYER_MESA_device_select sits above the spoof layer and re-sorts the
     // devices it sees (CPU devices last, its own "default" first), which would undo the spec's
     // enumeration order: the gate is about the RHI's policy, so switch it off.
-    setenv("NODEVICE_SELECT", "1", 1);
+    setEnv("NODEVICE_SELECT", "1");
     const bool validation = layerAvailable(kValidationLayer);
-    std::string layers = validation ? std::string(kValidationLayer) + ":" : std::string();
-    layers += kSpoofLayer; // application -> driver order: validation sees the spoofed devices
-    setenv("VK_INSTANCE_LAYERS", layers.c_str(), 1);
+    std::string layers = validation ? std::string(kValidationLayer) : std::string();
+    // Application -> driver order: validation sees the spoofed devices.
+    fuse::renderer::test::appendLoaderList(layers, kSpoofLayer);
+    setEnv("VK_INSTANCE_LAYERS", layers.c_str());
     if (validation) {
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
-        setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
+        setEnv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK");
     } else {
         std::printf("note: %s not installed — running without validation\n", kValidationLayer);
     }
@@ -508,7 +597,7 @@ int run(const char* layerDir) {
     return 0;
 }
 
-#endif // FUSE_VULKAN_BACKEND && __linux__
+#endif // FUSE_VULKAN_BACKEND && FUSE_B2_SPOOF_HOST
 
 } // namespace
 
@@ -516,7 +605,7 @@ int main(int argc, char** argv) {
     if (const int deviceIndexRc = testDeviceIndexOk()) {
         return deviceIndexRc;
     }
-#if defined(FUSE_VULKAN_BACKEND) && defined(__linux__)
+#if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_B2_SPOOF_HOST)
     const char* layerDir = nullptr;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--layer-dir") == 0 && i + 1 < argc) {
@@ -527,7 +616,7 @@ int main(int argc, char** argv) {
 #else
     (void)argc;
     (void)argv;
-    std::printf("SKIP: needs the Vulkan backend on Linux (ICD registered twice + spoof layer)\n");
+    std::printf("SKIP: needs the Vulkan backend on Linux or Windows (ICD registered twice + spoof layer)\n");
     return kSkip;
 #endif
 }

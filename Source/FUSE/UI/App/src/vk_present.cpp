@@ -38,6 +38,21 @@ typedef unsigned long VisualID;
 #include <vulkan/vulkan_xlib.h>
 #define FUSE_APP_VK_SURFACE_EXT VK_KHR_XLIB_SURFACE_EXTENSION_NAME
 #define FUSE_APP_VK_XLIB 1
+// VK_KHR_wayland_surface (the Wayland backend, SurfaceSource::Wayland), written out so that neither vulkan_wayland.h
+// nor the Wayland headers are needed: the create info only carries the two opaque pointers.
+struct wl_display;
+struct wl_surface;
+namespace {
+constexpr const char* kWaylandSurfaceExt = "VK_KHR_wayland_surface";
+struct WaylandSurfaceCreateInfo { // VkWaylandSurfaceCreateInfoKHR
+    VkStructureType sType;
+    const void* pNext;
+    VkFlags flags;
+    wl_display* display;
+    wl_surface* surface;
+};
+using CreateWaylandSurfaceFn = VkResult(VKAPI_PTR*)(VkInstance, const WaylandSurfaceCreateInfo*, const VkAllocationCallbacks*, VkSurfaceKHR*);
+} // namespace
 #endif
 
 #if defined(FUSE_HAS_VULKAN_RHI)
@@ -102,8 +117,9 @@ struct Khr {
     PFN_vkCreateMetalSurfaceEXT CreateMetalSurfaceEXT = nullptr;
 #else
     PFN_vkCreateXlibSurfaceKHR CreateXlibSurfaceKHR = nullptr;
+    CreateWaylandSurfaceFn CreateWaylandSurfaceKHR = nullptr;
 #endif
-    bool load(VkInstance inst) {
+    bool load(VkInstance inst, [[maybe_unused]] SurfaceSource::Kind kind) {
         bool all = true;
         auto get = [&](auto& fn, const char* name) {
             fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(vkGetInstanceProcAddr(inst, name));
@@ -126,7 +142,9 @@ struct Khr {
 #elif defined(__APPLE__)
         get(CreateMetalSurfaceEXT, "vkCreateMetalSurfaceEXT");
 #else
-        get(CreateXlibSurfaceKHR, "vkCreateXlibSurfaceKHR");
+        // only the window system in use: an instance made for one has no entry point of the other
+        if (kind == SurfaceSource::Wayland) get(CreateWaylandSurfaceKHR, "vkCreateWaylandSurfaceKHR");
+        else get(CreateXlibSurfaceKHR, "vkCreateXlibSurfaceKHR");
 #endif
         return all;
     }
@@ -171,6 +189,9 @@ VkCtx* vkCtxCreate(SurfaceSource::Kind kind, std::string& err) {
 #endif
     };
     u32 extCount = 2;
+#if defined(FUSE_APP_VK_XLIB)
+    if (kind == SurfaceSource::Wayland) exts[1] = kWaylandSurfaceExt;
+#endif
 #if defined(__APPLE__) && defined(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)
     bool portability = false;
     {
@@ -200,7 +221,7 @@ VkCtx* vkCtxCreate(SurfaceSource::Kind kind, std::string& err) {
         return nullptr;
     }
     FUSE_APP_VOLK(fuse::renderer::vkloader::registerInstance(c->instance));
-    if (!K.load(c->instance)) {
+    if (!K.load(c->instance, kind)) {
         err = "the Vulkan loader lacks the surface / swapchain entry points";
         FUSE_APP_VOLK(fuse::renderer::vkloader::unregisterInstance(c->instance));
         vkDestroyInstance(c->instance, nullptr);
@@ -224,7 +245,7 @@ VkCtx* vkCtxAdopt(SurfaceSource::Kind kind, const VulkanDeviceHandles& h, std::s
     c->queue = static_cast<VkQueue>(h.queue);
     c->family = h.queueFamily;
     // the owner registered both with the loader (fuse_rhi's VulkanInstance / VulkanDevice); entry points are loaded
-    if (!K.load(c->instance)) {
+    if (!K.load(c->instance, kind)) {
         err = "the adopted instance lacks the surface / swapchain entry points";
         delete c;
         return nullptr;
@@ -549,11 +570,20 @@ VkWin* vkWinCreate(VkCtx* c, const SurfaceSource& s, const NativeOptions& o, std
     si.pLayer = static_cast<const CAMetalLayer*>(s.metalLayer);
     const VkResult sr = K.CreateMetalSurfaceEXT(c->instance, &si, nullptr, &w->surface);
 #else
-    VkXlibSurfaceCreateInfoKHR si{};
-    si.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-    si.dpy = static_cast<Display*>(s.display);
-    si.window = s.xwindow;
-    const VkResult sr = K.CreateXlibSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+    VkResult sr = VK_ERROR_INITIALIZATION_FAILED;
+    if (s.kind == SurfaceSource::Wayland && K.CreateWaylandSurfaceKHR) {
+        WaylandSurfaceCreateInfo si{};
+        si.sType = VkStructureType(1000006000); // VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR
+        si.display = static_cast<wl_display*>(s.wlDisplay);
+        si.surface = static_cast<wl_surface*>(s.wlSurface);
+        sr = K.CreateWaylandSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+    } else if (s.kind == SurfaceSource::Xlib && K.CreateXlibSurfaceKHR) {
+        VkXlibSurfaceCreateInfoKHR si{};
+        si.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+        si.dpy = static_cast<Display*>(s.display);
+        si.window = s.xwindow;
+        sr = K.CreateXlibSurfaceKHR(c->instance, &si, nullptr, &w->surface);
+    }
 #endif
     if (!ok(sr, "vkCreate*SurfaceKHR", err)) {
         delete w;

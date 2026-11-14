@@ -1,0 +1,54 @@
+{
+  "schema": "fuse.remaster.remix-ingest-expected/1",
+  "assets": [
+  {
+    "first_key" : "remix.light:11CE000000000001",
+    "keys" : 
+    {
+      "remix.light" : "11CE000000000001"
+    },
+    "kind" : "light",
+    "oaid" : "08dad2f4-93a8-5a12-bfd4-412df3bb3c39"
+  },
+  {
+    "first_key" : "remix.tex:7E7E000000000001",
+    "keys" : 
+    {
+      "fuse.capture.sha256" : "8e6950abeb9ff3c9d336d639435f50059613d529acb5ce1aee9bc5f88af17011",
+      "remix.tex" : "7E7E000000000001"
+    },
+    "kind" : "texture",
+    "oaid" : "0edec839-16e2-58da-961f-23db711446b0"
+  },
+  {
+    "first_key" : "remix.geom.asset:5EED000000000001",
+    "keys" : 
+    {
+      "fuse.capture.sha256" : "7e5edef0214625fd6f63dac2f5fcb5f02749095994e49ae0cb1c61d48c55b6f7",
+      "remix.geom.asset" : "5EED000000000001"
+    },
+    "kind" : "mesh",
+    "oaid" : "2ae1accb-2667-59c2-a672-9aa45055ef48"
+  },
+  {
+    "first_key" : "remix.geom.asset:5EED000000000002",
+    "keys" : 
+    {
+      "fuse.capture.sha256" : "c9b4d3cefa3e080c58d3bb85e27c5d559289949d8a7e62c5e49b878d57fe5757",
+      "remix.geom.asset" : "5EED000000000002"
+    },
+    "kind" : "mesh",
+    "oaid" : "a6361a4d-0236-50b3-9d81-47ba8d60ab36"
+  },
+  {
+    "first_key" : "remix.tex:7E7E000000000002",
+    "keys" : 
+    {
+      "fuse.capture.sha256" : "fa575cb5c8b7150eeb43d8cff050c16caf76698fae779955a84b7ca6fe91b857",
+      "remix.tex" : "7E7E000000000002"
+    },
+    "kind" : "texture",
+    "oaid" : "df895f81-b16b-5153-937f-21d591fb052c"
+  }
+]
+}

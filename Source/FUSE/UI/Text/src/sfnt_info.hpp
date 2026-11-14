@@ -21,6 +21,13 @@ struct FaceInfo {
     bool hasPost = false, hasStrike = false;
     int underlinePosition = 0, underlineThickness = 0; ///< font units, y up
     int strikePosition = 0, strikeSize = 0;
+    std::string fullName;                ///< name ID 4
+    int stretch = 5;                     ///< OS/2 usWidthClass (5 = normal)
+    std::uint32_t unicodeRanges[4] = {}; ///< OS/2 ulUnicodeRange1..4
+    bool hasCmap = false;
+    /// (offset, length) of the tables the installed-font scan reads on demand (0: absent).
+    std::uint32_t nameOffset = 0, nameLength = 0, fvarOffset = 0, fvarLength = 0, statOffset = 0, statLength = 0;
+    std::uint32_t cmapOffset = 0, cmapLength = 0;
 };
 
 /// Number of faces in the file: 1 for .ttf / .otf, n for a .ttc collection, 0 when it is not an sfnt font.

@@ -36,6 +36,12 @@ private:
     void buildNavigation_(NodeHandle page);
     void syncNavigation_();
     void buildTerrain_(NodeHandle page);
+    void buildLighting_(NodeHandle page);
+    void syncLighting_();
+    NodeHandle m_ltSunLabel{}, m_ltAddSun{}, m_ltElev{}, m_ltAzim{}, m_ltSunInt{}, m_ltSunColor{};
+    NodeHandle m_ltAddAmb{}, m_ltAmbInt{}, m_ltAmbColor{}, m_ltAddFog{}, m_ltFogDensity{}, m_ltFogDist{}, m_ltFogColor{};
+    std::string m_ltKey;
+    bool m_ltUpdating = false;
     void syncTerrain_();
     NodeHandle m_trCells{}, m_trSize{}, m_trHeight{}, m_trSeed{}, m_trMode{}, m_trRadius{}, m_trStrength{}, m_trSculpt{}, m_trStatus{};
     std::string m_trKey;
@@ -68,6 +74,9 @@ private:
     bool within_(NodeHandle n, NodeHandle ancestor) const;
     std::string m_assetKey;
 
+    NodeHandle m_matName{}, m_matPreset{}, m_matUsage{}, m_matUsers{};
+    NodeHandle m_tlLane{}, m_tlInterp{}, m_tlTanIn{}, m_tlTanOut{}, m_tlCurve{}, m_tlKeyInfo{};
+    std::string m_tlCurveKey;
     NodeHandle m_matList, m_matPreview, m_matColor, m_matRough, m_matMetal, m_matShader, m_matTexture, m_matUv, m_matAssign, m_matSummary;
     fuse::ui::Image m_previewImg;
     u32 m_previewIndex = 0;
@@ -78,6 +87,25 @@ private:
 
     NodeHandle m_prSummary, m_prChart, m_prPause;
     u32 m_prSeen = ~0u;
+    // flame graph view (Qt profiler flame graph widget)
+    NodeHandle m_prView{}, m_prFlame{}, m_prFlameInfo{};
+    std::vector<NodeHandle> m_prBars; ///< bar node per FlameView::bars entry ({} when too narrow to draw)
+    std::string m_prFlameKey;
+    i32 m_prFlameSel = -1;
+    u32 m_prFlameTick = 0;
+    SceneViewportGpuTimings m_gpuTimings; ///< scratch for SceneViewportHost::pollGpuTimings
+    void syncFlame_();
+    void flameInfo_(i32 bar);
+
+public:
+    /// Profiler view: 0 chart, 1 flame graph.
+    void setProfilerView(u32 view);
+    [[nodiscard]] u32 profilerView() const;
+    /// Flame bar node of FlameView::bars[i] (gates); {} when not drawn.
+    [[nodiscard]] NodeHandle flameBar(u32 i) const { return i < m_prBars.size() ? m_prBars[i] : NodeHandle{}; }
+    [[nodiscard]] i32 flameSelected() const { return m_prFlameSel; }
+
+private:
 
     NodeHandle m_sqLink, m_sqScrub, m_sqPreview;
     std::string m_sqKey;
@@ -87,6 +115,9 @@ private:
 
     NodeHandle m_tlBox, m_tlWidget, m_tlPlay, m_tlTime, m_tlLength, m_tlStatus;
     NodeHandle m_tlLoop{}, m_tlSnap{};
+    i32 m_tlDragFromMs = -1; ///< key drag: the key's time at press (-1 = no drag)
+    void timelineDragEvent_(u32 phase);
+    void timelineKeyMoved_(); ///< Ctrl+Left / Right on the selected clip
     std::string m_tlKey;
 };
 

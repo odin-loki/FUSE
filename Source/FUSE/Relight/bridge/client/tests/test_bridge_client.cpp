@@ -3,7 +3,7 @@
 //
 // Portable (Linux + Windows): D3DFORMAT layout, DirectInput -> window-message translation
 // (the di_hook semantics), schema shapes the client relies on.
-// Windows (MinGW, run under Wine): cross-architecture wire forms of the D3D structures, shadow
+// Windows with the client objects (MinGW, run under Wine): cross-architecture wire forms of the D3D structures, shadow
 // device-state defaults and state-block masks, the import-table hook and the Win32 input hooks
 // while the renderer UI is active, window subclassing (forwarding, swallowing, the game
 // re-subclassing below the bridge), DirectInput vtable hooks on a real Wine dinput8 device.
@@ -18,7 +18,7 @@
 #include <cstring>
 #include <vector>
 
-#if defined(_WIN32)
+#if defined(FUSE_RELIGHT_BRIDGE_CLIENT_OBJ)
 #include "../src/device_state.hpp"
 #include "../src/window.hpp"
 #define DIRECTINPUT_VERSION 0x0800
@@ -220,7 +220,7 @@ void testSchemaShapes() {
     CHECK(client::wire::handleFromWire<void*>(0xFFFFFFFEu) == reinterpret_cast<void*>(intptr_t(-2)));
 }
 
-#if defined(_WIN32)
+#if defined(FUSE_RELIGHT_BRIDGE_CLIENT_OBJ)
 
 void testWireForms() {
     namespace wire = client::wire;
@@ -415,7 +415,7 @@ void testWindowAndHooks() {
     client::setMessageSinkForTest(nullptr);
 }
 
-#endif  // _WIN32
+#endif  // FUSE_RELIGHT_BRIDGE_CLIENT_OBJ
 
 }  // namespace
 
@@ -424,7 +424,7 @@ int main() {
     testFormatLayout();
     testInputTranslator();
     testSchemaShapes();
-#if defined(_WIN32)
+#if defined(FUSE_RELIGHT_BRIDGE_CLIENT_OBJ)
     testWireForms();
     testStateBlocks();
     testWindowAndHooks();

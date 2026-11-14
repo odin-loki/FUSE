@@ -156,7 +156,6 @@ def cmd_validation(raster, tools, args):
     common = {
         "VK_INSTANCE_LAYERS": "VK_LAYER_KHRONOS_validation",
         "VK_KHRONOS_VALIDATION_REPORT_FLAGS": "error,warn",
-        "VK_LAYER_ENABLES": "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT",
         "VK_KHRONOS_VALIDATION_VALIDATE_SYNC": "true",
         "DXVK_LOG_LEVEL": "info",
         "FUSE_RELIGHT_VK_VALIDATION": "1",
@@ -212,7 +211,7 @@ def main():
     p.add_argument("cmd", choices=["frame", "determinism", "validation"])
     p.add_argument("--out", required=True)
     args = p.parse_args()
-    if not shutil.which("wine") and not shutil.which("wine64"):
+    if not os.environ.get("FUSE_WINE") and not shutil.which("wine") and not shutil.which("wine64"):
         print("SKIP: wine not installed")
         return SKIP
     raster = base.load(args.raster_tools, "rl_raster_run")

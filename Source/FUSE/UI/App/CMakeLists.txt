@@ -1,5 +1,5 @@
 # fuse_app (plan UI5): application shell for UI-only projects + samples.
-add_library(fuse_app STATIC src/app.cpp src/services.cpp)
+add_library(fuse_app STATIC src/app.cpp src/services.cpp src/platform_services.cpp src/chrome.cpp)
 target_include_directories(fuse_app PUBLIC include PRIVATE ${FUSE_UI_REPO_ROOT}/vendor/stb)
 target_link_libraries(fuse_app PUBLIC fuse_ui_doc)
 if(WIN32 OR MINGW)
@@ -8,6 +8,7 @@ endif()
 
 # fuse_app_native: real OS windows + the Vulkan swapchain presenter. One window backend per platform:
 #   Win32 / X11 (libX11 loaded at runtime)   src/native.cpp
+#   Wayland (libwayland-client at runtime)   src/native_wayland.cpp, src/native_wayland_platform.cpp (with X11)
 #   Android (NativeActivity + app glue)      src/native_android.cpp, src/entry_android.cpp
 #   macOS (Cocoa) / iOS (UIKit)              src/native_apple.mm (+ src/entry_ios.mm)
 if(ANDROID)
@@ -22,6 +23,13 @@ elseif(APPLE)
     set_target_properties(fuse_app_native PROPERTIES OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED ON OBJCXX_EXTENSIONS OFF)
 else()
     add_library(fuse_app_native STATIC src/native.cpp)
+    if(NOT WIN32 AND NOT MINGW)
+        # the Wayland backend next to X11 (Linux / BSD), chosen at run time; libwayland-client, libxkbcommon and
+        # libwayland-cursor are dlopen'd, no Wayland headers or libraries at build time
+        target_sources(fuse_app_native PRIVATE src/native_wayland.cpp src/native_wayland_platform.cpp)
+        find_package(Threads REQUIRED) # a selection paste is written to its pipe on a thread
+        target_link_libraries(fuse_app_native PRIVATE Threads::Threads)
+    endif()
 endif()
 target_sources(fuse_app_native PRIVATE src/native_common.cpp)
 target_link_libraries(fuse_app_native PUBLIC fuse_app)
@@ -37,7 +45,7 @@ else()
     target_sources(fuse_app_native PRIVATE src/vk_stub.cpp) # CPU raster presenters only
 endif()
 if(WIN32 OR MINGW)
-    target_link_libraries(fuse_app_native PRIVATE user32 gdi32 advapi32 shell32 comdlg32 ole32)
+    target_link_libraries(fuse_app_native PRIVATE user32 gdi32 advapi32 shell32 comdlg32 ole32 uuid)
 elseif(ANDROID)
     # android_native_app_glue ships with the NDK as source. NativeActivity looks ANativeActivity_onCreate up by name
     # in the app's shared library: fuse_app_add_executable keeps the symbol (-u).
@@ -141,4 +149,22 @@ if(FUSE_BUILD_APP_SAMPLES)
             target_compile_definitions(${s} PRIVATE FUSE_APP_SAMPLE_UI_DIR="${CMAKE_CURRENT_SOURCE_DIR}/samples/ui")
         endif()
     endforeach()
+endif()
+
+# fuse_app_project (in tree only: needs fuse_project and fuse_core): project.json schema 2 `kind: app` / `hybrid`
+# projects through the minimal init path (fuse::app::ProjectHost, include/fuse/app/project_host.hpp), and the runners.
+if(TARGET fuse_project AND TARGET fuse_core)
+    add_library(fuse_app_project STATIC src/project_host.cpp)
+    target_link_libraries(fuse_app_project PUBLIC fuse_app_native fuse_project PRIVATE fuse_core)
+    # fuse_app_host <project>: app projects; no engine game side linked
+    add_executable(fuse_app_host samples/app_host.cpp)
+    target_link_libraries(fuse_app_host PRIVATE fuse_app_project)
+    # the engine game side for hybrid projects (composer, worlds, physics): only hosts that run hybrids link it
+    if(TARGET fuse_hybrid)
+        add_library(fuse_app_project_hybrid STATIC src/project_host_hybrid.cpp)
+        target_link_libraries(fuse_app_project_hybrid PUBLIC fuse_app_project fuse_hybrid)
+        add_executable(fuse_hybrid_host samples/app_host.cpp)
+        target_link_libraries(fuse_hybrid_host PRIVATE fuse_app_project_hybrid)
+        target_compile_definitions(fuse_hybrid_host PRIVATE FUSE_APP_HOST_HYBRID=1)
+    endif()
 endif()

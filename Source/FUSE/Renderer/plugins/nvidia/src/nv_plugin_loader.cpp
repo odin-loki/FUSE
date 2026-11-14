@@ -34,10 +34,17 @@ void* open_library(const std::string& path, std::string& error) {
     const std::wstring wide = fs::path(path).wstring();
     // Search the provider's own directory for its dependencies (sl.interposer.dll, nvngx_*.dll),
     // never the CWD / PATH first.
+    // No modal "Bad Image" hard-error box for a file that is not a valid PE image (it would block until clicked).
+    DWORD old_mode = 0;
+    const BOOL mode_set = SetThreadErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX, &old_mode);
     HMODULE h = LoadLibraryExW(wide.c_str(), nullptr,
                                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+    const DWORD load_error = GetLastError();
+    if (mode_set) {
+        SetThreadErrorMode(old_mode, nullptr);
+    }
     if (!h) {
-        error = "LoadLibraryExW failed, GetLastError=" + std::to_string(GetLastError());
+        error = "LoadLibraryExW failed, GetLastError=" + std::to_string(load_error);
     }
     return reinterpret_cast<void*>(h);
 #else

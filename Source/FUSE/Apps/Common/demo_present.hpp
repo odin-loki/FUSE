@@ -17,7 +17,8 @@ bool requestedFromArgv(int argc, char** argv);
 /// X11 display + GameWindow backend available (Xvfb on CI).
 [[nodiscard]] bool gameWindowPresentAvailable();
 
-/// Configure bootstrap for `PresentableBackend::GameWindow` (follow swapchain size).
+/// Configure bootstrap for `PresentableBackend::GameWindow` (follow swapchain size; presentReadback on, so the
+/// presented frames are read back like headless ones).
 void applyGameWindowToBootstrapDesc(fuse::hybrid::HybridRendererBootstrapDesc& desc, u32 width, u32 height,
                                     const char* windowTitle);
 

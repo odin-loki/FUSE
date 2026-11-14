@@ -82,7 +82,7 @@ set(_fuse_wp92_header "${_fuse_wp92_gen}/gsplat_spv.h")
 add_custom_target(fuse_gsplat_kernels)
 set(_fuse_wp92_embed_args "")
 set(_fuse_wp92_embed_deps "")
-file(GLOB _fuse_wp92_glsl_includes "${_fuse_wp92_shd}/*.glsl")
+file(GLOB _fuse_wp92_glsl_includes "${_fuse_wp92_shd}/*.glsl" "${_fuse_wp92_root}/shaders/common/exact_math.glsl")
 
 foreach(_row IN LISTS _fuse_wp92_kernels)
     string(REPLACE "|" ";" _entry "${_row}")
@@ -156,7 +156,7 @@ target_link_libraries(fuse_rp_gsplat PRIVATE fuse_gsplat)
 fuse_apply_cxx23(fuse_rp_gsplat)
 
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-set(_fuse_wp92_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+set(_fuse_wp92_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 set(_fuse_wp92_vk_tests "")
 foreach(_case "passes;set" "passes;buffer" "composite;set" "determinism;set" "zero_alloc;set")
     list(GET _case 0 _mode)
@@ -164,14 +164,14 @@ foreach(_case "passes;set" "passes;buffer" "composite;set" "determinism;set" "ze
     set(_name "fuse_rp_gsplat_vk_${_mode}_${_backend}")
     if(FUSE_VULKAN_BACKEND)
         add_test(NAME ${_name}
-                 COMMAND "${_fuse_wp92_lock}" "$<TARGET_FILE:fuse_rp_gsplat>" --mode ${_mode} --backend ${_backend})
+                 COMMAND ${_fuse_wp92_lock} "$<TARGET_FILE:fuse_rp_gsplat>" --mode ${_mode} --backend ${_backend})
     else()
         add_test(NAME ${_name} COMMAND fuse_rp_gsplat --mode ${_mode} --backend ${_backend})
     endif()
     list(APPEND _fuse_wp92_vk_tests ${_name})
 endforeach()
 set_tests_properties(${_fuse_wp92_vk_tests} PROPERTIES
-    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
     TIMEOUT 900

@@ -355,14 +355,73 @@ bool HybridSceneRenderer::addUi(const SpriteQuad& quad) {
 rg::TextureRef HybridSceneRenderer::recordUi(rg::Graph& graph, const fr::FrameUiContext& context, void* user) {
     HybridSceneRenderer& self = *static_cast<HybridSceneRenderer*>(user);
     const u32 count = self.m_spriteCount + self.m_uiCount;
-    if (count == 0u || !self.m_sprites.valid()) {
+    const bool overlay = self.m_uiOverlay.record != nullptr;
+    if ((count == 0u && !overlay) || !self.m_sprites.valid()) {
         return {};
     }
     for (u32 i = 0; i < self.m_uiCount; ++i) {
         self.m_overlay[self.m_spriteCount + i] = self.m_uiScratch[i];
     }
-    self.m_sprites.beginFrame(context.serial);
-    return self.m_sprites.addPass(graph, self.m_overlay.data(), count, context.width, context.height);
+    rg::TextureRef sprites;
+    if (count != 0u) {
+        self.m_sprites.beginFrame(context.serial);
+        sprites = self.m_sprites.addPass(graph, self.m_overlay.data(), count, context.width, context.height);
+    }
+    return overlay ? self.recordOverlay(graph, sprites, context) : sprites;
+}
+
+rg::TextureRef HybridSceneRenderer::recordOverlay(rg::Graph& graph, rg::TextureRef sprites,
+                                                  const fr::FrameUiContext& context) {
+    // The UI kernel blends onto RGBA8, the sprite layer is RGBA16F: convert it with a same-extent (nearest, per-texel)
+    // blit, or clear the target when there are no sprites, then let the overlay draw over it.
+    rg::ImageDesc d{};
+    d.width = context.width;
+    d.height = context.height;
+    d.format = kRgba8;
+    d.name = "hybrid.ui_overlay";
+    m_overlayRecord = OverlayRecord{sprites, graph.createImage(d), context.width, context.height};
+    if (sprites.valid()) {
+        graph.addPass("hybrid.ui_overlay.blit", &HybridSceneRenderer::recordOverlayBlit, &m_overlayRecord)
+            .use(sprites, rg::Access::TransferSrc)
+            .use(m_overlayRecord.target, rg::Access::TransferDst);
+    } else {
+        graph.addPass("hybrid.ui_overlay.clear", &HybridSceneRenderer::recordOverlayClear, &m_overlayRecord)
+            .use(m_overlayRecord.target, rg::Access::TransferDst);
+    }
+    const rg::TextureRef out = m_uiOverlay.record(graph, m_overlayRecord.target, context, m_uiOverlay.user);
+    m_overlayRan = out.valid();
+    // A failed overlay still leaves the sprites on screen.
+    return out.valid() ? out : sprites;
+}
+
+void HybridSceneRenderer::recordOverlayBlit(const rg::PassContext& context, void* user) {
+#if defined(FUSE_VULKAN_BACKEND)
+    const OverlayRecord& r = *static_cast<const OverlayRecord*>(user);
+    VkImageBlit region{};
+    region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.srcOffsets[1] = {static_cast<s32>(r.width), static_cast<s32>(r.height), 1};
+    region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.dstOffsets[1] = region.srcOffsets[1];
+    vkCmdBlitImage(static_cast<VkCommandBuffer>(context.commandBuffer), static_cast<VkImage>(context.image(r.sprites)),
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, static_cast<VkImage>(context.image(r.target)),
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_NEAREST);
+#else
+    (void)context;
+    (void)user;
+#endif
+}
+
+void HybridSceneRenderer::recordOverlayClear(const rg::PassContext& context, void* user) {
+#if defined(FUSE_VULKAN_BACKEND)
+    const OverlayRecord& r = *static_cast<const OverlayRecord*>(user);
+    const VkClearColorValue zero{};
+    const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCmdClearColorImage(static_cast<VkCommandBuffer>(context.commandBuffer), static_cast<VkImage>(context.image(r.target)),
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
+#else
+    (void)context;
+    (void)user;
+#endif
 }
 
 void HybridSceneRenderer::setTextureLoader(TextureLoader loader) {
@@ -454,11 +513,41 @@ void HybridSceneRenderer::syncMaterials(const world3d::World3D& world) {
     m_materialVersion = world.materialVersion();
 }
 
+void HybridSceneRenderer::syncCookedMeshes(world3d::World3D& world) {
+#if defined(FUSE_HYBRID_HAS_COOKED_REGISTRY)
+    namespace ca = renderer::cooked_assets;
+    if (m_cooked == nullptr) {
+        return;
+    }
+    if (&world != m_cookedMeshWorld || world.cookedMeshVersion() != m_cookedMeshVersion) {
+        for (const world3d::World3DCookedMesh& cooked : world.cookedMeshes()) {
+            if (cooked.mesh == nullptr || m_cooked->meshEngineId(cooked.id) != ca::CookedAssetRegistry::kInvalid) {
+                continue;
+            }
+            std::string error;
+            if (m_cooked->addMesh(cooked.id, *cooked.mesh, &error) == ca::CookedAssetRegistry::kInvalid) {
+                std::fprintf(stderr, "HybridSceneRenderer: cooked mesh %s not uploaded: %s\n", cooked.path.c_str(),
+                             error.c_str());
+                continue;
+            }
+            ++m_cookedMeshUploads;
+        }
+        m_cookedMeshWorld = &world;
+        m_cookedMeshVersion = world.cookedMeshVersion();
+    }
+    // ecs::MeshAssets -> ecs::Mesh::vertex_buffer (engine id; invalid while the mesh is not uploaded).
+    (void)m_cooked->syncEntities(world.registry());
+#else
+    (void)world;
+#endif
+}
+
 bool HybridSceneRenderer::renderWorld3D(world3d::World3D& world, frame::FrameCtx& ctx) {
     if (!m_valid) {
         return false;
     }
     syncMaterials(world);
+    syncCookedMeshes(world);
     ecs::Registry& registry = world.registry();
     fr::FrameCamera camera{};
     const world3d::RenderCamera3D& wc = world.camera();
@@ -508,6 +597,7 @@ bool HybridSceneRenderer::renderRegistry(ecs::Registry& registry, const fr::Fram
     sfd.deltaSeconds = ctx.dt > 0.f ? ctx.dt : 1.f / 60.f;
     sfd.fallbackSun = m_fallbackSun;
     sfd.unlit = m_unlit;
+    m_overlayRan = false;
     m_outputs = m_scene->renderScene(registry, camera, m_graph, sfd);
     m_recorded = m_outputs.output.valid();
     m_stats = HybridSceneFrameStats{};
@@ -517,6 +607,7 @@ bool HybridSceneRenderer::renderRegistry(ecs::Registry& registry, const fr::Fram
     m_stats.instances = m_scene->scene().liveInstances();
     m_stats.lights = m_scene->lastFrame().extract.lights;
     m_stats.uiStageRan = (m_scene->composer().stats().ran & fr::kStageUi) != 0u;
+    m_stats.uiOverlayRan = m_overlayRan;
     return m_recorded;
 }
 
@@ -571,9 +662,35 @@ bool HybridSceneRenderer::execute(void* waitSemaphore, void* signalSemaphore, vo
         m_recorded = false;
         return false;
     }
-    const bool readback = swapchain == nullptr && m_readback.handle != nullptr;
+    const bool readback = m_readback.handle != nullptr && (swapchain == nullptr || m_desc.presentReadback);
     if (readback) {
         m_copy.src = targets.target;
+        if (swapchain != nullptr) {
+            // presentReadback: the same scene output also goes to the headless RGBA8 target (same-extent blit: an exact
+            // per-texel conversion, like the headless path), which is copied below. The swapchain image keeps its own
+            // format / extent and needs no TRANSFER_SRC usage.
+            renderer::PresentTargetDesc h{};
+            h.image = m_headless.image;
+            h.view = m_headless.view;
+            h.format = kRgba8;
+            h.width = m_width;
+            h.height = m_height;
+            h.layoutTracker = &m_headlessLayout;
+            h.queueTracker = &m_headlessQueue;
+            h.name = "hybrid.headless_target";
+            m_readbackBlit = renderer::PresentBlit{};
+            m_readbackBlit.source = m_outputs.output; // what addPresent blits (no frame-generation target here)
+            m_readbackBlit.sourceWidth = m_scene->composer().outputWidth();
+            m_readbackBlit.sourceHeight = m_scene->composer().outputHeight();
+            m_readbackBlit.target = renderer::importPresentTarget(m_graph, h);
+            m_readbackBlit.targetWidth = m_width;
+            m_readbackBlit.targetHeight = m_height;
+            if (!renderer::addPresentBlit(m_graph, m_readbackBlit)) {
+                m_recorded = false;
+                return false;
+            }
+            m_copy.src = m_readbackBlit.target;
+        }
         m_copy.dst = m_graph.importBuffer(
             rg::ImportedBuffer{m_readback.handle, m_readback.desc.size, rg::kNoQueue, nullptr, "hybrid.headless_readback"});
         m_copy.width = m_width;

@@ -1,13 +1,16 @@
 // WP-0.1 gate (docs/unification/RENDERER-EXECUTION.md): Vulkan 1.3 device + renderer tier detection.
 //
-//  * Lavapipe (mesh, AS, ray query, RT pipeline; no cooperative matrix) reports T2.
+//  * Lavapipe (mesh, AS, ray query, RT pipeline; no cooperative matrix) reports T2; other devices
+//    report their own tier (RTX-class GPUs: T3), probed unmasked first. Every expected tier below is
+//    an upper bound on that native tier.
 //  * FUSE_RENDER_TIER_MAX / VulkanDeviceDesc::maxTier cap the tier and keep higher-tier features
 //    off; VK_LAYER_FUSE_mask_features (tests/vk_layer_mask_features.cpp, loaded *below*
 //    VK_LAYER_KHRONOS_validation) hides extensions / feature bits so the hardware tier drops to T1
 //    or T0, and a missing T0 requirement rejects the device (FUSE_VK_ALLOW_1_2 escape accepted).
 //  * Selection policy: the Lavapipe ICD is registered twice (two real devices, as in
 //    test_b2_physical_device_selection) and masked per device: a device missing a T0 requirement
-//    loses, a higher (capped) tier wins among equal device types.
+//    loses, a higher (capped) tier wins among equal device types. Linux only; native Windows runs
+//    the single-device mask scenarios.
 //  * Query back: the mask layer records the VkDeviceCreateInfo that reaches the driver; every
 //    RendererCaps bit must match the feature bit actually passed down (and the extension list).
 //  * Enabled features work: sync2 barriers + vkQueueSubmit2, dynamic-rendering clear, BDA query,
@@ -27,6 +30,8 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 #if defined(__linux__)
@@ -35,7 +40,17 @@
 #include <fstream>
 #include <link.h>
 #include <sstream>
+#elif defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
+#include <optional>
 
 namespace {
 
@@ -137,12 +152,26 @@ void checkTierLogic() {
 
 #if defined(FUSE_VULKAN_BACKEND) && (defined(__linux__) || defined(_WIN32))
 
-#if defined(__linux__)
-constexpr bool kMaskLayerAvailable = true;
+// Which scenario groups can run. Linux: the mask layer and the Lavapipe ICD registered twice (two
+// real devices) — everything. Native Windows with --layer-dir: the mask layer, one device (the
+// selection scenarios need the second ICD registration, Linux-only). Windows PE under Wine (Relight
+// RL-0.7, no --layer-dir; Wine's vulkan-1.dll loads no layers): only the unmasked scenarios (tier
+// report, tier caps, optional features, feature exercise).
+bool g_maskLayer = false;
+bool g_twoDevices = false;
+
+// The unmasked device's own tier and cooperative-matrix support. Scenarios that do not mask the
+// tier down expect this (Lavapipe: T2, no cooperative matrix; an RTX-class GPU: T3).
+RenderTier g_nativeTier = RenderTier::T2;
+bool g_nativeCooperativeMatrix = false;
+
+#if defined(_WIN32)
+constexpr const char* kListSeparator = ";"; ///< loader list variables (VK_ADD_LAYER_PATH, VK_INSTANCE_LAYERS)
 #else
-// Windows PE (Relight RL-0.7: Wine + Lavapipe): the mask layer and the second ICD are Linux-only, so
-// only the unmasked scenarios run (tier report, tier caps, optional features, feature exercise).
-constexpr bool kMaskLayerAvailable = false;
+constexpr const char* kListSeparator = ":";
+#endif
+
+#if !defined(__linux__)
 int setenv(const char* name, const char* value, int /*overwrite*/) {
     return _putenv_s(name, value);
 }
@@ -263,7 +292,6 @@ struct DeviceCreateRecord {
     bool hasFeature(const char* name) const { return contains(features, name); }
 };
 
-#if defined(__linux__)
 std::vector<std::string> splitList(const std::string& text) {
     std::vector<std::string> out;
     size_t start = 0;
@@ -279,28 +307,43 @@ std::vector<std::string> splitList(const std::string& text) {
     }
     return out;
 }
-#endif
+
+/// Parses "ext=<a>,<b>;feat=<x>,<y>" from fuseMaskFeaturesLastDeviceCreate.
+void parseRecord(const char* raw, DeviceCreateRecord& record) {
+    if (raw == nullptr) {
+        return;
+    }
+    const std::string text = raw;
+    const size_t semi = text.find(';');
+    if (text.rfind("ext=", 0) == 0 && semi != std::string::npos && text.compare(semi + 1, 5, "feat=") == 0) {
+        record.extensions = splitList(text.substr(4, semi - 4));
+        record.features = splitList(text.substr(semi + 6));
+        record.valid = true;
+    }
+}
 
 /// Reads the record from the mask layer instance the loader has loaded (instance must be alive).
 DeviceCreateRecord lastDeviceCreate() {
     DeviceCreateRecord record{};
+    using Fn = const char* (*)();
 #if defined(__linux__)
     void* handle = dlopen(g_layerLibrary.c_str(), RTLD_NOW | RTLD_NOLOAD);
     if (handle == nullptr) {
         return record;
     }
-    using Fn = const char* (*)();
-    auto fn = reinterpret_cast<Fn>(dlsym(handle, "fuseMaskFeaturesLastDeviceCreate"));
-    if (fn != nullptr) {
-        const std::string text = fn();
-        const size_t semi = text.find(';');
-        if (text.rfind("ext=", 0) == 0 && semi != std::string::npos && text.compare(semi + 1, 5, "feat=") == 0) {
-            record.extensions = splitList(text.substr(4, semi - 4));
-            record.features = splitList(text.substr(semi + 6));
-            record.valid = true;
-        }
+    if (auto fn = reinterpret_cast<Fn>(dlsym(handle, "fuseMaskFeaturesLastDeviceCreate")); fn != nullptr) {
+        parseRecord(fn(), record);
     }
     dlclose(handle);
+#elif defined(_WIN32)
+    // Already loaded by the loader: look it up without taking a reference.
+    HMODULE module = g_layerLibrary.empty() ? nullptr : GetModuleHandleA(g_layerLibrary.c_str());
+    if (module == nullptr) {
+        return record;
+    }
+    if (auto fn = reinterpret_cast<Fn>(reinterpret_cast<void*>(GetProcAddress(module, "fuseMaskFeaturesLastDeviceCreate"))); fn != nullptr) {
+        parseRecord(fn(), record);
+    }
 #endif
     return record;
 }
@@ -537,8 +580,10 @@ struct Scenario {
     bool allow12Env = false;        ///< FUSE_VK_ALLOW_1_2=1
     VulkanDeviceDesc desc{};
     int expectIndex = 0;            ///< -1 = creation must fail
-    RenderTier expectTier = RenderTier::T2;
-    RenderTier expectHardwareTier = RenderTier::T2;
+    /// Both tiers are upper bounds on the device's native tier (nullopt = the native tier itself):
+    /// a cap or a mask can only lower it. Lavapipe's native tier is T2, an RTX-class GPU's T3.
+    std::optional<RenderTier> expectTier{};
+    std::optional<RenderTier> expectHardwareTier{};
     bool expectMeetsT0 = true;
     std::vector<RenderFeature> mustHave{};
     std::vector<RenderFeature> mustLack{};
@@ -556,8 +601,17 @@ void setOrUnset(const char* name, const char* value) {
 
 std::vector<std::string> g_capsSummaries;
 
+RenderTier boundedByNative(const std::optional<RenderTier>& tier) {
+    if (!tier.has_value() || static_cast<int>(*tier) > static_cast<int>(g_nativeTier)) {
+        return g_nativeTier;
+    }
+    return *tier;
+}
+
 void runScenario(const Scenario& s) {
     const std::string tag = std::string("[") + s.what + "] ";
+    const RenderTier expectTier = boundedByNative(s.expectTier);
+    const RenderTier expectHardwareTier = boundedByNative(s.expectHardwareTier);
     setenv("FUSE_MASK_FEATURES", s.mask, 1);
     setOrUnset("FUSE_RENDER_TIER_MAX", s.tierEnv);
     setOrUnset("FUSE_VK_ALLOW_1_2", s.allow12Env ? "1" : nullptr);
@@ -590,10 +644,10 @@ void runScenario(const Scenario& s) {
             expectTrue(info.physicalDeviceIndex == static_cast<u32>(s.expectIndex),
                        tag + "selected #" + std::to_string(s.expectIndex) + ": " + info.selection);
             expectTrue(caps.valid, tag + "caps valid");
-            expectTrue(caps.tier == s.expectTier, tag + "tier " + renderTierName(s.expectTier) + ", got " +
-                                                      renderTierName(caps.tier));
-            expectTrue(caps.hardwareTier == s.expectHardwareTier,
-                       tag + "hardware tier " + renderTierName(s.expectHardwareTier) + ", got " +
+            expectTrue(caps.tier == expectTier,
+                       tag + "tier " + renderTierName(expectTier) + ", got " + renderTierName(caps.tier));
+            expectTrue(caps.hardwareTier == expectHardwareTier,
+                       tag + "hardware tier " + renderTierName(expectHardwareTier) + ", got " +
                            renderTierName(caps.hardwareTier));
             expectTrue(caps.meetsT0 == s.expectMeetsT0, tag + "meetsT0");
             expectTrue(!s.expectMeetsT0 || caps.missingT0().empty(), tag + "nothing missing at T0");
@@ -603,7 +657,8 @@ void runScenario(const Scenario& s) {
                        tag + "nothing above the tier cap enabled");
             expectTrue(caps.apiVersion == info.apiVersion, tag + "caps apiVersion");
             expectTrue(!s.expectMeetsT0 || info.apiVersion >= VK_API_VERSION_1_3, tag + "device API >= 1.3");
-            expectTrue(!caps.cooperativeMatrix, tag + "Lavapipe has no cooperative matrix (never T3)");
+            expectTrue(!caps.cooperativeMatrix || g_nativeCooperativeMatrix,
+                       tag + "cooperative matrix only where the device has it (Lavapipe: never, so never T3)");
             for (RenderFeature f : s.mustHave) {
                 expectTrue(caps.has(f), tag + "has " + renderFeatureInfo(f).name);
             }
@@ -618,7 +673,7 @@ void runScenario(const Scenario& s) {
 
             // Query back: what reached the driver (recorded by the mask layer below validation).
             const DeviceCreateRecord record = lastDeviceCreate();
-            expectTrue(record.valid || !kMaskLayerAvailable, tag + "mask layer recorded vkCreateDevice");
+            expectTrue(record.valid || !g_maskLayer, tag + "mask layer recorded vkCreateDevice");
             if (record.valid) {
                 for (u32 i = 0; i < kRenderFeatureCount; ++i) {
                     const auto f = static_cast<RenderFeature>(i);
@@ -684,39 +739,40 @@ int run(const char* layerDir) {
         return status;
     }
     g_layerLibrary = std::string(layerDir) + "/libVkLayer_fuse_mask_features.so";
-    std::string path = layerDir;
-    const char* existing = std::getenv("VK_ADD_LAYER_PATH");
-    if (existing != nullptr && existing[0] != '\0') {
-        path += ":";
-        path += existing;
-    }
-    setenv("VK_ADD_LAYER_PATH", path.c_str(), 1);
+    g_twoDevices = true;
     setenv("NODEVICE_SELECT", "1", 1); // keep enumeration order (see test_b2_physical_device_selection)
+#else
+    // Native Windows passes --layer-dir; the PE build under Wine does not (no layers there).
+    if (layerDir != nullptr) {
+        g_layerLibrary = "VkLayer_fuse_mask_features.dll"; // module name once the loader has it
+    }
+#endif
+    g_maskLayer = layerDir != nullptr;
     const bool validation = layerAvailable(kValidationLayer);
-    std::string layers = validation ? std::string(kValidationLayer) + ":" : std::string();
-    layers += kMaskLayer; // application -> driver: validation sees the masked device
-    setenv("VK_INSTANCE_LAYERS", layers.c_str(), 1);
+    std::string layers = validation ? std::string(kValidationLayer) : std::string();
+    if (g_maskLayer) {
+        std::string path = layerDir;
+        const char* existing = std::getenv("VK_ADD_LAYER_PATH");
+        if (existing != nullptr && existing[0] != '\0') {
+            path += kListSeparator;
+            path += existing;
+        }
+        setenv("VK_ADD_LAYER_PATH", path.c_str(), 1);
+        layers += layers.empty() ? "" : kListSeparator;
+        layers += kMaskLayer; // application -> driver: validation sees the masked device
+    }
+    if (!layers.empty()) {
+        setenv("VK_INSTANCE_LAYERS", layers.c_str(), 1);
+    }
     if (validation) {
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
     } else {
         std::printf("note: %s not installed — running without validation\n", kValidationLayer);
     }
-    if (!layerAvailable(kMaskLayer)) {
+    if (g_maskLayer && !layerAvailable(kMaskLayer)) {
         std::fprintf(stderr, "FAIL: %s not found under %s\n", kMaskLayer, layerDir);
         return 1;
     }
-#else
-    (void)layerDir;
-    const bool validation = layerAvailable(kValidationLayer);
-    if (validation) {
-        setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
-    } else {
-        std::printf("note: %s not available — running without validation\n", kValidationLayer);
-    }
-#endif
     {
         VulkanInstanceDesc probeDesc{};
         probeDesc.enableValidation = false;
@@ -729,6 +785,19 @@ int run(const char* layerDir) {
             std::printf("SKIP: Vulkan loader older than 1.3\n");
             return kSkip;
         }
+        // The unmasked device's own tier: the bound for every scenario's expectations.
+        setenv("FUSE_MASK_FEATURES", "", 1);
+        unsetenv("FUSE_RENDER_TIER_MAX");
+        auto native = VulkanDevice::create(*probe);
+        if (native == nullptr || !native->isValid()) {
+            std::printf("SKIP: no Vulkan device\n");
+            return kSkip;
+        }
+        const RendererCaps& caps = native->info().caps;
+        g_nativeTier = caps.hardwareTier;
+        g_nativeCooperativeMatrix = (caps.supportedMask & renderFeatureBit(RenderFeature::CooperativeMatrix)) != 0;
+        std::printf("native device: %s, hardware tier %s, cooperative matrix %s\n", native->info().deviceName.c_str(),
+                    renderTierName(g_nativeTier), g_nativeCooperativeMatrix ? "yes" : "no");
     }
 
     using F = RenderFeature;
@@ -752,12 +821,14 @@ int run(const char* layerDir) {
 
     std::vector<Scenario> scenarios;
     auto add = [&scenarios](Scenario s) { scenarios.push_back(std::move(s)); };
-    // Unmasked Lavapipe: T2 (RT pipeline yes, cooperative matrix no), everything but coop enabled.
-    add({.what = "lavapipe T2",
-         .mustHave = with({F::ShaderImageInt64Atomics, F::DescriptorBuffer, F::ShaderObject, F::TaskShader,
-                           F::MeshShader, F::AccelerationStructure, F::RayQuery, F::RayTracingPipeline}),
-         .mustLack = {F::CooperativeMatrix},
-         .exercise = true});
+    // Unmasked: the native tier with everything the device supports enabled. Lavapipe: T2 (RT
+    // pipeline yes, cooperative matrix no); a GPU with cooperative matrix (RTX-class): T3.
+    std::vector<F> unmaskedHave = with({F::ShaderImageInt64Atomics, F::DescriptorBuffer, F::ShaderObject,
+                                        F::TaskShader, F::MeshShader, F::AccelerationStructure, F::RayQuery,
+                                        F::RayTracingPipeline});
+    std::vector<F> unmaskedLack;
+    (g_nativeCooperativeMatrix ? unmaskedHave : unmaskedLack).push_back(F::CooperativeMatrix);
+    add({.what = "unmasked: native tier", .mustHave = unmaskedHave, .mustLack = unmaskedLack, .exercise = true});
     // Tier caps: env and desc. Features above the cap are neither enabled nor reported.
     add({.what = "FUSE_RENDER_TIER_MAX=T1", .tierEnv = "T1", .expectTier = RenderTier::T1,
          .mustHave = with({F::MeshShader, F::TaskShader, F::DescriptorBuffer}),
@@ -820,8 +891,11 @@ int run(const char* layerDir) {
 
     size_t ran = 0;
     for (const Scenario& s : scenarios) {
-        if (!kMaskLayerAvailable && s.mask[0] != '\0') {
-            continue; // needs VK_LAYER_FUSE_mask_features (Linux)
+        if (!g_maskLayer && s.mask[0] != '\0') {
+            continue; // needs VK_LAYER_FUSE_mask_features (--layer-dir)
+        }
+        if (!g_twoDevices && std::strchr(s.mask, ':') != nullptr) {
+            continue; // per-device mask: needs the second ICD registration (Linux)
         }
         runScenario(s);
         ++ran;

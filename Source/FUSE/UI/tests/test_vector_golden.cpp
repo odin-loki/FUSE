@@ -7,6 +7,9 @@
 //           linear / radial / conic gradients with pad / repeat / reflect, gradient strokes, per-corner gradient rects,
 //           clip to path and to a per-corner rounded rect, an opacity layer next to per-primitive opacity, rotated and
 //           skewed Painter transforms, a 9-slice frame at three sizes
+//   effects — the effect groups: translated / rotated / scaled / skewed cards (nested too), blur at several deviations,
+//           colour filters, drop shadows, alpha and luminance masks; then the same through CSS on a node tree:
+//           transform, filter, clip-path, mask-image, background-image gradients, z-index overlap, position
 //   icons — the built-in icon set at 12 / 16 / 24 / 32 / 48 px, tinted, plus a row drawn at render scale 2 and SVG
 //           documents with gradients / fills
 #include "fuse/ui/painter.hpp"
@@ -318,6 +321,124 @@ void sceneIcons(Image& img) {
 }
 } // namespace
 
+namespace {
+void sceneEffects(Image& img) {
+    constexpr int W = 720, H = 560;
+    img.resize(W, H, 0xFF000000u);
+    CpuRasterizer r;
+    DrawList dl;
+    dl.rect({0, 0, f32(W), f32(H)}, kBg);
+    const GradientStop warm[3]{{0.f, Color::rgb(0xFFB000)}, {0.5f, Color::rgb(0xFF3D6E)}, {1.f, Color::rgb(0x6A3DFF)}};
+    auto card = [&](Rect c) { // a card with every kind of content but text
+        dl.roundedRect(c, kPanel, {10, 10, 10, 10}, Color::rgb(0x4A5160), 1.f);
+        dl.gradientRect({c.x + 8, c.y + 8, c.w - 16, 18}, Gradient::linear({c.x + 8, 0}, {c.right() - 8, 0}, warm), {6, 6, 6, 6});
+        dl.rect({c.x + 8, c.y + 32, 26, 26}, kAccent, 13.f);
+        dl.fillPath(star({c.x + 60, c.y + 46}, 14), Brush(kWhite), FillRule::EvenOdd);
+        dl.line({c.x + 82, c.y + 34}, {c.right() - 8, c.y + 58}, Color::rgb(0x3DFDB0), 2.f);
+        dl.line({c.x + 82, c.y + 58}, {c.right() - 8, c.y + 34}, Color::rgb(0x3DFDB0), 2.f);
+    };
+    const Rect src{0, 0, 120, 66};
+    auto placed = [&](Vec2 at, const Affine& m) { return Affine::translation(at.x + 60, at.y + 33) * m * Affine::translation(-60, -33); };
+    // row 1: transforms
+    const Affine xfs[5] = {Affine{}, Affine::rotation(0.35f), Affine::scaling(0.7f, 1.15f), Affine{1.f, 0.f, -0.45f, 1.f, 0.f, 0.f},
+                           Affine::rotation(-0.6f) * Affine::scaling(-0.8f, 0.8f)};
+    for (int k = 0; k < 5; ++k) {
+        dl.pushTransform(placed({16.f + f32(k) * 140.f, 20.f}, xfs[k]), src);
+        card(src);
+        dl.popClip();
+    }
+    dl.pushTransform(placed({16.f, 112.f}, Affine::rotation(0.2f)), {0, -30, 260, 130}); // nested: a turned pair, one of them turned again
+    card(src);
+    dl.pushTransform(placed({130.f, 0.f}, Affine::rotation(-0.5f) * Affine::scaling(0.8f, 0.8f)), src);
+    card(src);
+    dl.popClip();
+    dl.popClip();
+    // row 2: blur at four deviations, colour filters
+    const f32 sigmas[4] = {0.8f, 2.f, 5.f, 12.f};
+    for (int k = 0; k < 4; ++k) {
+        const FilterOp op{FilterKind::Blur, sigmas[k], {}, {}};
+        const Affine at = Affine::translation(300.f + f32(k) * 104.f, 112.f) * Affine::scaling(0.75f, 0.75f);
+        dl.pushTransform(at, src);
+        dl.pushFilter({&op, 1}, src);
+        card(src);
+        dl.popClip();
+        dl.popClip();
+    }
+    const FilterOp colour[10] = {{FilterKind::Grayscale, 1.f, {}, {}}, {FilterKind::Sepia, 1.f, {}, {}}, {FilterKind::Invert, 1.f, {}, {}},
+                                 {FilterKind::HueRotate, 2.1f, {}, {}}, {FilterKind::Saturate, 3.f, {}, {}}, {FilterKind::Saturate, 0.3f, {}, {}},
+                                 {FilterKind::Brightness, 1.6f, {}, {}}, {FilterKind::Brightness, 0.5f, {}, {}}, {FilterKind::Contrast, 2.f, {}, {}},
+                                 {FilterKind::Opacity, 0.4f, {}, {}}};
+    for (int k = 0; k < 10; ++k) {
+        const Affine at = Affine::translation(16.f + f32(k % 5) * 114.f, 196.f + f32(k / 5) * 62.f) * Affine::scaling(0.85f, 0.85f);
+        dl.pushTransform(at, src);
+        dl.pushFilter({&colour[k], 1}, src);
+        card(src);
+        dl.popClip();
+        dl.popClip();
+    }
+    // row 3: drop shadows (hard, soft, tinted, after a blur) and masks (alpha fade, luminance, radial spot)
+    const FilterOp shadows[4][2] = {{{FilterKind::DropShadow, 0.f, {8, 8}, Color::rgb(0x000000, 0.8f)}, {FilterKind::Opacity, 1.f, {}, {}}},
+                                    {{FilterKind::DropShadow, 5.f, {0, 6}, Color::rgb(0x000000, 0.9f)}, {FilterKind::Opacity, 1.f, {}, {}}},
+                                    {{FilterKind::DropShadow, 3.f, {-6, -4}, Color::rgb(0x3D8BFD)}, {FilterKind::Opacity, 1.f, {}, {}}},
+                                    {{FilterKind::Blur, 1.5f, {}, {}}, {FilterKind::DropShadow, 2.f, {5, 5}, Color::rgb(0xFF3D6E, 0.9f)}}};
+    for (int k = 0; k < 4; ++k) {
+        dl.pushTransform(Affine::translation(24.f + f32(k) * 150.f, 330.f), src);
+        dl.pushFilter(shadows[k], src);
+        card(src);
+        dl.popClip();
+        dl.popClip();
+    }
+    const GradientStop fade[2]{{0.f, Color{0, 0, 0, 1}}, {1.f, Color{0, 0, 0, 0}}};
+    const GradientStop lum[3]{{0.f, Color{1, 1, 1, 1}}, {0.5f, Color{0.2f, 0.2f, 0.2f, 1}}, {1.f, Color{1, 1, 1, 1}}};
+    const GradientStop spot[3]{{0.f, Color{0, 0, 0, 1}}, {0.6f, Color{0, 0, 0, 1}}, {1.f, Color{0, 0, 0, 0}}};
+    for (int k = 0; k < 3; ++k) {
+        dl.pushTransform(Affine::translation(596.f, 196.f + f32(k) * 42.f) * Affine::scaling(0.9f, 0.58f), src);
+        if (k == 0) dl.pushMask(Gradient::linear({0, 0}, {120, 0}, fade), src);
+        else if (k == 1) dl.pushMask(Gradient::linear({0, 0}, {120, 66}, lum), src, MaskMode::Luminance);
+        else dl.pushMask(Gradient::radial({60, 33}, 62, spot), src);
+        card(src);
+        dl.popClip();
+        dl.popClip();
+    }
+    r.render(dl, img);
+
+    // the same machinery driven by CSS: a node tree (no text), drawn at its place in the sheet
+    UiContext ui({.viewport = {688, 140}});
+    UI_CHECK(ui.addStyleSheet(R"css(
+panel { flex-shrink: 0; }
+.strip { layout: absolute; width: 688px; height: 140px; background: #20242c; border-radius: 12px; overflow: clip; }
+.tile { width: 84px; height: 64px; top: 24px; background-image: linear-gradient(135deg, #ffb000, #ff3d6e 55%, #6a3dff); border-radius: 10px; }
+.dot { width: 26px; height: 26px; margin: 8px; background: #ffffff; border-radius: 13px; }
+.t1 { left: 20px; transform: rotate(-12deg); }
+.t2 { left: 126px; transform: scale(1.15, 0.8) skewX(-18deg); }
+.t3 { left: 232px; filter: blur(3px); }
+.t4 { left: 338px; filter: drop-shadow(6px 8px 4px #000000) saturate(1.6); }
+.t5 { left: 444px; clip-path: polygon(50% 0, 100% 38%, 82% 100%, 18% 100%, 0 38%); }
+.t6 { left: 540px; mask-image: radial-gradient(black 45%, transparent 80%); }
+.t7 { left: 588px; top: 56px; z-index: -1; background-image: none; background: #3d8bfd; transform: rotate(18deg); }
+.badge { position: absolute; right: -8px; top: -8px; width: 22px; height: 22px; background: #3dfdb0; border-radius: 11px; z-index: 2; }
+.host { position: relative; }
+)css").has_value());
+    const u32 panel = ui.registry().find("panel");
+    const NodeHandle strip = ui.create(panel, ui.root());
+    ui.addClass(strip, "strip");
+    for (const char* cls : {"t1", "t2", "t3", "t4", "t5", "t6", "t7"}) {
+        const NodeHandle t = ui.create(panel, strip);
+        ui.addClass(t, "tile");
+        ui.addClass(t, cls);
+        ui.addClass(ui.create(panel, t), "dot");
+        if (cls[1] == '1' || cls[1] == '4') {
+            ui.addClass(t, "host");
+            ui.addClass(ui.create(panel, t), "badge");
+        }
+    }
+    ui.update(0.f);
+    DrawList tree = ui.drawList();
+    tree.translate({16.f, 408.f});
+    r.render(tree, img);
+}
+} // namespace
+
 int main(int argc, char** argv) {
     std::string scene = "paths", out;
     for (int i = 1; i < argc; ++i) {
@@ -328,6 +449,7 @@ int main(int argc, char** argv) {
     Image img;
     if (scene == "paths") scenePaths(img);
     else if (scene == "icons") sceneIcons(img);
+    else if (scene == "effects") sceneEffects(img);
     else {
         std::fprintf(stderr, "unknown scene %s\n", scene.c_str());
         return 2;

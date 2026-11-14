@@ -23,7 +23,8 @@
 //                 = a centre on an edge of either snapped triangle, near edge = within 2 sub-pixels,
 //                 near depth = both cover the centre within 8 depth quanta) and none is unexplained
 //       mixed     M draws both SW and HW clusters; its exported image decodes (GPU vis.decode == CPU
-//                 decode kernel) with every covered pixel Ok, decoded depth within 64 quanta of the
+//                 decode kernel) with every covered pixel Ok, decoded depth within 64 quanta + the
+//                 vertex-snapping bound (|dz/dx| + |dz/dy|) x one sub-pixel step of the
 //                 word's and barycentrics inside the triangle up to the snapping tolerance; M agrees
 //                 with H and with the WP-1.4 path R on >= 99.9% of pixels; H vs R reported
 //       counters  0 overflow, 0 skipped, 0 oversize, 0 demoted in every rig
@@ -67,6 +68,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 // --- allocation counter (operator new) -----------------------------------------------------------
@@ -300,6 +302,7 @@ struct Context {
     Buffer decodeOut{};
     u8 decodeQueue = rg::kNoQueue;
     u64 serial = 0;
+    f64 snapStep = 1.0 / 256.0; ///< one sub-pixel step (px): 2^-min(subPixelPrecisionBits, kSwSubpixelBits)
 
     ~Context() {
         if (vkDevice != VK_NULL_HANDLE) {
@@ -332,8 +335,7 @@ int setup(Context& ctx, bool descriptorBuffer, bool validation) {
             return kSkip;
         }
         setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+        fuse::renderer::test::enableSyncValidationEnv();
         setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     } else {
         setenv("VK_INSTANCE_LAYERS", "", 1);
@@ -380,6 +382,12 @@ int setup(Context& ctx, bool descriptorBuffer, bool validation) {
         return kSkip;
     }
     ctx.vkDevice = static_cast<VkDevice>(ctx.device->nativeHandle());
+    {
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(static_cast<VkPhysicalDevice>(ctx.device->nativePhysicalDevice()), &props);
+        const u32 bits = std::min<u32>(props.limits.subPixelPrecisionBits, static_cast<u32>(kSwSubpixelBits));
+        ctx.snapStep = std::ldexp(1.0, -static_cast<int>(bits));
+    }
     ctx.allocator = GpuAllocator::create(*ctx.device);
     if (ctx.allocator == nullptr || !ctx.allocator->isValid()) {
         std::fprintf(stderr, "FAIL: GpuAllocator\n");
@@ -460,8 +468,19 @@ bool buildScene(Context& ctx, Scene& s) {
     for (const geometry::MeshletMesh& m : s.meshes) {
         s.positions.push_back(decode_kernel::MeshPositions{m.positions.data(), m.vertex_count()});
     }
+    // The scene must be the same on every toolchain: std::uniform_real_distribution is implementation-defined
+    // (the MSVC STL and libstdc++ draw different values from the same std::mt19937), and so is the evaluation
+    // order of a call's arguments. u() spells out libstdc++'s draw (generate_canonical<float, 24>: one 32-bit
+    // word / 2^32, then * (b - a) + a) and every draw goes to a named local, in the order GCC evaluated the
+    // former argument lists (last argument first), so the Linux scene is meant to be unchanged.
     std::mt19937 rng(5454);
-    std::uniform_real_distribution<f32> u(-1.f, 1.f);
+    auto u = [&rng]() {
+        f32 c = static_cast<f32>(rng()) / 4294967296.f;
+        if (c >= 1.f) {
+            c = std::nextafter(1.f, 0.f);
+        }
+        return c * 2.f + -1.f;
+    };
     auto add = [&](u32 mesh, const GpuTransform& xf, bool mover) {
         InstanceDesc id{};
         id.mesh = mesh;
@@ -472,18 +491,26 @@ bool buildScene(Context& ctx, Scene& s) {
         }
     };
     for (u32 w = 0; w < 3u; ++w) { // occluder slabs
-        add(2, place(-7.f + 7.f * static_cast<f32>(w), -0.5f + u(rng), -13.f, 2.2f, 1.6f, 0.25f, 0.f), false);
+        const f32 dy = u();
+        add(2, place(-7.f + 7.f * static_cast<f32>(w), -0.5f + dy, -13.f, 2.2f, 1.6f, 0.25f, 0.f), false);
     }
     add(0, place(-1.2f, -0.4f, -2.5f, 0.7f, 0.7f, 0.7f, 0.3f), true);   // near: HW extent
     add(1, place(0.25f, -0.25f, 1.45f, 0.3f, 0.3f, 0.3f, 0.5f), false); // crosses the near plane: HW clip
     for (u32 i = 0; i < 12u; ++i) {                                      // mid distance: SW (dense) / HW size (boxes)
-        add(i % 3u, place(u(rng) * 6.f, u(rng) * 3.f, -6.f - 5.f * (u(rng) * 0.5f + 0.5f), 0.5f, 0.5f, 0.5f, u(rng) * 3.f),
-            i % 3u == 0u);
+        const f32 yaw = u();
+        const f32 dz = u();
+        const f32 y = u();
+        const f32 x = u();
+        add(i % 3u, place(x * 6.f, y * 3.f, -6.f - 5.f * (dz * 0.5f + 0.5f), 0.5f, 0.5f, 0.5f, yaw * 3.f), i % 3u == 0u);
     }
     for (u32 i = 0; i < 360u; ++i) { // far: micro triangles
-        const f32 z = -18.f - 40.f * (u(rng) * 0.5f + 0.5f);
-        const f32 sc = 0.5f + 0.5f * (u(rng) * 0.5f + 0.5f);
-        add(i % 2u, place(u(rng) * 0.5f * -z, u(rng) * 0.36f * -z, z, sc, sc * (0.8f + 0.2f * u(rng)), sc, u(rng) * 3.f), i % 9u == 4u);
+        const f32 z = -18.f - 40.f * (u() * 0.5f + 0.5f);
+        const f32 sc = 0.5f + 0.5f * (u() * 0.5f + 0.5f);
+        const f32 yaw = u();
+        const f32 sy = u();
+        const f32 y = u();
+        const f32 x = u();
+        add(i % 2u, place(x * 0.5f * -z, y * 0.36f * -z, z, sc, sc * (0.8f + 0.2f * sy), sc, yaw * 3.f), i % 9u == 4u);
     }
     const GpuSceneCommitStats stats = s.gpu.commit();
     ctx.upload.flush();
@@ -892,6 +919,33 @@ f64 centreDistance(const Scene& s, const f32 viewProj[16], u32 instance, u32 tri
     return best;
 }
 
+/// Screen-space gradient of the triangle's depth plane (z / w is affine in screen space), in depth units
+/// per pixel, from the exact (f64) projected vertices; false when the triangle is degenerate on screen.
+bool depthGradient(const Scene& s, const f32 viewProj[16], u32 instance, u32 triangle, f64& gx, f64& gy) {
+    const GpuInstance& inst = s.gpu.instance(instance);
+    const GpuMesh& mesh = s.gpu.mesh(inst.mesh);
+    const u32* indices = s.gpu.indexData();
+    f64 x[3], y[3], z[3];
+    for (u32 k = 0; k < 3u; ++k) {
+        const u32 vertex = static_cast<u32>(static_cast<s32>(indices[mesh.firstIndex + triangle * 3u + k]) + mesh.vertexOffset);
+        f32 p[3];
+        decode_kernel::mesh_position(mesh, s.positions[inst.mesh].vpos, vertex, p);
+        const decode_kernel::Clip c = decode_kernel::clip_position(s.gpu.transform(instance), viewProj, p);
+        x[k] = (static_cast<f64>(c.x) / c.w * 0.5 + 0.5) * kWidth;
+        y[k] = (static_cast<f64>(c.y) / c.w * 0.5 + 0.5) * kHeight;
+        z[k] = static_cast<f64>(c.z) / c.w;
+    }
+    const f64 ax = x[1] - x[0], ay = y[1] - y[0], az = z[1] - z[0];
+    const f64 bx = x[2] - x[0], by = y[2] - y[0], bz = z[2] - z[0];
+    const f64 det = ax * by - ay * bx;
+    if (det == 0.0) {
+        return false;
+    }
+    gx = (az * by - ay * bz) / det;
+    gy = (ax * bz - az * bx) / det;
+    return true;
+}
+
 struct Agreement {
     u32 differ = 0;
     u32 covered = 0; ///< pixels covered in either image
@@ -1120,7 +1174,7 @@ int runGate(Context& ctx, VisAtomicTarget target) {
             const VisDecodeTexel* gpuDecode = rb<VisDecodeTexel>(ctx, fs.rb[kRigM].decode);
             std::vector<VisDecodeTexel> cpuDecode;
             decode_reference(vis_scene_view(s.gpu, s.positions), vp, mVis, kWidth, kHeight, cpuDecode);
-            u32 decodeFlagBad = 0, decodeNotOk = 0, depthOff = 0, farOff = 0, idBad = 0, interior = 0, rangeOff = 0;
+            u32 decodeFlagBad = 0, decodeNotOk = 0, depthOff = 0, depthOff64 = 0, farOff = 0, idBad = 0, interior = 0, rangeOff = 0;
             f64 decodeMaxDiff = 0.0, depthMaxQ = 0.0, distMax = 0.0;
             for (u32 p = 0; p < kPixels; ++p) {
                 const VisSample sm = vis64_unpack(mWords[p]);
@@ -1149,13 +1203,25 @@ int runGate(Context& ctx, VisAtomicTarget target) {
                 const f64 lo = std::floor(zMin * 16777216.0), hi = std::floor(zMax * 16777216.0);
                 rangeOff += (q < lo - (hi - lo) - 1.0 || q > hi + (hi - lo) + 1.0) ? 1u : 0u;
                 // Where the centre is well inside the exact triangle: decode (f32 plane through the exact
-                // vertices) vs the word (SW: plane through the snapped vertices) - statistic.
+                // vertices) vs the word (SW and HW: the plane through the SNAPPED vertices). Snapping moves
+                // each vertex by d_i (|d_i.x|, |d_i.y| <= one sub-pixel step s), and at a covered centre the
+                // snapped plane differs from the exact one by exactly -sum b'_i (grad z . d_i), b'_i >= 0 the
+                // barycentrics in the snapped triangle, so |word - decode| <= (|dz/dx| + |dz/dy|) s plus the
+                // 64-quanta rounding budget. The snap term is the rasteriser's (Vulkan leaves the sub-pixel
+                // precision and its rounding implementation-defined): on Lavapipe the HW words stay within
+                // 64 quanta; on the RTX 3090 (subPixelPrecisionBits 8) near, steep HW-cluster triangles reach
+                // ~0.4 s |grad z| (up to ~3500 quanta on a quarter of the interior pixels).
                 const f64 b0 = 1.0 - c.b1 - c.b2;
                 if (std::min({b0, static_cast<f64>(c.b1), static_cast<f64>(c.b2)}) >= 0.05) {
                     ++interior;
-                    const f64 dq = static_cast<f64>(c.depth) * 16777216.0 - q;
-                    depthMaxQ = std::max(depthMaxQ, std::fabs(dq - 0.5));
-                    depthOff += std::fabs(dq - 0.5) > 64.0 ? 1u : 0u;
+                    const f64 dq = std::fabs(static_cast<f64>(c.depth) * 16777216.0 - q - 0.5);
+                    f64 gx = 0.0, gy = 0.0;
+                    const f64 snapQ = depthGradient(s, vp, sm.instance, sm.triangle, gx, gy)
+                                          ? (std::fabs(gx) + std::fabs(gy)) * 16777216.0 * ctx.snapStep
+                                          : 0.0;
+                    depthMaxQ = std::max(depthMaxQ, dq);
+                    depthOff64 += dq > 64.0 ? 1u : 0u;
+                    depthOff += dq > 64.0 + snapQ ? 1u : 0u;
                 }
             }
             u32 counterBad = 0;
@@ -1181,8 +1247,8 @@ int runGate(Context& ctx, VisAtomicTarget target) {
             line("HW vs 1.4  ", hr);
             std::printf("           mixed: %u SW + %u HW clusters; decode: flags-bad %u (GPU-CPU max diff %.3g), not-ok %u, id-bad %u, "
                         "centre-to-triangle max %.5f px (off %u), depth outside the triangle's range %u, interior decode-vs-word depth "
-                        "max %.1f quanta, > 64 quanta on %u of %u px; counters-bad %u\n",
-                        mSw, mHw, decodeFlagBad, decodeMaxDiff, decodeNotOk, idBad, distMax, farOff, rangeOff, depthMaxQ, depthOff,
+                        "max %.1f quanta, > 64 quanta on %u, > 64 quanta + snap on %u of %u px; counters-bad %u\n",
+                        mSw, mHw, decodeFlagBad, decodeMaxDiff, decodeNotOk, idBad, distMax, farOff, rangeOff, depthMaxQ, depthOff64, depthOff,
                         interior, counterBad);
             expect(resultBad == 0u, "per-meshlet classification == CPU reference kernel (P and M)");
             expect(listBad == 0u, "SW list == the meshlets classified Software");
@@ -1197,7 +1263,8 @@ int runGate(Context& ctx, VisAtomicTarget target) {
             expect(idBad == 0u, "exported visibility image == the 64-bit words");
             expect(decodeNotOk == 0u && farOff == 0u && rangeOff == 0u,
                    "mixed frame decodes: ids valid, the decoded triangle covers the centre, depth within its range");
-            expect(depthOff * 200u <= interior, "decode-vs-word depth within 64 quanta on >= 99.5% of interior pixels");
+            expect(depthOff * 200u <= interior,
+                   "decode-vs-word depth within 64 quanta + the vertex-snapping bound on >= 99.5% of interior pixels");
             expect(counterBad == 0u, "no overflow / skipped / oversize / demoted cluster");
             if (frame + 1u == kFrames) {
                 for (u32 r = 0; r < kRigCount; ++r) {

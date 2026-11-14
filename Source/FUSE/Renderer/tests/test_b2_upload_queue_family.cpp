@@ -33,6 +33,8 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 namespace {
@@ -80,6 +82,11 @@ using fuse::renderer::UploadTicket;
 constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
 constexpr const char* kSplitLayer = "VK_LAYER_FUSE_split_transfer_family";
 constexpr u64 kTimeoutNs = 2000000000ull;
+#if defined(_WIN32)
+constexpr const char* kListSeparator = ";"; ///< loader list variables (VK_ADD_LAYER_PATH, VK_INSTANCE_LAYERS)
+#else
+constexpr const char* kListSeparator = ":";
+#endif
 
 // --- validation message capture ---------------------------------------------------------------
 
@@ -490,16 +497,15 @@ int run(const char* layerDir, bool expectSplit) {
         const char* existing = std::getenv("VK_ADD_LAYER_PATH");
         std::string path = layerDir;
         if (existing != nullptr && existing[0] != '\0') {
-            path += ":";
+            path += kListSeparator;
             path += existing;
         }
         setEnv("VK_ADD_LAYER_PATH", path, true);
-        layers += ":";
+        layers += kListSeparator;
         layers += kSplitLayer;
     }
     setEnv("VK_INSTANCE_LAYERS", layers, true);
-    setEnv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", true);
-    setEnv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", true);
+    fuse::renderer::test::enableSyncValidationEnv();
     // Messages reach the test's messenger only (negative controls must not print "Validation
     // Error" lines that fuse_vulkan_validation_gate would count).
     setEnv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", true);
@@ -563,7 +569,14 @@ int run(const char* layerDir, bool expectSplit) {
                 device->info().deviceName.c_str(), familyCount, gpu.graphicsFamily, gpu.transferFamily,
                 split ? "cross-family ownership transfers" : "single family");
     if (expectSplit) {
-        expectTrue(familyCount == 2, "split layer exposes two queue families");
+        // The split layer only rewrites single-family ICDs (Lavapipe: 1 -> 2 families). Hardware
+        // that already has a transfer-only family (discrete NVIDIA / AMD) passes through unchanged,
+        // and its own transfer family carries the cross-family path this gate exercises.
+        if (familyCount != 2) {
+            std::printf("note: the ICD exposes %u queue families natively; the split layer is a pass-through and "
+                        "the hardware transfer family is used\n",
+                        familyCount);
+        }
         expectTrue(split, "device picked the transfer-only family for uploads");
         expectTrue(gpu.transfer != gpu.graphics, "transfer and graphics queues are distinct handles");
     }
@@ -592,6 +605,18 @@ int run(const char* layerDir, bool expectSplit) {
     expectTrue(createImage(gpu, chainDesc, chain), "7-mip x 3-layer image");
     expectTrue(createImage(gpu, singleDesc, single), "single-mip image");
     if (g_failures != 0) {
+        // Release what was created before the device goes (VUID-vkDestroyDevice-device-05137).
+        destroyImage(gpu, chain);
+        destroyImage(gpu, single);
+        destroyBuffer(gpu, b0);
+        destroyBuffer(gpu, b1);
+        destroyBuffer(gpu, ring);
+        device.reset();
+        if (messenger != VK_NULL_HANDLE) {
+            destroyMessenger(vkInstance, messenger, nullptr);
+        }
+        instance.reset();
+        std::fprintf(stderr, "fuse_b2_upload_queue_family: %d failure(s) during setup\n", g_failures);
         return 1;
     }
 

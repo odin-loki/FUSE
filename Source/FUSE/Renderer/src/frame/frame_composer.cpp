@@ -7,6 +7,7 @@
 #include <fuse/renderer/upscale/upscale_inputs.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/pipeline_batch.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -27,6 +28,17 @@ constexpr u32 kPushBytes = sizeof(FramePush);
 constexpr u32 kFrameStride = 256u; ///< ring slot size (>= sizeof(FrameConstants), 256-aligned)
 static_assert(sizeof(FrameConstants) <= kFrameStride, "frame ring slot");
 constexpr u32 kViewStride = 256u;  ///< RtfxShadowView ring slot
+
+/// Field-wise (PtSettings has padding): PathTracerGpu::setSettings restarts the accumulation, so it is called only
+/// when a field changed.
+bool samePtSettings(const pathtrace::PtSettings& a, const pathtrace::PtSettings& b) {
+    return a.strategy == b.strategy && a.maxBounces == b.maxBounces && a.russianRoulette == b.russianRoulette &&
+           a.rrStartBounce == b.rrStartBounce && a.samplesPerFrame == b.samplesPerFrame && a.accumulate == b.accumulate &&
+           a.maxAccumulatedSamples == b.maxAccumulatedSamples && a.guides == b.guides &&
+           a.clampRadiance == b.clampRadiance && a.sky[0] == b.sky[0] && a.sky[1] == b.sky[1] && a.sky[2] == b.sky[2] &&
+           a.rayTMin == b.rayTMin && a.normalBias == b.normalBias && a.viewBias == b.viewBias &&
+           a.farDistance == b.farDistance && a.minRoughness == b.minRoughness && a.cullMask == b.cullMask;
+}
 constexpr u32 kColorFormat = static_cast<u32>(GpuFormat::R16G16B16A16Sfloat);
 constexpr u32 kJitterPhases = 8u;
 
@@ -207,7 +219,12 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
     m_initialized = true; // destroy() releases partial state from here on
     const u32 w = desc.renderWidth;
     const u32 h = desc.renderHeight;
+    // The subsystems below queue their pipeline builds on this batch, which runs them on worker threads while
+    // the next subsystems initialise (each build is the same vkCreate*Pipelines call as before). On a software
+    // rasteriser (Lavapipe) the builds are most of this init: SPIR-V -> NIR and NIR optimisation on the CPU.
+    PipelineBatch pipelineBatch;
     auto fail = [&](const char* why) {
+        (void)pipelineBatch.wait(); // no build may still write a subsystem that destroy() releases
         m_reason = why;
         destroy();
         m_reason = why;
@@ -347,6 +364,24 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         rd.height = h;
         rd.initialLights = std::max(desc.restirInitialLights, 1u);
         optional(m_treeGpu.init(td) && m_restir.init(rd), kStageRestir, "restir / light tree");
+        // WP-7.3 path tracer (Auto: the T3 RT pipeline when the device enabled it, else ray query) + its denoiser.
+        pathtrace::PathTracerGpuDesc pd{};
+        pd.device = desc.device;
+        pd.allocator = desc.allocator;
+        pd.bindless = desc.bindless;
+        pd.framesInFlight = desc.framesInFlight;
+        pd.width = w;
+        pd.height = h;
+        pd.initialLights = std::max(desc.restirInitialLights, 1u);
+        pd.language = desc.language == FrameKernelLanguage::Slang  ? pathtrace::PtKernelLanguage::Slang
+                      : desc.language == FrameKernelLanguage::Glsl ? pathtrace::PtKernelLanguage::Glsl
+                                                                   : pathtrace::PtKernelLanguage::Auto;
+        pd.name = "frame.pathtrace";
+        optional(m_pt.init(pd), kStagePathTrace, "path tracer");
+        rdn.name = "frame.pathtrace_denoiser";
+        optional((m_available & kStagePathTrace) != 0u && m_ptDenoiser.init(rdn) &&
+                     m_ptDenoiser.configure(frameDenoiserPreset(denoise::DenoiseSignal::Gi)),
+                 kStagePathTraceDenoise, "path-trace denoiser");
         m_restirTable.reserve(std::max(desc.restirInitialLights, 1u));
         m_tree.reserve(std::max(desc.restirInitialLights, 1u));
     }
@@ -371,14 +406,11 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         d.framesInFlight = desc.framesInFlight;
         optional(m_ssfx.init(d), kStageSsfx, "ssfx");
     }
-    {
-        ssrc::SsrcGpuDesc d{};
-        d.device = desc.device;
-        d.allocator = desc.allocator;
-        d.bindless = desc.bindless;
-        d.framesInFlight = desc.framesInFlight;
-        optional(m_ssrc.init(d), kStageSsrc, "ssrc");
-    }
+    // WP-6.5b SSRC is off in FrameSettings{}: its kernels are created by the first frame that plans the stage
+    // (ensureSsrc), not here. They are the slowest of the composer to build on a software rasteriser (Lavapipe:
+    // 6.4 s of the 18.4 s this init took when fuse_runtime_boot_time was measured), and no default frame runs
+    // them. available() reports the device capability until then.
+    optional(ssrc::querySsrcCapabilities(desc.device).ssrc, kStageSsrc, "ssrc");
     {
         research::rc::RcGpuDesc d{};
         d.device = desc.device;
@@ -511,6 +543,38 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         return fail("material sampler");
     }
     m_samplerHandle = desc.bindless->shaderHandle(m_sampler);
+    if (!pipelineBatch.wait()) {
+        // A queued build failed: an optional subsystem drops its stage(s) (as a failed init() does above), a
+        // mandatory one (the only other owners on the batch) fails the init.
+        struct OptionalOwner {
+            const void* owner;
+            u32 stages;
+            const char* why;
+        };
+        const OptionalOwner optionalOwners[] = {
+            {&m_ddgi, kStageDdgi, "ddgi"},
+            {&m_ssfx, kStageSsfx, "ssfx"},
+            {&m_fog, kStageFog, "froxel fog"},
+            {&m_clouds, kStageClouds, "clouds"},
+            {&m_gsplat, kStageSplats, "gaussian splats"},
+            {&m_taau, kStageTaau, "taau"},
+            {&m_forward, kStageForward, "forward transparency"},
+        };
+        u32 optionalFailures = 0;
+        for (const OptionalOwner& o : optionalOwners) {
+            if (pipelineBatch.failed(o.owner)) {
+                ++optionalFailures;
+                m_available &= ~o.stages;
+                if (std::strcmp(m_reason, "ok") == 0) {
+                    m_reason = o.why;
+                }
+            }
+        }
+        if (pipelineBatch.failed(&m_lighting) || pipelineBatch.failed(&m_resolve) || pipelineBatch.failed(&m_motion) ||
+            optionalFailures == 0u) {
+            return fail("pipeline build (clustered lighting, material resolve or motion vectors)");
+        }
+    }
     if (!createPipeline()) {
         return fail("frame kernel not built / pipeline");
     }
@@ -533,6 +597,9 @@ void FrameComposer::destroy() {
     m_framegen.destroy();
     m_forward.destroy();
     m_restir.destroy();
+    m_pt.destroy();
+    m_ptDenoiser.svgf().destroy();
+    m_ptConfigured = false;
     m_treeGpu.destroy();
     m_post.destroy();
     m_fsr3.destroy();
@@ -543,6 +610,7 @@ void FrameComposer::destroy() {
     m_atmosphere.destroy();
     m_ssfx.destroy();
     m_ssrc.destroy();
+    m_ssrcCreated = false;
     m_rc.destroy();
     m_lighting.destroy();
     m_ddgi.destroy();
@@ -721,12 +789,34 @@ void FrameComposer::fillRcSceneDiagnostic_(u32 frameIndex) {
     }
 }
 
+bool FrameComposer::ensureSsrc() {
+    if (m_ssrcCreated) {
+        return true;
+    }
+    ssrc::SsrcGpuDesc d{};
+    d.device = m_desc.device;
+    d.allocator = m_desc.allocator;
+    d.bindless = m_desc.bindless;
+    d.framesInFlight = m_desc.framesInFlight;
+    if (!m_ssrc.init(d)) {
+        // Not tried again: the stage is dropped like one that failed in init().
+        m_available &= ~static_cast<u32>(kStageSsrc);
+        if (std::strcmp(m_reason, "ok") == 0) {
+            m_reason = "ssrc";
+        }
+        return false;
+    }
+    m_ssrcCreated = true;
+    return true;
+}
+
 bool FrameComposer::createTargets() {
     const u32 w = m_desc.renderWidth;
     const u32 h = m_desc.renderHeight;
     const u64 n = static_cast<u64>(w) * h;
     return createImage(m_skyImage, w, h, "frame.sky") && createImage(m_aerialImage, w, h, "frame.aerial") &&
            createImage(m_restirImage, w, h, "frame.restir") && createImage(m_reflectImage, w, h, "frame.reflect") &&
+           createImage(m_ptImage, w, h, "frame.pathtrace") &&
            createImage(m_resolveImage, w, h, "frame.scene_color") &&
            createBuffer(m_background, n * 16u, "frame.background") && createBuffer(m_distance, n * 4u, "frame.distance") &&
            createBuffer(m_visibility, n * 4u, "frame.visibility") && [&]() {
@@ -742,7 +832,7 @@ bool FrameComposer::createTargets() {
 }
 
 void FrameComposer::destroyTargets() {
-    for (OwnedImage* o : {&m_skyImage, &m_aerialImage, &m_restirImage, &m_reflectImage, &m_resolveImage, &m_uiImage}) {
+    for (OwnedImage* o : {&m_skyImage, &m_aerialImage, &m_restirImage, &m_reflectImage, &m_ptImage, &m_resolveImage, &m_uiImage}) {
         if (o->storage.isValid()) {
             m_desc.bindless->unregisterSlot(o->storage);
         }
@@ -972,6 +1062,12 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     if (settings.ui && m_uiSource.record != nullptr && m_uiImage.image.image != nullptr) {
         plan |= kStageUi;
     }
+    if (t2 && settings.pathTrace) {
+        plan |= kStagePathTrace;
+        if (settings.pathTraceDenoise) {
+            plan |= kStagePathTraceDenoise;
+        }
+    }
     // A stage that is not available is dropped (its consumers take the previous image).
     plan &= m_available | kStageScene | kStageLighting | kStageResolve;
     if ((plan & kStageDenoise) != 0u && (plan & kStageRtShadows) == 0u) {
@@ -982,6 +1078,20 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     }
     if ((plan & kStageReflectionDenoise) != 0u && (plan & kStageRtReflections) == 0u) {
         plan &= ~static_cast<u32>(kStageReflectionDenoise);
+    }
+    if ((plan & kStagePathTraceDenoise) != 0u && (plan & kStagePathTrace) == 0u) {
+        plan &= ~static_cast<u32>(kStagePathTraceDenoise);
+    }
+    if ((plan & kStagePathTrace) != 0u) {
+        // The path tracer's image replaces the raster lighting chain: the stages that only refine that chain (or
+        // feed light.shade, whose output it no longer reads) are not planned. Fog / clouds / splats / forward /
+        // upscaler / post / frame generation run on the PT image.
+        plan &= ~static_cast<u32>(kStageRestir | kStageRestirDenoise | kStageSky | kStageSsrc | kStageSsfx |
+                                  kStageRtReflections | kStageReflectionDenoise | kStageAerial | kStageRcFlatland |
+                                  kStageDdgi | kStageRtShadows | kStageDenoise);
+    }
+    if ((plan & kStageSsrc) != 0u && !ensureSsrc()) {
+        plan &= ~static_cast<u32>(kStageSsrc);
     }
     const bool atmosphere = (plan & kStageAtmosphere) != 0u;
     const bool ddgiSky = (plan & kStageDdgi) != 0u && settings.ddgiAtmosphereSky && atmosphere;
@@ -1223,12 +1333,51 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         }
     }
 
+    // --- WP-7.3 path tracer (T2 / T3) -------------------------------------------------------------------------
+    if ((plan & kStagePathTrace) != 0u) {
+        const pathtrace::PtSettings ps = settings.pathTraceSettings;
+        if (!m_ptConfigured || !samePtSettings(ps, m_ptApplied)) {
+            m_pt.setSettings(ps); // restarts the accumulation
+            m_ptApplied = ps;
+            m_ptConfigured = true;
+        }
+        const bool lights = (m_available & kStageRestir) != 0u && !m_restirTable.empty();
+        if (lights) {
+            ok = m_treeGpu.beginFrame(serial, m_tree) && ok;
+        }
+        pathtrace::PtFrameDesc pf{};
+        std::memcpy(pf.camera.viewProj, m_viewProj, sizeof(pf.camera.viewProj)); // unjittered: the PT jitters per sample
+        std::memcpy(pf.camera.position, cam.eye, sizeof(pf.camera.position));
+        std::memcpy(pf.camera.forward, basis.f, sizeof(pf.camera.forward));
+        pf.width = w;
+        pf.height = h;
+        pf.tlasAddress = m_as.tlasAddress();
+        pf.sceneHeader = scene.headerAddress();
+        pf.lightTreeHeader = lights ? m_treeGpu.headerAddress() : 0u;
+        pf.lights = lights ? m_restirTable.data() : nullptr;
+        pf.lightCount = lights ? static_cast<u32>(m_restirTable.size()) : 0u;
+        pf.lightsVersion = m_tree.version();
+        pf.frameIndex = desc.frameIndex;
+        pf.reset = desc.resetHistory;
+        ok = m_pt.beginFrame(serial, pf) && ok;
+        if ((plan & kStagePathTraceDenoise) != 0u) {
+            denoise::DenoiserSettings ds = settings.pathTraceDenoiser;
+            ds.signal = denoise::DenoiseSignal::Gi; // demodulated RGB radiance + the PT guides
+            ok = m_ptDenoiser.configure(ds) && ok;
+            ok = m_ptDenoiser.beginFrame(serial, m_pt.denoiseFrame(m_motion.motionAddress(), desc.resetHistory)) && ok;
+        }
+    }
+
     // --- HDR chain (the image each stage reads) ---------------------------------------------------------------
     const Texture& depth = m_resolve.gbufferImage(4);
     const Texture* chain = &m_lighting.outputImage();
     const Texture* restirIn = chain;
     if ((plan & kStageRestir) != 0u) {
         chain = &m_restirImage.image;
+    }
+    const Texture* ptIn = chain;
+    if ((plan & kStagePathTrace) != 0u) {
+        chain = &m_ptImage.image;
     }
     const Texture* skyIn = chain;
     if ((plan & kStageSky) != 0u) {
@@ -1289,6 +1438,9 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         }
         if ((plan & kStageSsrc) != 0u) {
             ss.ssgi = false; // near-field diffuse comes from SSRC
+        }
+        if ((plan & kStageDdgi) != 0u && !settings.ssgiWithDdgi) {
+            ss.ssgi = false; // T2: DDGI is the indirect diffuse (FrameSettings::ssgiWithDdgi)
         }
         ok = m_ssfx.beginFrame(serial, ss, screenCam, settings.ambient, si) && ok;
         chain = &m_ssfx.outputImage();
@@ -1394,7 +1546,7 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     c.cameraPos[1] = cam.eye[1];
     c.cameraPos[2] = cam.eye[2];
     c.skyDistance = 1.0e30f;
-    FrameConstants slots[kSlotCount] = {c, c, c, c, c, c};
+    FrameConstants slots[kSlotCount] = {c, c, c, c, c, c, c};
     // [main] frame.gather / frame.resolve
     slots[kSlotMain].inColor = sampledHandle(*mainIn);
     slots[kSlotMain].flags = ((plan & kStageClouds) != 0u ? static_cast<u32>(kFrameFlagClouds) : 0u) |
@@ -1413,6 +1565,16 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     // [reflect] frame.reflect
     slots[kSlotReflect].inColor = sampledHandle(*reflectIn);
     slots[kSlotReflect].outColor = m_reflectImage.storageHandle;
+    // [pathtrace] frame.pathtrace: the PT mean, or the denoised signal x the demodulation factor
+    slots[kSlotPathTrace].inColor = sampledHandle(*ptIn);
+    slots[kSlotPathTrace].outColor = m_ptImage.storageHandle;
+    if ((plan & kStagePathTrace) != 0u) {
+        const bool remodulate = (plan & kStagePathTraceDenoise) != 0u;
+        slots[kSlotPathTrace].denoised = remodulate ? m_ptDenoiser.svgf().outputAddress() : m_pt.meanAddress();
+        slots[kSlotPathTrace].restirAlbedo = m_pt.albedoAddress();
+        slots[kSlotPathTrace].flags = remodulate ? static_cast<u32>(kFrameFlagPtRemodulate) : 0u;
+        ok = ok && slots[kSlotPathTrace].denoised != 0u && slots[kSlotPathTrace].restirAlbedo != 0u;
+    }
     // [rc pack] frame.rc_pack: G-buffer -> flatland scene texels (WP-6.5)
     slots[kSlotRcPack].inColor = sampledHandle(*chain);
     if (rcPack) {
@@ -1720,6 +1882,40 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
             out.restirState = rr.state;
             chain = img;
             ran |= kStageRestir;
+        }
+    }
+
+    // --- WP-7.3 path tracer -> (SVGF) -> frame.pathtrace: the PT image replaces the lighting chain ---------------
+    if ((plan & kStagePathTrace) != 0u) {
+        pathtrace::PtGraphInputs pi{};
+        pi.tlas = rtRefs.tlas;
+        pi.scene = sceneRefs;
+        if (m_pt.frameConstants().lightTree != 0u) {
+            pi.lightTree = m_treeGpu.importInto(graph);
+        }
+        const pathtrace::PtGraphRefs pr = m_pt.importInto(graph);
+        if (m_pt.addPasses(graph, pr, pi)) {
+            rg::BufferRef source = pr.output;
+            if ((plan & kStagePathTraceDenoise) != 0u) {
+                const denoise::DenoiseGraphRefs dn = m_ptDenoiser.importInto(graph);
+                m_ptDenoiser.addPasses(graph, dn, m_pt.denoiseInputs(pr, motion.motion));
+                source = dn.output;
+                out.pathTraceDenoised = dn.output;
+                ran |= kStagePathTraceDenoise;
+            }
+            const rg::TextureRef img = importImage(graph, m_ptImage, "frame.pathtrace");
+            if (PassRecord* r = nextRecord(kFrameModePathTrace, kSlotPathTrace)) {
+                rg::PassBuilder pass = graph.addPass("frame.pathtrace", &FrameComposer::recordDispatch, r);
+                pass.use(pr.output, rg::Access::StorageRead, {}, rg::kStageCompute)
+                    .use(img, rg::Access::StorageWrite, {}, rg::kStageCompute);
+                if (source.id != pr.output.id) {
+                    pass.use(source, rg::Access::StorageRead, {}, rg::kStageCompute);
+                }
+            }
+            out.pathTrace = img;
+            out.pathTraceOutput = pr.output;
+            chain = img;
+            ran |= kStagePathTrace;
         }
     }
 
@@ -2085,7 +2281,7 @@ void FrameComposer::collectRetired(u64 completedSerial) {
     if ((m_available & kStageSsfx) != 0u) {
         m_ssfx.collectRetired(completedSerial);
     }
-    if ((m_available & kStageSsrc) != 0u) {
+    if (m_ssrcCreated) {
         m_ssrc.collectRetired(completedSerial);
     }
     if ((m_available & kStageRcFlatland) != 0u) {
@@ -2118,6 +2314,12 @@ void FrameComposer::collectRetired(u64 completedSerial) {
     }
     if ((m_available & kStageForward) != 0u) {
         m_forward.collectRetired(completedSerial);
+    }
+    if ((m_available & kStagePathTrace) != 0u) {
+        m_pt.collectRetired(completedSerial);
+    }
+    if ((m_available & kStagePathTraceDenoise) != 0u) {
+        m_ptDenoiser.collectRetired(completedSerial);
     }
 }
 

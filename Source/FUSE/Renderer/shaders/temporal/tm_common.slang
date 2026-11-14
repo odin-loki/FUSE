@@ -69,3 +69,9 @@ struct TmPush {
     uint64_t out_;  // taau.resolve: optional f32x4 dump, else 0
 };
 [[vk::push_constant]] ConstantBuffer<TmPush> pc;
+
+// Correctly rounded division / square root (fuseDivRn / fuseSqrtRn, common/exact_math.slang): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but the motion pass scales the object-space point by
+// barycentric quotients and the TAAU resolve feeds quotients to floor() texel choices, rejection tests and the clip
+// box.
+#include "../common/exact_math.slang"

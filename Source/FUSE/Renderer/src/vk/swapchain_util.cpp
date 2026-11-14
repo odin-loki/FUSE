@@ -21,7 +21,7 @@ bool desktopWin32PresentEnabled() {
 }
 
 bool desktopQtPresentEnabled() {
-#if defined(FUSE_ENABLE_QT_PRESENT)
+#if defined(FUSE_ENABLE_EDITOR_PRESENT)
     return true;
 #else
     return false;
@@ -46,7 +46,7 @@ bool desktopWin32PresentRuntimeReady() {
 }
 
 bool desktopQtPresentRuntimeReady() {
-#if defined(FUSE_ENABLE_QT_PRESENT)
+#if defined(FUSE_ENABLE_EDITOR_PRESENT)
     return fuse::platform::displayServerAvailable();
 #else
     // The editor host opts in at runtime once its Qt Vulkan surface exists (editor-scoped unlock).

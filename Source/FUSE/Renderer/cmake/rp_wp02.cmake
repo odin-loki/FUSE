@@ -27,7 +27,7 @@ endif()
 
 if(FUSE_BUILD_CORE_TESTS)
     # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
-    set(_fuse_rp_wp02_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
+    set(_fuse_rp_wp02_lock "${FUSE_VULKAN_TEST_LAUNCHER}")
 
     # Gate: volk global/instance/device loading, device-level dispatch with one live device,
     # loader trampolines with two, reload hook, real work on each device, zero validation messages
@@ -35,12 +35,12 @@ if(FUSE_BUILD_CORE_TESTS)
     add_executable(fuse_rp_volk_loader tests/test_rp_volk_loader.cpp)
     target_link_libraries(fuse_rp_volk_loader PRIVATE fuse_rhi)
     if(FUSE_VULKAN_BACKEND)
-        add_test(NAME fuse_rp_volk_loader COMMAND "${_fuse_rp_wp02_lock}" "$<TARGET_FILE:fuse_rp_volk_loader>")
+        add_test(NAME fuse_rp_volk_loader COMMAND ${_fuse_rp_wp02_lock} "$<TARGET_FILE:fuse_rp_volk_loader>")
     else()
         add_test(NAME fuse_rp_volk_loader COMMAND fuse_rp_volk_loader)
     endif()
     set_tests_properties(fuse_rp_volk_loader PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV};VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
         RUN_SERIAL TRUE
         SKIP_RETURN_CODE 77
         LABELS "gate;vulkan")
@@ -88,14 +88,14 @@ if(FUSE_BUILD_CORE_TESTS)
         set(_name "fuse_rp_volk_explicit_init_${_mode}")
         string(REPLACE "-" "_" _name "${_name}")
         if(FUSE_VULKAN_BACKEND)
-            add_test(NAME ${_name} COMMAND "${_fuse_rp_wp02_lock}" "$<TARGET_FILE:fuse_rp_volk_explicit_init>" --mode ${_mode})
+            add_test(NAME ${_name} COMMAND ${_fuse_rp_wp02_lock} "$<TARGET_FILE:fuse_rp_volk_explicit_init>" --mode ${_mode})
         else()
             add_test(NAME ${_name} COMMAND fuse_rp_volk_explicit_init --mode ${_mode})
         endif()
         list(APPEND _fuse_rp_wp02_init_tests ${_name})
     endforeach()
     if(FUSE_VULKAN_BACKEND AND FUSE_RHI_VOLK_AUTO_INIT)
-        add_test(NAME fuse_rp_volk_auto_init COMMAND "${_fuse_rp_wp02_lock}" "$<TARGET_FILE:fuse_rp_volk_auto_init>")
+        add_test(NAME fuse_rp_volk_auto_init COMMAND ${_fuse_rp_wp02_lock} "$<TARGET_FILE:fuse_rp_volk_auto_init>")
         list(APPEND _fuse_rp_wp02_init_tests fuse_rp_volk_auto_init)
     elseif(NOT FUSE_VULKAN_BACKEND)
         add_test(NAME fuse_rp_volk_auto_init COMMAND fuse_rp_volk_auto_init)
@@ -126,12 +126,12 @@ if(FUSE_BUILD_CORE_TESTS)
         target_compile_definitions(fuse_rp_vk_adopt PRIVATE FUSE_RP_VK_ADOPT_SHADER="${_fuse_adopt_spv}")
     endif()
     if(FUSE_VULKAN_BACKEND)
-        add_test(NAME fuse_rp_vk_adopt COMMAND "${_fuse_rp_wp02_lock}" "$<TARGET_FILE:fuse_rp_vk_adopt>")
+        add_test(NAME fuse_rp_vk_adopt COMMAND ${_fuse_rp_wp02_lock} "$<TARGET_FILE:fuse_rp_vk_adopt>")
     else()
         add_test(NAME fuse_rp_vk_adopt COMMAND fuse_rp_vk_adopt)
     endif()
     set_tests_properties(${_fuse_rp_wp02_init_tests} fuse_rp_vk_adopt PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV};VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
         RUN_SERIAL TRUE
         SKIP_RETURN_CODE 77
         TIMEOUT 600

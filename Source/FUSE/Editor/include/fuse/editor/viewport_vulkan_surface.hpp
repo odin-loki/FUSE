@@ -4,7 +4,7 @@
 
 namespace fuse::editor {
 
-/// Result of attempting Qt → Vulkan surface bootstrap (WP-06i).
+/// Result of a winId → Vulkan surface bootstrap (WP-06i; the real path belonged to the former Qt shell).
 /// Headless CI uses `stubPath=true` with opaque winId as `vkSurface`.
 struct ViewportVulkanSurfaceResult {
     void* vkInstance = nullptr;
@@ -14,15 +14,15 @@ struct ViewportVulkanSurfaceResult {
     const char* message = nullptr;
 };
 
-/// Create a viewport `VkSurfaceKHR` from a Qt widget winId when Qt Vulkan is available;
-/// otherwise returns an honest winId stub (WP-06h compatibility).
+/// Returns an honest winId stub (WP-06h compatibility). The FUSE UI editor presents its viewport as a zero-copy
+/// external texture, so there is no toolkit surface to create.
 [[nodiscard]] ViewportVulkanSurfaceResult createViewportVulkanSurfaceFromWinId(u64 winId, u32 width,
                                                                                u32 height);
 
 /// Release any resources owned by a prior bootstrap (no-op for winId stubs).
 void destroyViewportVulkanSurface(ViewportVulkanSurfaceResult& result);
 
-/// Headless-safe Qt embed bootstrap + teardown stress (WP-06j).
+/// Headless-safe embed bootstrap + teardown stress (WP-06j).
 struct ViewportVulkanBootstrapStressResult {
     u32 cyclesAttempted = 0;
     u32 cyclesCompleted = 0;
@@ -32,7 +32,8 @@ struct ViewportVulkanBootstrapStressResult {
 
 [[nodiscard]] ViewportVulkanBootstrapStressResult stressViewportVulkanBootstrapTeardown(u32 cycles);
 
-/// Headless-safe `QVulkanWindow` WSI probe (wave 9). Skips when no display server.
+/// `QVulkanWindow` WSI probe of the former Qt shell (wave 9): always reports `headlessSkipped` now that the build has
+/// no Qt; kept so the embed session keeps its probe counters.
 struct QVulkanWindowWsiProbeResult {
     bool attempted = false;
     bool instanceReady = false;

@@ -107,7 +107,11 @@ set(FUSE_RELIGHT_TINYUSDZ_SOURCES
     ${_rl_tusd}/lz4/lz4.c)
 
 add_library(fuse_relight_tinyusdz STATIC ${FUSE_RELIGHT_TINYUSDZ_SOURCES})
-target_include_directories(fuse_relight_tinyusdz SYSTEM PUBLIC "${_rl_tusd}" "${FUSE_RELIGHT_TINYUSDZ_DIR}")
+# The pin header is copied into its own include dir: vendor/tinyusdz itself must not be on the include path, its
+# VERSION file would shadow <version> on case-insensitive file systems (Windows).
+set(_rl_tusd_pin "${CMAKE_CURRENT_BINARY_DIR}/tinyusdz_pin")
+configure_file("${FUSE_RELIGHT_TINYUSDZ_DIR}/fuse_tinyusdz_version.h" "${_rl_tusd_pin}/fuse_tinyusdz_version.h" COPYONLY)
+target_include_directories(fuse_relight_tinyusdz SYSTEM PUBLIC "${_rl_tusd}" "${_rl_tusd_pin}")
 target_include_directories(fuse_relight_tinyusdz PRIVATE "${_rl_tusd}/external")
 # Upstream's CMake defaults for a library build without the optional modules we do not vendor (Tydra, MaterialX,
 # JSON, image / audio loaders, zstd, C API).

@@ -18,7 +18,7 @@
 
 namespace fuse::editor {
 
-/// Headless property inspector model (B6.6) — Qt widgets deferred to `fuse_editor`.
+/// Headless property inspector model (B6.6) — the FUSE UI shell's Inspector draws it.
 class PropertyInspector {
 public:
     /// One labelled, formatted field row of a component section.

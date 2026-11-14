@@ -179,7 +179,7 @@ def main():
         stream_path, sidecar_path = args.stream, args.sidecar
     else:
         import shutil
-        if not shutil.which("wine") and not shutil.which("wine64"):
+        if not os.environ.get("FUSE_WINE") and not shutil.which("wine") and not shutil.which("wine64"):
             print("SKIP: wine not installed")
             return SKIP
         sys.path.insert(0, TAP_TESTS)

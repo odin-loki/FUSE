@@ -65,10 +65,12 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/vk/compute_pipeline.hpp
     include/fuse/renderer/vk/pipeline_layout.hpp
     include/fuse/renderer/vk/pipeline_cache.hpp
+    include/fuse/renderer/vk/pipeline_batch.hpp
     include/fuse/renderer/vk/image_readback.hpp
     include/fuse/renderer/vk/raster_path.hpp
     include/fuse/renderer/vk/render_pass.hpp
     include/fuse/renderer/vk/surface.hpp
+    include/fuse/renderer/vk/surface_android.hpp
     include/fuse/renderer/vk/swapchain.hpp
     include/fuse/renderer/vk/swapchain_util.hpp
     include/fuse/renderer/cuda/interop.hpp
@@ -137,11 +139,13 @@ set(FUSE_RHI_SOURCES
     src/vk/compute_pipeline.cpp
     src/vk/pipeline_layout.cpp
     src/vk/pipeline_cache.cpp
+    src/vk/pipeline_batch.cpp
     src/vk/image_readback.cpp
     src/vk/raster_path.cpp
     src/vk/render_pass.cpp
     src/vk/surface.cpp
     src/vk/swapchain.cpp
+    src/vk/surface_android.cpp
     src/vk/swapchain_util.cpp
     src/cuda/interop.cpp
     src/cuda/interop_fill.cpp
@@ -241,9 +245,9 @@ if(FUSE_ENABLE_WIN32_PRESENT)
     endif()
 endif()
 
-if(FUSE_ENABLE_QT_PRESENT)
-    target_compile_definitions(fuse_rhi PUBLIC FUSE_ENABLE_QT_PRESENT=1)
-    message(STATUS "FUSE: fuse_rhi desktop Qt present path enabled")
+if(FUSE_ENABLE_EDITOR_PRESENT)
+    target_compile_definitions(fuse_rhi PUBLIC FUSE_ENABLE_EDITOR_PRESENT=1)
+    message(STATUS "FUSE: fuse_rhi editor external-surface present path enabled")
 endif()
 
 option(FUSE_SHADER_GLSLANG "Enable runtime glslang shader compilation in fuse_rhi (optional; CI uses offline .spv fixtures)" OFF)
@@ -257,6 +261,9 @@ if(FUSE_SHADER_GLSLANG)
         message(STATUS "FUSE: FUSE_SHADER_GLSLANG=ON but glslang not found — offline SPIR-V only")
     endif()
 endif()
+
+# Vulkan gate launcher + environment (FUSE_VULKAN_TEST_LAUNCHER / FUSE_VULKAN_LVP_ENV): cmake/FuseVulkanTestEnv.cmake.
+include(${CMAKE_SOURCE_DIR}/cmake/FuseVulkanTestEnv.cmake)
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
@@ -295,6 +302,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp23.cmake")  # WP-2.3 forward tra
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp31.cmake")  # WP-3.1 virtual shadow map core (shadow/vsm/, core_logic/vsm_pages/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp32.cmake")  # WP-3.2 VSM raster, filtering, local lights (shadow/vsm_raster/, shaders/shadow_vsm/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp41.cmake")  # WP-4.1 GPU motion vectors + TAAU dispatch (temporal/, shaders/temporal/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_skinning.cmake") # P4 GPU skinning in the GPU scene + skinned motion (skinning/, shaders/skinning/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp45.cmake")  # WP-4.5 GPU post stack (postprocess/gpu/, shaders/post/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp51.cmake")  # WP-5.1 mesh-shader path, T1 (meshlet/, shaders/meshlet/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp52.cmake")  # WP-5.2 cluster DAG + LOD (geometry/dag/)
@@ -327,3 +335,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp73.cmake") # WP-7.3 path-tracing
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_rl55.cmake") # RL-5.5 radiance denoiser, extends WP-6.4 (denoise/radiance_*, shaders/denoise/rdn*)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_ssrc.cmake")  # WP-6.5 follow-up: screen-space radiance cascades (ssrc/, shaders/ssrc/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/b5_device_bench.cmake") # B5 device gates (DDGI / clustered CUDA-event timing) + per-pass frame benchmark
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_hw_bench.cmake") # HW exit criteria: §5.3 budgets, P2/P3/P5/P7/P8/P9, reference scenes (docs/unification/RENDERER-HW-RUN.md)

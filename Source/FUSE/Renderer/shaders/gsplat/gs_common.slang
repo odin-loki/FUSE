@@ -69,3 +69,8 @@ float4* gsTexels(uint64_t address) { return (float4*)address; }
 float gsClamp(float v, float lo, float hi) { return v < lo ? lo : (hi < v ? hi : v); }
 uint4 gsProjected(uint i, uint w) { return gsProjectedPtr(F.projected)[i * 4u + w]; }
 uint gsTilesTouched(uint4 rect) { return (rect.z - rect.x) * (rect.w - rect.y); }
+
+// Correctly rounded division / square root (fuseDivRn / fuseSqrtRn, common/exact_math.slang): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but det = a c - b^2 amplifies a division ulp (~250 ulp on the
+// RTX 3090) and the 3-sigma radius / tile rectangle are discrete decisions on these quotients.
+#include "../common/exact_math.slang"

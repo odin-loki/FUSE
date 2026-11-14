@@ -1,5 +1,7 @@
 #include "fuse/ui/style.hpp"
 
+#include "style_internal.hpp"
+
 #include "fuse/text/font_family.hpp"
 
 #include <algorithm>
@@ -9,6 +11,8 @@
 #include <cstring>
 
 namespace fuse::ui {
+
+using namespace detail;
 
 namespace {
 using T = PropType;
@@ -85,6 +89,32 @@ constexpr PropInfo kProps[] = {
     {Prop::EnterDuration, "enter-duration", T::Number, false, false, false},
     {Prop::ExitAnimation, "exit-animation", T::Enum, false, false, false},
     {Prop::ExitDuration, "exit-duration", T::Number, false, false, false},
+    {Prop::Position, "position", T::Enum, false, false, true},
+    {Prop::ZIndex, "z-index", T::Number, false, false, false},
+    {Prop::AspectRatio, "aspect-ratio", T::Number, false, false, true},
+    {Prop::Transform, "transform", T::Raw, false, true, false},
+    {Prop::TransformOriginX, "transform-origin-x", T::Length, false, true, false},
+    {Prop::TransformOriginY, "transform-origin-y", T::Length, false, true, false},
+    {Prop::Filter, "filter", T::Raw, false, true, false},
+    {Prop::ClipPath, "clip-path", T::Raw, false, false, false},
+    {Prop::MaskImage, "mask-image", T::Raw, false, false, false},
+    {Prop::MaskMode, "mask-mode", T::Enum, false, false, false},
+    {Prop::BackgroundImage, "background-image", T::Raw, false, false, false},
+    {Prop::AnimationName, "animation-name", T::Raw, false, false, false},
+    {Prop::AnimationDuration, "animation-duration", T::Raw, false, false, false},
+    {Prop::AnimationTimingFunction, "animation-timing-function", T::Raw, false, false, false},
+    {Prop::AnimationDelay, "animation-delay", T::Raw, false, false, false},
+    {Prop::AnimationIterationCount, "animation-iteration-count", T::Raw, false, false, false},
+    {Prop::AnimationDirection, "animation-direction", T::Raw, false, false, false},
+    {Prop::AnimationFillMode, "animation-fill-mode", T::Raw, false, false, false},
+    {Prop::AnimationPlayState, "animation-play-state", T::Raw, false, false, false},
+    {Prop::ContainerType, "container-type", T::Enum, false, false, false},
+    {Prop::ContainerName, "container-name", T::Number, false, false, false},
+    {Prop::FontStretch, "font-stretch", T::Number, true, true, true},
+    {Prop::FontVariationSettings, "font-variation-settings", T::FontSettings, true, false, true},
+    {Prop::FontFeatureSettings, "font-feature-settings", T::FontSettings, true, false, true},
+    {Prop::Icon, "icon", T::Ident, false, false, true},
+    {Prop::IconSize, "icon-size", T::Length, false, true, true},
 };
 // clang-format on
 static_assert(sizeof(kProps) / sizeof(kProps[0]) == kPropCount);
@@ -132,63 +162,18 @@ constexpr EnumWord kEnums[] = {
     {Prop::EnterAnimation, "slide-up", u8(MotionKind::SlideUp)}, {Prop::EnterAnimation, "slide-down", u8(MotionKind::SlideDown)},
     {Prop::ExitAnimation, "none", u8(MotionKind::None)}, {Prop::ExitAnimation, "fade", u8(MotionKind::Fade)},
     {Prop::ExitAnimation, "slide-up", u8(MotionKind::SlideUp)}, {Prop::ExitAnimation, "slide-down", u8(MotionKind::SlideDown)},
+    {Prop::Position, "static", u8(PositionKind::Static)}, {Prop::Position, "relative", u8(PositionKind::Relative)},
+    {Prop::Position, "absolute", u8(PositionKind::Absolute)}, {Prop::Position, "fixed", u8(PositionKind::Fixed)},
+    {Prop::Position, "sticky", u8(PositionKind::Sticky)},
+    {Prop::MaskMode, "alpha", 0}, {Prop::MaskMode, "match-source", 0}, {Prop::MaskMode, "luminance", 1},
+    {Prop::ContainerType, "normal", 0}, {Prop::ContainerType, "inline-size", 1}, {Prop::ContainerType, "size", 2},
 };
-
-std::string_view trim(std::string_view s) {
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.remove_prefix(1);
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.remove_suffix(1);
-    return s;
-}
-
-bool parseNumber(std::string_view s, f32& out, std::string_view& unit) {
-    s = trim(s);
-    std::size_t i = 0;
-    while (i < s.size() && (std::isdigit(static_cast<unsigned char>(s[i])) || s[i] == '.' || s[i] == '-' || s[i] == '+')) ++i;
-    if (i == 0) return false;
-    std::string buf(s.substr(0, i));
-    char* end = nullptr;
-    out = std::strtof(buf.c_str(), &end);
-    if (end != buf.c_str() + buf.size()) return false;
-    unit = s.substr(i);
-    return true;
-}
-
-bool parseLength(std::string_view s, Length& out) {
-    s = trim(s);
-    if (s == "auto") { out = {}; return true; }
-    f32 v;
-    std::string_view unit;
-    if (!parseNumber(s, v, unit)) return false;
-    if (unit.empty() || unit == "px" || unit == "dp") out = Length::px(v);
-    else if (unit == "%") out = Length::pct(v);
-    else if (unit == "fr") out = Length::fr(v);
-    else return false;
-    return true;
-}
 
 int hexval(char c) {
     if (c >= '0' && c <= '9') return c - '0';
     c = char(std::tolower(static_cast<unsigned char>(c)));
     if (c >= 'a' && c <= 'f') return 10 + c - 'a';
     return -1;
-}
-
-/// "0.2s", "150ms" or a plain number of seconds.
-bool parseSeconds(std::string_view s, f32& out) {
-    std::string_view unit;
-    if (!parseNumber(s, out, unit)) return false;
-    if (unit == "ms") out /= 1000.f;
-    else if (!(unit.empty() || unit == "s")) return false;
-    return out >= 0.f;
-}
-bool parseEasing(std::string_view s, Easing& out) {
-    if (s == "linear") out = Easing::Linear;
-    else if (s == "ease" || s == "ease-in-out") out = Easing::InOutCubic;
-    else if (s == "ease-in") out = Easing::In;
-    else if (s == "ease-out") out = Easing::Out;
-    else if (s == "back" || s == "ease-out-back") out = Easing::OutBack;
-    else return false;
-    return true;
 }
 
 struct NamedColor { std::string_view name; u32 hex; };
@@ -248,18 +233,83 @@ bool parseColor(std::string_view s, Color& out) {
     return false;
 }
 
+namespace {
+// font-weight / font-stretch: a number (stretch: a percentage) or a CSS keyword.
+bool parseFontNumber(Prop p, std::string_view text, f32& out) {
+    struct Word {
+        std::string_view w;
+        f32 v;
+    };
+    static constexpr Word kWeight[] = {{"normal", 400.f}, {"bold", 700.f}, {"bolder", 700.f}, {"lighter", 300.f}};
+    static constexpr Word kStretch[] = {{"normal", 100.f}, {"ultra-condensed", 50.f}, {"extra-condensed", 62.5f},
+                                        {"condensed", 75.f}, {"semi-condensed", 87.5f}, {"semi-expanded", 112.5f},
+                                        {"expanded", 125.f}, {"extra-expanded", 150.f}, {"ultra-expanded", 200.f}};
+    const std::span<const Word> words = p == Prop::FontWeight ? std::span<const Word>(kWeight) : std::span<const Word>(kStretch);
+    for (const Word& w : words)
+        if (w.w == text) {
+            out = w.v;
+            return true;
+        }
+    std::string_view unit;
+    if (!parseNumber(text, out, unit)) return false;
+    if (p == Prop::FontWeight) return unit.empty() && out >= 1.f && out <= 1000.f;
+    return (unit == "%" || unit.empty()) && out > 0.f;
+}
+
+// font-variation-settings / font-feature-settings: `normal` or a comma list of "tag" [value]; features take
+// on / off / a number (default 1), variations need a number.
+bool parseFontSettings(std::string_view text, bool features, PropValue& out) {
+    out.trackCount = 0;
+    if (text == "normal") return true;
+    while (!(text = trim(text)).empty()) {
+        if (text.size() < 6 || (text[0] != '"' && text[0] != '\'') || text[5] != text[0]) return false;
+        u32 tag = 0;
+        for (int k = 1; k <= 4; ++k) {
+            const char c = text[std::size_t(k)];
+            if (c < 0x20 || c > 0x7E) return false;
+            tag = (tag << 8) | u32(u8(c));
+        }
+        text.remove_prefix(6);
+        const auto comma = text.find(',');
+        const std::string_view val = trim(text.substr(0, comma));
+        f32 v = 1.f;
+        if (val == "on") v = 1.f;
+        else if (val == "off") v = 0.f;
+        else if (!val.empty()) {
+            std::string_view unit;
+            if (!parseNumber(val, v, unit) || !unit.empty()) return false;
+        } else if (!features) {
+            return false;
+        }
+        if (out.trackCount >= (features ? kMaxFontFeatures : kMaxFontVariations)) return false;
+        out.tags[out.trackCount] = tag;
+        out.tracks[out.trackCount] = Length::px(v);
+        ++out.trackCount;
+        if (comma == std::string_view::npos) break;
+        text.remove_prefix(comma + 1);
+    }
+    return true;
+}
+} // namespace
+
 bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
     text = trim(text);
     const PropInfo& pi = propInfo(p);
     out = {};
     out.type = pi.type;
     switch (p) { // text properties with keyword / list syntax
-    case Prop::FontWeight: {
-        if (text == "normal") { out.num = 400.f; return true; }
-        if (text == "bold" || text == "bolder") { out.num = 700.f; return true; }
-        if (text == "lighter") { out.num = 300.f; return true; }
-        std::string_view unit;
-        return parseNumber(text, out.num, unit) && unit.empty() && out.num >= 1.f && out.num <= 1000.f;
+    case Prop::FontWeight:
+    case Prop::FontStretch: return parseFontNumber(p, text, out.num);
+    case Prop::FontVariationSettings:
+    case Prop::FontFeatureSettings: return parseFontSettings(text, p == Prop::FontFeatureSettings, out);
+    case Prop::Icon: { // none, or an icon name (optionally quoted): [a-z0-9_.-]
+        if (text.size() >= 2 && (text.front() == '"' || text.front() == '\'') && text.back() == text.front())
+            text = text.substr(1, text.size() - 2);
+        if (text.empty()) return false;
+        for (const char c : text)
+            if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '-')) return false;
+        out = PropValue::ofIdent(text == "none" ? 0u : hashId(text));
+        return true;
     }
     case Prop::FontFamily: {
         // comma list; each name is stored as its case-insensitive 24-bit hash (stable across runs and in cooked sheets)
@@ -287,6 +337,44 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         }
         return true;
     }
+    case Prop::Transform: return parseTransformValue(text, out);
+    case Prop::Filter: return parseFilterValue(text, out);
+    case Prop::ClipPath: return parseClipPathValue(text, out);
+    case Prop::MaskImage:
+    case Prop::BackgroundImage: return parseGradientValue(text, out);
+    case Prop::AnimationName: case Prop::AnimationDuration: case Prop::AnimationTimingFunction: case Prop::AnimationDelay:
+    case Prop::AnimationIterationCount: case Prop::AnimationDirection: case Prop::AnimationFillMode: case Prop::AnimationPlayState:
+        return parseAnimationList(p, text, out);
+    case Prop::ZIndex: {
+        if (text == "auto") { out.e = 1; return true; }
+        std::string_view unit;
+        return parseNumber(text, out.num, unit) && unit.empty() && out.num == std::floor(out.num) && std::abs(out.num) < 1.0e6f;
+    }
+    case Prop::AspectRatio: { // auto | <number> | <number> / <number>
+        if (text == "auto") { out.num = 0.f; return true; }
+        const auto slash = text.find('/');
+        f32 a = 0.f, b = 1.f;
+        std::string_view unit;
+        if (!parseNumber(text.substr(0, slash), a, unit) || !trim(unit).empty()) return false;
+        if (slash != std::string_view::npos && (!parseNumber(text.substr(slash + 1), b, unit) || !unit.empty())) return false;
+        if (!(a > 0.f) || !(b > 0.f)) return false;
+        out.num = a / b;
+        return true;
+    }
+    case Prop::TransformOriginX:
+    case Prop::TransformOriginY: {
+        if (text == "center") { out.len = Length::pct(50.f); return true; }
+        if (text == (p == Prop::TransformOriginX ? "left" : "top")) { out.len = Length::pct(0.f); return true; }
+        if (text == (p == Prop::TransformOriginX ? "right" : "bottom")) { out.len = Length::pct(100.f); return true; }
+        return parseLength(text, out.len) && (out.len.unit == Unit::Px || out.len.unit == Unit::Percent);
+    }
+    case Prop::ContainerName:
+        if (text.empty() || text.find_first_of(" \t,") != std::string_view::npos) return false;
+        out.num = text == "none" ? 0.f : f32(animationNameId(text));
+        return true;
+    case Prop::GridColumns:
+        if (text == "subgrid") { out.b = true; out.trackCount = 0; return true; }
+        break;
     case Prop::LineHeight: {
         if (text == "normal") { out.len = {}; return true; }
         f32 v;
@@ -362,6 +450,10 @@ bool parsePropValue(Prop p, std::string_view text, PropValue& out) {
         }
         return out.trackCount > 0;
     }
+    case T::Raw: break; // handled by property above
+    case T::FontSettings: // parsed per property above (font-variation-settings, font-feature-settings)
+    case T::Ident:        // (icon)
+        break;
     }
     return false;
 }
@@ -394,7 +486,7 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::Justify: s.justify = Justify(v.e); break;
     case Prop::Wrap: s.wrap = v.b; break;
     case Prop::Overflow: s.overflow = Overflow(v.e); break;
-    case Prop::GridColumns: s.gridColumns = v.tracks; s.gridColumnCount = v.trackCount; break;
+    case Prop::GridColumns: s.gridColumns = v.tracks; s.gridColumnCount = v.trackCount; s.subgrid = v.b && v.trackCount == 0; break;
     case Prop::GridColumn: s.gridColumn = u8(v.num); break;
     case Prop::GridColumnSpan: s.gridColumnSpan = u8(std::max(1.f, v.num)); break;
     case Prop::GridRow: s.gridRow = u8(v.num); break;
@@ -451,6 +543,62 @@ void applyProp(ComputedStyle& s, Prop p, const PropValue& v) {
     case Prop::EnterDuration: s.enterDuration = std::max(0.f, v.num); break;
     case Prop::ExitAnimation: s.exitAnim = MotionKind(v.e); break;
     case Prop::ExitDuration: s.exitDuration = std::max(0.f, v.num); break;
+    case Prop::Position: s.position = PositionKind(std::min<u8>(v.e, u8(PositionKind::Sticky))); break;
+    case Prop::ZIndex: s.zIndex = v.e ? kZAuto : toIndex(v.num, -1000000, 1000000); break;
+    case Prop::AspectRatio: s.aspectRatio = std::clamp(finiteOr(v.num, 0.f), 0.f, 1.0e6f); break;
+    case Prop::Transform: s.transform = transformOf(v); break;
+    case Prop::TransformOriginX: s.originX = v.len; break;
+    case Prop::TransformOriginY: s.originY = v.len; break;
+    case Prop::Filter: s.filter = filterOf(v); break;
+    case Prop::ClipPath: s.clipPath = clipShapeOf(v); break;
+    case Prop::MaskImage: s.mask = gradientSpecOf(v); break;
+    case Prop::MaskMode: s.maskLuminance = v.e != 0; break;
+    case Prop::BackgroundImage: s.backgroundImage = gradientSpecOf(v); break;
+    case Prop::AnimationName:
+        s.animationCount = std::min<u8>(v.fCount, kMaxAnimations);
+        for (u8 k = 0; k < kMaxAnimations; ++k) s.animations[k].name = k < s.animationCount ? u32(toIndex(v.f[k], 0, 0xFFFFFF)) : 0u;
+        if (s.animationCount == 1 && s.animations[0].name == 0) s.animationCount = 0; // animation-name: none
+        break;
+    case Prop::AnimationDuration: case Prop::AnimationTimingFunction: case Prop::AnimationDelay: case Prop::AnimationIterationCount:
+    case Prop::AnimationDirection: case Prop::AnimationFillMode: case Prop::AnimationPlayState:
+        if (!v.fCount) break;
+        for (u8 k = 0; k < kMaxAnimations; ++k) { // a shorter list repeats (CSS)
+            const f32 x = v.f[k % std::min<u8>(v.fCount, kMaxAnimations)];
+            AnimationSpec& a = s.animations[k];
+            switch (p) {
+            case Prop::AnimationDuration: a.duration = std::max(0.f, finiteOr(x, 0.f)); break;
+            case Prop::AnimationTimingFunction: a.ease = Easing(toIndex(x, 0, int(Easing::Out))); break;
+            case Prop::AnimationDelay: a.delay = finiteOr(x, 0.f); break;
+            case Prop::AnimationIterationCount: a.iterations = x == x ? std::max(0.f, x) : 1.f; break; // infinity is a count
+            case Prop::AnimationDirection: a.direction = AnimDirection(toIndex(x, 0, 3)); break;
+            case Prop::AnimationFillMode: a.fill = AnimFill(toIndex(x, 0, 3)); break;
+            default: a.paused = x != 0.f; break;
+            }
+        }
+        break;
+    case Prop::ContainerType: s.containerType = std::min<u8>(v.e, 2); break;
+    case Prop::ContainerName: s.containerName = u32(toIndex(v.num, 0, 0xFFFFFF)); break;
+    case Prop::FontStretch: s.fontStretch = std::clamp(v.num, 1.f, 1000.f); break;
+    case Prop::Icon: s.icon = v.ident(); break;
+    case Prop::IconSize: s.iconSize = std::max(0.f, v.len.value); break;
+    case Prop::FontVariationSettings:
+        s.fontVariationCount = std::min<u8>(v.trackCount, u8(kMaxFontVariations));
+        s.fontVariationTags = {};
+        s.fontVariationValues = {};
+        for (u8 i = 0; i < s.fontVariationCount; ++i) {
+            s.fontVariationTags[i] = v.tags[i];
+            s.fontVariationValues[i] = v.tracks[i].value;
+        }
+        break;
+    case Prop::FontFeatureSettings:
+        s.fontFeatureCount = std::min<u8>(v.trackCount, u8(kMaxFontFeatures));
+        s.fontFeatureTags = {};
+        s.fontFeatureValues = {};
+        for (u8 i = 0; i < s.fontFeatureCount; ++i) {
+            s.fontFeatureTags[i] = v.tags[i];
+            s.fontFeatureValues[i] = u32(std::max(0.f, v.tracks[i].value));
+        }
+        break;
     case Prop::Count: break;
     }
 }
@@ -484,7 +632,7 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::Justify: return PropValue::ofEnum(u8(s.justify));
     case Prop::Wrap: return PropValue::ofBool(s.wrap);
     case Prop::Overflow: return PropValue::ofEnum(u8(s.overflow));
-    case Prop::GridColumns: { PropValue v; v.type = PropType::Tracks; v.tracks = s.gridColumns; v.trackCount = s.gridColumnCount; return v; }
+    case Prop::GridColumns: { PropValue v; v.type = PropType::Tracks; v.tracks = s.gridColumns; v.trackCount = s.gridColumnCount; v.b = s.subgrid; return v; }
     case Prop::GridColumn: return PropValue::ofNumber(f32(s.gridColumn));
     case Prop::GridColumnSpan: return PropValue::ofNumber(f32(s.gridColumnSpan));
     case Prop::GridRow: return PropValue::ofNumber(f32(s.gridRow));
@@ -534,9 +682,51 @@ PropValue readProp(const ComputedStyle& s, Prop p) {
     case Prop::EnterDuration: return PropValue::ofNumber(s.enterDuration);
     case Prop::ExitAnimation: return PropValue::ofEnum(u8(s.exitAnim));
     case Prop::ExitDuration: return PropValue::ofNumber(s.exitDuration);
+    case Prop::FontStretch: return PropValue::ofNumber(s.fontStretch);
+    case Prop::Icon: return PropValue::ofIdent(s.icon);
+    case Prop::IconSize: return PropValue::ofLength(Length::px(s.iconSize));
+    case Prop::FontVariationSettings:
+    case Prop::FontFeatureSettings: {
+        PropValue v;
+        v.type = PropType::FontSettings;
+        const bool var = p == Prop::FontVariationSettings;
+        v.trackCount = var ? s.fontVariationCount : s.fontFeatureCount;
+        for (u8 i = 0; i < v.trackCount; ++i) {
+            v.tags[i] = var ? s.fontVariationTags[i] : s.fontFeatureTags[i];
+            v.tracks[i] = Length::px(var ? s.fontVariationValues[i] : f32(s.fontFeatureValues[i]));
+        }
+        return v;
+    }
     case Prop::Transition: // the first entry (the whole list is ComputedStyle::transitions)
         if (s.transitionCount) return PropValue::ofTransition(s.transitions[0].prop, s.transitions[0].duration, s.transitions[0].ease, s.transitions[0].delay);
         break;
+    case Prop::Position: return PropValue::ofEnum(u8(s.position));
+    case Prop::ZIndex: { PropValue v = PropValue::ofNumber(s.zIndex == kZAuto ? 0.f : f32(s.zIndex)); v.e = s.zIndex == kZAuto; return v; }
+    case Prop::AspectRatio: return PropValue::ofNumber(s.aspectRatio);
+    case Prop::Transform: return transformValue(s.transform);
+    case Prop::TransformOriginX: return PropValue::ofLength(s.originX);
+    case Prop::TransformOriginY: return PropValue::ofLength(s.originY);
+    case Prop::Filter: return filterValue(s.filter);
+    case Prop::ClipPath: return clipShapeValue(s.clipPath);
+    case Prop::MaskImage: return gradientSpecValue(s.mask);
+    case Prop::MaskMode: return PropValue::ofEnum(s.maskLuminance ? 1 : 0);
+    case Prop::BackgroundImage: return gradientSpecValue(s.backgroundImage);
+    case Prop::AnimationName: case Prop::AnimationDuration: case Prop::AnimationTimingFunction: case Prop::AnimationDelay:
+    case Prop::AnimationIterationCount: case Prop::AnimationDirection: case Prop::AnimationFillMode: case Prop::AnimationPlayState: {
+        PropValue v;
+        v.type = PropType::Raw;
+        v.fCount = s.animationCount;
+        for (u8 k = 0; k < s.animationCount; ++k) {
+            const AnimationSpec& a = s.animations[k];
+            v.f[k] = p == Prop::AnimationName ? f32(a.name) : p == Prop::AnimationDuration ? a.duration
+                   : p == Prop::AnimationTimingFunction ? f32(u8(a.ease)) : p == Prop::AnimationDelay ? a.delay
+                   : p == Prop::AnimationIterationCount ? a.iterations : p == Prop::AnimationDirection ? f32(u8(a.direction))
+                   : p == Prop::AnimationFillMode ? f32(u8(a.fill)) : (a.paused ? 1.f : 0.f);
+        }
+        return v;
+    }
+    case Prop::ContainerType: return PropValue::ofEnum(s.containerType);
+    case Prop::ContainerName: return PropValue::ofNumber(f32(s.containerName));
     case Prop::Count: break;
     }
     PropValue v;
@@ -594,6 +784,8 @@ PropField propField(Prop p) {
     case Prop::Top: f.len = &ComputedStyle::top; break;
     case Prop::Right: f.len = &ComputedStyle::right; break;
     case Prop::Bottom: f.len = &ComputedStyle::bottom; break;
+    case Prop::TransformOriginX: f.len = &ComputedStyle::originX; break;
+    case Prop::TransformOriginY: f.len = &ComputedStyle::originY; break;
     case Prop::Grow: f.num = &ComputedStyle::grow; break;
     case Prop::Shrink: f.num = &ComputedStyle::shrink; break;
     case Prop::Gap: f.num = &ComputedStyle::gap; break;
@@ -605,6 +797,8 @@ PropField propField(Prop p) {
     case Prop::ShadowY: f.num = &ComputedStyle::shadowY; break;
     case Prop::BackdropBlur: f.num = &ComputedStyle::backdropBlur; break;
     case Prop::LetterSpacing: f.num = &ComputedStyle::letterSpacing; break;
+    case Prop::FontStretch: f.num = &ComputedStyle::fontStretch; break;
+    case Prop::IconSize: f.num = &ComputedStyle::iconSize; break;
     case Prop::Background: f.col = &ComputedStyle::background; break;
     case Prop::Background2: f.col = &ComputedStyle::background2; break;
     case Prop::BorderColor: f.col = &ComputedStyle::borderColor; break;
@@ -651,12 +845,23 @@ bool sameStyleProp(const ComputedStyle& a, const ComputedStyle& b, Prop p) {
     case Prop::TextDecoration: return a.textDecoration == b.textDecoration;
     case Prop::LineHeight: return a.lineHeight == b.lineHeight;
     case Prop::Cursor: return a.cursor == b.cursor;
+    case Prop::Transform: return a.transform == b.transform;
+    case Prop::Filter: return a.filter == b.filter;
+    case Prop::Icon: return a.icon == b.icon;
+    case Prop::FontVariationSettings:
+        return a.fontVariationCount == b.fontVariationCount && a.fontVariationTags == b.fontVariationTags &&
+               a.fontVariationValues == b.fontVariationValues;
+    case Prop::FontFeatureSettings:
+        return a.fontFeatureCount == b.fontFeatureCount && a.fontFeatureTags == b.fontFeatureTags &&
+               a.fontFeatureValues == b.fontFeatureValues;
     default: break;
     }
     return true;
 }
 
 void lerpStyleProp(ComputedStyle& out, const ComputedStyle& a, const ComputedStyle& b, Prop p, f32 k) {
+    if (p == Prop::Transform) { out.transform = lerpTransform(a.transform, b.transform, k); return; }
+    if (p == Prop::Filter) { out.filter = lerpFilter(a.filter, b.filter, k); return; }
     const PropField f = propField(p);
     if (f.num) {
         f32 v = mixf(a.*f.num, b.*f.num, k);
@@ -695,286 +900,28 @@ void inheritFrom(ComputedStyle& s, const ComputedStyle& parent) {
     s.letterSpacing = parent.letterSpacing;
     s.lineHeight = parent.lineHeight;
     s.rtl = parent.rtl;
+    s.fontStretch = parent.fontStretch;
+    s.fontVariationCount = parent.fontVariationCount;
+    s.fontVariationTags = parent.fontVariationTags;
+    s.fontVariationValues = parent.fontVariationValues;
+    s.fontFeatureCount = parent.fontFeatureCount;
+    s.fontFeatureTags = parent.fontFeatureTags;
+    s.fontFeatureValues = parent.fontFeatureValues;
 }
 
-// ---- Parser --------------------------------------------------------------------------------------------------------
-namespace {
-
-struct ParseCursor {
-    std::string_view s;
-    std::size_t i = 0;
-    u32 line = 1;
-    void skipWs() {
-        for (;;) {
-            while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) {
-                if (s[i] == '\n') ++line;
-                ++i;
-            }
-            if (i + 1 < s.size() && s[i] == '/' && s[i + 1] == '*') {
-                const auto e = s.find("*/", i + 2);
-                for (std::size_t k = i; k < (e == std::string_view::npos ? s.size() : e); ++k)
-                    if (s[k] == '\n') ++line;
-                i = e == std::string_view::npos ? s.size() : e + 2;
-                continue;
-            }
-            break;
-        }
+bool StyleSheet::token(u32 h, std::string_view& out, const std::vector<u8>* condOk) const {
+    for (std::size_t i = m_tokens.size(); i-- > 0;) {
+        if (m_tokens[i].first != h) continue;
+        if (condOk && i < m_tokenConds.size()) // defined inside an @media block: only while that block applies
+            if (const i32 c = m_tokenConds[i]; c >= 0 && (std::size_t(c) >= condOk->size() || !(*condOk)[std::size_t(c)])) continue;
+        out = m_tokens[i].second;
+        return true;
     }
-};
-
-
-bool parseSelector(std::string_view text, StyleRule& rule, bool& isRoot) {
-    rule.chain.clear();
-    isRoot = false;
-    std::size_t i = 0;
-    auto comb = SimpleSelector::Combinator::None;
-    u32 ids = 0, cls = 0, types = 0;
-    while (i < text.size()) {
-        while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) {
-            ++i;
-            if (!rule.chain.empty() && comb == SimpleSelector::Combinator::None) comb = SimpleSelector::Combinator::Descendant;
-        }
-        if (i >= text.size()) break;
-        if (text[i] == '>') {
-            comb = SimpleSelector::Combinator::Child;
-            ++i;
-            continue;
-        }
-        SimpleSelector sel;
-        sel.combinator = rule.chain.empty() ? SimpleSelector::Combinator::None : comb;
-        bool any = false;
-        while (i < text.size() && !std::isspace(static_cast<unsigned char>(text[i])) && text[i] != '>') {
-            const char c = text[i];
-            auto ident = [&](std::size_t from) {
-                std::size_t k = from;
-                while (k < text.size() && (std::isalnum(static_cast<unsigned char>(text[k])) || text[k] == '-' || text[k] == '_')) ++k;
-                return k;
-            };
-            if (c == '*') { ++i; any = true; }
-            else if (c == '#') { const auto e = ident(i + 1); sel.idHash = hashId(text.substr(i + 1, e - i - 1)); i = e; ++ids; any = true; }
-            else if (c == '.') {
-                const auto e = ident(i + 1);
-                if (sel.classCount >= 4) return false;
-                sel.classes[sel.classCount++] = hashId(text.substr(i + 1, e - i - 1));
-                i = e; ++cls; any = true;
-            } else if (c == ':') {
-                const auto e = ident(i + 1);
-                const auto name = text.substr(i + 1, e - i - 1);
-                i = e; any = true;
-                if (name == "root") { isRoot = true; continue; }
-                u32 bit = 0;
-                if (name == "hover") bit = kStateHover;
-                else if (name == "pressed" || name == "active") bit = kStatePressed;
-                else if (name == "focus") bit = kStateFocus;
-                else if (name == "focus-visible") bit = kStateFocusVisible;
-                else if (name == "disabled") bit = kStateDisabled;
-                else if (name == "checked") bit = kStateChecked;
-                else if (name == "selected") bit = kStateSelected;
-                else if (name == "drag-over") bit = kStateDragOver;
-                else return false;
-                sel.states |= bit;
-                ++cls;
-            } else if (std::isalpha(static_cast<unsigned char>(c))) {
-                const auto e = ident(i);
-                sel.typeHash = hashId(text.substr(i, e - i));
-                i = e; ++types; any = true;
-            } else return false;
-        }
-        if (!any) return false;
-        rule.chain.push_back(sel);
-        comb = SimpleSelector::Combinator::None;
-    }
-    rule.specificity = (std::min(ids, 255u) << 16) | (std::min(cls, 255u) << 8) | std::min(types, 255u);
-    return !rule.chain.empty() || isRoot;
+    return false;
 }
-
-void addDecl(StyleRule& rule, Prop p, std::string_view value, u32 line, std::vector<StyleDiagnostic>* diags) {
-    Declaration d;
-    d.prop = p;
-    if (value.find("var(") != std::string_view::npos) {
-        d.raw.assign(value);
-        rule.decls.push_back(std::move(d));
-        return;
-    }
-    if (!parsePropValue(p, value, d.value)) {
-        if (diags) diags->push_back({StyleError::BadValue, line, std::string(propInfo(p).cssName) + ": " + std::string(value)});
-        return;
-    }
-    rule.decls.push_back(std::move(d));
-}
-
-void splitWords(std::string_view v, std::string_view* out, int& n, int max) {
-    n = 0;
-    std::size_t i = 0;
-    while (i < v.size() && n < max) {
-        while (i < v.size() && std::isspace(static_cast<unsigned char>(v[i]))) ++i;
-        std::size_t s = i;
-        int depth = 0;
-        while (i < v.size() && (depth > 0 || !std::isspace(static_cast<unsigned char>(v[i])))) {
-            if (v[i] == '(') ++depth;
-            if (v[i] == ')') --depth;
-            ++i;
-        }
-        if (i > s) out[n++] = v.substr(s, i - s);
-    }
-}
-
-void addShorthand(StyleRule& rule, std::string_view name, std::string_view value, u32 line,
-                  std::vector<StyleDiagnostic>* diags) {
-    std::string_view w[4];
-    int n = 0;
-    auto four = [&](Prop t, Prop r, Prop b, Prop l) {
-        splitWords(value, w, n, 4);
-        if (n == 0) return;
-        std::string_view top = w[0], right = n > 1 ? w[1] : w[0], bottom = n > 2 ? w[2] : w[0],
-                         left = n > 3 ? w[3] : (n > 1 ? w[1] : w[0]);
-        addDecl(rule, t, top, line, diags);
-        addDecl(rule, r, right, line, diags);
-        addDecl(rule, b, bottom, line, diags);
-        addDecl(rule, l, left, line, diags);
-    };
-    if (name == "padding") four(Prop::PaddingTop, Prop::PaddingRight, Prop::PaddingBottom, Prop::PaddingLeft);
-    else if (name == "margin") four(Prop::MarginTop, Prop::MarginRight, Prop::MarginBottom, Prop::MarginLeft);
-    else if (name == "border-radius") four(Prop::RadiusTL, Prop::RadiusTR, Prop::RadiusBR, Prop::RadiusBL);
-    else if (name == "border") {
-        splitWords(value, w, n, 4);
-        for (int k = 0; k < n; ++k) {
-            PropValue tmp;
-            if (parsePropValue(Prop::BorderWidth, w[k], tmp)) addDecl(rule, Prop::BorderWidth, w[k], line, diags);
-            else if (w[k] == "solid" || w[k] == "none") continue;
-            else addDecl(rule, Prop::BorderColor, w[k], line, diags);
-        }
-    } else if (name == "transition") { // <property|all|none> <duration> [easing] [delay], ...
-        std::size_t at = 0;
-        while (at <= value.size()) {
-            const std::size_t comma = value.find(',', at);
-            const std::string_view one = trim(value.substr(at, comma == std::string_view::npos ? std::string_view::npos : comma - at));
-            const std::size_t sp = one.find_first_of(" \t");
-            const std::string_view target = one.substr(0, sp), rest = sp == std::string_view::npos ? std::string_view{} : one.substr(sp);
-            // box shorthands animate their four longhands
-            static constexpr std::string_view kBox[3][5] = {
-                {"padding", "padding-top", "padding-right", "padding-bottom", "padding-left"},
-                {"margin", "margin-top", "margin-right", "margin-bottom", "margin-left"},
-                {"border-radius", "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius"}};
-            bool expanded = false;
-            for (const auto& box : kBox)
-                if (target == box[0]) {
-                    for (int k = 1; k < 5; ++k) addDecl(rule, Prop::Transition, std::string(box[k]) + std::string(rest), line, diags);
-                    expanded = true;
-                }
-            if (!expanded && !one.empty()) addDecl(rule, Prop::Transition, one, line, diags);
-            if (comma == std::string_view::npos) break;
-            at = comma + 1;
-        }
-    } else if (name == "flex") {
-        splitWords(value, w, n, 3);
-        if (n > 0) addDecl(rule, Prop::Grow, w[0], line, diags);
-        if (n > 1) addDecl(rule, Prop::Shrink, w[1], line, diags);
-        if (n > 2) addDecl(rule, Prop::Basis, w[2], line, diags);
-    } else if (name == "box-shadow") { // <x> <y> <blur> <color>
-        splitWords(value, w, n, 4);
-        if (n == 4) {
-            addDecl(rule, Prop::ShadowX, w[0], line, diags);
-            addDecl(rule, Prop::ShadowY, w[1], line, diags);
-            addDecl(rule, Prop::ShadowBlur, w[2], line, diags);
-            addDecl(rule, Prop::ShadowColor, w[3], line, diags);
-        } else if (diags) diags->push_back({StyleError::BadValue, line, "box-shadow"});
-    } else if (name == "background" && value.starts_with("linear-gradient")) {
-        // linear-gradient(vertical|horizontal, c0, c1)
-        const auto open = value.find('('), close = value.rfind(')');
-        std::string_view args = value.substr(open + 1, close - open - 1);
-        std::string_view parts[3];
-        int k = 0;
-        int depth = 0;
-        std::size_t s = 0;
-        for (std::size_t i = 0; i <= args.size() && k < 3; ++i) {
-            if (i < args.size() && args[i] == '(') ++depth;
-            if (i < args.size() && args[i] == ')') --depth;
-            if (i == args.size() || (args[i] == ',' && depth == 0)) {
-                parts[k++] = trim(args.substr(s, i - s));
-                s = i + 1;
-            }
-        }
-        if (k == 3) {
-            addDecl(rule, Prop::Gradient, parts[0] == "to right" ? "horizontal" : (parts[0] == "to bottom" ? "vertical" : parts[0]), line, diags);
-            addDecl(rule, Prop::Background, parts[1], line, diags);
-            addDecl(rule, Prop::Background2, parts[2], line, diags);
-        } else if (diags) diags->push_back({StyleError::BadValue, line, "linear-gradient"});
-    } else if (diags) diags->push_back({StyleError::UnknownProperty, line, std::string(name)});
-}
-
-} // namespace
-
-std::expected<StyleSheet, StyleDiagnostic> StyleSheet::parse(std::string_view css, std::vector<StyleDiagnostic>* diags) {
-    StyleSheet sheet;
-    ParseCursor c{css};
-    u32 order = 0;
-    for (;;) {
-        c.skipWs();
-        if (c.i >= css.size()) break;
-        const auto brace = css.find('{', c.i);
-        if (brace == std::string_view::npos) return std::unexpected(StyleDiagnostic{StyleError::Syntax, c.line, "expected '{'"});
-        const std::string_view selectors = trim(css.substr(c.i, brace - c.i));
-        const auto close = css.find('}', brace);
-        if (close == std::string_view::npos) return std::unexpected(StyleDiagnostic{StyleError::Syntax, c.line, "expected '}'"});
-        const u32 line = c.line;
-        for (std::size_t k = c.i; k < close; ++k)
-            if (css[k] == '\n') ++c.line;
-        StyleRule proto;
-        std::string_view body = css.substr(brace + 1, close - brace - 1);
-        std::vector<std::pair<u32, std::string>> tokens;
-        // declarations
-        while (!body.empty()) {
-            const auto semi = body.find(';');
-            std::string_view decl = trim(body.substr(0, semi));
-            if (!decl.empty()) {
-                const auto colon = decl.find(':');
-                if (colon == std::string_view::npos) {
-                    if (diags) diags->push_back({StyleError::Syntax, line, std::string(decl)});
-                } else {
-                    const auto name = trim(decl.substr(0, colon));
-                    const auto value = trim(decl.substr(colon + 1));
-                    Prop p;
-                    if (name.starts_with("--")) {
-                        Declaration d;
-                        d.customHash = hashId(name);
-                        d.raw.assign(value);
-                        tokens.emplace_back(d.customHash, d.raw);
-                        proto.decls.push_back(std::move(d));
-                    } else if (findProp(name, p)) addDecl(proto, p, value, line, diags);
-                    else addShorthand(proto, name, value, line, diags);
-                }
-            }
-            if (semi == std::string_view::npos) break;
-            body.remove_prefix(semi + 1);
-        }
-        // one rule per selector in the list
-        std::string_view list = selectors;
-        while (!list.empty()) {
-            const auto comma = list.find(',');
-            const auto one = trim(list.substr(0, comma));
-            StyleRule rule;
-            bool isRoot = false;
-            if (!parseSelector(one, rule, isRoot)) {
-                if (diags) diags->push_back({StyleError::Syntax, line, "bad selector: " + std::string(one)});
-            } else {
-                rule.decls = proto.decls;
-                rule.order = order++;
-                rule.root = isRoot;
-                if (isRoot) for (auto& t : tokens) sheet.m_tokens.push_back(t);
-                if (!rule.chain.empty() || isRoot) sheet.m_rules.push_back(std::move(rule));
-            }
-            if (comma == std::string_view::npos) break;
-            list.remove_prefix(comma + 1);
-        }
-        c.i = close + 1;
-    }
-    return sheet;
-}
-
-bool StyleSheet::token(u32 h, std::string_view& out) const {
-    for (auto it = m_tokens.rbegin(); it != m_tokens.rend(); ++it)
-        if (it->first == h) { out = it->second; return true; }
+bool StyleEngine::sheetToken(u32 h, std::string_view& out) const {
+    for (std::size_t i = m_sheets.size(); i-- > 0;)
+        if (m_sheets[i].token(h, out, i < m_condOk.size() ? &m_condOk[i] : nullptr)) return true;
     return false;
 }
 
@@ -991,23 +938,354 @@ StyleEngine::StyleEngine() {
 
 void StyleEngine::clearSheets() {
     m_sheets.clear();
-    m_ordered.clear();
+    rebuild();
     ++m_version;
 }
 
 void StyleEngine::addSheet(StyleSheet sheet) {
     m_sheets.push_back(std::move(sheet));
-    m_ordered.clear();
-    u32 sheetIdx = 0;
-    std::vector<std::pair<u64, const StyleRule*>> keyed;
-    for (const auto& sh : m_sheets) {
-        for (const auto& r : sh.m_rules) keyed.emplace_back((u64(r.specificity) << 40) | (u64(sheetIdx) << 32) | r.order, &r);
-        ++sheetIdx;
-    }
-    std::stable_sort(keyed.begin(), keyed.end(), [](auto& a, auto& b) { return a.first < b.first; });
-    for (auto& k : keyed) m_ordered.push_back(k.second);
+    rebuild();
     ++m_version;
 }
+
+// ---- Conditions (@media, @container) -------------------------------------------------------------------------------
+bool evalQuery(const std::vector<QueryTerm>& program, const MediaEnv& env) {
+    bool stack[32];
+    int n = 0;
+    for (const QueryTerm& t : program) {
+        switch (t.op) {
+        case QueryTerm::Op::True:
+        case QueryTerm::Op::False:
+            if (n < 32) stack[n++] = t.op == QueryTerm::Op::True;
+            break;
+        case QueryTerm::Op::Not:
+            if (n >= 1) stack[n - 1] = !stack[n - 1];
+            break;
+        case QueryTerm::Op::And:
+        case QueryTerm::Op::Or:
+            if (n >= 2) {
+                stack[n - 2] = t.op == QueryTerm::Op::And ? (stack[n - 2] && stack[n - 1]) : (stack[n - 2] || stack[n - 1]);
+                --n;
+            }
+            break;
+        case QueryTerm::Op::Feature: {
+            f32 v = 0.f;
+            switch (t.feature) {
+            case QueryTerm::Feature::Width: v = env.width; break;
+            case QueryTerm::Feature::Height: v = env.height; break;
+            case QueryTerm::Feature::AspectRatio: v = env.height > 0.f ? env.width / env.height : 0.f; break;
+            case QueryTerm::Feature::Orientation: v = env.width > env.height ? 1.f : 0.f; break;
+            case QueryTerm::Feature::PrefersDark: v = env.dark ? 1.f : 0.f; break;
+            case QueryTerm::Feature::PrefersReducedMotion: v = env.reducedMotion ? 1.f : 0.f; break;
+            case QueryTerm::Feature::Hover: v = env.hover ? 1.f : 0.f; break;
+            case QueryTerm::Feature::Pointer: v = f32(env.pointer); break;
+            case QueryTerm::Feature::Resolution: v = env.resolution; break;
+            case QueryTerm::Feature::PrefersContrast: v = env.moreContrast ? 1.f : 0.f; break;
+            }
+            bool r = false;
+            switch (t.cmp) {
+            case QueryTerm::Cmp::Truthy: r = v != 0.f; break;
+            case QueryTerm::Cmp::Eq: r = std::abs(v - t.value) < 1e-4f; break;
+            case QueryTerm::Cmp::Lt: r = v < t.value; break;
+            case QueryTerm::Cmp::Le: r = v <= t.value; break;
+            case QueryTerm::Cmp::Gt: r = v > t.value; break;
+            case QueryTerm::Cmp::Ge: r = v >= t.value; break;
+            }
+            if (n < 32) stack[n++] = r;
+            break;
+        }
+        }
+    }
+    return n > 0 && stack[n - 1];
+}
+
+namespace {
+/// Per condition of a sheet: do the @media blocks it sits in hold? (@container blocks are decided per node.)
+void evalMediaChain(const StyleSheet& sheet, const MediaEnv& env, std::vector<u8>& out) {
+    const auto& conds = sheet.conditions();
+    out.assign(conds.size(), 1);
+    for (std::size_t i = 0; i < conds.size(); ++i) { // parents come first
+        const StyleCondition& c = conds[i];
+        bool ok = c.parent < 0 || (std::size_t(c.parent) < i && out[std::size_t(c.parent)]);
+        if (ok && c.kind == StyleCondition::Kind::Media) ok = evalQuery(c.program, env);
+        out[i] = ok ? 1 : 0;
+    }
+}
+} // namespace
+
+void StyleEngine::setMediaEnv(const MediaEnv& env) {
+    if (env == m_media) return;
+    m_media = env;
+    std::vector<u8> now;
+    bool flipped = false;
+    for (std::size_t i = 0; i < m_sheets.size() && !flipped; ++i) {
+        if (m_sheets[i].conditions().empty()) continue;
+        evalMediaChain(m_sheets[i], env, now);
+        flipped = i >= m_condOk.size() || now != m_condOk[i];
+    }
+    if (!flipped) return;
+    rebuild();
+    ++m_version;
+}
+
+bool StyleEngine::conditionHolds(const StyleSubject& s, u32 node, const Ordered& o) const {
+    const auto& conds = o.sheet->conditions();
+    for (i32 c = o.rule->cond; c >= 0 && std::size_t(c) < conds.size(); c = conds[std::size_t(c)].parent) {
+        const StyleCondition& sc = conds[std::size_t(c)];
+        if (sc.kind != StyleCondition::Kind::Container) continue;
+        Size size;
+        if (!s.containerSize(node, sc.containerName, sc.needsHeight, size)) return false;
+        MediaEnv env = m_media;
+        env.width = size.w;
+        env.height = size.h;
+        if (!evalQuery(sc.program, env)) return false;
+    }
+    return true;
+}
+
+// ---- Rule order, features, invalidation keys -----------------------------------------------------------------------
+void StyleEngine::addKey(u8 kind, u32 key, StyleInvalidation inv) {
+    if (!inv.descend && !inv.siblings && !inv.has) return;
+    for (InvalKey& k : m_keys)
+        if (k.kind == kind && k.key == key) {
+            k.inv.descend = std::max(k.inv.descend, inv.descend);
+            k.inv.siblings = k.inv.siblings || inv.siblings;
+            k.inv.has = k.inv.has || inv.has;
+            return;
+        }
+    m_keys.push_back({key, kind, inv});
+}
+
+void StyleEngine::collectKeys(const StyleRule& r, const SimpleSelector& sel, StyleInvalidation inv, bool inHas) {
+    for (u8 k = 0; k < sel.classCount; ++k) addKey(0, sel.classes[k], inv);
+    for (u32 bit = 1; bit && bit <= sel.states; bit <<= 1)
+        if (sel.states & bit) addKey(1, bit, inv);
+    for (u32 pi = sel.firstPart; pi < u32(sel.firstPart) + sel.partCount && pi < r.parts.size(); ++pi) {
+        const SelectorPart& part = r.parts[pi];
+        switch (part.kind) {
+        case SelectorPart::Kind::Attr: addKey(2, part.name, inv); break;
+        case SelectorPart::Kind::Empty: m_features |= kStyleStructural | kStyleEmptyText; break;
+        case SelectorPart::Kind::NthChild:
+        case SelectorPart::Kind::NthLastChild: m_features |= kStyleStructural; break;
+        case SelectorPart::Kind::Not:
+        case SelectorPart::Kind::Is:
+        case SelectorPart::Kind::Where:
+        case SelectorPart::Kind::Has: {
+            StyleInvalidation in = inv;
+            bool has = inHas;
+            if (part.kind == SelectorPart::Kind::Has) {
+                in.has = true;
+                has = true;
+                m_features |= kStyleHas;
+            }
+            for (u32 li = part.firstList; li < part.firstList + part.listCount && li < r.lists.size(); ++li) {
+                const SelectorRange& range = r.lists[li];
+                for (u32 ci = range.first; ci < range.first + range.count && ci < r.sub.size(); ++ci) {
+                    StyleInvalidation x = in;
+                    if (ci + 1 < range.first + range.count) { // left of the argument's subject: any depth, any sibling
+                        x.descend = 255;
+                        x.siblings = true;
+                        if (!has) m_features |= kStyleStructDeep;
+                    }
+                    const auto comb = r.sub[ci].combinator;
+                    if (comb == SimpleSelector::Combinator::NextSibling || comb == SimpleSelector::Combinator::LaterSibling)
+                        m_features |= kStyleSibling | (has ? 0u : u32(kStyleStructDeep));
+                    collectKeys(r, r.sub[ci], x, has);
+                }
+            }
+            break;
+        }
+        default: break;
+        }
+    }
+}
+
+void StyleEngine::rebuild() {
+    m_ordered.clear();
+    m_keys.clear();
+    m_features = 0;
+    m_condOk.resize(m_sheets.size());
+    // cascade layers: names merge across sheets in order of first appearance; a layer's own rules come after its
+    // sub-layers; rules outside any layer come last (and so win)
+    // (an anonymous layer, marked by a \x01 in its name, belongs to its sheet alone)
+    auto layerKey = [](const std::string& l, u32 sheet) {
+        if (l.find('\x01') == std::string::npos) return l;
+        std::string key;
+        for (char c : l) {
+            key.push_back(c);
+            if (c == '\x01') key += std::to_string(sheet) + ":";
+        }
+        return key;
+    };
+    std::vector<std::string> names;
+    for (u32 si = 0; si < m_sheets.size(); ++si)
+        for (const std::string& l : m_sheets[si].m_layers)
+            if (const std::string key = layerKey(l, si); std::find(names.begin(), names.end(), key) == names.end()) names.push_back(key);
+    auto indexOf = [&](std::string_view n) {
+        for (std::size_t i = 0; i < names.size(); ++i)
+            if (names[i] == n) return u32(i);
+        return u32(names.size());
+    };
+    std::vector<std::vector<u32>> paths(names.size());
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        const std::string_view n = names[i];
+        for (std::size_t dot = n.find('.');; dot = n.find('.', dot + 1)) { // (a prefix nothing declared sorts last)
+            paths[i].push_back(indexOf(n.substr(0, dot)));
+            if (dot == std::string_view::npos) break;
+        }
+        paths[i].push_back(0xFFFFFFFFu); // own rules after the sub-layers
+    }
+    std::vector<u32> byRank(names.size());
+    for (u32 i = 0; i < byRank.size(); ++i) byRank[i] = i;
+    std::sort(byRank.begin(), byRank.end(), [&](u32 a, u32 b) { return paths[a] < paths[b]; });
+    std::vector<u32> rank(names.size());
+    for (u32 i = 0; i < byRank.size(); ++i) rank[byRank[i]] = i;
+
+    struct Keyed {
+        u32 layer, specificity, sheet, order;
+        Ordered o;
+    };
+    std::vector<Keyed> keyed;
+    u32 sheetIdx = 0;
+    for (const auto& sh : m_sheets) {
+        evalMediaChain(sh, m_media, m_condOk[sheetIdx]);
+        for (const StyleCondition& c : sh.m_conditions)
+            if (c.kind == StyleCondition::Kind::Container) m_features |= kStyleContainer;
+        for (const auto& r : sh.m_rules) {
+            if (r.cond >= 0 && (std::size_t(r.cond) >= m_condOk[sheetIdx].size() || !m_condOk[sheetIdx][std::size_t(r.cond)])) continue;
+            const u32 layer = r.layer && std::size_t(r.layer - 1) < sh.m_layers.size() ? rank[indexOf(layerKey(sh.m_layers[r.layer - 1u], sheetIdx))] : 0xFFFFFFFFu;
+            keyed.push_back({layer, r.specificity, sheetIdx, r.order, {&r, &sh}});
+            // what a change left of the subject reaches
+            if (r.chain.size() > 1) m_features |= kStyleDescend;
+            StyleInvalidation inv;
+            for (std::size_t k = r.chain.size(); k-- > 0;) {
+                const bool subject = k + 1 == r.chain.size();
+                collectKeys(r, r.chain[k], inv, false);
+                if (!subject) {
+                    for (u32 pi = r.chain[k].firstPart; pi < u32(r.chain[k].firstPart) + r.chain[k].partCount && pi < r.parts.size(); ++pi) {
+                        const auto kind = r.parts[pi].kind;
+                        if (kind == SelectorPart::Kind::Has) m_features |= kStyleHasDeep;
+                        if (kind == SelectorPart::Kind::Empty || kind == SelectorPart::Kind::NthChild || kind == SelectorPart::Kind::NthLastChild)
+                            m_features |= kStyleStructDeep;
+                    }
+                }
+                switch (r.chain[k].combinator) { // the hop from chain[k - 1] to chain[k]
+                case SimpleSelector::Combinator::Child:
+                    if (inv.descend < 254) ++inv.descend;
+                    break;
+                case SimpleSelector::Combinator::NextSibling:
+                case SimpleSelector::Combinator::LaterSibling:
+                    inv.siblings = true;
+                    m_features |= kStyleSibling;
+                    if (!subject) m_features |= kStyleStructDeep;
+                    break;
+                default: inv.descend = 255; break;
+                }
+            }
+            if (r.scoped) { // the scope root / limit selectors sit above the subject at any depth
+                StyleInvalidation any;
+                any.descend = 255;
+                any.siblings = true;
+                for (u32 li : {r.scopeFirst, r.limitFirst}) {
+                    const u32 count = li == r.scopeFirst ? r.scopeCount : r.limitCount;
+                    for (u32 x = li; x < li + count && x < r.lists.size(); ++x)
+                        for (u32 ci = r.lists[x].first; ci < r.lists[x].first + r.lists[x].count && ci < r.sub.size(); ++ci)
+                            collectKeys(r, r.sub[ci], any, false);
+                }
+                m_features |= kStyleDescend;
+            }
+        }
+        ++sheetIdx;
+    }
+    std::stable_sort(keyed.begin(), keyed.end(), [](const Keyed& a, const Keyed& b) {
+        if (a.layer != b.layer) return a.layer < b.layer;
+        if (a.specificity != b.specificity) return a.specificity < b.specificity;
+        if (a.sheet != b.sheet) return a.sheet < b.sheet;
+        return a.order < b.order;
+    });
+    for (const Keyed& k : keyed) m_ordered.push_back(k.o);
+}
+
+StyleInvalidation StyleEngine::lookupInvalidation(u8 kind, u32 key) const {
+    for (const InvalKey& k : m_keys)
+        if (k.kind == kind && k.key == key) return k.inv;
+    return {};
+}
+StyleInvalidation StyleEngine::stateInvalidation(u32 bits) const {
+    StyleInvalidation out;
+    if (m_keys.empty()) return out;
+    for (const InvalKey& k : m_keys)
+        if (k.kind == 1 && (k.key & bits)) {
+            out.descend = std::max(out.descend, k.inv.descend);
+            out.siblings = out.siblings || k.inv.siblings;
+            out.has = out.has || k.inv.has;
+        }
+    return out;
+}
+
+const KeyframesRule* StyleEngine::findKeyframes(u32 name) const {
+    for (auto sh = m_sheets.rbegin(); sh != m_sheets.rend(); ++sh)
+        for (auto k = sh->m_keyframes.rbegin(); k != sh->m_keyframes.rend(); ++k)
+            if (k->name == name) return &*k;
+    return nullptr;
+}
+
+bool StyleEngine::resolveDeclaration(const Declaration& d, PropValue& out) {
+    if (d.prop == Prop::Count) return false;
+    if (d.raw.empty()) { out = d.value; return true; }
+    m_localTokens.clear();
+    return resolveVar(d.raw, d.prop, out, 0);
+}
+
+// ---- Matching ------------------------------------------------------------------------------------------------------
+struct StyleEngine::MatchCtx {
+    const StyleSubject& s;
+    const StyleRule& r;
+    u32 scope; ///< the @scope root the rule is matched under (kNone: none)
+};
+namespace {
+constexpr u32 kNone = 0xFFFFFFFFu;
+char lower(char c) { return c >= 'A' && c <= 'Z' ? char(c - 'A' + 'a') : c; }
+bool equalText(std::string_view a, std::string_view b, bool noCase) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (noCase ? lower(a[i]) != lower(b[i]) : a[i] != b[i]) return false;
+    return true;
+}
+bool attrMatches(AttrOp op, std::string_view have, std::string_view want, bool noCase) {
+    switch (op) {
+    case AttrOp::Exists: return true;
+    case AttrOp::Equals: return equalText(have, want, noCase);
+    case AttrOp::Includes: // one of the whitespace separated words
+        if (want.empty()) return false;
+        for (std::size_t i = 0; i < have.size();) {
+            while (i < have.size() && isSpace(have[i])) ++i;
+            std::size_t e = i;
+            while (e < have.size() && !isSpace(have[e])) ++e;
+            if (e > i && equalText(have.substr(i, e - i), want, noCase)) return true;
+            i = e;
+        }
+        return false;
+    case AttrOp::DashMatch:
+        return equalText(have, want, noCase) ||
+               (have.size() > want.size() && have[want.size()] == '-' && equalText(have.substr(0, want.size()), want, noCase));
+    case AttrOp::Prefix: return !want.empty() && have.size() >= want.size() && equalText(have.substr(0, want.size()), want, noCase);
+    case AttrOp::Suffix:
+        return !want.empty() && have.size() >= want.size() && equalText(have.substr(have.size() - want.size()), want, noCase);
+    case AttrOp::Substring:
+        if (want.empty()) return false;
+        for (std::size_t i = 0; i + want.size() <= have.size(); ++i)
+            if (equalText(have.substr(i, want.size()), want, noCase)) return true;
+        return false;
+    }
+    return false;
+}
+bool nthMatches(i32 a, i32 b, i32 index) {
+    if (a == 0) return index == b;
+    const i32 d = index - b;
+    return d % a == 0 && d / a >= 0;
+}
+} // namespace
 
 bool StyleEngine::matchSimple(const StyleSubject& s, u32 node, const SimpleSelector& sel) const {
     if (sel.typeHash && s.typeHash(node) != sel.typeHash) return false;
@@ -1018,27 +1296,163 @@ bool StyleEngine::matchSimple(const StyleSubject& s, u32 node, const SimpleSelec
     return true;
 }
 
-bool StyleEngine::matches(const StyleSubject& s, u32 node, const StyleRule& rule) const {
-    if (rule.root) return s.parent(node) == 0xFFFFFFFFu;
-    int k = int(rule.chain.size()) - 1;
-    if (!matchSimple(s, node, rule.chain[std::size_t(k)])) return false;
-    u32 cur = node;
-    while (k > 0) {
-        const auto comb = rule.chain[std::size_t(k)].combinator;
-        --k;
-        const auto& want = rule.chain[std::size_t(k)];
-        if (comb == SimpleSelector::Combinator::Child) {
-            cur = s.parent(cur);
-            if (cur == 0xFFFFFFFFu || !matchSimple(s, cur, want)) return false;
-        } else {
-            for (;;) {
-                cur = s.parent(cur);
-                if (cur == 0xFFFFFFFFu) return false;
-                if (matchSimple(s, cur, want)) break;
+bool StyleEngine::matchList(const MatchCtx& c, u32 node, u32 firstList, u32 listCount) const {
+    for (u32 li = firstList; li < firstList + listCount && li < c.r.lists.size(); ++li) {
+        const SelectorRange& range = c.r.lists[li];
+        if (range.count == 0 || std::size_t(range.first) + range.count > c.r.sub.size()) continue;
+        if (matchChain(c, node, c.r.sub.data() + range.first, int(range.count) - 1, kNone, range.lead)) return true;
+    }
+    return false;
+}
+
+bool StyleEngine::matchHas(const MatchCtx& c, u32 anchor, const SelectorRange& range) const {
+    if (range.count == 0 || std::size_t(range.first) + range.count > c.r.sub.size()) return false;
+    const SimpleSelector* chain = c.r.sub.data() + range.first;
+    const int last = int(range.count) - 1;
+    using Comb = SimpleSelector::Combinator;
+    const bool sideways = range.lead == Comb::NextSibling || range.lead == Comb::LaterSibling;
+    // candidates for the argument's subject: the anchor's descendants, or its later siblings and what is below them
+    auto subtree = [&](u32 top, bool includeTop, bool childrenOnly) {
+        if (includeTop && matchChain(c, top, chain, last, anchor, range.lead)) return true;
+        if (includeTop && last == 0) return false; // one compound right of `+` / `~`: the sibling itself
+        u32 n = c.s.firstChild(top);
+        while (n != kNone) {
+            if (matchChain(c, n, chain, last, anchor, range.lead)) return true;
+            u32 next = childrenOnly ? kNone : c.s.firstChild(n);
+            if (next == kNone) {
+                next = c.s.nextSibling(n);
+                while (next == kNone) {
+                    n = c.s.parent(n);
+                    if (n == kNone || n == top) return false;
+                    next = c.s.nextSibling(n);
+                }
             }
+            n = next;
+        }
+        return false;
+    };
+    if (!sideways) return subtree(anchor, false, range.lead == Comb::Child && last == 0);
+    for (u32 sib = c.s.nextSibling(anchor); sib != kNone; sib = c.s.nextSibling(sib)) {
+        if (subtree(sib, true, false)) return true;
+        if (range.lead == Comb::NextSibling && last == 0) break;
+    }
+    return false;
+}
+
+bool StyleEngine::matchCompound(const MatchCtx& c, u32 node, const SimpleSelector& sel) const {
+    if (!matchSimple(c.s, node, sel)) return false;
+    if (!sel.partCount) return true;
+    static constexpr u32 kClassAttr = hashId("class");
+    for (u32 pi = sel.firstPart; pi < u32(sel.firstPart) + sel.partCount; ++pi) {
+        if (pi >= c.r.parts.size()) return false;
+        const SelectorPart& part = c.r.parts[pi];
+        switch (part.kind) {
+        case SelectorPart::Kind::Attr: {
+            const std::string_view want = std::size_t(part.text) + part.textLen <= c.r.strings.size()
+                                              ? std::string_view(c.r.strings).substr(part.text, part.textLen) : std::string_view{};
+            if (part.name == kClassAttr && part.attrOp == AttrOp::Includes && !part.noCase) {
+                if (want.empty() || !c.s.hasClass(node, hashId(want))) return false;
+                break;
+            }
+            std::string_view have;
+            if (!c.s.attribute(node, part.name, have) || !attrMatches(part.attrOp, have, want, part.noCase)) return false;
+            break;
+        }
+        case SelectorPart::Kind::NthChild:
+        case SelectorPart::Kind::NthLastChild: {
+            i32 index = 1;
+            const bool fromEnd = part.kind == SelectorPart::Kind::NthLastChild;
+            for (u32 k = fromEnd ? c.s.nextSibling(node) : c.s.prevSibling(node); k != kNone;
+                 k = fromEnd ? c.s.nextSibling(k) : c.s.prevSibling(k))
+                ++index;
+            if (!nthMatches(part.a, part.b, index)) return false;
+            break;
+        }
+        case SelectorPart::Kind::Empty:
+            if (!c.s.empty(node)) return false;
+            break;
+        case SelectorPart::Kind::Not:
+            if (matchList(c, node, part.firstList, part.listCount)) return false;
+            break;
+        case SelectorPart::Kind::Is:
+        case SelectorPart::Kind::Where:
+            if (!matchList(c, node, part.firstList, part.listCount)) return false;
+            break;
+        case SelectorPart::Kind::Has: {
+            bool any = false;
+            for (u32 li = part.firstList; li < part.firstList + part.listCount && li < c.r.lists.size() && !any; ++li)
+                any = matchHas(c, node, c.r.lists[li]);
+            if (!any) return false;
+            break;
+        }
+        case SelectorPart::Kind::Scope:
+            if (c.scope != kNone ? node != c.scope : c.s.parent(node) != kNone) return false;
+            break;
+        case SelectorPart::Kind::Root:
+            if (c.s.parent(node) != kNone) return false;
+            break;
         }
     }
     return true;
+}
+
+// Matches chain[0..k] ending at `node` (right to left, backtracking over descendant / later-sibling hops). With an
+// `anchor` the leftmost compound must also stand in relation `lead` to it (the relative selectors of :has()).
+bool StyleEngine::matchChain(const MatchCtx& c, u32 node, const SimpleSelector* chain, int k, u32 anchor,
+                             SimpleSelector::Combinator lead) const {
+    using Comb = SimpleSelector::Combinator;
+    if (!matchCompound(c, node, chain[k])) return false;
+    if (k == 0) {
+        if (anchor == kNone) return true;
+        switch (lead) {
+        case Comb::Child: return c.s.parent(node) == anchor;
+        case Comb::NextSibling: return c.s.prevSibling(node) == anchor;
+        case Comb::LaterSibling:
+            for (u32 p = c.s.prevSibling(node); p != kNone; p = c.s.prevSibling(p))
+                if (p == anchor) return true;
+            return false;
+        default:
+            for (u32 p = c.s.parent(node); p != kNone; p = c.s.parent(p))
+                if (p == anchor) return true;
+            return false;
+        }
+    }
+    switch (chain[k].combinator) {
+    case Comb::Child: {
+        const u32 p = c.s.parent(node);
+        return p != kNone && matchChain(c, p, chain, k - 1, anchor, lead);
+    }
+    case Comb::NextSibling: {
+        const u32 p = c.s.prevSibling(node);
+        return p != kNone && matchChain(c, p, chain, k - 1, anchor, lead);
+    }
+    case Comb::LaterSibling:
+        for (u32 p = c.s.prevSibling(node); p != kNone; p = c.s.prevSibling(p))
+            if (matchChain(c, p, chain, k - 1, anchor, lead)) return true;
+        return false;
+    default:
+        for (u32 p = c.s.parent(node); p != kNone; p = c.s.parent(p))
+            if (matchChain(c, p, chain, k - 1, anchor, lead)) return true;
+        return false;
+    }
+}
+
+bool StyleEngine::matches(const StyleSubject& s, u32 node, const StyleRule& rule) const {
+    if (rule.root) return s.parent(node) == kNone;
+    if (rule.chain.empty()) return false;
+    const int last = int(rule.chain.size()) - 1;
+    if (!matchSimple(s, node, rule.chain[std::size_t(last)])) return false; // the common rejection, before anything else
+    if (!rule.scoped) return matchChain({s, rule, kNone}, node, rule.chain.data(), last, kNone, SimpleSelector::Combinator::Descendant);
+    // @scope: under a scope root (the node or an ancestor) with no scope limit between it and the node
+    for (u32 root = node; root != kNone; root = s.parent(root)) {
+        const MatchCtx c{s, rule, root};
+        if (!matchList(c, root, rule.scopeFirst, rule.scopeCount)) continue;
+        bool cut = false;
+        if (rule.limitCount)
+            for (u32 n = node; n != root && !cut; n = s.parent(n)) cut = matchList(c, n, rule.limitFirst, rule.limitCount);
+        if (!cut && matchChain(c, node, rule.chain.data(), last, kNone, SimpleSelector::Combinator::Descendant)) return true;
+    }
+    return false;
 }
 
 bool StyleEngine::resolveVar(std::string_view raw, Prop p, PropValue& out, int depth) const {
@@ -1057,7 +1471,7 @@ bool StyleEngine::resolveVar(std::string_view raw, Prop p, PropValue& out, int d
     bool found = false;
     for (auto it = m_localTokens.rbegin(); it != m_localTokens.rend() && !found; ++it)
         if (it->first == h) { tok = it->second; found = true; }
-    for (auto it = m_sheets.rbegin(); it != m_sheets.rend() && !found; ++it) found = it->token(h, tok);
+    if (!found) found = sheetToken(h, tok);
     if (!found) {
         if (fallback.empty()) return false;
         tok = fallback;
@@ -1073,6 +1487,14 @@ u64 hashStyle(const ComputedStyle& cs) {
     mix(cs.background.r); mix(cs.background.g); mix(cs.background.a); mix(cs.color.r); mix(cs.color.a);
     mix(cs.width.value); mix(cs.height.value); mix(cs.padding.l); mix(cs.padding.t); mix(cs.gap); mix(cs.fontSize);
     mix(cs.opacity); mix(cs.borderWidth); mix(cs.radius[0]); mix(cs.grow);
+    // placement and the remaining colour channels: a HUD moves anchored / absolute nodes and fades colours every frame,
+    // and styles that differ only in those must not share one probe chain (fuse_ui_bench_hud spent 80% of a frame
+    // comparing ComputedStyles in it)
+    mix(cs.left.value); mix(cs.top.value); mix(cs.right.value); mix(cs.bottom.value); mix(cs.margin.l); mix(cs.margin.t);
+    mix(cs.background.b); mix(cs.color.g); mix(cs.color.b); mix(cs.background2.r); mix(cs.background2.g); mix(cs.background2.b);
+    mix(cs.borderColor.r); mix(cs.borderColor.g); mix(cs.borderColor.b); mix(cs.minWidth.value); mix(cs.minHeight.value);
+    mix(cs.maxWidth.value); mix(cs.maxHeight.value); mix(cs.basis.value); mix(cs.shadowBlur); mix(cs.letterSpacing);
+    mix(cs.transform.m[0]); mix(cs.transform.m[4]); mix(cs.transform.m[5]); mix(f32(cs.zIndex)); mix(f32(cs.animations[0].name));
     h = (h ^ (u64(cs.layout) | u64(cs.direction) << 8 | u64(cs.visible) << 16 | u64(cs.alignItems) << 24 | u64(cs.justify) << 32)) * 1099511628211ull;
     return h;
 }
@@ -1133,12 +1555,14 @@ u32 StyleEngine::compute(const StyleSubject& s, u32 node, const ComputedStyle* p
     if (parent) inheritFrom(cs, *parent);
     m_scratch.clear();
     m_localTokens.clear();
-    for (const StyleRule* r : m_ordered)
-        if (matches(s, node, *r)) {
+    for (const Ordered& o : m_ordered) {
+        const StyleRule* r = o.rule;
+        if (matches(s, node, *r) && (r->cond < 0 || conditionHolds(s, node, o))) {
             m_scratch.push_back(r);
             for (const auto& d : r->decls)
                 if (d.prop == Prop::Count) m_localTokens.emplace_back(d.customHash, std::string_view(d.raw));
         }
+    }
     for (const StyleRule* r : m_scratch)
         for (const auto& d : r->decls) {
             if (d.prop == Prop::Count) continue;

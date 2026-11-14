@@ -457,7 +457,7 @@ int gateSelection1M() {
     for (int i = 0; i < 60; ++i) { ui.wheel(mid, {0.f, 30.f}); ui.update(1.f / 60.f); }
     const unsigned long long a1 = g_allocs.load();
     for (int i = 0; i < 300; ++i) { ui.wheel(mid, {0.f, 30.f}); ui.update(1.f / 60.f); }
-    UI_CHECK_EQ(g_allocs.load() - a1, 0ull);
+    UI_CHECK_NO_ALLOC(g_allocs.load() - a1);
     // punching holes makes ranges, still not rows
     key(ui, Key::A, kModCtrl);
     w::setViewFirstVisible(ui, t, 500000);
@@ -1486,7 +1486,7 @@ int gateAsync() {
     for (int i = 0; i < 20; ++i) { ui.wheel(ctr(ui.rect(t)), {0.f, i % 2 ? 1.f : -1.f}); ui.update(1.f / 60.f); }
     const unsigned long long a0 = g_allocs.load();
     for (int i = 0; i < 100; ++i) { ui.wheel(ctr(ui.rect(t)), {0.f, i % 2 ? 1.f : -1.f}); ui.update(1.f / 60.f); }
-    UI_CHECK_EQ(g_allocs.load() - a0, 0ull);
+    UI_CHECK_NO_ALLOC(g_allocs.load() - a0);
     return finish("fuse_ui_mv_async");
 }
 

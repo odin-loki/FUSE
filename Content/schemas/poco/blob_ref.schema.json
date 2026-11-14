@@ -1,0 +1,26 @@
+{
+  "$id": "fuse.poco/1/blob_ref.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "A content-addressed payload: <store>/blobs/sha256/<ab>/<sha256> (plan \u00a72.1).",
+  "properties": {
+    "media": {
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "size": {
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "sha256",
+    "size",
+    "media"
+  ],
+  "title": "blob_ref",
+  "type": "object"
+}

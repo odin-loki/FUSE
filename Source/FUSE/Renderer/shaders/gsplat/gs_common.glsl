@@ -78,4 +78,9 @@ uvec4 gs_projected(uint i, uint w) { return GsProjectedRef(F.projected).v[i * 4u
 
 uint gs_tiles_touched(uvec4 rect) { return (rect.z - rect.x) * (rect.w - rect.y); }
 
+// Correctly rounded division / square root (fuse_div_rn / fuse_sqrt_rn, common/exact_math.glsl): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but det = a c - b^2 amplifies a division ulp (~250 ulp on the
+// RTX 3090) and the 3-sigma radius / tile rectangle are discrete decisions on these quotients.
+#include "../common/exact_math.glsl"
+
 #endif

@@ -1101,7 +1101,11 @@ void testExistingParity() {
         }
     }
     expectTrue(vigErr < 1e-6f, "vignette (roundness 0, falloff 2) == legacy vignette_factor");
-    expectNear(lk::srgb_encode(0.18f), fuse::renderer::linear_to_srgb({0.18f, 0.f, 0.f}).x, 0, "sRGB OETF matches");
+    // A runtime input: with a literal, Clang folds the inline srgb_encode's powf at compile time, which may round
+    // differently (1 ulp) from the libm powf linear_to_srgb calls; the gate is about the two expressions matching.
+    volatile f32 mid_grey = 0.18f;
+    const f32 grey = mid_grey;
+    expectNear(lk::srgb_encode(grey), fuse::renderer::linear_to_srgb({grey, 0.f, 0.f}).x, 0, "sRGB OETF matches");
 }
 
 void testAnalyticKernels() {

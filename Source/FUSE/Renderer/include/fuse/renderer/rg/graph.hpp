@@ -249,6 +249,7 @@ private:
         u64 writeStages = 0; ///< last write (or the chain stage of a layout transition)
         u64 writeAccess = 0;
         u64 readStages = 0; ///< reads since the last write
+        u64 passUnordered = 0; ///< earlier passes' read stages the barrier before lastPass does not wait on
         u64 visStages[2] = {0, 0};
         u64 visAccess[2] = {0, 0};
         u64 rangeLo = 0; ///< buffers: bounding range of tracked accesses
@@ -256,6 +257,7 @@ private:
         i32 lastBatch[kQueueClassCount] = {-1, -1, -1};
         u32 layout = 0;
         u32 lastPass = UINT32_MAX;
+        u32 writePass = UINT32_MAX; ///< order position of the last pass that wrote (its writes are visible to no one)
         u8 queue = kNoQueue;
         bool contents = false; ///< holds data an ownership transfer must preserve
         bool touched = false;

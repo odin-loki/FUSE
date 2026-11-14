@@ -18,7 +18,7 @@ Size textSize(UiContext& ui, NodeHandle n, std::string_view s) {
     return {std::ceil(ui.measureString(s, px)), lineHeight(ui, px)};
 }
 
-Color accent(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)); }
+Color accent(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD)); }
 Color textCol(const PaintContext& pc) { return pc.tint(pc.style.color); }
 
 void labelAt(const PaintContext& pc, DrawList& dl, std::string_view s, Rect box, TextAlignment al) {
@@ -99,9 +99,9 @@ struct CheckBox {
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect b{pc.content.x, std::round(pc.content.y + (pc.content.h - 16.f) * 0.5f), 16.f, 16.f};
         const bool on = pc.states & kStateChecked;
-        dl.roundedRect(b, on ? accent(pc) : pc.tint(Color::rgb(0x000000, 0.25f)), {3, 3, 3, 3}, pc.tint(pc.style.borderColor.a > 0 ? pc.style.borderColor : Color::rgb(0x808080)), on ? 0.f : 1.f);
+        dl.roundedRect(b, on ? accent(pc) : pc.tint(themed(pc, tok::inset, 0x000000, 0.25f)), {3, 3, 3, 3}, pc.tint(pc.style.borderColor.a > 0 ? pc.style.borderColor : themed(pc, tok::control_border, 0x808080)), on ? 0.f : 1.f);
         if (on) {
-            const Color w = pc.tint(Color::rgb(0xFFFFFF));
+            const Color w = pc.tint(themed(pc, tok::on_accent, 0xFFFFFF));
             dl.line({b.x + 3.5f, b.y + 8.5f}, {b.x + 6.5f, b.y + 11.5f}, w, 2.f);
             dl.line({b.x + 6.5f, b.y + 11.5f}, {b.x + 12.5f, b.y + 4.5f}, w, 2.f);
         }
@@ -124,7 +124,7 @@ struct RadioButton {
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect b{pc.content.x, std::round(pc.content.y + (pc.content.h - 16.f) * 0.5f), 16.f, 16.f};
         const bool on = pc.states & kStateChecked;
-        dl.roundedRect(b, pc.tint(Color::rgb(0x000000, 0.25f)), {8, 8, 8, 8}, on ? accent(pc) : pc.tint(Color::rgb(0x808080)), on ? 2.f : 1.f);
+        dl.roundedRect(b, pc.tint(themed(pc, tok::inset, 0x000000, 0.25f)), {8, 8, 8, 8}, on ? accent(pc) : pc.tint(themed(pc, tok::control_border, 0x808080)), on ? 2.f : 1.f);
         if (on) dl.rect({b.x + 4.f, b.y + 4.f, 8.f, 8.f}, accent(pc), 4.f);
         labelAt(pc, dl, pc.ui.text(pc.node), {b.right() + 6.f, pc.content.y, pc.content.w - 22.f, pc.content.h}, TextAlignment::Start);
     }
@@ -149,8 +149,8 @@ struct Switch : CheckBox {
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect t{pc.content.x, std::round(pc.content.y + (pc.content.h - 18.f) * 0.5f), 32.f, 18.f};
         const bool on = pc.states & kStateChecked;
-        dl.rect(t, on ? accent(pc) : pc.tint(Color::rgb(0x5A5A66)), 9.f);
-        dl.rect({on ? t.right() - 16.f : t.x + 2.f, t.y + 2.f, 14.f, 14.f}, pc.tint(Color::rgb(0xFFFFFF)), 7.f);
+        dl.rect(t, on ? accent(pc) : pc.tint(themed(pc, tok::track, 0x5A5A66)), 9.f);
+        dl.rect({on ? t.right() - 16.f : t.x + 2.f, t.y + 2.f, 14.f, 14.f}, pc.tint(themed(pc, tok::switch_knob, 0xFFFFFF)), 7.f);
         labelAt(pc, dl, pc.ui.text(pc.node), {t.right() + 6.f, pc.content.y, pc.content.w - 38.f, pc.content.h}, TextAlignment::Start);
     }
 };
@@ -168,10 +168,10 @@ struct Slider {
         const f32 f = frac(pc.ui, pc.node);
         const f32 cy = std::round(c.y + c.h * 0.5f);
         const Rect track{c.x + 7.f, cy - 2.f, std::max(0.f, c.w - 14.f), 4.f};
-        dl.rect(track, pc.tint(Color::rgb(0x5A5A66)), 2.f);
+        dl.rect(track, pc.tint(themed(pc, tok::track, 0x5A5A66)), 2.f);
         dl.rect({track.x, track.y, track.w * f, 4.f}, accent(pc), 2.f);
         const f32 kx = std::round(track.x + track.w * f);
-        dl.roundedRect({kx - 7.f, cy - 7.f, 14.f, 14.f}, pc.tint(Color::rgb(0xF0F0F5)), {7, 7, 7, 7}, accent(pc), (pc.states & kStateFocusVisible) ? 2.f : 0.f);
+        dl.roundedRect({kx - 7.f, cy - 7.f, 14.f, 14.f}, pc.tint(themed(pc, tok::knob, 0xF0F0F5)), {7, 7, 7, 7}, accent(pc), (pc.states & kStateFocusVisible) ? 2.f : 0.f);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
@@ -198,9 +198,9 @@ struct ScrollBar {
         const bool v = vertical(c);
         const f32 len = v ? c.h : c.w, pg = page(pc.ui, pc.node), th = std::max(16.f, len * pg);
         const f32 at = (len - th) * frac(pc.ui, pc.node);
-        dl.rect(c, pc.tint(Color::rgb(0x000000, 0.2f)), 4.f);
+        dl.rect(c, pc.tint(themed(pc, tok::scroll_track, 0x000000, 0.2f)), 4.f);
         const Rect t = v ? Rect{c.x + 2.f, c.y + at, c.w - 4.f, th} : Rect{c.x + at, c.y + 2.f, th, c.h - 4.f};
-        dl.rect(t, pc.states & (kStateHover | kStatePressed) ? accent(pc) : pc.tint(Color::rgb(0x8A8A96)), 3.f);
+        dl.rect(t, pc.states & (kStateHover | kStatePressed) ? accent(pc) : pc.tint(themed(pc, tok::scroll_thumb, 0x8A8A96)), 3.f);
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
@@ -233,7 +233,7 @@ struct Dial {
         const Rect c = pc.content;
         const f32 d = std::min(c.w, c.h), r = d * 0.5f;
         const Vec2 o{c.x + c.w * 0.5f, c.y + c.h * 0.5f};
-        dl.roundedRect({o.x - r, o.y - r, d, d}, pc.tint(Color::rgb(0x2A2A33)), {r, r, r, r}, accent(pc), 2.f);
+        dl.roundedRect({o.x - r, o.y - r, d, d}, pc.tint(themed(pc, tok::dial_face, 0x2A2A33)), {r, r, r, r}, accent(pc), 2.f);
         const f32 a = (-225.f + 270.f * frac(pc.ui, pc.node)) * kPi / 180.f;
         dl.line(o, {o.x + std::cos(a) * (r - 4.f), o.y + std::sin(a) * (r - 4.f)}, textCol(pc), 2.f);
     }
@@ -258,7 +258,7 @@ struct ProgressBar {
     static Size measure(UiContext&, NodeHandle, Size) { return {120.f, 8.f}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const f32 r = std::min(pc.content.h * 0.5f, pc.style.radius[0]);
-        dl.rect(pc.content, pc.tint(Color::rgb(0x000000, 0.3f)), r);
+        dl.rect(pc.content, pc.tint(themed(pc, tok::progress_track, 0x000000, 0.3f)), r);
         const f32 w = std::round(pc.content.w * frac(pc.ui, pc.node));
         if (w > 0.f) dl.rect({pc.content.x, pc.content.y, w, pc.content.h}, accent(pc), r);
     }
@@ -276,12 +276,14 @@ struct SpinBox {
         return std::snprintf(buf, std::size_t(cap), "%.*f", dec, double(ui.value(n)));
     }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
+        if (detail::spinBoxHasState(ui, n)) return detail::spinBoxMeasure(ui, n); // setSpinBoxOptions
         char buf[32];
         const int len = fmt(ui, n, buf, 32);
         const Size t = textSize(ui, n, std::string_view(buf, std::size_t(std::max(0, len))));
         return {std::max(48.f, t.w) + 20.f, t.h};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
+        if (detail::spinBoxHasState(pc.ui, pc.node)) { detail::spinBoxPaint(pc, dl); return; }
         char buf[32];
         const int len = fmt(pc.ui, pc.node, buf, 32);
         const Rect c = pc.content;
@@ -296,6 +298,7 @@ struct SpinBox {
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
+        if (detail::spinBoxHasState(ui, ec.node)) return detail::spinBoxEvent(ec, e); // setSpinBoxOptions
         const f32 st = ui.rangeStep(ec.node) > 0.f ? ui.rangeStep(ec.node) : 1.f;
         if (e.type == EventType::PointerDown) {
             if (e.button != MouseButton::Left) return false; // (a context-menu press does not step)
@@ -368,6 +371,7 @@ struct LineEdit {
     static constexpr bool kInteractive = true;
     static Size measure(UiContext& ui, NodeHandle n, Size) { return {160.f, lineHeight(ui, ui.computed(n).fontSize)}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
+        if (detail::lineEditHasState(pc.ui, pc.node)) { detail::lineEditPaint(pc, dl); return; } // options / completer
         UiContext& ui = pc.ui;
         const Rect c = pc.content;
         auto& eb = ui.editBuffer(pc.node);
@@ -410,6 +414,7 @@ struct LineEdit {
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
+        if (detail::lineEditHasState(ui, ec.node)) return detail::lineEditEvent(ec, e); // options / completer
         auto& eb = ui.editBuffer(ec.node);
         if (e.type == EventType::Text) { eb.insert(e.text); changed(ui, ec.node); return true; }
         if (e.type == EventType::Composition) { ui.setValue(ec.node, ui.value(ec.node) + 1.f); return true; } // repaint
@@ -486,7 +491,7 @@ struct Separator {
     static Size measure(UiContext&, NodeHandle, Size) { return {1.f, 1.f}; }
     static void paint(const PaintContext& pc, DrawList& dl) {
         const Rect c = pc.content;
-        const Color col = pc.tint(pc.style.borderColor.a > 0.f ? pc.style.borderColor : Color::rgb(0x44444F));
+        const Color col = pc.tint(pc.style.borderColor.a > 0.f ? pc.style.borderColor : themed(pc, tok::separator, 0x44444F));
         if (c.w >= c.h) dl.rect({c.x, std::round(c.y + c.h * 0.5f - 0.5f), c.w, 1.f}, col);
         else dl.rect({std::round(c.x + c.w * 0.5f - 0.5f), c.y, 1.f, c.h}, col);
     }
@@ -527,7 +532,10 @@ void install(UiContext& ui) {
     registerTierB3(ui);
     registerSvgWidgets(ui);
     registerPlatformFeel(ui); // kineticscroll
-    (void)ui.addStyleSheet(defaultThemeCss());
+    registerEditWidgets(ui);  // completer, completeritem, editcombo, combodrop
+    registerExtraWidgets(ui); // lcdnumber, keysequenceedit, mdiarea, mdisubwindow, mdititle, graphicsview, vkeyboard
+    (void)ui.setThemeStyleSheet(defaultThemeCss());
+    ui.setMediaTheme(true); // the default theme is the dark one: @media (prefers-color-scheme: dark) holds
 }
 
 u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, bool theme) {
@@ -541,6 +549,8 @@ u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, boo
         registerTierB3(scratch);
         registerSvgWidgets(scratch);
         registerPlatformFeel(scratch); // kineticscroll (not part of install(): its factory registers it on first use)
+        registerEditWidgets(scratch);
+        registerExtraWidgets(scratch);
         return scratch.registry();
     }();
     u32 unknown = 0;
@@ -550,7 +560,10 @@ u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, boo
         if (id == 0xFFFFFFFFu) { ++unknown; continue; }
         ui.registry().add(all.get(id));
     }
-    if (theme) (void)ui.addStyleSheet(defaultThemeCss());
+    if (theme) {
+        (void)ui.setThemeStyleSheet(defaultThemeCss());
+        ui.setMediaTheme(true);
+    }
     return unknown;
 }
 
@@ -686,5 +699,9 @@ bool comboA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32 v
     }
 }
 } // namespace
-void detail::a11yTierA(WidgetRegistry& r) { a11yHook(r, "combobox", A11yRole::ComboBox, &comboA11y, &comboA11yAction); }
+void detail::a11yTierA(WidgetRegistry& r) {
+    a11yHook(r, "combobox", A11yRole::ComboBox, &comboA11y, &comboA11yAction);
+    a11ySpinBox(r); // widgets_spinbox.cpp: the shown text (prefix / suffix / special value) of a spin box with options
+    a11yLineEdit(r); // widgets_lineedit.cpp: SetValue on a field with options (mask, validator, password)
+}
 } // namespace fuse::ui::widgets

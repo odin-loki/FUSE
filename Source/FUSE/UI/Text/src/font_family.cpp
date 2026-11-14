@@ -2,6 +2,7 @@
 #include "fuse/text/font_family.hpp"
 
 #include "sfnt_info.hpp"
+#include "text_internal.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -11,6 +12,16 @@
 #include <filesystem>
 #include <mutex>
 #include <system_error>
+
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace fuse::text {
 
@@ -90,7 +101,7 @@ bool sfntFaceInfo(const SfntReader& r, int index, FaceInfo& out) {
     if (numTables == 0 || numTables > 512) return false;
     std::vector<std::uint8_t> dir(std::size_t(numTables) * 16);
     if (!r.read(r.user, std::uint64_t(base) + 12, dir.data(), dir.size())) return false;
-    Table name, os2, head, post;
+    Table name, os2, head, post, fvar, stat, cmap;
     bool glyf = false, cff = false;
     for (std::uint16_t i = 0; i < numTables; ++i) {
         const std::uint8_t* e = dir.data() + std::size_t(i) * 16;
@@ -102,9 +113,21 @@ bool sfntFaceInfo(const SfntReader& r, int index, FaceInfo& out) {
         else if (t == tag('p', 'o', 's', 't')) post = tb;
         else if (t == tag('g', 'l', 'y', 'f')) glyf = tb.length > 0;
         else if (t == tag('C', 'F', 'F', ' ')) cff = tb.length > 0;
+        else if (t == tag('f', 'v', 'a', 'r')) fvar = tb;
+        else if (t == tag('S', 'T', 'A', 'T')) stat = tb;
+        else if (t == tag('c', 'm', 'a', 'p')) cmap = tb;
     }
     out = {};
     out.outlines = glyf || cff;
+    out.hasCmap = cmap.length > 0;
+    out.nameOffset = name.offset;
+    out.nameLength = name.length;
+    out.fvarOffset = fvar.length >= 16 ? fvar.offset : 0;
+    out.fvarLength = fvar.length >= 16 ? fvar.length : 0;
+    out.statOffset = stat.offset;
+    out.statLength = stat.length;
+    out.cmapOffset = cmap.offset;
+    out.cmapLength = cmap.length;
 
     bool macBold = false;
     if (head.length >= 54) {
@@ -122,6 +145,8 @@ bool sfntFaceInfo(const SfntReader& r, int index, FaceInfo& out) {
             int w = rd16(b + 4);
             if (w >= 1 && w <= 9) w *= 100; // legacy fonts store 1..9
             if (w >= 1 && w <= 1000) out.weight = w;
+            if (const int wd = rd16(b + 6); wd >= 1 && wd <= 9) out.stretch = wd;
+            for (int k = 0; k < 4; ++k) out.unicodeRanges[k] = rd32(b + 42 + k * 4);
             out.strikeSize = std::int16_t(rd16(b + 26));
             out.strikePosition = std::int16_t(rd16(b + 28));
             out.hasStrike = true;
@@ -153,11 +178,11 @@ bool sfntFaceInfo(const SfntReader& r, int index, FaceInfo& out) {
                     std::uint16_t len = 0, off = 0;
                     bool utf16 = false;
                 };
-                Pick pick[4]; // ids 1, 2, 16, 17
+                Pick pick[5]; // ids 1, 2, 16, 17, 4
                 for (std::uint16_t i = 0; i < count; ++i) {
                     const std::uint8_t* e = recs.data() + std::size_t(i) * 12;
                     const std::uint16_t platform = rd16(e), enc = rd16(e + 2), lang = rd16(e + 4), id = rd16(e + 6);
-                    const int slot = id == 1 ? 0 : id == 2 ? 1 : id == 16 ? 2 : id == 17 ? 3 : -1;
+                    const int slot = id == 1 ? 0 : id == 2 ? 1 : id == 16 ? 2 : id == 17 ? 3 : id == 4 ? 4 : -1;
                     if (slot < 0) continue;
                     int rank = 0;
                     bool utf16 = true;
@@ -178,6 +203,7 @@ bool sfntFaceInfo(const SfntReader& r, int index, FaceInfo& out) {
                 if (out.family.empty()) out.family = text(pick[0]);
                 out.style = text(pick[3]);
                 if (out.style.empty()) out.style = text(pick[1]);
+                out.fullName = text(pick[4]);
             }
         }
     }
@@ -294,7 +320,12 @@ FontFamily::Match FontFamily::match(int weight, bool italic) {
     r.font = m->font;
     r.syntheticOblique = italic && !m->italic;
     const int lighter = weight - m->weight;
-    r.syntheticBold = weight >= 600 && lighter >= 150;
+    // a variable face with a weight axis is instanced at the weight asked for (UiContext::styledFont, Font::instance)
+    // once the application enabled variations: no synthetic bold on top
+    bool variableWeight = false;
+    if (variableFontsEnabled() && m->font->isVariable())
+        for (const VariationAxis& a : m->font->axes()) variableWeight = variableWeight || a.tag == fontTag("wght");
+    r.syntheticBold = !variableWeight && weight >= 600 && lighter >= 150;
     if (!r.syntheticBold && !r.syntheticOblique) return r;
     const int steps = r.syntheticBold ? std::min(12, (lighter + 25) / 50) : 0;
     for (const Variant& v : m_variants)
@@ -349,7 +380,7 @@ bool fontExtension(std::string_view path) {
     const std::string_view e = path.substr(dot + 1);
     return equalNoCase(e, "ttf") || equalNoCase(e, "otf") || equalNoCase(e, "ttc") || equalNoCase(e, "otc");
 }
-std::string envOr(const char* name, const char* fallback = "") {
+[[maybe_unused]] std::string envOr(const char* name, const char* fallback = "") { // (no font directories from the environment on Android / Apple)
     const char* v = std::getenv(name); // NOLINT(concurrency-mt-unsafe): read once under the font list lock
     return v && *v ? std::string(v) : std::string(fallback);
 }
@@ -362,6 +393,39 @@ bool infoLess(const SystemFontInfo& a, const SystemFontInfo& b) {
     if (a.weight != b.weight) return a.weight < b.weight;
     return a.italic < b.italic;
 }
+
+#if defined(_WIN32)
+// Font files listed in the registry (HKLM: machine-wide, file names relative to %WINDIR%\Fonts; HKCU: per-user, full
+// paths under %LOCALAPPDATA%): fonts installed outside the scanned directories.
+void registryFonts(HKEY root, const std::string& fontDir, std::vector<SystemFontInfo>& out) {
+    namespace fs = std::filesystem;
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(root, L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts", 0, KEY_READ, &key) != ERROR_SUCCESS)
+        return;
+    for (DWORD i = 0;; ++i) {
+        wchar_t name[512];
+        wchar_t data[1024];
+        DWORD nameLen = 512, dataLen = sizeof data, type = 0;
+        const LONG r = RegEnumValueW(key, i, name, &nameLen, nullptr, &type, reinterpret_cast<BYTE*>(data), &dataLen);
+        if (r == ERROR_NO_MORE_ITEMS) break;
+        if (r != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ)) continue;
+        std::wstring file(data, dataLen / sizeof(wchar_t));
+        while (!file.empty() && file.back() == L'\0') file.pop_back();
+        if (file.empty()) continue;
+        fs::path p(file);
+        if (p.is_relative()) p = fs::path(fontDir) / p;
+        std::error_code ec;
+        if (!fs::is_regular_file(p, ec)) continue;
+        const auto u8 = p.u8string();
+        const std::string path(u8.begin(), u8.end());
+        if (!fontExtension(path)) continue;
+        bool listed = false; // already found by the directory scan
+        for (const SystemFontInfo& f : out) listed = listed || equalNoCase(f.path, path);
+        if (!listed) describeFontFile(path, out);
+    }
+    RegCloseKey(key);
+}
+#endif
 
 struct SystemFontCache {
     std::mutex mutex;
@@ -379,6 +443,13 @@ const std::vector<SystemFontInfo>& ensureScanned(SystemFontCache& c) { // lock h
     auto list = std::make_unique<std::vector<SystemFontInfo>>();
     const std::vector<std::string> dirs = c.dirs.empty() ? systemFontDirectories() : c.dirs;
     for (const std::string& d : dirs) scanFontDirectory(d, *list);
+#if defined(_WIN32)
+    if (c.dirs.empty()) {
+        const std::string winFonts = envOr("WINDIR", envOr("SystemRoot", "C:\\Windows").c_str()) + "\\Fonts";
+        registryFonts(HKEY_LOCAL_MACHINE, winFonts, *list);
+        registryFonts(HKEY_CURRENT_USER, winFonts, *list);
+    }
+#endif
     // stable: for equal (family, weight, slant) the face from the earlier (more specific) directory wins
     std::stable_sort(list->begin(), list->end(), infoLess);
     c.lists.push_back(std::move(list));
@@ -390,13 +461,29 @@ template <class Pred> const SystemFontInfo* bestMatch(std::span<const SystemFont
     int bestScore = 0;
     for (const SystemFontInfo& f : fonts) {
         if (!sameFamily(f)) continue;
-        const int s = fontMatchScore(weight, italic, f.weight, f.italic);
+        // CSS font matching order: stretch, then style, then weight; a variable font's default instance before a
+        // named instance with the same style
+        const int s = (fontMatchScore(weight, italic, f.weight, f.italic) + std::abs(f.stretch - 5) * 100000) * 2 +
+                      (f.namedInstance >= 0 ? 1 : 0);
         if (!best || s < bestScore) {
             best = &f;
             bestScore = s;
         }
     }
     return best;
+}
+
+// Platform families for the generic CSS names, Windows / macOS / Linux / Android mixed: the first installed one wins.
+constexpr const char* kSans[] = {"Segoe UI", "Helvetica Neue", "Noto Sans", "DejaVu Sans", "Liberation Sans", "Arial", "Ubuntu", "Cantarell", "Roboto"};
+constexpr const char* kSerif[] = {"Times New Roman", "Noto Serif", "DejaVu Serif", "Liberation Serif", "Times", "Georgia"};
+constexpr const char* kMono[] = {"Cascadia Mono", "Consolas", "SF Mono", "Menlo", "DejaVu Sans Mono", "Noto Sans Mono", "Liberation Mono", "Courier New", "Droid Sans Mono"};
+std::span<const char* const> genericFamilies(std::string_view family) {
+    if (equalNoCase(family, "sans-serif") || equalNoCase(family, "sans serif") || equalNoCase(family, "system-ui") ||
+        equalNoCase(family, "system ui"))
+        return kSans;
+    if (equalNoCase(family, "serif")) return kSerif;
+    if (equalNoCase(family, "monospace")) return kMono;
+    return {};
 }
 } // namespace
 
@@ -449,13 +536,33 @@ bool describeFontFile(const std::string& path, std::vector<SystemFontInfo>& out)
         SystemFontInfo s;
         s.family = std::move(fi.family);
         s.style = std::move(fi.style);
+        s.fullName = std::move(fi.fullName);
         s.path = path;
         s.faceIndex = i;
         s.weight = fi.weight;
+        s.stretch = fi.stretch;
         s.italic = fi.italic;
         s.monospace = fi.monospace;
-        out.push_back(std::move(s));
+        s.variable = fi.fvarOffset != 0;
+        for (int k = 0; k < 4; ++k) s.unicodeRanges[k] = fi.unicodeRanges[k];
+        out.push_back(s);
         any = true;
+        // fvar named instances: only once enableVariableFonts() installed the lister (loadSystemFont pins them
+        // through the variation API)
+        if (const detail::NamedInstanceLister lister = detail::namedInstanceLister(); lister && s.variable) {
+            auto table = [&](std::uint32_t off, std::uint32_t len, std::vector<std::uint8_t>& buf) {
+                buf.clear();
+                if (!off || !len || len > (1u << 20)) return false;
+                buf.resize(len);
+                if (!r.read(r.user, off, buf.data(), len)) buf.clear();
+                return !buf.empty();
+            };
+            std::vector<std::uint8_t> name, fvar, stat;
+            if (table(fi.nameOffset, fi.nameLength, name) && table(fi.fvarOffset, fi.fvarLength, fvar)) {
+                table(fi.statOffset, fi.statLength, stat);
+                lister(s, name, fvar, stat, out);
+            }
+        }
     }
     std::fclose(fp);
     return any;
@@ -499,7 +606,13 @@ std::vector<std::string> systemFontFamilies() {
 
 const SystemFontInfo* findSystemFont(std::string_view family, int weight, bool italic) {
     family = trimName(family);
-    return bestMatch(systemFonts(), weight, italic, [&](const SystemFontInfo& f) { return equalNoCase(f.family, family); });
+    const auto fonts = systemFonts();
+    if (const SystemFontInfo* f = bestMatch(fonts, weight, italic, [&](const SystemFontInfo& x) { return equalNoCase(x.family, family); }))
+        return f;
+    for (const char* g : genericFamilies(family)) // sans-serif / serif / monospace / system-ui
+        if (const SystemFontInfo* f = bestMatch(fonts, weight, italic, [&](const SystemFontInfo& x) { return equalNoCase(x.family, g); }))
+            return f;
+    return nullptr;
 }
 const SystemFontInfo* findSystemFontByHash(std::uint32_t hash, int weight, bool italic) {
     return bestMatch(systemFonts(), weight, italic, [&](const SystemFontInfo& f) { return familyHash(f.family) == hash; });
@@ -520,20 +633,39 @@ void refreshSystemFonts() {
 std::expected<Font, TextError> Font::fromSystem(std::string_view family, int weight, bool italic) {
     const SystemFontInfo* f = findSystemFont(family, weight, italic);
     if (!f) return std::unexpected(TextError::InvalidFont);
-    return fromFile(f->path, f->faceIndex);
+    return loadSystemFont(*f);
+}
+
+std::expected<Font, TextError> loadSystemFont(const SystemFontInfo& face) {
+    auto font = Font::fromFile(face.path, face.faceIndex);
+    if (font && face.namedInstance >= 0) { // listed only once enableVariableFonts was called
+        const auto named = font->namedInstances();
+        const auto axes = font->axes();
+        if (std::size_t(face.namedInstance) < named.size()) {
+            const auto& coords = named[std::size_t(face.namedInstance)].coords;
+            std::vector<FontVariation> v;
+            for (std::size_t a = 0; a < axes.size() && a < coords.size(); ++a) v.push_back({axes[a].tag, coords[a]});
+            font->setVariation(v);
+        }
+    }
+    return font;
 }
 
 std::expected<FontFamily, TextError> FontFamily::fromSystem(std::string_view family) {
     family = trimName(family);
+    if (const SystemFontInfo* generic = findSystemFont(family)) family = generic->family; // "sans-serif" -> its family
     FontFamily fam;
-    for (const SystemFontInfo& f : systemFonts()) {
-        if (!equalNoCase(f.family, family)) continue;
-        if (fam.hasReal(f.weight, f.italic)) continue; // same style installed twice: the first directory wins
-        if (auto font = Font::fromFile(f.path, f.faceIndex)) {
-            if (fam.m_name.empty()) fam.m_name = f.family;
-            fam.add(std::move(*font), f.weight, f.italic);
+    // normal-width faces first, then the other widths for styles the family lacks; a variable font's default instance
+    // before its named instances
+    for (int pass = 0; pass < 4; ++pass)
+        for (const SystemFontInfo& f : systemFonts()) {
+            if (!equalNoCase(f.family, family) || (f.stretch == 5) != (pass < 2) || (f.namedInstance < 0) != (pass % 2 == 0)) continue;
+            if (fam.hasReal(f.weight, f.italic)) continue; // same style installed twice: the first directory wins
+            if (auto font = loadSystemFont(f)) {
+                if (fam.m_name.empty()) fam.m_name = f.family;
+                fam.add(std::move(*font), f.weight, f.italic);
+            }
         }
-    }
     if (fam.empty()) return std::unexpected(TextError::InvalidFont);
     return fam;
 }

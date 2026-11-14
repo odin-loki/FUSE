@@ -14,7 +14,7 @@ float sx_contact_harden_roughness(float rayHitDistance, float materialRoughness)
         return sx_clamp(materialRoughness, 0.0, 1.0);
     }
     const float distance = max(rayHitDistance, 0.0);
-    precise float q = 1.0 - distance / F.ssrContactDistance;
+    precise float q = 1.0 - fuse_div_rn(distance, F.ssrContactDistance);
     const float contactFactor = pow(sx_clamp(q, 0.0, 1.0), F.ssrContactExponent);
     precise float hardened = materialRoughness + (F.ssrContactFloor - materialRoughness) * contactFactor;
     return sx_clamp(hardened, F.ssrContactFloor, 1.0);
@@ -41,6 +41,7 @@ void main() {
     P.maxDistance = F.ssrMaxDistance;
     P.fadeEdge = F.ssrFadeEdge;
     P.refineSteps = F.ssrRefineSteps;
+    P.hiz = (F.flags & SX_FLAG_HIZ) != 0u;
     const bool useRoughness = (F.flags & SX_FLAG_SSR_ROUGHNESS) != 0u;
     const float r = useRoughness ? SxTexelsRef(F.prepared).v[i].y : 0.0;
     vec4 result = vec4(0.0);
@@ -57,9 +58,20 @@ void main() {
             // Sky fallback: the ray left the screen / reached the sky at full confidence (x the gloss fade).
             const vec3 dir = sx_pixel_reflection(p.x, p.y);
             if (sx_sky_exit(P, p.x, p.y, dir)) {
-                result = vec4(sx_sky(sx_normalize(dir)), useRoughness ? sx_gloss_fade(P.maxDistance, r) : 1.0);
+                // The sky in a local and the fade by an `if`, not vec4(sx_sky(..), useRoughness ? sx_gloss_fade(..)
+                // : 1.0): with a call as a constructor argument next to the fade glslangValidator 15.1 runs out of
+                // memory on this file (more than 13 GB; it took the Linux CI runners down). Same values.
+                const vec3 sky = sx_sky(sx_normalize(dir));
+                float fade = 1.0;
+                if (useRoughness) {
+                    fade = sx_gloss_fade(P.maxDistance, r);
+                }
+                result = vec4(sky, fade);
             }
         }
     }
     SxTexelsRef(F.ssr).v[i] = result;
+    if (P.hiz) {
+        SxUvec2Ref(F.ssrSteps).v[i] = uvec2(g_sx_hiz_skipped, g_sx_tested);
+    }
 }

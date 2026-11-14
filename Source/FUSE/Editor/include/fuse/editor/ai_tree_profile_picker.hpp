@@ -14,7 +14,7 @@ struct AiTreeProfileOption {
     std::string uaiskModule;
 };
 
-/// WP-08 / U5 stub — posts `ai.tree_profile_id` through EditorHost (Qt-free).
+/// WP-08 / U5 stub — posts `ai.tree_profile_id` through EditorHost (toolkit-free).
 class AiTreeProfilePicker {
 public:
     explicit AiTreeProfilePicker(EditorHost& host);

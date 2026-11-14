@@ -84,7 +84,7 @@ These build with core rather than the module flags:
 | `fuse_navigation` | Uniform 4-connected grid navmesh with deterministic A* — see below |
 | `fuse_compute` | Single-source compute kernels: CPU backends everywhere, CUDA trampolines when the toolkit is found — [compute-kernels.md](compute-kernels.md) |
 | `fuse_ssfx` | Screen-space effect references (HBAO, SSR, SSGI) as single-source kernels, shared by `fuse_rhi` and `fuse_compute`; depends on `fuse_core` only |
-| `fuse_compat_ts*`, `fuse_compat_sim_object` | Quarantined dialect script VMs and the SimObject id ↔ `EntityID` table. Never linked into `fuse_core`, `fuse_runtime_smoke`, `fuse_editor_api`, or Qt targets; `FUSE_BUILD_COMPAT_TS` (forced OFF in shipping) |
+| `fuse_compat_ts*`, `fuse_compat_sim_object` | Quarantined dialect script VMs and the SimObject id ↔ `EntityID` table. Never linked into `fuse_core`, `fuse_runtime_smoke`, or `fuse_editor_api`; `FUSE_BUILD_COMPAT_TS` (forced OFF in shipping) |
 
 Engine-level VFX is distinct from `fuse_fx`: particles vs. authored spell/effect graphs.
 

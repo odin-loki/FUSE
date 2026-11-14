@@ -10,7 +10,13 @@
 // Installed fonts are found by scanning the platform font directories and reading each file's name / OS/2 / head /
 // post tables directly: no fontconfig, CoreText or DirectWrite dependency. .ttf, .otf (glyf and CFF outlines) and
 // .ttc / .otc collections are listed; bitmap-only and CFF2 (variable .otf) faces are skipped because the rasterisers
-// cannot draw them. A variable .ttf is listed as its default instance.
+// cannot draw them. A variable .ttf is listed as its default instance and, once enableVariableFonts() was called, also
+// once per fvar named instance (SystemFontInfo::namedInstance).
+//
+// This header is also the font catalogue of the merged `magical-bassi` branch (its FontCatalog class was folded in here
+// rather than kept as a second abstraction): scripts (scriptOf), OS/2 coverage (SystemFontInfo::covers), per-script
+// system fallback chains (systemFallbackChain), generic CSS family names (findSystemFont("sans-serif")) and named
+// instances (loadSystemFont).
 #pragma once
 
 #include "fuse/text/text.hpp"
@@ -100,14 +106,32 @@ private:
     bool m_hasFallbacks = false;
 };
 
+// ---- Scripts -------------------------------------------------------------------------------------------------------
+/// Scripts the fallback chains know about (scriptOf maps a code point; Common for punctuation, digits, spaces).
+enum class Script : std::uint8_t { Common, Latin, Greek, Cyrillic, Arabic, Hebrew, Devanagari, Thai, Han, Kana, Hangul, Emoji, Symbols };
+Script scriptOf(char32_t cp);
+const char* scriptName(Script s);
+
 // ---- Installed fonts -----------------------------------------------------------------------------------------------
+/// One face of an installed font file, read from its name / OS/2 / head / post tables (no outlines are loaded).
 struct SystemFontInfo {
-    std::string family; ///< "DejaVu Sans" (typographic family when the font has one)
-    std::string style;  ///< "Bold Oblique"
-    std::string path;
-    int faceIndex = 0;  ///< face inside a .ttc collection
-    int weight = 400;   ///< CSS weight (OS/2 usWeightClass)
+    std::string family;   ///< "DejaVu Sans" (typographic family when the font has one)
+    std::string style;    ///< "Bold Oblique"
+    std::string fullName; ///< name ID 4 ("DejaVu Sans Bold Oblique"); may be empty
+    std::string path;     ///< UTF-8 file path
+    int faceIndex = 0;    ///< face inside a .ttc collection
+    int weight = 400;     ///< CSS weight (OS/2 usWeightClass; a named instance: its wght coordinate)
+    int stretch = 5;      ///< OS/2 usWidthClass (5 = normal)
     bool italic = false, monospace = false;
+    std::uint32_t unicodeRanges[4] = {}; ///< OS/2 ulUnicodeRange1..4 (script coverage hints)
+    bool variable = false;               ///< the face has an fvar table (with enableVariableFonts() it can instance)
+    /// -1: the face at its default coordinates. >= 0 (listed only when enableVariableFonts() was called before the
+    /// scan): fvar named instance `namedInstance`, named like DirectWrite's WWS families: STAT axis values other than
+    /// weight / width / italic / slant join the family ("Segoe UI Variable Display"), the rest is the style
+    /// ("Semibold"); weight / stretch / italic come from the instance's wght / wdth / ital / slnt coordinates.
+    int namedInstance = -1;
+    /// From unicodeRanges (Emoji / Symbols: by family name). The bits are hints: systemFallbackChain checks the cmap.
+    bool covers(Script s) const;
 };
 
 /// The platform's font directories, most specific (per-user) first: Linux / BSD: $XDG_DATA_HOME/fonts, ~/.fonts,
@@ -120,14 +144,24 @@ bool describeFontFile(const std::string& path, std::vector<SystemFontInfo>& out)
 /// Appends every face found under `dir` (recursive, bounded depth; unreadable entries are skipped).
 void scanFontDirectory(const std::string& dir, std::vector<SystemFontInfo>& out);
 
-/// Every installed face, sorted by family (case-insensitive), weight, slant. Scanned on first use and cached; a
+/// Every installed face (Windows: also the font files listed in the HKLM / HKCU "Windows NT\\CurrentVersion\\Fonts"
+/// registry keys), sorted by family (case-insensitive), weight, slant. Scanned on first use and cached; a
 /// machine without fonts yields an empty list. Thread-safe. The span stays valid until the list is rebuilt
 /// (setSystemFontDirectories / refreshSystemFonts).
 std::span<const SystemFontInfo> systemFonts();
 /// Family names of systemFonts(), unique, in order.
 std::vector<std::string> systemFontFamilies();
-/// Best face of `family` (case-insensitive) for the weight and slant; nullptr when the family is not installed.
+/// Best face of `family` (case-insensitive) for the weight and slant (normal width first); nullptr when the family is
+/// not installed. The generic CSS names sans-serif, serif, monospace and system-ui map to the first installed
+/// platform family of a built-in list (Segoe UI, Helvetica Neue, Noto Sans, DejaVu Sans, ...).
 const SystemFontInfo* findSystemFont(std::string_view family, int weight = 400, bool italic = false);
+/// Loads a listed face (path / faceIndex; a named instance is pinned with Font::setVariation). Font::fromSystem and
+/// FontFamily::fromSystem load through this.
+std::expected<Font, TextError> loadSystemFont(const SystemFontInfo& face);
+/// Regular upright installed faces that cover `script`, best first (platform UI fonts for the script, then any other
+/// family whose OS/2 ranges claim it), one per family, at most `maxFaces`. Each face's cmap is checked for a letter of
+/// the script (the range bits alone are unreliable). The pointers point into systemFonts().
+std::vector<const SystemFontInfo*> systemFallbackChain(Script script, std::size_t maxFaces = 4);
 /// Same lookup by familyHash().
 const SystemFontInfo* findSystemFontByHash(std::uint32_t familyHash, int weight = 400, bool italic = false);
 /// Replaces the scanned directories (tests, apps shipping a font folder) and drops the cache; an empty list restores

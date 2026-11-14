@@ -238,6 +238,28 @@ bool UiContext::dragExternalMove(Vec2 pos, const DragData& data) {
 void UiContext::dragExternalLeave() {
     if (m_drag.active && m_drag.external) dragFinish(m_drag.pos, false);
 }
+void UiContext::dragFinishExternal(DropAction result) {
+    if (!m_drag.active || m_drag.external) return;
+    const Vec2 p = m_drag.pos;
+    const NodeHandle t = m_drag.target;
+    m_drag.target = {};
+    m_drag.hasIndicator = false;
+    if (node(t)) {
+        setState(t, kStateDragOver, false);
+        Event e; e.type = EventType::DragLeave; e.pos = p; e.mods = m_mods; e.drag = &m_drag.data;
+        dispatch(t.index, e);
+    }
+    m_drag.active = false;
+    m_drag.action = result;
+    m_lastDrop = result;
+    m_lastDropTarget = {};
+    m_overlayDirty = m_anyPaintDirty = true;
+    const NodeHandle src = m_drag.data.source;
+    if (node(src)) {
+        Event e; e.type = EventType::DragEnd; e.pos = p; e.mods = m_mods; e.drag = &m_drag.data; e.dropAction = result;
+        dispatch(src.index, e);
+    }
+}
 DropAction UiContext::dropExternal(Vec2 pos, const DragData& data) {
     if (m_drag.active && !m_drag.external) return DropAction::None;
     const bool hovering = m_drag.active;

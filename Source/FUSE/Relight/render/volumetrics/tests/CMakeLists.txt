@@ -32,19 +32,18 @@ target_include_directories(fuse_relight_vol_vk_tests PRIVATE "${CMAKE_CURRENT_SO
                            "${CMAKE_CURRENT_SOURCE_DIR}/../../pathtrace/tests") # pt_test_scenes.hpp (RL-5.1 Cornell)
 _rl_vol_cxx23(fuse_relight_vol_vk_tests)
 if(NOT CMAKE_CROSSCOMPILING)
-    set(_rl_vol_lock "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
     set(_rl_vol_vk_tests "")
     foreach(_lang slang glsl)
-        if(EXISTS "${_rl_vol_lock}")
+        if(EXISTS "${FUSE_VULKAN_ICD_LOCK_PATH}")
             add_test(NAME rl_vol_vk_${_lang}
-                     COMMAND "${_rl_vol_lock}" "$<TARGET_FILE:fuse_relight_vol_vk_tests>" --language ${_lang})
+                     COMMAND ${FUSE_VULKAN_TEST_LAUNCHER} "$<TARGET_FILE:fuse_relight_vol_vk_tests>" --language ${_lang})
         else()
             add_test(NAME rl_vol_vk_${_lang} COMMAND fuse_relight_vol_vk_tests --language ${_lang})
         endif()
         list(APPEND _rl_vol_vk_tests rl_vol_vk_${_lang})
     endforeach()
     set_tests_properties(${_rl_vol_vk_tests} PROPERTIES
-        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        ENVIRONMENT "${FUSE_VULKAN_LVP_ENV}"
         RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 1800 LABELS "gate;vulkan;relight")
     return()
 endif()
@@ -66,7 +65,7 @@ if(EXISTS "/usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json" O
              COMMAND "${_rl_vol_runner}" "${_rl_vol_prefix}" "$<TARGET_FILE:fuse_relight_vol_vk_tests>"
                      --external-validation)
     set_tests_properties(rl_pe.vol_vk_validation PROPERTIES
-        ENVIRONMENT "VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation;VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
+        ENVIRONMENT "VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
         LABELS "relight;wine;renderer_pe;vulkan;gate" SKIP_RETURN_CODE 77 RESOURCE_LOCK fuse_relight_renderer_pe
         TIMEOUT 1800)
 endif()

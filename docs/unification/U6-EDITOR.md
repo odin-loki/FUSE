@@ -1,5 +1,7 @@
 # U6 — Qt 6 Editor Shell (WP-08)
 
+> **2026-11-14: Qt removed.** The editor described here was the Qt 6 shell. On the owner's decision it was deleted and the FUSE UI shell (`Source/FUSE/EditorShell`, `fuse_editor_fuse`, built with `FUSE_BUILD_EDITOR=ON`) is the only editor. The Qt build steps and `fuse_editor_qt_*` gates below no longer apply. See [FUSE_EDITOR_QT_FIRST_PLAN.md](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md) §12.
+
 **Phase:** U6 / WP-08 vertical slice  
 **Date:** 2026-09-19  
 **Status:** Inspector + coalesced UI property undo + runtime embed with `PresentPath`; **live Qt GPU viewport present** on X11 (`RuntimeViewportHook::tickWindowPresent_`, editor-scoped `TrackBHostFeature::EditorViewportPresent`, CI gate `fuse_editor_qt_live_present`)

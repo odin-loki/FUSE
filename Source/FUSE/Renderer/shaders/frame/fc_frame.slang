@@ -37,6 +37,16 @@ void main(uint3 tid: SV_DispatchThreadID) {
         fcFloats(F.visibility)[i] = min(1.0, max(0.0, fcTexels(F.denoised)[i].x));
         return;
     }
+    if (mode == kFcModePathTrace) {
+        const float4 src = fcTexels(F.denoised)[i];
+        float4 result = float4(src.xyz, 1.0);
+        if ((F.flags & kFcFlagPtRemodulate) != 0u) {
+            const float4 f = fcTexels(F.restirAlbedo)[i];
+            result = float4(src.x * f.x, src.y * f.y, src.z * f.z, 1.0);
+        }
+        fuse_fc_images[F.outColor & 0xFFFFFu][p] = result;
+        return;
+    }
     if (mode == kFcModeResolve) {
         float4 base;
         if ((F.flags & kFcFlagClouds) != 0u) {

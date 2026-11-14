@@ -1,0 +1,9 @@
+<ModuleDefinition
+    ModuleId="Prototyping"
+    VersionId="1"
+    Description="demo_3d_empty bundled shapes (copy of Templates/BaseGame/game/data/Prototyping/shapes/Vehicles/carwheel)."
+    Group="Game">
+    <DeclaredAssets
+        Extension="asset.taml"
+        Recurse="true"/>
+</ModuleDefinition>

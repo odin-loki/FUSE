@@ -29,7 +29,7 @@ f32 rowHeight(UiContext& ui, NodeHandle n) {
     return std::ceil(ui.font() ? ui.font()->metrics(px).lineHeight() : px * 1.25f) + 6.f;
 }
 Color textCol(const PaintContext& pc) { return pc.tint(pc.style.color); }
-Color accent(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)); }
+Color accent(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD)); }
 void labelAt(const PaintContext& pc, DrawList& dl, std::string_view s, Rect box, TextAlignment al = TextAlignment::Start) {
     pc.ui.paintString(dl, s, box, textCol(pc), pc.style.fontSize, al, pc.node.index);
 }
@@ -91,6 +91,7 @@ struct Popup {
             else if (const NodeHandle f = firstFocusable(ec.ui, ec.node); f.valid()) ec.ui.setFocus(f, FocusReason::Pointer);
             return true; // a modal scrim keeps focus inside the dialog
         }
+        if (detail::dialogKey(ec.ui, ec.node, e, ec.phase)) return true; // QDialog reject / default buttons (widgets_extra.cpp)
         if (e.type == EventType::KeyDown && e.key == Key::Escape) {
             closePopup(ec.ui, ec.node);
             return true;
@@ -509,11 +510,13 @@ struct TabBar {
     static constexpr f32 kPad = 12.f;
     static f32 tabW(UiContext& ui, NodeHandle n, std::string_view t) { return std::ceil(ui.measureString(t, ui.computed(n).fontSize)) + 2.f * kPad; }
     static Size measure(UiContext& ui, NodeHandle n, Size) {
+        if (detail::tabBarHasState(ui, n)) return detail::tabBarMeasure(ui, n); // QTabBar options (widgets_tabs.cpp)
         f32 w = 0.f;
         eachLine(ui.text(n), [&](u32, std::string_view t) { w += tabW(ui, n, t); return true; });
         return {w, rowHeight(ui, n)};
     }
     static void paint(const PaintContext& pc, DrawList& dl) {
+        if (detail::tabBarHasState(pc.ui, pc.node)) { detail::tabBarPaint(pc, dl); return; }
         UiContext& ui = pc.ui;
         const Rect c = pc.content;
         const u32 sel = u32(ui.value(pc.node));
@@ -521,19 +524,20 @@ struct TabBar {
         eachLine(ui.text(pc.node), [&](u32 i, std::string_view t) {
             const f32 w = tabW(ui, pc.node, t);
             if (i == sel) {
-                dl.rect({x, c.y, w, c.h}, pc.tint(Color::rgb(0x34353E)), 4.f);
+                dl.rect({x, c.y, w, c.h}, pc.tint(themed(pc, tok::surface_hi, 0x34353E)), 4.f);
                 dl.rect({x + 4.f, c.bottom() - 2.f, w - 8.f, 2.f}, accent(pc));
             }
             labelAt(pc, dl, t, {x, c.y, w, c.h}, TextAlignment::Center);
             x += w;
             return true;
         });
-        dl.rect({c.x, c.bottom() - 1.f, c.w, 1.f}, pc.tint(Color::rgb(0x474955)));
+        dl.rect({c.x, c.bottom() - 1.f, c.w, 1.f}, pc.tint(themed(pc, tok::border, 0x474955)));
     }
     static bool onEvent(EventContext& ec, const Event& e) {
         if (ec.phase != Phase::Target) return false;
         UiContext& ui = ec.ui;
         const NodeHandle n = ec.node;
+        if (detail::tabBarHasState(ui, n)) return detail::tabBarEvent(ec, e); // QTabBar options (widgets_tabs.cpp)
         const u32 c = count(ui.text(n)), cur = u32(ui.value(n));
         auto pick = [&](u32 i) { if (c && i < c && i != cur) ui.setValue(n, f32(i), true); };
         if (e.type == EventType::PointerDown) {
@@ -809,6 +813,22 @@ u32 treeVisibleRows(const UiContext& ui, NodeHandle tree) {
     return rows;
 }
 
+i32 treeLineAt(UiContext& ui, NodeHandle tree, Vec2 at) {
+    if (!ui.alive(tree) || ui.classOf(tree) != ui.registry().find("treeview")) return -1;
+    const Rect c = ui.contentRect(tree);
+    if (!c.contains(at)) return -1;
+    const i64 row = i64((at.y - c.y) / rowHeight(ui, tree));
+    return i32(TreeView::rowInfo(ui, tree, [&](u32 r, u32) { return i64(r) == row; }).line);
+}
+Rect treeLineRect(UiContext& ui, NodeHandle tree, u32 line) {
+    if (!ui.alive(tree) || ui.classOf(tree) != ui.registry().find("treeview")) return {};
+    const TreeView::Hit h = TreeView::rowInfo(ui, tree, [&](u32, u32 l) { return l == line; });
+    if (h.row < 0) return {};
+    const Rect c = ui.contentRect(tree);
+    const f32 rh = rowHeight(ui, tree);
+    return {c.x, c.y + f32(h.row) * rh, c.w, rh};
+}
+
 NodeHandle tabBar(UiContext& ui, NodeHandle parent, std::string_view titles, u32 current, std::string_view id) {
     registerTierB(ui);
     const NodeHandle n = make(ui, "tabbar", parent, id);
@@ -937,11 +957,14 @@ void tabBarA11y(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std:
     detail::a11yDropTextName(ui, n, self);
     const Rect c = ui.contentRect(n);
     const u32 total = count(ui.text(n)), sel = u32(ui.value(n));
+    const bool opts = detail::tabBarHasState(ui, n); // closable / scrolled / disabled tabs: widgets_tabs.cpp knows the rects
     f32 x = c.x;
     eachLine(ui.text(n), [&](u32 i, std::string_view t) {
         const f32 w = TabBar::tabW(ui, n, t);
-        A11ySnapshotNode it = a11yItem(i + 1, A11yRole::Tab, t, {x, c.y, w, c.h},
-                                       self.disabled ? 0u : detail::a11yBits({A11yAction::Select, A11yAction::Click}));
+        const bool off = opts && detail::tabBarTabDisabled(ui, n, i);
+        A11ySnapshotNode it = a11yItem(i + 1, A11yRole::Tab, t, opts ? detail::tabBarTabBounds(ui, n, i) : Rect{x, c.y, w, c.h},
+                                       self.disabled || off ? 0u : detail::a11yBits({A11yAction::Select, A11yAction::Click}));
+        it.disabled = off;
         it.selectable = true;
         it.selected = i == sel;
         it.posInSet = i + 1;
@@ -953,6 +976,7 @@ void tabBarA11y(const UiContext& cui, NodeHandle n, A11ySnapshotNode& self, std:
 }
 bool tabBarA11yAction(UiContext& ui, NodeHandle n, u32 child, A11yAction a, f32, std::string_view) {
     if (!child || child > count(ui.text(n)) || (a != A11yAction::Select && a != A11yAction::Click)) return false;
+    if (detail::tabBarHasState(ui, n) && detail::tabBarTabDisabled(ui, n, child - 1)) return false;
     ui.setValue(n, f32(child - 1), true);
     return true;
 }

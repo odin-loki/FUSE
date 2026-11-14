@@ -1,0 +1,9 @@
+{
+  "description": "POCO material payloads (plan §2.3) for lamp_room.obj, keyed by usemtl name. Hand-authored W5.6 fixture, CC0.",
+  "materials": {
+    "wall_plaster": {"model": "Opaque", "baseColor": [0.7, 0.68, 0.64, 1.0], "roughness": 0.9, "metallic": 0.0, "emissiveNits": 0.0},
+    "panel_light": {"model": "Emissive", "baseColor": [1.0, 0.95, 0.85, 1.0], "emissiveNits": 2000.0},
+    "globe_light": {"model": "Emissive", "baseColor": [1.0, 0.8, 0.5, 1.0], "emissiveNits": 5000.0},
+    "exit_sign_led": {"model": "Emissive", "baseColor": [0.1, 1.0, 0.2, 1.0], "emissiveNits": 30.0}
+  }
+}

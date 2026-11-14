@@ -73,12 +73,19 @@ public:
         m_atlasSize = atlasSize;
     }
     renderer::frame::FrameUiSource source() { return {&UiFrameSource::recordFrame, this}; }
+    /// Blends the draw list over `target`, an RGBA8 storage image of the context extent that earlier passes filled
+    /// (the hybrid sprite layer: hybrid::HybridUiOverlay{&UiFrameSource::recordOver, &ui}), instead of a cleared
+    /// transient. Returns `target`; invalid when there is nothing to draw. `user` is the UiFrameSource.
+    static rg::TextureRef recordOver(rg::Graph& graph, rg::TextureRef target,
+                                     const renderer::frame::FrameUiContext& context, void* user);
     u32 frames() const { return m_frames; }
     UiLayerGpu& layer() { return m_layer; }
 
 private:
     static rg::TextureRef recordFrame(rg::Graph& graph, const renderer::frame::FrameUiContext& context, void* user);
     static void clear(const rg::PassContext& context, void* user);
+    bool ready(const renderer::frame::FrameUiContext& context) const;
+    rg::TextureRef draw(rg::Graph& graph, rg::TextureRef target, const renderer::frame::FrameUiContext& context);
 
     UiLayerGpu m_layer;
     const DrawList* m_list = nullptr;

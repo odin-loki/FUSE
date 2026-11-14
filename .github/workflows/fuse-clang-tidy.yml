@@ -30,4 +30,4 @@ jobs:
         run: cmake --build build/fuse-debug --target fuse_core
 
       - name: Run clang-tidy ctest
-        run: ctest --test-dir build/fuse-debug -R fuse_p7_clang_tidy --output-on-failure
+        run: ctest --test-dir build/fuse-debug --no-tests=error -R fuse_p7_clang_tidy --output-on-failure

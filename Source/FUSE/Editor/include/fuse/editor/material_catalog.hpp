@@ -25,7 +25,7 @@ struct MaterialCatalogEntry {
 
 /// Per-scene material catalog backing the Material Editor dock (GUI-3). Ids are indices and match
 /// `Mesh::material_id` / `SDFObject::material_id`. Persisted beside the scene as `<scene>.materials`
-/// ("FUSEEDMAT 1" text). Qt-free and renderer-free; a renderer bridge can mirror it into a
+/// ("FUSEEDMAT 1" text). toolkit-free and renderer-free; a renderer bridge can mirror it into a
 /// `renderer::MaterialSystem` by id.
 class MaterialCatalog {
 public:

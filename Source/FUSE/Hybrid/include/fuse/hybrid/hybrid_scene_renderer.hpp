@@ -8,6 +8,7 @@
 //   World3D::render -> renderWorld3D(world, ctx)        graph.reset(); SceneRenderer::renderScene(world registry, camera)
 //                                                       3D opaque + transparent (forward) + post; the E02 UI stage runs
 //                                                       our FrameUiSource: "hybrid.sprite_layer" (sprites, then UI quads)
+//                                                       [+ the UI overlay: sprite layer -> RGBA8, FUSE UI blended over]
 //                                                       -> "frame.ui_composite" over the 3D output
 //   (no 3D world: renderEmpty(ctx) records the same frame over an empty registry)
 //   RhiContext::submitFrame -> submitFrame(SceneFrameSubmit)   "present.blit" (+ "present.handoff") into the acquired
@@ -27,6 +28,7 @@
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/scene_renderer/scene_renderer.hpp>
+#include <fuse/renderer/vk/present_path.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/world3d/render_scene.hpp>
 
@@ -53,6 +55,16 @@ class World3D;
 
 namespace fuse::hybrid {
 
+/// A UI layer drawn over the sprite layer in the UI stage (FUSE UI: ui::render::UiFrameSource::recordOver).
+/// `record` blends the UI over `target`, an RGBA8 (R8G8B8A8_UNORM) storage image of the context extent that holds the
+/// sprite layer (transparent without sprites), and returns it (invalid: no UI image this frame).
+using HybridUiOverlayFn = rg::TextureRef (*)(rg::Graph& graph, rg::TextureRef target,
+                                             const renderer::frame::FrameUiContext& context, void* user);
+struct HybridUiOverlay {
+    HybridUiOverlayFn record = nullptr; ///< null: sprites and UI quads only
+    void* user = nullptr;
+};
+
 struct HybridSceneRendererDesc {
     /// Display extent of the 3D frame (0 = 320 x 240, the placeholder extent). A swapchain of another size gets the
     /// frame through a scaling blit (linear); resize() re-creates the frame at a new extent.
@@ -72,6 +84,10 @@ struct HybridSceneRendererDesc {
     u32 maxQuads = 1024;       ///< sprites + UI quads per frame
     /// Keep an RGBA8 copy of every headless frame in host-visible memory (readbackPixels()).
     bool headlessReadback = true;
+    /// Also read back swapchain frames (needs headlessReadback): the frame is blitted to the headless target as well as
+    /// the acquired image, then copied to the readback buffer, so present-mode gates check the presented frame. Off by
+    /// default (one extra blit + copy per presented frame).
+    bool presentReadback = false;
     /// Use runtimeComposerDesc() / runtimeFrameSettings() (Lavapipe T0 composer; frame settings match the
     /// shared presets but without volumetric clouds — see runtimeFrameSettings()).
     /// False: `composer` / `settings` below as given.
@@ -93,6 +109,7 @@ struct HybridSceneFrameStats {
     u32 instances = 0;     ///< GpuScene instances after the extract
     u32 lights = 0;
     bool uiStageRan = false;
+    bool uiOverlayRan = false; ///< the UI overlay recorded its passes
     bool presentedToSwapchain = false;
     bool headless = false;
     bool submitted = false;
@@ -129,6 +146,9 @@ public:
     bool addUi(const SpriteQuad& quad);
     u32 spriteCount() const { return m_spriteCount; }
     u32 uiCount() const { return m_uiCount; }
+    /// UI layer blended over the sprites each frame (kept until replaced; {} removes it).
+    void setUiOverlay(const HybridUiOverlay& overlay) { m_uiOverlay = overlay; }
+    const HybridUiOverlay& uiOverlay() const { return m_uiOverlay; }
     /// Sprites then UI quads (what the kernel composites, in order).
     const SpriteQuad* overlayQuads() const { return m_overlay.data(); }
     u32 overlayCount() const { return m_spriteCount + m_uiCount; }
@@ -152,10 +172,10 @@ public:
     /// Submits the recorded frame without an RhiContext (headless target, own fence-less submission).
     bool submitHeadless();
 
-    /// Blocks until every submitted frame completed (then readbackPixels() holds the last headless frame).
+    /// Blocks until every submitted frame completed (then readbackPixels() holds the last read-back frame).
     bool waitIdle();
-    /// RGBA8 (R, G, B, A byte order), width() x height(), top row first: the last completed headless frame.
-    /// Null when headlessReadback is off or nothing was rendered headless yet.
+    /// RGBA8 (R, G, B, A byte order), width() x height(), top row first: the last completed headless frame (or
+    /// presented frame, with presentReadback). Null when headlessReadback is off or nothing was read back yet.
     const u8* readbackPixels() const;
     u32 readbackFrames() const { return m_readbackFrames; }
     /// The headless RGBA8 target (sampled usage) and its current VkImageLayout, as left by the last submitted frame:
@@ -193,6 +213,9 @@ public:
     u32 layeredMaterialCount() const { return m_layeredMaterials; }
     /// Textures the loader decoded and uploaded (cache size).
     u32 loadedTextureCount() const { return static_cast<u32>(m_textureIds.size()); }
+    /// Asset plan 4a: World3D cooked meshes (TSStatic shapes, World3D::cookedMeshes) uploaded into the cooked-asset
+    /// registry; their entities' ecs::Mesh::vertex_buffer is bound each frame (CookedAssetRegistry::syncEntities).
+    u32 cookedMeshCount() const { return m_cookedMeshUploads; }
 
 private:
     bool m_fallbackSun = false;
@@ -200,9 +223,13 @@ private:
     static bool submitThunk(const renderer::SceneFrameSubmit& submit, void* user);
     static void recordCopy(const rg::PassContext& context, void* user);
     static rg::TextureRef recordUi(rg::Graph& graph, const renderer::frame::FrameUiContext& context, void* user);
+    rg::TextureRef recordOverlay(rg::Graph& graph, rg::TextureRef sprites, const renderer::frame::FrameUiContext& context);
+    static void recordOverlayBlit(const rg::PassContext& context, void* user);
+    static void recordOverlayClear(const rg::PassContext& context, void* user);
     bool createTargets();
     void destroyTargets();
     void syncMaterials(const world3d::World3D& world);
+    void syncCookedMeshes(world3d::World3D& world);
     bool execute(void* waitSemaphore, void* signalSemaphore, void* fence, const renderer::SceneFrameSubmit* swapchain);
 
     renderer::VulkanDevice* m_device = nullptr;
@@ -225,6 +252,15 @@ private:
     std::vector<SpriteQuad> m_uiScratch;
     u32 m_spriteCount = 0;
     u32 m_uiCount = 0;
+    HybridUiOverlay m_uiOverlay{};
+    struct OverlayRecord {
+        rg::TextureRef sprites; ///< RGBA16F sprite layer (invalid: clear the target)
+        rg::TextureRef target;  ///< RGBA8 overlay image
+        u32 width = 0;
+        u32 height = 0;
+    };
+    OverlayRecord m_overlayRecord{};
+    bool m_overlayRan = false;
 
     renderer::Texture m_headless{};
     u32 m_headlessLayout = 0;
@@ -237,6 +273,7 @@ private:
         u32 height = 0;
     };
     Copy m_copy{};
+    renderer::PresentBlit m_readbackBlit{}; ///< presentReadback: scene output -> headless target on a swapchain frame
     u32 m_readbackFrames = 0;
     bool m_readbackPending = false;
 
@@ -249,14 +286,17 @@ private:
     u32 m_layeredMaterials = 0;
     u64 m_materialVersion = ~0ull;
     const world3d::World3D* m_materialWorld = nullptr;
+    u64 m_cookedMeshVersion = ~0ull;
+    const world3d::World3D* m_cookedMeshWorld = nullptr;
+    u32 m_cookedMeshUploads = 0;
     u64 m_framesSubmitted = 0;
     HybridSceneFrameStats m_stats{};
 };
 
-/// GPU readback check for demos / gates (call after waitIdle, on a headless frame): the pixels where the CPU sprite
+/// GPU readback check for demos / gates (call after waitIdle, on a read-back headless or presentReadback frame): the pixels where the CPU sprite
 /// layer (spriteLayerTexel over overlayQuads()) is opaque must equal the quad colour within `tolerance` / 255.
 struct OverlayReadbackCheck {
-    bool valid = false;  ///< a headless frame was read back
+    bool valid = false;  ///< a frame was read back
     u32 covered = 0;     ///< pixels fully covered by the overlay
     u32 mismatched = 0;  ///< channels off by more than the tolerance
 };

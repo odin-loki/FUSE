@@ -36,7 +36,7 @@ struct PlayModePhysicsState {
     StepHook stepHook;
 };
 
-/// Play-in-editor transport controller (B6.12 stub — Qt toolbar deferred to U6 chrome).
+/// Play-in-editor transport controller (B6.12; the FUSE UI shell's transport toolbar drives it).
 class PlayModeController {
 public:
     enum class State : u8 {

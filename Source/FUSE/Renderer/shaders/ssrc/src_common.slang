@@ -130,19 +130,24 @@ float4 srcDecode(uint2 r) {
                   srcF16ToF32(r.y >> 16));
 }
 
+// Correctly rounded division / square root (fuseDivRn / fuseSqrtRn, common/exact_math.slang): Vulkan lets `/` and
+// `sqrt` be a few ulp off and NVIDIA uses that slack, but the march positions and the pixels they truncate to must be
+// the oracle's (SsrcCpuSolver).
+#include "../common/exact_math.slang"
+
 // --- vector helpers -----------------------------------------------------------------------------------------
 float srcDot(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 float3 srcScale(float3 v, float s) { return float3(v.x * s, v.y * s, v.z * s); }
 float3 srcAdd(float3 a, float3 b) { return float3(a.x + b.x, a.y + b.y, a.z + b.z); }
 float3 srcSub(float3 a, float3 b) { return float3(a.x - b.x, a.y - b.y, a.z - b.z); }
 float3 srcNormalize(float3 v) {
-    const float len = sqrt(srcDot(v, v));
+    const float len = fuseSqrtRn(srcDot(v, v));
     if (len < 1e-8) {
         return float3(0.0);
     }
-    return srcScale(v, 1.0 / len);
+    return srcScale(v, fuseDivRn(1.0, len));
 }
-float srcRayCoord(uint p, float c, float f) { return ((float(p) + 0.5) - c) / f; }
+float srcRayCoord(uint p, float c, float f) { return fuseDivRn((float(p) + 0.5) - c, f); }
 
 uint srcClampIndex(int v, uint count) {
     if (v < 0) {
@@ -153,8 +158,8 @@ uint srcClampIndex(int v, uint count) {
 }
 
 uint4 srcBilinear(float px, float py, float spacing, uint countX, uint countY, out float4 w) {
-    const float u = px / spacing - 0.5;
-    const float v = py / spacing - 0.5;
+    const float u = fuseDivRn(px, spacing) - 0.5;
+    const float v = fuseDivRn(py, spacing) - 0.5;
     const float fu = floor(u);
     const float fv = floor(v);
     const float ax = u - fu;

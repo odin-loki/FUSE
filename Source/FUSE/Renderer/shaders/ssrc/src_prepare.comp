@@ -14,13 +14,13 @@ float src_linear_depth(float d, float nearPlane, float farPlane, bool reversedZ)
     float z = 0.0;
     if (reversedZ) {
         if (d > 0.0) {
-            precise float q = nearPlane / d;
+            const float q = fuse_div_rn(nearPlane, d);
             z = q;
         }
     } else if (d < 1.0 && farPlane > nearPlane) {
         precise float num = nearPlane * farPlane;
         precise float den = farPlane - d * (farPlane - nearPlane);
-        precise float q = num / den;
+        const float q = fuse_div_rn(num, den);
         z = q;
     }
     return (z > 0.0 && z < 3.0e38) ? z : 0.0;
@@ -42,11 +42,11 @@ vec3 src_pscale(vec3 v, float s) {
 }
 
 vec3 src_pnormalize(vec3 v) {
-    precise float len = sqrt(src_pdot(v, v));
+    const float len = fuse_sqrt_rn(src_pdot(v, v));
     if (len < 1e-8) {
         return vec3(0.0);
     }
-    precise float inv = 1.0 / len;
+    const float inv = fuse_div_rn(1.0, len);
     return src_pscale(v, inv);
 }
 

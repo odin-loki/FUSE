@@ -1,5 +1,5 @@
 #pragma once
-// Editor copy / cut / paste of entity subtrees (Qt-free; UI or game thread under the scene lock).
+// Editor copy / cut / paste of entity subtrees (toolkit-free; UI or game thread under the scene lock).
 
 #include <fuse/editor/editor_state.hpp>
 #include <fuse/editor/entity_names.hpp>

@@ -5,7 +5,8 @@
 //                    and BC6H mode incl. the reserved ones, plus the cook's encoder output), two mip levels, uploaded
 //                    as VK_FORMAT_BC* images (cooked_texture_gpu.hpp) and texelFetch'ed by a compute kernel == the CPU
 //                    decoder (BC7 / BC6H exact; BC1 / BC4 / BC5 within the implementation's interpolation precision,
-//                    <= 2 / 255: Lavapipe interpolates BC4 / BC5 with 6-bit weights, e.g. 4/5 -> 51/64); the
+//                    which no spec bounds: Lavapipe <= 2 / 255 (6-bit weights, e.g. 4/5 -> 51/64), other devices
+//                    <= 1 + endpoint span / 32 per texel (interpolation weight within 1/32, runDecode)); the
 //                    forced CPU-decode images return the CPU decoder's values exactly; ResourceManager::createCookedTexture
 //                    (BC7 image when supported, RGBA8 when forced / unsupported).
 //   --mode render    SceneRenderer frames of a sphere (T0, TAAU off): (A) cooked FMSH v2 (meshlets + DAG adopted) with
@@ -68,6 +69,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#include <fuse/renderer/vk/test_layer_env.hpp>
 #endif
 
 namespace {
@@ -206,8 +208,7 @@ int setup(Context& ctx) {
         return kSkip;
     }
     setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
-    setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
-    setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+    fuse::renderer::test::enableSyncValidationEnv();
     setenv("VK_KHRONOS_VALIDATION_DEBUG_ACTION", "VK_DBG_LAYER_ACTION_CALLBACK", 1);
     VulkanInstanceDesc instanceDesc{};
     instanceDesc.appName = "fuse_cooked_assets_vk";
@@ -499,7 +500,39 @@ asset::CookedTexture decodeTexture(asset::BcFormat format) {
     return t;
 }
 
+/// |endpoint 0 - endpoint 1| (in /255 codes) of channel `c` in the block holding texel `k` of a `width`-wide BC1 /
+/// BC4 / BC5 level: the span the block interpolates across (0 for channels the format holds constant).
+f64 bcEndpointSpan(asset::BcFormat f, const u8* blocks, u32 width, u32 k, u32 c) {
+    const u32 bx = (k % width) / 4u;
+    const u32 by = (k / width) / 4u;
+    const u8* b = blocks + static_cast<usize>(by * (width / 4u) + bx) * asset::bc_block_bytes(f);
+    if (f == asset::BcFormat::BC1) {
+        if (c > 2u) {
+            return 0.0;
+        }
+        auto expand = [c](u32 v) {
+            const u32 bits = c == 1u ? 6u : 5u;
+            const u32 shift = c == 0u ? 11u : (c == 1u ? 5u : 0u);
+            const u32 q = (v >> shift) & ((1u << bits) - 1u);
+            return static_cast<s32>((q << (8u - bits)) | (q >> (2u * bits - 8u)));
+        };
+        return std::abs(expand(b[0] | (u32{b[1]} << 8u)) - expand(b[2] | (u32{b[3]} << 8u)));
+    }
+    if (c > (f == asset::BcFormat::BC5 ? 1u : 0u)) {
+        return 0.0;
+    }
+    const u8* e = b + 8u * c;
+    return std::abs(static_cast<s32>(e[0]) - static_cast<s32>(e[1]));
+}
+
 int runDecode(Context& ctx) {
+    // BC1 / BC4 / BC5 interpolants are implementation-defined: GL (EXT_texture_compression_s3tc / _rgtc, issue 12:
+    // "No precision requirements are part of the specification") and Vulkan (via the Khronos Data Format Spec) give
+    // the ideal formulas without a tolerance. Lavapipe uses 6-bit weights (<= 2 / 255 from the ideal decode); the
+    // RTX 3090 uses coarser weights (BC4 2/5 -> ~3/8, BC1 1/3 -> ~5/16: up to 4 / 255 on BC1, 6.5 / 255 on BC5,
+    // always inside the endpoints). Off Lavapipe the gate therefore bounds each texel by the weight error, not a fixed
+    // code count: |gpu - cpu| <= 1 + span / 32 (a weight within 1/32 of ideal; measured worst on the 3090: 0.023).
+    const bool lavapipe = ctx.device->info().deviceName.find("llvmpipe") != std::string::npos;
     FetchKernel kernel;
     if (!createFetchKernel(ctx, kernel)) {
         std::fprintf(stderr, "FAIL: fetch kernel (bc_fetch.comp.spv) not built / not loadable\n");
@@ -566,8 +599,10 @@ int runDecode(Context& ctx) {
         (void)ctx.upload.waitAll();
 
         const f32* gpu = static_cast<const f32*>(out.mapped);
+        const bool exactFormat = f == asset::BcFormat::BC7 || f == asset::BcFormat::BC6H;
         f64 maxNative = 0.0;
         f64 maxCpu = 0.0;
+        u32 nativeBeyondWeightBound = 0;
         for (u32 path = 0; path < 2u; ++path) {
             if (!made[path]) {
                 continue;
@@ -588,18 +623,28 @@ int runDecode(Context& ctx) {
                     } else {
                         const f64 want = cpu.bytes[cpu.levelOffsets[l] + k * 4u + c];
                         diff = std::fabs(static_cast<f64>(g) * 255.0 - want);
+                        if (path == 0u && !exactFormat &&
+                            diff > 1.0 + bcEndpointSpan(f, tex.levels[l].blocks.data(), 32u >> l, k, c) / 32.0) {
+                            ++nativeBeyondWeightBound;
+                        }
                     }
                     (path == 0u ? maxNative : maxCpu) = std::max(path == 0u ? maxNative : maxCpu, diff);
                 }
             }
         }
-        const bool exactFormat = f == asset::BcFormat::BC7 || f == asset::BcFormat::BC6H;
-        std::printf("decode %-4s: native %s max |gpu - cpu| = %.4f %s, cpu-decoded image max = %.4f\n",
+        std::printf("decode %-4s: native %s max |gpu - cpu| = %.4f %s, cpu-decoded image max = %.4f, %u value(s) beyond "
+                    "1 + span / 32\n",
                     asset::bc_format_name(f), native ? "BC" : "(unsupported)", maxNative,
-                    f == asset::BcFormat::BC6H ? "half ulp" : "/255", maxCpu);
-        if (native) {
-            expect(exactFormat ? maxNative <= 1e-3 : maxNative <= 2.0,
-                   std::string("GPU BCn decode == CPU decoder: ") + asset::bc_format_name(f));
+                    f == asset::BcFormat::BC6H ? "half ulp" : "/255", maxCpu, nativeBeyondWeightBound);
+        if (native && exactFormat) {
+            expect(maxNative <= 1e-3, std::string("GPU BCn decode == CPU decoder: ") + asset::bc_format_name(f));
+        } else if (native && lavapipe) {
+            expect(maxNative <= 2.0, std::string("GPU BCn decode == CPU decoder (Lavapipe: 6-bit weights): ") +
+                                         asset::bc_format_name(f));
+        } else if (native) {
+            expect(nativeBeyondWeightBound == 0u,
+                   std::string("GPU BCn decode == CPU decoder within the interpolation-weight bound: ") +
+                       asset::bc_format_name(f));
         }
         expect(maxCpu <= 1e-3, std::string("CPU-decoded upload samples the decoder's values: ") + asset::bc_format_name(f));
         for (ca::CookedTextureGpu& img : images) {

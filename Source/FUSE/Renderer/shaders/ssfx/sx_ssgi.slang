@@ -6,14 +6,14 @@ static const float kSxGiTwoPi = 6.28318548;
 float3 sxSampleDirection(float3 n, uint x, uint y, uint i, uint j, uint sampleSqrt) {
     const uint k = max(1u, sampleSqrt);
     const uint seed = (x * 73856093u) ^ (y * 19349663u) ^ ((i * k + j) * 83492791u);
-    const float u1 = (float(i) + sxHashUnit(seed)) / float(k);
-    const float u2 = (float(j) + sxHashUnit(seed ^ 0x9e3779b9u)) / float(k);
+    const float u1 = fuseDivRn(float(i) + sxHashUnit(seed), float(k));
+    const float u2 = fuseDivRn(float(j) + sxHashUnit(seed ^ 0x9e3779b9u), float(k));
     const float3 helper = abs(n.x) < 0.9 ? float3(1.0, 0.0, 0.0) : float3(0.0, 1.0, 0.0);
     const float3 tangent = sxNormalize(sxCross(helper, n));
     const float3 bitangent = sxCross(n, tangent);
-    const float r = sqrt(u1);
+    const float r = fuseSqrtRn(u1);
     const float phi = kSxGiTwoPi * u2;
-    const float lz = sqrt(max(0.0, 1.0 - u1));
+    const float lz = fuseSqrtRn(max(0.0, 1.0 - u1));
     return sxAdd(sxAdd(sxScale(tangent, r * cos(phi)), sxScale(bitangent, r * sin(phi))), sxScale(n, lz));
 }
 
@@ -28,6 +28,7 @@ float3 sxPixelGather(uint64_t radianceIn, uint x, uint y) {
     P.maxDistance = F.giMaxDistance;
     P.fadeEdge = 0.0;
     P.refineSteps = F.giRefineSteps;
+    P.hiz = false;
     const float3 p = sxPositionAt(x, y);
     float3 n = sxNormalize(sxNormalAt(x, y));
     if (sxDot(n, p) > 0.0) {
@@ -57,7 +58,7 @@ float3 sxPixelGather(uint64_t radianceIn, uint x, uint y) {
             sum = sxAdd(sum, hit.color);
         }
     }
-    return sxScale(sum, 1.0 / float(total));
+    return sxScale(sum, fuseDivRn(1.0, float(total)));
 }
 
 [numthreads(8, 8, 1)]

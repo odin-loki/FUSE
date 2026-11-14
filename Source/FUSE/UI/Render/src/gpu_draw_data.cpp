@@ -8,9 +8,21 @@ namespace fuse::ui::render {
 
 namespace {
 struct Clip {
-    Rect r;
+    Rect r;       ///< device pixels
     f32 radius;
+    f32 dx = 0.f, dy = 0.f; ///< where the commands under it are moved to (translation groups)
 };
+/// A transform group the CPU rasteriser draws in place, moved by whole pixels (drawFxGroup): a pure translation under
+/// a rect clip. Packed the same way: its commands are emitted moved; nothing is baked for the group itself.
+bool movedInPlace(const DrawList& list, const DrawCmd& c, f32 clipRadius, f32& dx, f32& dy) {
+    if (c.op != DrawOp::PushTransform || c.data >= list.transforms().size() || clipRadius > 0.f) return false;
+    const DrawTransform& t = list.transforms()[c.data];
+    if (!(t.xf.a == 1.f && t.xf.b == 0.f && t.xf.c == 0.f && t.xf.d == 1.f) || t.src.empty()) return false;
+    if (!std::isfinite(t.xf.tx) || !std::isfinite(t.xf.ty)) return false;
+    dx = f32(std::lround(t.xf.tx));
+    dy = f32(std::lround(t.xf.ty));
+    return true;
+}
 void put4(f32 (&d)[4], f32 a, f32 b, f32 c, f32 e) {
     d[0] = a;
     d[1] = b;
@@ -28,15 +40,29 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     out.atlasSize = atlas ? atlasSize : 0;
     const u32 tilesX = (width + kUiTile - 1) / kUiTile, tilesY = (height + kUiTile - 1) / kUiTile;
     const u32 tileCount = tilesX * tilesY;
-    out.bakedOps = out.bakedPixels = out.unsupportedOps = 0;
+    out.bakedOps = out.bakedPixels = out.unsupportedOps = out.skippedGlyphs = 0;
     // vector ops are drawn as pre-rasterised images: one extra image table entry per top-level vector op / group
     u32 bakeSlots = 0;
-    if (list.hasVectorOps()) {
+    if (list.hasVectorOps()) { // the same walk as pass 1 below, counting only
         const auto& cmds = list.cmds();
+        f32 radius[32];
+        int d = 0;
+        radius[0] = 0.f;
         for (std::size_t i = 0; i < cmds.size(); ++i) {
             const DrawOp op = cmds[i].op;
-            if (op == DrawOp::Path || op == DrawOp::NinePatch) ++bakeSlots;
-            else if (op == DrawOp::PushClipPath || op == DrawOp::PushLayer) {
+            f32 dx, dy;
+            if (op == DrawOp::PushClip) {
+                if (d < 31) {
+                    ++d;
+                    radius[d] = radius[d - 1] > 0.f && cmds[i].radius[0] <= 0.f ? 0.f : cmds[i].radius[0];
+                }
+            } else if (op == DrawOp::PopClip) {
+                if (d > 0) --d;
+            } else if (d < 31 && movedInPlace(list, cmds[i], radius[d], dx, dy)) {
+                ++d;
+                radius[d] = 0.f;
+            } else if (op == DrawOp::Path || op == DrawOp::NinePatch) ++bakeSlots;
+            else if (isLayerGroup(op)) {
                 ++bakeSlots;
                 i = matchingPop(list, i);
             }
@@ -83,15 +109,21 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
     const auto& listCmds = list.cmds();
     for (std::size_t ci = 0; ci < listCmds.size(); ++ci) {
         const DrawCmd& c = listCmds[ci];
-        if (c.op == DrawOp::Path || c.op == DrawOp::NinePatch || c.op == DrawOp::PushClipPath || c.op == DrawOp::PushLayer) {
+        if (f32 mx, my; depth < 31 && movedInPlace(list, c, stack[depth].radius, mx, my)) {
+            ++depth; // ends at its PopClip like a clip; the clip itself stays
+            stack[depth] = {stack[depth - 1].r, 0.f, stack[depth - 1].dx + mx, stack[depth - 1].dy + my};
+            continue;
+        }
+        if (c.op == DrawOp::Path || c.op == DrawOp::NinePatch || isLayerGroup(c.op)) {
             // a vector op, or a whole group: CPU pre-rasterised, drawn by the kernel as an image
-            const bool group = c.op == DrawOp::PushClipPath || c.op == DrawOp::PushLayer;
+            const bool group = isLayerGroup(c.op); // effect groups (transform / filter / mask) bake like the others
             const std::size_t end = group ? matchingPop(list, ci) : ci;
             const std::size_t first = ci, count = std::min(end, listCmds.size() - 1) - ci + 1;
             const u32 slot = imageCount + bakeIndex++;
             const Clip& clip = stack[depth];
             const f32 opacity = c.op == DrawOp::PushLayer ? c.fill.a : 1.f;
-            const Rect bounds = (c.op == DrawOp::PushLayer && c.rect.empty()) ? clip.r : c.rect.intersect(clip.r);
+            const Rect local{clip.r.x - clip.dx, clip.r.y - clip.dy, clip.r.w, clip.r.h}; // the clip in the commands' space
+            const Rect bounds = (c.op == DrawOp::PushLayer && c.rect.empty()) ? local : list.groupBounds(c).intersect(local);
             ci = end;
             if (bounds.empty() || !(opacity > 0.f)) continue;
             const Area a{int(std::floor(bounds.x)), int(std::floor(bounds.y)), int(std::ceil(bounds.right())), int(std::ceil(bounds.bottom()))};
@@ -110,23 +142,25 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
             out.images[slot * 4 + 3] = 0u;
             out.images.insert(out.images.end(), out.bakeScratch.pixels.begin(), out.bakeScratch.pixels.end());
             GpuCmd g{};
-            put4(g.rect, area.x, area.y, area.w, area.h);
+            put4(g.rect, area.x + clip.dx, area.y + clip.dy, area.w, area.h);
             put4(g.fill, 1.f, 1.f, 1.f, opacity);
             put4(g.clip, clip.r.x, clip.r.y, clip.r.w, clip.r.h);
             put4(g.params, 0.f, 0.f, clip.radius, 0.f);
             g.info[0] = u32(DrawOp::Image);
             g.info[3] = slot;
             out.cmds.push_back(g);
-            areas.push_back(a);
-            for (int ty = a.y0 / int(kUiTile); ty <= (a.y1 - 1) / int(kUiTile); ++ty)
-                for (int tx = a.x0 / int(kUiTile); tx <= (a.x1 - 1) / int(kUiTile); ++tx) ++out.tiles[std::size_t(ty) * tilesX + tx];
+            const Area moved{a.x0 + int(clip.dx), a.y0 + int(clip.dy), a.x1 + int(clip.dx), a.y1 + int(clip.dy)};
+            areas.push_back(moved);
+            for (int ty = moved.y0 / int(kUiTile); ty <= (moved.y1 - 1) / int(kUiTile); ++ty)
+                for (int tx = moved.x0 / int(kUiTile); tx <= (moved.x1 - 1) / int(kUiTile); ++tx) ++out.tiles[std::size_t(ty) * tilesX + tx];
             continue;
         }
         if (c.op == DrawOp::PushClip) {
             if (depth < 31) {
+                const Clip& up = stack[depth];
                 ++depth;
-                stack[depth] = {stack[depth - 1].r.intersect(c.rect), c.radius[0]};
-                if (stack[depth - 1].radius > 0.f && c.radius[0] <= 0.f) stack[depth].radius = 0.f;
+                stack[depth] = {up.r.intersect({c.rect.x + up.dx, c.rect.y + up.dy, c.rect.w, c.rect.h}), c.radius[0], up.dx, up.dy};
+                if (up.radius > 0.f && c.radius[0] <= 0.f) stack[depth].radius = 0.f;
             }
             continue;
         }
@@ -136,20 +170,31 @@ void packDrawList(const DrawList& list, u32 width, u32 height, GpuDrawData& out,
         }
         if (c.op == DrawOp::Backdrop) continue; // single-pass tile kernel: no blur pass yet (panel drawn unblurred)
         const Clip& clip = stack[depth];
-        Rect bounds = c.rect;
+        Rect rect = c.rect; // moved with its translation group (a Line holds two points)
+        rect.x += clip.dx;
+        rect.y += clip.dy;
+        if (c.op == DrawOp::Line) { rect.w += clip.dx; rect.h += clip.dy; }
+        Rect bounds = rect;
         if (c.op == DrawOp::Shadow)
-            bounds = {c.rect.x - c.blur * 2.f, c.rect.y - c.blur * 2.f, c.rect.w + c.blur * 4.f, c.rect.h + c.blur * 4.f};
+            bounds = {rect.x - c.blur * 2.f, rect.y - c.blur * 2.f, rect.w + c.blur * 4.f, rect.h + c.blur * 4.f};
         if (c.op == DrawOp::Line) {
             const f32 hw = c.borderWidth * 0.5f + 1.f;
-            bounds = {std::min(c.rect.x, c.rect.w) - hw, std::min(c.rect.y, c.rect.h) - hw,
-                      std::abs(c.rect.w - c.rect.x) + 2 * hw, std::abs(c.rect.h - c.rect.y) + 2 * hw};
+            bounds = {std::min(rect.x, rect.w) - hw, std::min(rect.y, rect.h) - hw,
+                      std::abs(rect.w - rect.x) + 2 * hw, std::abs(rect.h - rect.y) + 2 * hw};
         }
         const Rect area = bounds.intersect(clip.r);
         if (area.empty()) continue;
         if (c.op == DrawOp::Glyph && !atlas) continue;
+        // Colour-image and MSDF glyphs live in the atlas' RGBA page, which this backend does not upload: not drawn on
+        // the GPU path (draw_list.hpp, kGlyphColor / kGlyphMsdf). The CPU rasteriser is the reference for them.
+        // (Inside a baked group they are part of the group's image; only loose ones get here. Counted, never silent.)
+        if (c.op == DrawOp::Glyph && c.gradient != kGlyphCoverage) {
+            ++out.skippedGlyphs;
+            continue;
+        }
         if (c.op == DrawOp::Image && c.image >= imageCount) continue;
         GpuCmd g{};
-        put4(g.rect, c.rect.x, c.rect.y, c.rect.w, c.rect.h);
+        put4(g.rect, rect.x, rect.y, rect.w, rect.h);
         put4(g.fill, c.fill.r, c.fill.g, c.fill.b, c.fill.a);
         put4(g.fill2, c.fill2.r, c.fill2.g, c.fill2.b, c.fill2.a);
         put4(g.border, c.border.r, c.border.g, c.border.b, c.border.a);

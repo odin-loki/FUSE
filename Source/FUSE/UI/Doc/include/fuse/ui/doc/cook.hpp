@@ -22,11 +22,20 @@ namespace fuse::ui::doc {
 // 2: style properties added (direction, transition, enter / exit animation)
 // 3: the merged property set (font family / weight / style / decoration / spacing, cursor, ...) and the document-class
 //    properties stored as plain data, never as bindings (tooltip, contextMenu, columns, rows, icon, ...)
-inline constexpr u32 kCookedVersion = 3;
+// 4: the style engine port: Raw property values (transform, filter, clip-path, gradients, animation lists), selector
+//    parts (attribute / structural / functional pseudo-classes, sibling combinators), @media / @container conditions,
+//    cascade layers, @scope and @keyframes
+// 5: the style engine port and the text / icon port together: 97 properties (the 21 of the style engine, then
+//    font-stretch, font-variation-settings, font-feature-settings, icon, icon-size) and the FontSettings / Ident value
+//    types, whose tags follow the Raw payload of a value
+inline constexpr u32 kCookedVersion = 5;
 
 struct CookInfo {
     u32 nodes = 0, bindings = 0, instructions = 0;
     std::vector<std::string> classes; ///< widget classes the document creates (sorted, unique)
+    /// Icon names the document's nodes ask for ("icon" keys and inline `icon` styles; sorted, unique): what an icon
+    /// pack shipped with the document has to hold (fuse/ui/icon_set.hpp; names of built-in icons are listed too).
+    std::vector<std::string> icons;
 };
 
 /// `.fuseui` text -> cooked document. Fails on JSON errors, bad bindings or a bad style sheet.

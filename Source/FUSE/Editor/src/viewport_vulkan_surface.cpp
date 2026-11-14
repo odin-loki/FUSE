@@ -6,44 +6,28 @@ ViewportVulkanSurfaceResult createViewportVulkanSurfaceFromWinId(u64 winId, [[ma
                                                                  [[maybe_unused]] u32 height) {
     ViewportVulkanSurfaceResult result{};
     if (winId == 0u) {
-        result.message = "invalid Qt winId";
+        result.message = "invalid winId";
         return result;
     }
 
-#if defined(FUSE_HAS_QT_VULKAN)
-    // Real QVulkanInstance path — compiled when Qt6 Gui is linked into fuse_editor_api.
-    extern ViewportVulkanSurfaceResult createViewportVulkanSurfaceFromWinIdQt(u64 winId, u32 width,
-                                                                                u32 height);
-    return createViewportVulkanSurfaceFromWinIdQt(winId, width, height);
-#else
+    // The former Qt shell created a real VkSurfaceKHR here through QVulkanInstance. The FUSE UI shell presents the
+    // viewport as a zero-copy external texture (EditorShell/SceneHost), so a winId only ever takes the stub handoff.
     result.vkSurface = reinterpret_cast<void*>(static_cast<uintptr_t>(winId));
     result.valid = true;
     result.stubPath = true;
-    result.message = "Qt Vulkan unavailable — winId stub handoff";
+    result.message = "winId stub handoff";
     return result;
-#endif
 }
 
 void destroyViewportVulkanSurface(ViewportVulkanSurfaceResult& result) {
-#if defined(FUSE_HAS_QT_VULKAN)
-    extern void destroyViewportVulkanSurfaceQt(ViewportVulkanSurfaceResult& result);
-    destroyViewportVulkanSurfaceQt(result);
-#else
-    (void)result;
-#endif
     result = {};
 }
 
 QVulkanWindowWsiProbeResult probeQVulkanWindowWsi() {
-#if defined(FUSE_HAS_QT_VULKAN)
-    extern QVulkanWindowWsiProbeResult probeQVulkanWindowWsiQt();
-    return probeQVulkanWindowWsiQt();
-#else
     QVulkanWindowWsiProbeResult result{};
     result.headlessSkipped = true;
-    result.note = "qt_vulkan_module_unavailable";
+    result.note = "qt_vulkan_module_unavailable"; // no Qt in the build since the Stage 3 switch
     return result;
-#endif
 }
 
 ViewportVulkanBootstrapStressResult stressViewportVulkanBootstrapTeardown(u32 cycles) {

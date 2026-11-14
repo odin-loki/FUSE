@@ -50,7 +50,7 @@ Work happens on **`main`**. Open PRs against `main`.
 - Code must be legally compatible with the AGPL-3.0 license in [`LICENSE.md`](LICENSE.md).
 - Follow [`docs/coding-standards.md`](docs/coding-standards.md).
 - Keep each PR focused. One intent, a small set of files, a clear test plan.
-- Do not leak Qt types into engine libraries. Editor chrome is Qt; core is Qt-free.
+- Do not add Qt. Editor chrome is FUSE UI (`Source/FUSE/EditorShell`); the Qt shell was removed on 2026-11-14.
 - Scene mutation stays on the game thread. Cross-thread traffic uses `fuse::Handle<T>` and command buffers, not raw object pointers.
 - Public APIs live in `fuse::` with `FUSE_*` macros. Do not introduce a second product namespace.
 

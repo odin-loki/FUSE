@@ -214,7 +214,8 @@ u16 GBufferQuantize::halfNextDown(u16 bits) {
 
 f32 GBufferQuantize::toUnorm8(f32 value) {
     const f32 clamped = std::clamp(value, 0.f, 1.f);
-    return static_cast<f32>(std::lround(clamped * 255.f)) / 255.f;
+    // Nearest even on midpoints (std::nearbyint, default rounding mode), as write_gbuffer rounds on the GPU.
+    return std::nearbyint(clamped * 255.f) / 255.f;
 }
 
 GBufferMrt GBufferPacking::pack(const GBufferPackedData& data, f32 alpha) {

@@ -2,14 +2,19 @@
 // Win32, plus the presenter selection (Vulkan swapchain -> GDI on Win32 / XPutImage on X11 -> headless). See native.hpp.
 // The platform services (cursors, clipboard, window management, theme, displays, dialogs) are in native_services.inl.
 #include "native_internal.hpp"
+#include "fuse/app/chrome.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <expected>
+#include <initializer_list>
 #include <limits>
 #include <string>
 #include <type_traits>
@@ -24,8 +29,11 @@
 #endif
 #include <windows.h>
 #include <commdlg.h>
+#include <ole2.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <shobjidl.h>
+#include <atomic>
 #else
 #include <dlfcn.h>
 #include <fcntl.h>
@@ -34,6 +42,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 extern char** environ;
+#include "native_wayland_platform.hpp" // the Wayland backend (chosen at run time, see NativeOptions::backend)
+#include "wayland_internal.hpp"
 #endif
 
 namespace fuse::app {
@@ -68,11 +78,12 @@ struct SelectionEv {
     int type; unsigned long serial; int send_event; Display* display; Window requestor; Atom selection, target, property;
     unsigned long time;
 };
+struct SelectionClearEv { int type; unsigned long serial; int send_event; Display* display; Window window; Atom selection; unsigned long time; };
 struct PropertyEv { int type; unsigned long serial; int send_event; Display* display; Window window; Atom atom; unsigned long time; int state; };
 struct FocusEv { int type; unsigned long serial; int send_event; Display* display; Window window; int mode, detail; };
 union Event {
     int type; AnyEv any; InputEv input; ConfigureEv configure; ClientEv client; SelectionRequestEv selectionRequest;
-    SelectionEv selection; PropertyEv property; FocusEv focus; long pad[24];
+    SelectionEv selection; SelectionClearEv selectionClear; PropertyEv property; FocusEv focus; long pad[24];
 };
 struct Color { unsigned long pixel; unsigned short red, green, blue; char flags, pad; }; // XColor
 struct RRMonitor { Atom name; int primary, automatic, noutput, x, y, width, height, mwidth, mheight; XID* outputs; }; // XRRMonitorInfo
@@ -146,6 +157,9 @@ struct Lib {
     char* (*GetAtomName)(Display*, Atom) = nullptr;
     void* xcursor = nullptr; ///< libXcursor: themed cursors by CSS name
     XID (*CursorLoad)(Display*, const char*) = nullptr;
+    int (*CursorSetDefaultSize)(Display*, int) = nullptr;
+    int (*CursorGetDefaultSize)(Display*) = nullptr;
+    int (*CursorSetTheme)(Display*, const char*) = nullptr;
     void* xrandr = nullptr;  ///< libXrandr: monitors and the refresh rate
     RRMonitor* (*RRGetMonitors)(Display*, Window, int, int*) = nullptr;
     void (*RRFreeMonitors)(RRMonitor*) = nullptr;
@@ -187,7 +201,10 @@ struct Lib {
             return h != nullptr;
         };
         auto from = [&](void* h, auto& fn, const char* name) { fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(dlsym(h, name)); };
-        if (lib(xcursor, "libXcursor.so.1")) from(xcursor, CursorLoad, "XcursorLibraryLoadCursor");
+        if (lib(xcursor, "libXcursor.so.1")) {
+            from(xcursor, CursorLoad, "XcursorLibraryLoadCursor"); from(xcursor, CursorSetDefaultSize, "XcursorSetDefaultSize");
+            from(xcursor, CursorGetDefaultSize, "XcursorGetDefaultSize"); from(xcursor, CursorSetTheme, "XcursorSetTheme");
+        }
         if (lib(xrandr, "libXrandr.so.2")) {
             from(xrandr, RRGetMonitors, "XRRGetMonitors"); from(xrandr, RRFreeMonitors, "XRRFreeMonitors");
             from(xrandr, RRGetScreenInfo, "XRRGetScreenInfo"); from(xrandr, RRConfigCurrentRate, "XRRConfigCurrentRate");
@@ -267,6 +284,7 @@ struct NativePlatform::Impl {
         bool hideAsked = false;          ///< the app hid the window (an unmap is not a minimise)
         std::vector<u32> staged;         ///< X11 software presenter: the frame in the server's pixel order
         struct Popup {
+            NodeHandle node;               ///< tool windows: the "os-window" node shown
             unsigned long long handle = 0;
             Rect screen;   ///< physical screen rect
             Rect rect;     ///< context rect (input offset)
@@ -275,6 +293,18 @@ struct NativePlatform::Impl {
             std::vector<u32> staged; ///< OS pixel order
         };
         std::vector<Popup> popups;
+        std::vector<Popup> tools;        ///< OS tool windows (NativeOptions::osWindows), back to front
+        int originX = 0, originY = 0;    ///< client origin on screen (px), as of the last present / configure
+        /// Custom chrome without a window manager (X11): the backend moves / resizes while the button is held.
+        struct ChromeDrag {
+            bool active = false;
+            HitArea area = HitArea::Client;
+            int rootX = 0, rootY = 0;    ///< pointer at the press (screen px)
+            int x = 0, y = 0, w = 0, h = 0; ///< window rect at the press (screen px)
+        } chromeDrag;
+        unsigned long captionClickTime = 0; ///< X11: server time of the last caption press (double click = maximise)
+        Vec2 pointer{-1.f, -1.f};        ///< last pointer position (UI units): resize cursors over Custom chrome edges
+        void* dropTarget = nullptr;      ///< Win32: the registered IDropTarget
 #if defined(_WIN32)
         std::vector<u32> bgra; ///< GDI fallback staging
         wchar_t highSurrogate = 0;
@@ -298,15 +328,76 @@ struct NativePlatform::Impl {
     void initServices();              ///< DPI awareness + the system theme
     void leaveFullscreen(Rec& r);
     SystemTheme queryTheme() const;
+    bool oleReady = false; ///< OleInitialize succeeded: drop targets and DoDragDrop are available
+    bool dragOut = false;  ///< inside DoDragDrop: a drag of the UI is over other applications
+    void registerDrop(Rec& r);
+    void revokeDrop(Rec& r);
+    void dragOutCheck(Rec& r);
 #else
+    std::unique_ptr<detail::WaylandPlatform> wl; ///< set: Wayland is the window system, everything X11 below is unused
     x11::Lib x;
     x11::Display* dpy = nullptr;
     x11::Atom wmProtocols = 0, wmDelete = 0;
     x11::Window helper = 0; ///< unmapped: owns the CLIPBOARD selection and receives conversions
     x11::Atom aClipboard = 0, aUtf8 = 0, aTargets = 0, aTextPlain = 0, aIncr = 0, aClipProp = 0, aNetWmState = 0, aFullscreen = 0, aMaxV = 0,
               aMaxH = 0, aHidden = 0, aActive = 0, aChangeState = 0, aNetWmName = 0, aWmCheck = 0, aWorkArea = 0;
-    std::string clipText;   ///< what we serve while we own the selection
-    bool clipOwner = false;
+    /// A selection this platform owns: CLIPBOARD, PRIMARY (formats in services.hpp ClipboardItem).
+    struct Selection {
+        std::vector<ClipboardItem> items;
+        bool owner = false;
+    } clip, primary;
+    /// An outgoing INCR transfer: the rest is sent chunk by chunk as the requestor deletes the property.
+    struct IncrOut {
+        x11::Window requestor = 0;
+        x11::Atom property = 0, target = 0;
+        std::string bytes;
+        std::size_t offset = 0;
+    };
+    std::vector<IncrOut> incrOut;
+    x11::Atom aPrimary = 1 /*XA_PRIMARY*/, aImagePng = 0, aTextBare = 0, aMotifHints = 0, aMoveResize = 0;
+    // XDND v5
+    struct Dnd {
+        x11::Atom aware = 0, enter = 0, position = 0, status = 0, leave = 0, drop = 0, finished = 0, selection = 0, actionCopy = 0,
+                  actionMove = 0, typeList = 0, uriList = 0, prop = 0;
+        // target side: a drag from another client over one of our windows
+        x11::Window source = 0;
+        x11::Window window = 0;         ///< our window it is over
+        x11::Atom type = 0;             ///< the offered type we take (text/uri-list wins over text)
+        Vec2 pos{};                     ///< UI units
+        bool dropping = false;          ///< XdndDrop seen, the selection conversion is pending
+        // source side: a drag of ours over another client
+        Rec* rec = nullptr;             ///< the window the drag started in (null: no outgoing drag)
+        x11::Window target = 0;         ///< the XdndAware window under the pointer
+        bool accepted = false, dropped = false;
+        double deadline = 0.0;          ///< app clock: give up waiting for XdndFinished
+        std::vector<std::pair<x11::Atom, std::string>> types; ///< what we serve as XdndSelection
+    } dnd;
+    void initPlatformAtoms();
+    // XSETTINGS (native_platform.inl): DPI, theme and cursor theme from the desktop's settings manager, followed live
+    x11::Window xsOwner = 0;    ///< the _XSETTINGS_S<screen> selection owner seen at start (0: no settings manager)
+    x11::Atom aXsProp = 0;
+    std::string resourceDpi;    ///< RESOURCE_MANAGER at start (Xft.dpi: the fallback below XSETTINGS)
+    void readXSettings(bool initial);
+    // selections (native_platform.inl)
+    Selection* selectionOf(x11::Atom a) { return a == aClipboard ? &clip : a == aPrimary ? &primary : nullptr; }
+    bool ownSelection(x11::Atom sel, Selection& s, std::vector<ClipboardItem> items);
+    std::vector<x11::Atom> selectionTargets(const Selection& s);
+    bool selectionBytes(Selection& s, x11::Atom target, std::string& out);
+    void sendProperty(x11::Window requestor, x11::Atom property, x11::Atom target, std::string bytes);
+    bool continueIncr(const x11::PropertyEv& e);
+    bool convert(x11::Atom selection, x11::Atom target, std::string& out, x11::Atom* type = nullptr, int* format = nullptr);
+    std::string atomName(x11::Atom a) const;
+    // XDND (native_platform.inl)
+    void dndSend(x11::Window to, x11::Atom type, long l1, long l2, long l3, long l4, x11::Window self);
+    bool dndClient(Rec& r, const x11::ClientEv& c);
+    void dndSelectionNotify(const x11::SelectionEv& e);
+    x11::Window dndTargetAt(int rx, int ry);
+    void dndOutMotion(Rec& r, const x11::InputEv& in, bool outside);
+    bool dndOutRelease(Rec& r, const x11::InputEv& in);
+    void dndOutEnd(DropAction result);
+    // custom chrome (native_platform.inl)
+    bool chromePress(Rec& r, const x11::InputEv& in, Vec2 pos);
+    void chromeDragMove(Rec& r, const x11::InputEv& in);
     unsigned long cursors[kCursorCount] = {};
     f32 detectedScale = 1.f; ///< Xft.dpi / env (dpi::x11Scale)
     bool themeQueried = false;
@@ -375,6 +466,17 @@ struct NativePlatform::Impl {
     void blitPopupOs(Rec::Popup& p);
     bool capturePopupOs(const Rec::Popup& p, Image& out);
     bool postClickOs(unsigned long long h, Vec2 at);
+    // OS tool windows (native_platform.inl)
+    void syncTools(Rec& r);
+    bool createToolOs(Rec& r, Rec::Popup& p);
+    void raiseToolOs(Rec::Popup& p);
+    Rec* findTool(unsigned long long h, std::size_t& idx) {
+        for (Rec* r : recs)
+            for (std::size_t i = 0; i < r->tools.size(); ++i)
+                if (r->tools[i].handle == h) { idx = i; return r; }
+        return nullptr;
+    }
+    bool postInputOs(unsigned long long h, Vec2 at, int kind); ///< 0 move, 1 press, 2 release, 3 close
 #if !defined(_WIN32)
     bool captureX(unsigned long win, unsigned w, unsigned h, Image& out);
 #endif
@@ -385,6 +487,18 @@ struct NativePlatform::Impl {
         return nullptr;
     }
 };
+
+// The Wayland seam: with the Wayland backend open (Linux / BSD) the public call goes to it.
+#if defined(_WIN32)
+#define FUSE_APP_WL(call)
+#define FUSE_APP_WL_NONE(value)
+#else
+#define FUSE_APP_WL(call) \
+    if (m->wl) return m->wl->call
+/// For what the Wayland backend does not have: the "unsupported" answer, before any X11 state is looked at.
+#define FUSE_APP_WL_NONE(value) \
+    if (m->wl) return value
+#endif
 
 void NativePlatform::Impl::syncPopups(Rec& r) {
     if (!opts.osPopups || !r.handle) return;
@@ -435,6 +549,7 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
     case PresenterKind::Vulkan: {
         const bool ok = detail::vkWinPresent(r.vk, w, damage);
         r.impl->syncPopups(r);
+        r.impl->syncTools(r);
         return ok;
     }
 #if defined(_WIN32)
@@ -458,6 +573,7 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
                           DIB_RGB_COLORS);
         ReleaseDC(hwnd, dc);
         r.impl->syncPopups(r);
+        r.impl->syncTools(r);
         return true;
     }
 #else
@@ -479,10 +595,11 @@ bool NativePlatform::Impl::present(void* user, AppWindow& w, Rect damage) {
             x.Flush(m.dpy);
         }
         r.impl->syncPopups(r);
+        r.impl->syncTools(r);
         return true;
     }
 #endif
-    default: w.rasterize(damage); r.impl->syncPopups(r); return true;
+    default: w.rasterize(damage); r.impl->syncPopups(r); r.impl->syncTools(r); return true;
     }
 }
 
@@ -493,6 +610,12 @@ void NativePlatform::Impl::destroy(void* user) {
     r->vk = nullptr;
     for (Rec::Popup& p : r->popups) m.destroyPopupOs(p);
     r->popups.clear();
+    for (Rec::Popup& p : r->tools) m.destroyPopupOs(p);
+    r->tools.clear();
+#if !defined(_WIN32)
+    if (m.dnd.rec == r) m.dnd.rec = nullptr; // an outgoing drag of this window ends with it
+#endif
+    if (r->win) r->win->ui().setOsWindows(false);
     if (r->win) r->win->ui().setOsPopups(false);
     if (r->win) {
         r->win->ui().setClipboard({}); // back to the context-local buffer
@@ -555,12 +678,19 @@ Vec2 uiPos(const NativePlatform::Impl::Rec& r, LPARAM lp) {
     const Vec2 p = lparamPos(lp);
     return {p.x / r.scale, p.y / r.scale};
 }
+// native_platform_win32.inl: OS tool windows and client-side chrome
+constexpr const wchar_t* kToolClass = L"FuseAppToolWindow";
+LRESULT CALLBACK toolProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+bool chromeMessage(HWND hwnd, NativePlatform::Impl::Rec& r, UINT msg, WPARAM wp, LPARAM lp, LRESULT& result);
+DWORD chromeStyle(WindowFrame f);
+void chromeAdjust(const AppWindow& w, RECT& rc);
 
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* r = reinterpret_cast<NativePlatform::Impl::Rec*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (!r || !r->win) return DefWindowProcW(hwnd, msg, wp, lp);
     AppWindow& w = *r->win;
     UiContext& ui = w.ui();
+    if (LRESULT chrome = 0; chromeMessage(hwnd, *r, msg, wp, lp, chrome)) return chrome; // Borderless / Custom frames
     switch (msg) {
     case WM_CLOSE: w.tryClose(); return 0; // the close guard may veto
     case WM_ACTIVATEAPP: // another application took the pointer / focus: popups close (Qt::Popup)
@@ -574,7 +704,8 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         auto* mm = reinterpret_cast<MINMAXINFO*>(lp);
         const Size mn = w.minimumSize(), mx = w.maximumSize();
         RECT fr{0, 0, 0, 0};
-        AdjustWindowRectEx(&fr, DWORD(GetWindowLongW(hwnd, GWL_STYLE)), FALSE, DWORD(GetWindowLongW(hwnd, GWL_EXSTYLE)));
+        if (w.chrome().frame == WindowFrame::System) // a Borderless / Custom window is all client area
+            AdjustWindowRectEx(&fr, DWORD(GetWindowLongW(hwnd, GWL_STYLE)), FALSE, DWORD(GetWindowLongW(hwnd, GWL_EXSTYLE)));
         const LONG fw = fr.right - fr.left, fh = fr.bottom - fr.top;
         if (mn.w > 0.f) mm->ptMinTrackSize.x = LONG(std::lround(mn.w * r->scale)) + fw;
         if (mn.h > 0.f) mm->ptMinTrackSize.y = LONG(std::lround(mn.h * r->scale)) + fh;
@@ -621,7 +752,11 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     default: break;
     }
     switch (msg) {
-    case WM_MOUSEMOVE: ui.pointerMove(uiPos(*r, lp)); r->impl->applyCursor(*r); return 0;
+    case WM_MOUSEMOVE:
+        ui.pointerMove(uiPos(*r, lp));
+        r->impl->applyCursor(*r);
+        r->impl->dragOutCheck(*r); // a UI drag that left the app's windows goes on as an OLE drag
+        return 0;
     case WM_LBUTTONDOWN: SetCapture(hwnd); ui.pointerDown(uiPos(*r, lp), MouseButton::Left); return 0;
     case WM_RBUTTONDOWN: ui.pointerDown(uiPos(*r, lp), MouseButton::Right); return 0;
     case WM_MBUTTONDOWN: ui.pointerDown(uiPos(*r, lp), MouseButton::Middle); return 0;
@@ -765,12 +900,13 @@ bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
 
 bool NativePlatform::Impl::createOsWindow(Rec& r) {
     const Size sz = r.win->size();
+    const DWORD style = chromeStyle(r.win->chrome().frame);
     RECT rc{0, 0, LONG(sz.w), LONG(sz.h)};
-    AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+    chromeAdjust(*r.win, rc);
     const std::string& t = r.win->title();
     std::wstring wt(std::size_t(MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), nullptr, 0)), L'\0');
     if (!wt.empty()) MultiByteToWideChar(CP_UTF8, 0, t.data(), int(t.size()), wt.data(), int(wt.size()));
-    HWND hwnd = CreateWindowExW(0, kClass, wt.c_str(), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+    HWND hwnd = CreateWindowExW(0, kClass, wt.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
                                 rc.right - rc.left, rc.bottom - rc.top, nullptr, nullptr, hinst, nullptr);
     if (!hwnd) {
         error = "CreateWindowExW failed";
@@ -781,11 +917,14 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
     r.scale = windowScale(hwnd);
     const Size px = dpi::toPixels(sz, r.scale);
     RECT want{0, 0, LONG(px.w), LONG(px.h)};
-    AdjustWindowRect(&want, WS_OVERLAPPEDWINDOW, FALSE);
-    SetWindowPos(hwnd, nullptr, 0, 0, want.right - want.left, want.bottom - want.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    chromeAdjust(*r.win, want);
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&r));
+    // SWP_FRAMECHANGED: a Custom frame's first WM_NCCALCSIZE ran before the window knew its AppWindow
+    SetWindowPos(hwnd, nullptr, 0, 0, want.right - want.left, want.bottom - want.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     RECT client;
     if (GetClientRect(hwnd, &client) && client.right > 0 && client.bottom > 0) r.win->resizePixels(u32(client.right), u32(client.bottom), r.scale);
-    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&r));
+    if (r.win->positionRequested()) windowRequest(&r, *r.win, WindowRequest::Position); // a saved position
+    registerDrop(r);
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
     return true;
@@ -793,6 +932,7 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
 void NativePlatform::Impl::destroyOsWindow(Rec& r) {
     if (!r.handle) return;
     HWND hwnd = reinterpret_cast<HWND>(r.handle);
+    revokeDrop(r);
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
     DestroyWindow(hwnd);
     r.handle = 0;
@@ -869,6 +1009,11 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
     pc.lpfnWndProc = &popupProc;
     pc.lpszClassName = kPopupClass;
     RegisterClassExW(&pc);
+    WNDCLASSEXW tc = wc;
+    tc.lpfnWndProc = &toolProc;
+    tc.lpszClassName = kToolClass;
+    RegisterClassExW(&tc);
+    m->oleReady = o.dragAndDrop && SUCCEEDED(OleInitialize(nullptr)); // drop targets + DoDragDrop need OLE on this thread
     m->initServices();
     app.setEventSource({m.get(), &Impl::pump});
 }
@@ -891,6 +1036,19 @@ bool NativePlatform::Impl::createOsWindow(Rec& r) {
     x.SetWMProtocols(dpy, w, &wmDelete, 1);
     if (x.DefineCursor)
         if (const unsigned long arrow = cursorFor(Cursor::Arrow)) x.DefineCursor(dpy, w, arrow); // a bare X root shows an X
+    if (r.win->chrome().frame != WindowFrame::System) {
+        // custom chrome: _MOTIF_WM_HINTS { flags = decorations, functions, decorations = none, input mode, status }
+        const long hints[5] = {2, 0, 0, 0, 0};
+        x.ChangeProperty(dpy, w, aMotifHints, aMotifHints, 32, 0, reinterpret_cast<const unsigned char*>(hints), 5);
+    }
+    if (opts.dragAndDrop) { // XDND v5 drop target
+        const long version = 5;
+        x.ChangeProperty(dpy, w, dnd.aware, 4 /*XA_ATOM*/, 32, 0, reinterpret_cast<const unsigned char*>(&version), 1);
+    }
+    if (r.win->positionRequested() && x.MoveWindow) { // placed before it is mapped (a saved position)
+        const Vec2 at = r.win->requestedPosition();
+        x.MoveWindow(dpy, w, int(std::lround(at.x * r.scale)), int(std::lround(at.y * r.scale)));
+    }
     x.MapWindow(dpy, w);
     x.Flush(dpy);
     r.handle = w;
@@ -907,6 +1065,7 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
     Impl& m = *static_cast<Impl*>(user);
     if (!m.dpy) return m.previous.pump ? m.previous.pump(m.previous.user, app, wait) : true;
     auto& x = m.x;
+    if (m.dnd.rec && m.dnd.dropped) wait = std::min(wait, 0.05f); // a drop of ours is waiting for XdndFinished
     if (wait > 0.f && !x.Pending(m.dpy)) {
         pollfd p{x.ConnectionNumber(m.dpy), POLLIN, 0};
         const int ms = std::isinf(wait) ? -1 : int(std::min(std::ceil(double(wait) * 1000.0), 2.0e9));
@@ -916,8 +1075,33 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
         x11::Event ev{};
         x.NextEvent(m.dpy, &ev);
         if (ev.type == x11::SelectionRequest) { m.serveSelection(ev.selectionRequest); continue; }
-        if (ev.type == x11::SelectionClear) { m.clipOwner = false; continue; } // another client copied
-        if (ev.type == x11::SelectionNotify) continue; // a late answer to a conversion clipGet gave up on
+        if (ev.type == x11::SelectionClear) { // another client took the selection
+            if (Selection* sel = m.selectionOf(ev.selectionClear.selection)) *sel = {};
+            continue;
+        }
+        if (ev.type == x11::SelectionNotify) { // the data of an XDND drop; else a late answer to a conversion we gave up on
+            if (ev.selection.selection == m.dnd.selection) m.dndSelectionNotify(ev.selection);
+            continue;
+        }
+        if (ev.type == x11::PropertyNotify && m.xsOwner && ev.property.window == m.xsOwner) { // the desktop settings changed
+            if (ev.property.atom == m.aXsProp) m.readXSettings(false);
+            continue;
+        }
+        if (ev.type == x11::PropertyNotify && m.continueIncr(ev.property)) continue;
+        bool fromTool = false;
+        std::size_t ti = 0;
+        if (Rec* tr = m.findTool(ev.any.window, ti)) { // a tool window: its input is the owner's, in context coordinates
+            if (ev.type == x11::Expose) { m.blitPopupOs(tr->tools[ti]); continue; }
+            if (ev.type != x11::MotionNotify && ev.type != x11::ButtonPress && ev.type != x11::ButtonRelease && ev.type != x11::KeyPress &&
+                ev.type != x11::KeyRelease)
+                continue;
+            if (ev.type == x11::ButtonPress) m.raiseToolOs(tr->tools[ti]);
+            // through the screen position: the window may move under the pointer while its title is dragged
+            ev.input.x = ev.input.x_root - tr->originX;
+            ev.input.y = ev.input.y_root - tr->originY;
+            ev.input.window = x11::Window(tr->handle);
+            fromTool = true;
+        }
         std::size_t pi = 0;
         if (Rec* pr = m.findPopup(ev.any.window, pi)) { // a popup window: input in context coordinates of its owner
             Rec::Popup& p = pr->popups[pi];
@@ -948,6 +1132,7 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
         switch (ev.type) {
         case x11::ClientMessage:
             if (ev.client.message_type == m.wmProtocols && x11::Atom(ev.client.l[0]) == m.wmDelete) w.tryClose();
+            else m.dndClient(*r, ev.client); // XDND: a drag over this window, or the answers to one of ours
             break;
         case x11::MapNotify:
             r->mapped = true;
@@ -977,18 +1162,36 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
                 w.resizePixels(u32(ev.configure.width), u32(ev.configure.height), r->scale);
             int ox = 0, oy = 0;
             Rect work;
-            if (m.screenInfo(*r, ox, oy, work)) w.notifyMoved(toUi(*r, f32(ox), f32(oy)));
+            if (m.screenInfo(*r, ox, oy, work)) {
+                r->originX = ox;
+                r->originY = oy;
+                w.notifyMoved(toUi(*r, f32(ox), f32(oy)));
+                if (!r->tools.empty()) w.requestRedraw(); // the tool windows follow the main window
+            }
             break;
         }
-        case x11::MotionNotify: ui.setModifiers(x11::mods(in.state)); ui.pointerMove(pos); break;
+        case x11::MotionNotify: {
+            if (r->chromeDrag.active) { m.chromeDragMove(*r, in); break; }
+            ui.setModifiers(x11::mods(in.state));
+            r->pointer = pos;
+            ui.pointerMove(pos);
+            // a drag of ours that left the app's windows continues over other applications (XDND source)
+            const Size vp = ui.viewport();
+            const bool outside = pos.x < 0.f || pos.y < 0.f || pos.x >= vp.w || pos.y >= vp.h;
+            if (m.opts.dragAndDrop && (m.dnd.rec == r || (outside && ui.dragging()))) m.dndOutMotion(*r, in, outside);
+            break;
+        }
         case x11::ButtonPress:
             ui.setModifiers(x11::mods(in.state));
             if (in.detail == 4 || in.detail == 5) ui.wheel(pos, {0.f, in.detail == 4 ? 1.f : -1.f});
             else if (in.detail == 6 || in.detail == 7) ui.wheel(pos, {in.detail == 6 ? -1.f : 1.f, 0.f});
+            else if (in.detail == 1 && !fromTool && m.chromePress(*r, in, pos)) break; // caption / edge of a Custom frame
             else ui.pointerDown(pos, in.detail == 3 ? MouseButton::Right : in.detail == 2 ? MouseButton::Middle : MouseButton::Left);
             break;
         case x11::ButtonRelease:
             ui.setModifiers(x11::mods(in.state));
+            if (in.detail == 1 && r->chromeDrag.active) { r->chromeDrag.active = false; break; }
+            if (in.detail == 1 && m.dnd.rec == r && m.dndOutRelease(*r, in)) break; // dropped on another application
             if (in.detail <= 3) ui.pointerUp(pos);
             break;
         case x11::KeyPress:
@@ -1018,6 +1221,7 @@ bool NativePlatform::Impl::pump(void* user, Application& app, f32 wait) {
         default: break;
         }
     }
+    if (m.dnd.rec && m.dnd.dropped && app.now() > m.dnd.deadline) m.dndOutEnd(DropAction::None); // the target never answered
     for (Rec* r : m.recs)
         if (r->handle && r->win) m.applyCursor(*r); // what the UI wants after this batch of input
     return true;
@@ -1083,20 +1287,7 @@ void NativePlatform::Impl::blitPopupOs(Rec::Popup& p) {
     x.Flush(dpy);
 }
 bool NativePlatform::Impl::postClickOs(unsigned long long h, Vec2 at) {
-    for (int type : {int(x11::ButtonPress), int(x11::ButtonRelease)}) {
-        x11::Event ev{};
-        ev.input.type = type;
-        ev.input.display = dpy;
-        ev.input.window = x11::Window(h);
-        ev.input.root = x.RootWindow(dpy, x.DefaultScreen(dpy));
-        ev.input.x = int(at.x);
-        ev.input.y = int(at.y);
-        ev.input.detail = 1;
-        ev.input.same_screen = 1;
-        if (!x.SendEvent(dpy, x11::Window(h), 0, 0, &ev)) return false;
-    }
-    x.Flush(dpy);
-    return true;
+    return postInputOs(h, at, 1) && postInputOs(h, at, 2); // press + release, with the screen position filled in
 }
 bool NativePlatform::Impl::captureOs(const Rec& r, Image& out) {
     const Size sz = r.win->pixelSize();
@@ -1129,6 +1320,16 @@ bool NativePlatform::Impl::captureX(unsigned long win, unsigned w, unsigned h, I
 
 NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std::make_unique<Impl>(app, o)) {
     const char* disp = std::getenv("DISPLAY");
+    {
+        const char* be = std::getenv("FUSE_UI_BACKEND");
+        const char* wd = std::getenv("WAYLAND_DISPLAY");
+        const std::string_view env = be ? be : "";
+        if (wl::chooseBackend(o.backend, env, wd ? wd : "") == NativeBackend::Wayland) {
+            m->wl = detail::WaylandPlatform::open(app, o, m->error);
+            if (m->wl || wl::backendForced(o.backend, env)) return; // forced: no fallback to X11
+            m->error.clear(); // no compositor / no libwayland-client: X11 (XWayland) when there is a DISPLAY
+        }
+    }
     if (disp && *disp && m->x.load()) {
         m->dpy = m->x.OpenDisplay(nullptr);
         if (m->dpy) {
@@ -1144,12 +1345,16 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
             m->aNetWmName = atom("_NET_WM_NAME"); m->aWmCheck = atom("_NET_SUPPORTING_WM_CHECK"); m->aWorkArea = atom("_NET_WORKAREA");
             const int scr = m->x.DefaultScreen(m->dpy);
             m->helper = m->x.CreateSimpleWindow(m->dpy, m->x.RootWindow(m->dpy, scr), -10, -10, 1, 1, 0, 0, 0); // never mapped
+            m->x.SelectInput(m->dpy, m->helper, 1L << 22); // PropertyChange: incoming INCR transfers
+            m->initPlatformAtoms();
             const char* rm = m->x.ResourceManagerString ? m->x.ResourceManagerString(m->dpy) : nullptr;
             const char* gdk = std::getenv("GDK_SCALE");
             const char* own = std::getenv("FUSE_UI_SCALE");
-            m->detectedScale = dpi::x11Scale(rm ? rm : "", gdk ? gdk : "", own ? own : "");
+            m->resourceDpi = rm ? rm : "";
+            m->detectedScale = dpi::x11Scale(m->resourceDpi, gdk ? gdk : "", own ? own : "");
             if (const char* gtk = std::getenv("GTK_THEME")) // cheap hint; systemTheme() asks gsettings
-                if (const ColorScheme cs = schemeFromGtkTheme(gtk); cs != ColorScheme::Unknown) app.setSystemTheme({.scheme = cs});
+                if (const ColorScheme cs = schemeFromGtkTheme(gtk); cs != ColorScheme::Unknown) app.setSystemTheme({.scheme = cs, .highContrast = highContrastFromGtkTheme(gtk)});
+            m->readXSettings(true); // a settings manager's DPI / theme / cursor theme win over the above
         } else {
             m->error = "cannot open X display";
         }
@@ -1158,16 +1363,27 @@ NativePlatform::NativePlatform(Application& app, const NativeOptions& o) : m(std
     }
     if (m->dpy) app.setEventSource({m.get(), &Impl::pump});
 }
-bool NativePlatform::available() const { return m->dpy != nullptr; }
-void* NativePlatform::nativeDisplay() const { return m->dpy; }
+bool NativePlatform::available() const { return m->wl || m->dpy != nullptr; }
+void* NativePlatform::nativeDisplay() const {
+    FUSE_APP_WL(nativeDisplay());
+    return m->dpy;
+}
+NativeBackend NativePlatform::backend() const { return m->wl ? NativeBackend::Wayland : m->dpy ? NativeBackend::X11 : NativeBackend::Auto; }
 #endif
 
 NativePlatform::~NativePlatform() {
+#if !defined(_WIN32)
+    if (m->wl) { // detaches its windows, closes the connection, restores the event source
+        m->wl.reset();
+        return;
+    }
+#endif
     // detach every shown window (restores its headless presenter) before the display / instance go away
     while (!m->recs.empty()) m->recs.back()->win->setPresenter({});
     detail::vkCtxDestroy(m->vk);
 #if defined(_WIN32)
     m->app.setEventSource({});
+    if (m->oleReady) OleUninitialize();
 #else
     if (m->dpy) {
         if (m->helper) m->x.DestroyWindow(m->dpy, m->helper);
@@ -1178,6 +1394,7 @@ NativePlatform::~NativePlatform() {
 }
 
 PresenterKind NativePlatform::show(AppWindow& w) {
+    FUSE_APP_WL(show(w));
     if (const Impl::Rec* existing = m->find(w)) return existing->kind;
     if (!available()) return PresenterKind::Headless;
     auto* r = new Impl::Rec{};
@@ -1210,13 +1427,19 @@ PresenterKind NativePlatform::show(AppWindow& w) {
               : m->x.DefaultDepth(m->dpy, m->x.DefaultScreen(m->dpy)) >= 24 ? PresenterKind::Software : PresenterKind::Headless;
 #endif
     if (m->opts.osPopups) w.ui().setOsPopups(true); // screen bounds arrive with the first present
+    if (m->opts.osWindows) w.ui().setOsWindows(true); // floating docks ("os-window" nodes) get their own OS windows
     if (m->clipboardUsable()) w.ui().setClipboard({&Impl::clipSet, &Impl::clipGet, m.get()});
-    w.setPresenter({r, &Impl::present, &Impl::destroy});
+    // a FIFO swapchain waits for the display; everything else is paced by AppWindow::setMaxFrameRate when asked
+    w.setPresenter({r, &Impl::present, &Impl::destroy, r->vk != nullptr && m->opts.vsync});
     w.setWindowBackend({r, &Impl::windowRequest});
     {
         int ox = 0, oy = 0;
         Rect work;
-        if (m->screenInfo(*r, ox, oy, work)) w.notifyMoved(Impl::toUi(*r, f32(ox), f32(oy))); // where the OS put it
+        if (m->screenInfo(*r, ox, oy, work)) {
+            r->originX = ox;
+            r->originY = oy;
+            w.notifyMoved(Impl::toUi(*r, f32(ox), f32(oy))); // where the OS put it
+        }
     }
     // what the app asked for before the window existed
     if (w.minimumSize().w > 0.f || w.minimumSize().h > 0.f || w.maximumSize().w > 0.f || w.maximumSize().h > 0.f)
@@ -1227,40 +1450,55 @@ PresenterKind NativePlatform::show(AppWindow& w) {
 }
 
 PresenterKind NativePlatform::kind(const AppWindow& w) const {
+    FUSE_APP_WL(kind(w));
     const Impl::Rec* r = m->find(w);
     return r ? r->kind : PresenterKind::Headless;
 }
-std::string_view NativePlatform::gpuName() const { return detail::vkCtxDeviceName(m->vk); }
+std::string_view NativePlatform::gpuName() const {
+    FUSE_APP_WL(gpuName());
+    return detail::vkCtxDeviceName(m->vk);
+}
 bool NativePlatform::gpuDraws(const AppWindow& w) const {
+    FUSE_APP_WL(gpuDraws(w));
     const Impl::Rec* r = m->find(w);
     return r && detail::vkWinGpuDraws(r->vk);
 }
-std::string_view NativePlatform::lastError() const { return m->error; }
+std::string_view NativePlatform::lastError() const {
+    FUSE_APP_WL(lastError());
+    return m->error;
+}
 bool NativePlatform::setExternalTexture(const AppWindow& w, unsigned slot, const ExternalTexture& tex) {
+    FUSE_APP_WL(setExternalTexture(w, slot, tex));
     const Impl::Rec* r = m->find(w);
     return r && detail::vkWinSetExternal(r->vk, slot, tex);
 }
 bool NativePlatform::capture(const AppWindow& w, Image& out) {
+    FUSE_APP_WL(capture(w, out));
     const Impl::Rec* r = m->find(w);
     return r && r->handle && m->captureOs(*r, out);
 }
 std::size_t NativePlatform::popupCount(const AppWindow& w) const {
+    FUSE_APP_WL(popupCount(w));
     const Impl::Rec* r = m->find(w);
     return r ? r->popups.size() : 0;
 }
 unsigned long long NativePlatform::popupWindow(const AppWindow& w, std::size_t i) const {
+    FUSE_APP_WL(popupWindow(w, i));
     const Impl::Rec* r = m->find(w);
     return r && i < r->popups.size() ? r->popups[i].handle : 0;
 }
 Rect NativePlatform::popupScreenRect(const AppWindow& w, std::size_t i) const {
+    FUSE_APP_WL(popupScreenRect(w, i));
     const Impl::Rec* r = m->find(w);
     return r && i < r->popups.size() ? r->popups[i].screen : Rect{};
 }
 bool NativePlatform::capturePopup(const AppWindow& w, std::size_t i, Image& out) {
+    FUSE_APP_WL(capturePopup(w, i, out));
     const Impl::Rec* r = m->find(w);
     return r && i < r->popups.size() && m->capturePopupOs(r->popups[i], out);
 }
 Vec2 NativePlatform::screenOrigin(const AppWindow& w) const {
+    FUSE_APP_WL_NONE(Vec2{}); // Wayland has no global coordinates
     const Impl::Rec* r = m->find(w);
     int ox = 0, oy = 0;
     Rect work;
@@ -1272,17 +1510,29 @@ Rect NativePlatform::safeArea(const AppWindow& w) const {
     return {0.f, 0.f, s.w, s.h};
 }
 float NativePlatform::scale(const AppWindow& w) const {
+    FUSE_APP_WL(scale(w));
     const Impl::Rec* r = m->find(w);
     return r ? r->scale : 1.f;
 }
 Cursor NativePlatform::cursor(const AppWindow& w) const {
+    FUSE_APP_WL(cursor(w));
     const Impl::Rec* r = m->find(w);
     return r ? r->cursor : Cursor::Arrow;
 }
-bool NativePlatform::setClipboardText(std::string_view utf8) { return m->clipboardUsable() && Impl::clipSet(m.get(), utf8); }
-bool NativePlatform::clipboardText(std::string& out) { return m->clipboardUsable() && Impl::clipGet(m.get(), out); }
-bool NativePlatform::postClick(unsigned long long nativeWin, Vec2 at) { return nativeWin && m->postClickOs(nativeWin, at); }
+bool NativePlatform::setClipboardText(std::string_view utf8) {
+    FUSE_APP_WL(setClipboardText(utf8));
+    return m->clipboardUsable() && Impl::clipSet(m.get(), utf8);
+}
+bool NativePlatform::clipboardText(std::string& out) {
+    FUSE_APP_WL(clipboardText(out));
+    return m->clipboardUsable() && Impl::clipGet(m.get(), out);
+}
+bool NativePlatform::postClick(unsigned long long nativeWin, Vec2 at) {
+    FUSE_APP_WL(postClick(nativeWin, at));
+    return nativeWin && m->postClickOs(nativeWin, at);
+}
 unsigned long long NativePlatform::nativeWindow(const AppWindow& w) const {
+    FUSE_APP_WL(nativeWindow(w));
     const Impl::Rec* r = m->find(w);
     return r ? r->handle : 0;
 }
@@ -1357,7 +1607,7 @@ bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned h
     if (!r || !r->handle) return false;
     const Size px = dpi::toPixels({f32(width), f32(height)}, r->scale);
     RECT rc{0, 0, LONG(px.w), LONG(px.h)};
-    AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+    chromeAdjust(w, rc);
     return SetWindowPos(reinterpret_cast<HWND>(r->handle), nullptr, 0, 0, rc.right - rc.left, rc.bottom - rc.top,
                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != 0;
 }
@@ -1372,6 +1622,7 @@ std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
 }
 #else
 bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
+    FUSE_APP_WL(setIcon(w, sizes));
     const Impl::Rec* r = m->find(w);
     if (!r || !r->handle || !m->dpy) return false;
     std::vector<unsigned long> data; // format-32 X properties are arrays of C long
@@ -1390,6 +1641,7 @@ bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
     return true;
 }
 bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned height) {
+    FUSE_APP_WL(resizeWindow(w, width, height));
     const Impl::Rec* r = m->find(w);
     if (!r || !r->handle || !m->dpy) return false;
     const Size px = dpi::toPixels({f32(width), f32(height)}, r->scale);
@@ -1398,6 +1650,7 @@ bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned h
     return true;
 }
 std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
+    FUSE_APP_WL(iconSizes(w));
     std::vector<int> out;
     const Impl::Rec* r = m->find(w);
     if (!r || !r->handle || !m->dpy) return out;
@@ -1425,3 +1678,4 @@ std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
 } // namespace fuse::app
 
 #include "native_services.inl" // opens namespace fuse::app itself
+#include "native_platform.inl" // tool windows, clipboard formats, OS drag and drop, custom chrome, window-less dialogs

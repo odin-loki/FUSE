@@ -1,0 +1,9 @@
+<ModuleDefinition
+	ModuleId="Core_GameObjects"
+	VersionId="1"
+	Description="demo_3d_empty bundled shapes (copy of Templates/BaseGame/game/core/gameObjects/shapes/unit_cube)."
+	Group="Core">
+	<DeclaredAssets
+           Extension="asset.taml"
+           Recurse="true"/>
+</ModuleDefinition>

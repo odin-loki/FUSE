@@ -83,6 +83,7 @@ private:
         std::vector<GradientStop> stops;
     };
     friend struct SvgParser;
+    friend struct SvgCookAccess; ///< .fuseicons packs (icon_set.cpp): the parsed shapes in binary form
     Brush brushFor(const Paint& paint, const Shape& s, Color currentColor, Gradient& storage) const;
 
     Size m_size;

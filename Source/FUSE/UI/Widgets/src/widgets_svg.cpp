@@ -65,6 +65,28 @@ IconEntry* findIconEntry(const UiContext& ui, NodeHandle n) { // (a lookup does 
 
 constexpr f32 kIconGap = 6.f;
 
+// The icon a button draws: the one given with setIcon(SvgHandle / Icon), else the style's `icon` (the context's pack,
+// then the built-in icons).
+struct ShownIcon {
+    const SvgImage* image = nullptr;
+    f32 size = 16.f;
+};
+ShownIcon shownIcon(const UiContext& ui, NodeHandle n, const ComputedStyle& s) {
+    ShownIcon r;
+    if (!iconTable().empty())
+        if (const IconEntry* e = findIconEntry(ui, n)) {
+            r.image = svgGet(e->svg);
+            r.size = e->size;
+        }
+    if (!r.image && s.icon) {
+        if (const IconSet* set = ui.icons())
+            if (const i32 i = set->findHash(s.icon); i >= 0) r.image = &set->image(u32(i));
+        if (Icon builtin; !r.image && findIconHash(s.icon, builtin)) r.image = &iconImage(builtin);
+    }
+    if (r.image && s.iconSize > 0.f) r.size = s.iconSize;
+    return r;
+}
+
 // ---- svgimage ----
 struct SvgImageW {
     static constexpr std::string_view kName = "svgimage";
@@ -78,6 +100,23 @@ struct SvgImageW {
         if (!img) return;
         Painter p(pc, dl);
         img->render(p, pc.content, pc.style.color);
+    }
+};
+
+// ---- icon: a node that is just its style icon (`icon` / `icon-size`), tinted with the text colour ----
+struct IconW {
+    static constexpr std::string_view kName = "icon";
+    static constexpr A11yRole kRole = A11yRole::Image;
+    static Size measure(UiContext& ui, NodeHandle n, Size) {
+        const ComputedStyle& s = ui.computed(n);
+        const f32 size = s.iconSize > 0.f ? s.iconSize : 16.f;
+        return {size, size}; // an unknown name keeps its cell (a pack attached later fills it)
+    }
+    static void paint(const PaintContext& pc, DrawList& dl) {
+        const ShownIcon ic = shownIcon(pc.ui, pc.node, pc.style);
+        if (!ic.image) return;
+        Painter p(pc, dl);
+        ic.image->render(p, pc.content, pc.style.color);
     }
 };
 
@@ -151,7 +190,20 @@ void setIcon(UiContext& ui, NodeHandle button, SvgHandle svg, f32 size) {
 }
 
 void setIcon(UiContext& ui, NodeHandle button, Icon icon, f32 size) { setIcon(ui, button, iconHandle(icon), size); }
-void clearIcon(UiContext& ui, NodeHandle button) { setIcon(ui, button, SvgHandle{}, 0.f); }
+bool setIcon(UiContext& ui, NodeHandle button, std::string_view name, f32 size) {
+    if (!ui.alive(button)) return false;
+    PropValue v;
+    if (!parsePropValue(Prop::Icon, name, v)) return false;
+    ui.set(button, Prop::Icon, v);
+    if (size > 0.f) ui.set(button, Prop::IconSize, PropValue::ofLength(Length::px(size)));
+    const u32 h = v.ident();
+    Icon builtin;
+    return h == 0u || (ui.icons() && ui.icons()->findHash(h) >= 0) || findIconHash(h, builtin);
+}
+void clearIcon(UiContext& ui, NodeHandle button) {
+    setIcon(ui, button, SvgHandle{}, 0.f);
+    if (ui.alive(button) && ui.computed(button).icon) ui.set(button, Prop::Icon, PropValue::ofIdent(0u));
+}
 
 SvgHandle iconOf(const UiContext& ui, NodeHandle button) {
     const IconEntry* e = iconTable().empty() ? nullptr : findIconEntry(ui, button);
@@ -171,28 +223,44 @@ NodeHandle iconButton(UiContext& ui, NodeHandle parent, Icon icon, std::string_v
     return b;
 }
 
-void registerSvgWidgets(UiContext& ui) { ui.registry().registerWidget<SvgImageW>(); }
+NodeHandle icon(UiContext& ui, NodeHandle parent, std::string_view name, f32 size, std::string_view id) {
+    auto h = ui.create("icon", parent, id);
+    if (!h) return {};
+    PropValue v;
+    if (parsePropValue(Prop::Icon, name, v) && v.ident()) ui.set(*h, Prop::Icon, v); // "none": left to the style sheets
+    if (size > 0.f) ui.set(*h, Prop::IconSize, PropValue::ofLength(Length::px(size)));
+    return *h;
+}
+
+void registerSvgWidgets(UiContext& ui) {
+    ui.registry().registerWidget<SvgImageW>();
+    ui.registry().registerWidget<IconW>();
+}
 
 namespace detail {
 
 Size iconContentSize(const UiContext& ui, NodeHandle n, Size text) {
-    if (iconTable().empty()) return text;
-    const IconEntry* e = findIconEntry(ui, n);
-    if (!e) return text;
-    return {e->size + (text.w > 0.f ? kIconGap + text.w : 0.f), std::max(text.h, e->size)};
+    const ComputedStyle& s = ui.computed(n);
+    if (iconTable().empty() && !s.icon) return text;
+    const ShownIcon ic = shownIcon(ui, n, s);
+    const IconEntry* e = iconTable().empty() ? nullptr : findIconEntry(ui, n);
+    if (!ic.image && !e) return text; // (an unknown style icon takes no room; a destroyed setIcon handle keeps its cell)
+    return {ic.size + (text.w > 0.f ? kIconGap + text.w : 0.f), std::max(text.h, ic.size)};
 }
 
 bool paintIcon(const PaintContext& pc, DrawList& dl, Rect& textBox) {
-    if (iconTable().empty()) return false;
-    const IconEntry* e = findIconEntry(pc.ui, pc.node);
-    if (!e) return false;
+    if (iconTable().empty() && !pc.style.icon) return false;
+    const ShownIcon shown = shownIcon(pc.ui, pc.node, pc.style);
+    const IconEntry* entry = iconTable().empty() ? nullptr : findIconEntry(pc.ui, pc.node);
+    if (!shown.image && !entry) return false;
+    const ShownIcon* e = &shown;
     const Rect c = pc.content;
     const std::string_view text = pc.ui.text(pc.node);
     const f32 textWidth = text.empty() ? 0.f : std::ceil(pc.ui.measureString(text, pc.style.fontSize));
     const f32 total = e->size + (textWidth > 0.f ? kIconGap + textWidth : 0.f);
     const f32 x = std::round(c.x + std::max(0.f, (c.w - total) * 0.5f));
     const Rect box{x, std::round(c.y + (c.h - e->size) * 0.5f), e->size, e->size};
-    if (const SvgImage* img = svgGet(e->svg)) {
+    if (const SvgImage* img = e->image) {
         Painter p(pc, dl);
         img->render(p, box, pc.style.color);
     }

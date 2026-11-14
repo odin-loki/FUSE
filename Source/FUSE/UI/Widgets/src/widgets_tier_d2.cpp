@@ -19,7 +19,7 @@ NodeHandle make(UiContext& ui, std::string_view cls, NodeHandle parent, std::str
     auto h = ui.create(cls, parent, id);
     return h ? *h : NodeHandle{};
 }
-Color accentOf(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : Color::rgb(0x3D8BFD)); }
+Color accentOf(const PaintContext& pc) { return pc.tint(pc.style.background2.a > 0.f ? pc.style.background2 : themed(pc, tok::accent, 0x3D8BFD)); }
 bool inside(Rect r, Vec2 p) { return p.x >= r.x && p.y >= r.y && p.x < r.right() && p.y < r.bottom(); }
 NodeHandle hbox(UiContext& ui, NodeHandle parent) {
     const NodeHandle r = panel(ui, parent);
@@ -197,18 +197,18 @@ struct NodeGraphW {
         if (!s) return;
         const Rect c = pc.content;
         dl.pushClip(c);
-        dl.rect(c, pc.tint(Color::rgb(0x17171C)));
+        dl.rect(c, pc.tint(themed(pc, tok::canvas, 0x17171C)));
         const f32 step = 24.f * s->zoom;
         if (step >= 6.f) {
             const f32 ox = std::fmod(s->pan.x * s->zoom, step), oy = std::fmod(s->pan.y * s->zoom, step);
-            for (f32 x = c.x + (ox < 0 ? ox + step : ox); x < c.right(); x += step) dl.line({x, c.y}, {x, c.bottom()}, pc.tint(Color::rgb(0x23232A)), 1.f);
-            for (f32 y = c.y + (oy < 0 ? oy + step : oy); y < c.bottom(); y += step) dl.line({c.x, y}, {c.right(), y}, pc.tint(Color::rgb(0x23232A)), 1.f);
+            for (f32 x = c.x + (ox < 0 ? ox + step : ox); x < c.right(); x += step) dl.line({x, c.y}, {x, c.bottom()}, pc.tint(themed(pc, tok::canvas_grid, 0x23232A)), 1.f);
+            for (f32 y = c.y + (oy < 0 ? oy + step : oy); y < c.bottom(); y += step) dl.line({c.x, y}, {c.right(), y}, pc.tint(themed(pc, tok::canvas_grid, 0x23232A)), 1.f);
         }
         for (const GLink& l : s->links)
             bezier(dl, gpin(ui, pc.node, *s, l.from, l.outPin, true), gpin(ui, pc.node, *s, l.to, l.inPin, false),
                    pc.tint(pinColor(s->nodes[l.from].out[l.outPin].second)), 2.f * s->zoom);
         if (s->drag == 2)
-            bezier(dl, gpin(ui, pc.node, *s, s->dragNode, s->dragPin, true), s->cursor, pc.tint(Color::rgb(0xFFFFFF, 0.7f)), 2.f);
+            bezier(dl, gpin(ui, pc.node, *s, s->dragNode, s->dragPin, true), s->cursor, pc.tint(themedA(pc, tok::wire, 0xFFFFFF, 0.7f)), 2.f);
         const i32 sel = i32(ui.value(pc.node));
         const Color text = pc.tint(pc.style.color), acc = accentOf(pc);
         const f32 fs = pc.style.fontSize * 0.86f * s->zoom;
@@ -217,21 +217,21 @@ struct NodeGraphW {
             if (!g.alive) continue;
             const Rect r = gnodeRect(ui, pc.node, *s, i);
             const f32 rad = 6.f * s->zoom;
-            dl.shadow(r, Color::rgb(0x000000, 0.5f * pc.opacity), 10.f, rad);
-            dl.roundedRect(r, pc.tint(Color::rgb(0x2A2A33)), {rad, rad, rad, rad}, i32(i) == sel ? acc : pc.tint(Color::rgb(0x3A3A45)),
+            dl.shadow(r, themedA(pc, tok::shadow, 0x000000, 0.5f * pc.opacity), 10.f, rad);
+            dl.roundedRect(r, pc.tint(themed(pc, tok::raised, 0x2A2A33)), {rad, rad, rad, rad}, i32(i) == sel ? acc : pc.tint(themed(pc, tok::line_strong, 0x3A3A45)),
                            i32(i) == sel ? 2.f : 1.f);
-            dl.roundedRect({r.x, r.y, r.w, kGHead * s->zoom}, pc.tint(Color::rgb(0x3B4A6B)), {rad, rad, 0.f, 0.f});
+            dl.roundedRect({r.x, r.y, r.w, kGHead * s->zoom}, pc.tint(themed(pc, tok::node_head, 0x3B4A6B)), {rad, rad, 0.f, 0.f});
             ui.paintString(dl, g.title, {r.x + 8.f * s->zoom, r.y, r.w - 16.f * s->zoom, kGHead * s->zoom}, text, fs,
                            TextAlignment::Start, pc.node.index);
             for (u32 k = 0; k < g.in.size(); ++k) {
                 const Vec2 p = gpin(ui, pc.node, *s, i, k, false);
-                dot(dl, p, 4.5f * s->zoom, pc.tint(pinColor(g.in[k].second)), pc.tint(Color::rgb(0x111111)));
+                dot(dl, p, 4.5f * s->zoom, pc.tint(pinColor(g.in[k].second)), pc.tint(themed(pc, tok::pin_outline, 0x111111)));
                 ui.paintString(dl, g.in[k].first, {p.x + 9.f * s->zoom, p.y - kGRow * 0.5f * s->zoom, r.w * 0.5f, kGRow * s->zoom}, text,
                                fs * 0.92f, TextAlignment::Start, pc.node.index);
             }
             for (u32 k = 0; k < g.out.size(); ++k) {
                 const Vec2 p = gpin(ui, pc.node, *s, i, k, true);
-                dot(dl, p, 4.5f * s->zoom, pc.tint(pinColor(g.out[k].second)), pc.tint(Color::rgb(0x111111)));
+                dot(dl, p, 4.5f * s->zoom, pc.tint(pinColor(g.out[k].second)), pc.tint(themed(pc, tok::pin_outline, 0x111111)));
                 ui.paintString(dl, g.out[k].first, {r.x + r.w * 0.5f, p.y - kGRow * 0.5f * s->zoom, r.w * 0.5f - 9.f * s->zoom, kGRow * s->zoom},
                                text, fs * 0.92f, TextAlignment::End, pc.node.index);
             }
@@ -368,10 +368,10 @@ struct CurveW {
         if (!s) return;
         const Rect c = pc.content;
         dl.pushClip(c);
-        dl.rect(c, pc.tint(Color::rgb(0x17171C)), 4.f);
+        dl.rect(c, pc.tint(themed(pc, tok::canvas, 0x17171C)), 4.f);
         for (int i = 1; i < 4; ++i) {
-            dl.line({c.x + c.w * f32(i) / 4.f, c.y}, {c.x + c.w * f32(i) / 4.f, c.bottom()}, pc.tint(Color::rgb(0x2A2A33)), 1.f);
-            dl.line({c.x, c.y + c.h * f32(i) / 4.f}, {c.right(), c.y + c.h * f32(i) / 4.f}, pc.tint(Color::rgb(0x2A2A33)), 1.f);
+            dl.line({c.x + c.w * f32(i) / 4.f, c.y}, {c.x + c.w * f32(i) / 4.f, c.bottom()}, pc.tint(themed(pc, tok::canvas_grid_hi, 0x2A2A33)), 1.f);
+            dl.line({c.x, c.y + c.h * f32(i) / 4.f}, {c.right(), c.y + c.h * f32(i) / 4.f}, pc.tint(themed(pc, tok::canvas_grid_hi, 0x2A2A33)), 1.f);
         }
         const Color acc = accentOf(pc);
         Vec2 prev = toScreen(c, *s, s->t0, curveEval(*s, s->t0));
@@ -384,7 +384,7 @@ struct CurveW {
         const i32 sel = i32(pc.ui.value(pc.node));
         for (u32 i = 0; i < s->keys.size(); ++i) {
             const Vec2 p = toScreen(c, *s, s->keys[i].t, s->keys[i].v);
-            dl.rect({p.x - 4.f, p.y - 4.f, 8.f, 8.f}, pc.tint(i32(i) == sel ? Color::rgb(0xFFD93D) : Color::rgb(0xE8E8EE)), 1.f);
+            dl.rect({p.x - 4.f, p.y - 4.f, 8.f, 8.f}, pc.tint(i32(i) == sel ? themed(pc, tok::key_selected, 0xFFD93D) : themed(pc, tok::key, 0xE8E8EE)), 1.f);
         }
         dl.popClip();
     }
@@ -455,6 +455,12 @@ struct TimelineState {
     u8 drag = 0; // 1 scrub, 2 clip
     u32 dTrack = 0, dClip = 0;
     f32 grabSec = 0.f;
+    f32 downSec = 0.f, pointerSec = 0.f; ///< clip drag: pointer time at press / now (unsnapped)
+    f32 fromStart = 0.f;                 ///< clip start at press
+    i32 selTrack = -1, selClip = -1;     ///< selected clip (a press, or Ctrl+Down / Ctrl+Up); Ctrl+Left / Right move it
+    bool hasSel() const {
+        return selTrack >= 0 && u32(selTrack) < tracks.size() && selClip >= 0 && u32(selClip) < tracks[u32(selTrack)].clips.size();
+    }
 };
 Pool<TimelineState>& tlPool() { static Pool<TimelineState> p; return p; }
 constexpr f32 kTlHead = 96.f, kTlRuler = 22.f, kTlRow = 28.f;
@@ -487,11 +493,11 @@ struct TimelineW {
         if (!s) return;
         const Rect c = pc.content;
         applyView(c, *s);
-        const Color text = pc.tint(pc.style.color), dim = pc.tint(Color::rgb(0x8A8A96));
+        const Color text = pc.tint(pc.style.color), dim = pc.tint(themed(pc, tok::text_faint, 0x8A8A96));
         const f32 fs = pc.style.fontSize * 0.8f;
         dl.pushClip(c);
-        dl.rect(c, pc.tint(Color::rgb(0x17171C)));
-        dl.rect({c.x, c.y, c.w, kTlRuler}, pc.tint(Color::rgb(0x22222A)));
+        dl.rect(c, pc.tint(themed(pc, tok::canvas, 0x17171C)));
+        dl.rect({c.x, c.y, c.w, kTlRuler}, pc.tint(themed(pc, tok::strip, 0x22222A)));
         const Rect lane{c.x + kTlHead, c.y, c.w - kTlHead, c.h};
         dl.pushClip(lane);
         // adaptive ruler (Qt TimelineCanvas): the smallest step that keeps <= 12 labels in view
@@ -502,33 +508,69 @@ struct TimelineW {
         for (f32 t = std::floor(s->scrollSec / major + 1e-4f) * major; t <= s->duration + 1e-4f; t += major) {
             const f32 x = xOf(c, *s, t);
             if (x > c.right()) break;
-            dl.line({x, c.y + kTlRuler - 8.f}, {x, c.bottom()}, pc.tint(Color::rgb(0x2A2A33)), 1.f);
+            dl.line({x, c.y + kTlRuler - 8.f}, {x, c.bottom()}, pc.tint(themed(pc, tok::canvas_grid_hi, 0x2A2A33)), 1.f);
             char b[16];
             std::snprintf(b, sizeof b, "%gs", double(t));
             ui.paintString(dl, b, {x + 3.f, c.y, 60.f, kTlRuler - 4.f}, dim, fs, TextAlignment::Start, pc.node.index);
         }
         for (u32 k = 0; k < s->tracks.size(); ++k) {
             const f32 y = c.y + kTlRuler + f32(k) * kTlRow;
-            for (const Clip& cl : s->tracks[k].clips) {
+            for (u32 j = 0; j < s->tracks[k].clips.size(); ++j) {
+                const Clip& cl = s->tracks[k].clips[j];
                 const Rect r{xOf(c, *s, cl.start), y + 3.f, (cl.end - cl.start) * s->pxPerSec, kTlRow - 6.f};
                 dl.rect(r, pc.tint(cl.color), 4.f);
-                ui.paintString(dl, cl.label, {r.x + 6.f, r.y, std::max(0.f, r.w - 8.f), r.h}, pc.tint(Color::rgb(0x101014)), fs,
+                if (i32(k) == s->selTrack && i32(j) == s->selClip) // the selected clip
+                    dl.roundedRect({r.x - 1.f, r.y - 1.f, r.w + 2.f, r.h + 2.f}, {}, {5.f, 5.f, 5.f, 5.f}, pc.tint(themed(pc, tok::primary_ring, 0xFFFFFF)), 2.f);
+                ui.paintString(dl, cl.label, {r.x + 6.f, r.y, std::max(0.f, r.w - 8.f), r.h}, pc.tint(themed(pc, tok::on_clip, 0x101014)), fs,
                                TextAlignment::Start, pc.node.index);
             }
         }
         const f32 px = xOf(c, *s, ui.value(pc.node));
-        dl.line({px, c.y}, {px, c.bottom()}, pc.tint(Color::rgb(0xFF6B6B)), 2.f);
-        dl.rect({px - 5.f, c.y, 10.f, 10.f}, pc.tint(Color::rgb(0xFF6B6B)), 2.f);
+        dl.line({px, c.y}, {px, c.bottom()}, pc.tint(themed(pc, tok::hot, 0xFF6B6B)), 2.f);
+        dl.rect({px - 5.f, c.y, 10.f, 10.f}, pc.tint(themed(pc, tok::hot, 0xFF6B6B)), 2.f);
         dl.popClip();
         for (u32 k = 0; k < s->tracks.size(); ++k) {
             const f32 y = c.y + kTlRuler + f32(k) * kTlRow;
-            dl.line({c.x, y + kTlRow}, {c.right(), y + kTlRow}, pc.tint(Color::rgb(0x26262E)), 1.f);
+            dl.line({c.x, y + kTlRow}, {c.right(), y + kTlRow}, pc.tint(themed(pc, tok::row_line, 0x26262E)), 1.f);
             ui.paintString(dl, s->tracks[k].name, {c.x + 6.f, y, kTlHead - 10.f, kTlRow}, text, fs, TextAlignment::Start, pc.node.index);
         }
-        dl.line({c.x + kTlHead, c.y}, {c.x + kTlHead, c.bottom()}, pc.tint(Color::rgb(0x3A3A45)), 1.f);
+        dl.line({c.x + kTlHead, c.y}, {c.x + kTlHead, c.bottom()}, pc.tint(themed(pc, tok::line_strong, 0x3A3A45)), 1.f);
         dl.popClip();
     }
     static f32 snapT(const TimelineState& s, f32 t) { return s.snap > 0.f ? std::round(t / s.snap) * s.snap : t; }
+    /// Ctrl+Down / Ctrl+Up select the next / previous clip (track order, then start time); Ctrl+Right / Ctrl+Left move
+    /// the selected clip by a frame (the snap step), Ctrl+Shift by a second. Moves emit Event {value = 2}.
+    static bool clipKeys(UiContext& ui, NodeHandle n, TimelineState& s, const Event& e, f32 step) {
+        if (e.key == Key::Down || e.key == Key::Up) {
+            // clips ordered by (track, start, index): the nearest one after / before the selection
+            struct Ord { u32 k; f32 start; u32 j; };
+            auto less = [](const Ord& a, const Ord& b) { return a.k != b.k ? a.k < b.k : a.start != b.start ? a.start < b.start : a.j < b.j; };
+            auto key = [&](u32 k, u32 j) { return Ord{k, s.tracks[k].clips[j].start, j}; };
+            const bool has = s.hasSel(), down = e.key == Key::Down;
+            i32 bt = -1, bc = -1;
+            for (u32 k = 0; k < s.tracks.size(); ++k)
+                for (u32 j = 0; j < s.tracks[k].clips.size(); ++j) {
+                    const Ord c = key(k, j);
+                    if (has && (down ? !less(key(u32(s.selTrack), u32(s.selClip)), c) : !less(c, key(u32(s.selTrack), u32(s.selClip))))) continue;
+                    if (bt < 0 || (down ? less(c, key(u32(bt), u32(bc))) : less(key(u32(bt), u32(bc)), c))) { bt = i32(k); bc = i32(j); }
+                }
+            if (bt >= 0) { s.selTrack = bt; s.selClip = bc; }
+            ui.invalidate(n);
+            return true;
+        }
+        if ((e.key == Key::Left || e.key == Key::Right) && s.hasSel()) {
+            Clip& cl = s.tracks[u32(s.selTrack)].clips[u32(s.selClip)];
+            const f32 len = cl.end - cl.start, d = ((e.mods & kModShift) ? 1.f : step) * (e.key == Key::Right ? 1.f : -1.f);
+            cl.start = std::clamp(snapT(s, cl.start + d), 0.f, std::max(0.f, s.duration - len));
+            cl.end = cl.start + len;
+            s.dTrack = u32(s.selTrack); // timelineClipDrag names the moved clip
+            s.dClip = u32(s.selClip);
+            ui.invalidate(n);
+            ui.emit(n, SignalKind::Event, {.value = 2.f});
+            return true;
+        }
+        return false;
+    }
     static void scrub(UiContext& ui, NodeHandle n, const TimelineState& s, f32 t) {
         ui.setValue(n, std::clamp(t, 0.f, s.duration), true);
         ui.invalidate(n);
@@ -549,7 +591,19 @@ struct TimelineW {
                 if (k < s->tracks.size())
                     for (u32 j = 0; j < s->tracks[k].clips.size(); ++j) {
                         const Clip& cl = s->tracks[k].clips[j];
-                        if (t >= cl.start && t < cl.end) { s->drag = 2; s->dTrack = k; s->dClip = j; s->grabSec = t - cl.start; return true; }
+                        if (t >= cl.start && t < cl.end) {
+                            s->drag = 2;
+                            s->dTrack = k;
+                            s->dClip = j;
+                            s->grabSec = t - cl.start;
+                            s->downSec = s->pointerSec = t;
+                            s->fromStart = cl.start;
+                            s->selTrack = i32(k);
+                            s->selClip = i32(j);
+                            ui.invalidate(ec.node);
+                            ui.emit(ec.node, SignalKind::Event, {.value = 5.f, .event = &e}); // clip drag begins
+                            return true;
+                        }
                     }
             }
             s->drag = 1;
@@ -560,15 +614,25 @@ struct TimelineW {
             const f32 t = tOf(c, *s, e.pos.x);
             if (s->drag == 1) scrub(ui, ec.node, *s, snapT(*s, t));
             else if (s->drag == 2) {
+                if (s->dTrack >= s->tracks.size() || s->dClip >= s->tracks[s->dTrack].clips.size()) { s->drag = 0; return true; }
                 Clip& cl = s->tracks[s->dTrack].clips[s->dClip];
                 const f32 len = cl.end - cl.start;
-                cl.start = std::clamp(snapT(*s, t - s->grabSec), 0.f, std::max(0.f, s->duration - len));
+                // Shift: free move (no snapping), like the Qt canvas
+                const f32 at = (e.mods & kModShift) ? t - s->grabSec : snapT(*s, t - s->grabSec);
+                cl.start = std::clamp(at, 0.f, std::max(0.f, s->duration - len));
                 cl.end = cl.start + len;
+                s->pointerSec = t;
                 ui.invalidate(ec.node);
+                ui.emit(ec.node, SignalKind::Event, {.value = 6.f, .event = &e}); // clip moved
             } else return false;
             return true;
         }
-        case EventType::PointerUp: s->drag = 0; return true;
+        case EventType::PointerUp: {
+            const bool clip = s->drag == 2;
+            s->drag = 0;
+            if (clip) ui.emit(ec.node, SignalKind::Event, {.value = 7.f, .event = &e}); // clip dropped
+            return true;
+        }
         case EventType::Wheel: {
             const f32 anchor = tOf(c, *s, e.pos.x);
             if (s->viewSpan > 0.f) {
@@ -595,6 +659,8 @@ struct TimelineW {
         }
         case EventType::KeyDown: {
             const f32 st = s->snap > 0.f ? s->snap : 1.f / 30.f;
+            if ((e.mods & kModCtrl) && clipKeys(ui, ec.node, *s, e, st)) return true;
+            if (e.key == Key::Escape && s->selClip >= 0) { s->selTrack = s->selClip = -1; ui.invalidate(ec.node); return true; }
             if (e.key == Key::Right) { scrub(ui, ec.node, *s, ui.value(ec.node) + st); return true; }
             if (e.key == Key::Left) { scrub(ui, ec.node, *s, ui.value(ec.node) - st); return true; }
             if (e.key == Key::Home) { scrub(ui, ec.node, *s, 0.f); return true; }
@@ -625,7 +691,7 @@ struct ViewportW {
     static void paint(const PaintContext& pc, DrawList& dl) {
         ViewportState* s = vpPool().get(pc.ui, pc.node);
         if (!s) return;
-        dl.rect(pc.content, pc.tint(Color::rgb(0x000000)));
+        dl.rect(pc.content, pc.tint(themed(pc, tok::media_bg, 0x000000)));
         DrawCmd c;
         c.op = DrawOp::Image;
         c.image = s->image;
@@ -678,7 +744,7 @@ struct ViewportW {
         if (e.type == EventType::KeyDown || e.type == EventType::KeyUp) s->last.pos = {};
         ++s->count;
         ec.ui.emit(ec.node, SignalKind::Event, {.value = f32(u32(e.type))});
-        return true;
+        return e.key != Key::Tab; // forwarded, but Tab still moves focus on (no keyboard trap)
     }
 };
 
@@ -784,11 +850,11 @@ struct CodeEditW {
         if (!s) return;
         const Rect c = pc.content;
         const f32 lh = lineH(pc), fs = pc.style.fontSize, gw = gutter(ui, pc.node, *s);
-        static const Color kTok[] = {Color::rgb(0xD4D4D4), Color::rgb(0x569CD6), Color::rgb(0xCE9178), Color::rgb(0xB5CEA8), Color::rgb(0x6A9955)};
+        const Color kTok[] = {themed(pc, tok::code_fg, 0xD4D4D4), themed(pc, tok::code_keyword, 0x569CD6), themed(pc, tok::code_string, 0xCE9178), themed(pc, tok::code_number, 0xB5CEA8), themed(pc, tok::code_comment, 0x6A9955)};
         dl.pushClip(c);
-        dl.rect(c, pc.tint(Color::rgb(0x1A1A20)));
+        dl.rect(c, pc.tint(themed(pc, tok::code_editor_bg, 0x1A1A20)));
         const bool numbers = !ui.hasClass(pc.node, "plain");
-        if (numbers) dl.rect({c.x, c.y, gw - 6.f, c.h}, pc.tint(Color::rgb(0x212128)));
+        if (numbers) dl.rect({c.x, c.y, gw - 6.f, c.h}, pc.tint(themed(pc, tok::gutter, 0x212128)));
         const Pos a = std::min(s->caret, s->anchor), b = std::max(s->caret, s->anchor);
         const bool focused = ui.focused() == pc.node;
         std::vector<u8> tok;
@@ -797,17 +863,17 @@ struct CodeEditW {
             const u32 li = s->first + r;
             const std::string& L = s->lines[li];
             const f32 y = c.y + f32(r) * lh, x0 = c.x + gw;
-            if (li == s->caret.line && focused) dl.rect({x0 - 4.f, y, c.w - gw + 4.f, lh}, pc.tint(Color::rgb(0xFFFFFF, 0.04f)));
+            if (li == s->caret.line && focused) dl.rect({x0 - 4.f, y, c.w - gw + 4.f, lh}, pc.tint(themed(pc, tok::current_line, 0xFFFFFF, 0.04f)));
             char num[16];
             std::snprintf(num, sizeof num, "%u", li + 1);
             if (numbers)
-                ui.paintString(dl, num, {c.x, y, gw - 12.f, lh}, pc.tint(li == s->caret.line ? Color::rgb(0xC8C8D0) : Color::rgb(0x6A6A76)),
+                ui.paintString(dl, num, {c.x, y, gw - 12.f, lh}, pc.tint(li == s->caret.line ? themed(pc, tok::gutter_text_hi, 0xC8C8D0) : themed(pc, tok::gutter_text, 0x6A6A76)),
                                fs * 0.9f, TextAlignment::End, pc.node.index);
             if (!(a == b) && li >= a.line && li <= b.line) { // selection
                 const u32 sc = li == a.line ? a.col : 0, ecl = li == b.line ? b.col : u32(L.size());
                 const f32 sx = x0 + ui.measureString(std::string_view(L).substr(0, sc), fs);
                 const f32 ex = x0 + ui.measureString(std::string_view(L).substr(0, ecl), fs) + (li != b.line ? 6.f : 0.f);
-                dl.rect({sx, y, std::max(0.f, ex - sx), lh}, pc.tint(Color::rgb(0x264F78)));
+                dl.rect({sx, y, std::max(0.f, ex - sx), lh}, pc.tint(themed(pc, tok::selection, 0x264F78)));
             }
             tokenize(s->lang, L, tok);
             for (std::size_t i = 0; i < L.size();) {
@@ -820,7 +886,7 @@ struct CodeEditW {
             }
             if (focused && li == s->caret.line) {
                 const f32 cx = x0 + ui.measureString(std::string_view(L).substr(0, s->caret.col), fs);
-                dl.rect({cx, y + 2.f, 2.f, lh - 4.f}, pc.tint(Color::rgb(0xFFFFFF)));
+                dl.rect({cx, y + 2.f, 2.f, lh - 4.f}, pc.tint(themed(pc, tok::caret, 0xFFFFFF)));
                 ui.setTextCaret(pc.node, {cx, y + 2.f, 2.f, lh - 4.f});
             }
         }
@@ -1094,7 +1160,7 @@ struct DateTimeW {
         }
         ui.paintString(dl, t, {c.x, c.y, c.w - kBtn, c.h}, pc.tint(pc.style.color), fs, TextAlignment::Start, pc.node.index);
         const Rect b{c.right() - kBtn, c.y, kBtn, c.h};
-        dl.rect(b, pc.tint(Color::rgb(0xFFFFFF, 0.06f)), 3.f);
+        dl.rect(b, pc.tint(themed(pc, tok::hover_wash, 0xFFFFFF, 0.06f)), 3.f);
         // calendar glyph: a small page with a header bar
         const Rect g{b.x + 5.f, b.y + c.h * 0.5f - 6.f, 12.f, 12.f};
         dl.roundedRect(g, {}, {2.f, 2.f, 2.f, 2.f}, pc.tint(pc.style.color), 1.2f);
@@ -1217,7 +1283,7 @@ struct VideoW {
         decode(*s);
         const Rect c = pc.content;
         const Rect pic{c.x, c.y, c.w, c.h - kBar};
-        dl.rect(pic, pc.tint(Color::rgb(0x000000)));
+        dl.rect(pic, pc.tint(themed(pc, tok::media_bg, 0x000000)));
         DrawCmd im;
         im.op = DrawOp::Image;
         im.image = s->index;
@@ -1226,7 +1292,7 @@ struct VideoW {
         im.node = pc.node.index;
         dl.push(im);
         const Rect bar{c.x, c.bottom() - kBar, c.w, kBar};
-        dl.rect(bar, pc.tint(Color::rgb(0x202027)));
+        dl.rect(bar, pc.tint(themed(pc, tok::media_bar, 0x202027)));
         // play / pause glyph
         const f32 cy = bar.y + kBar * 0.5f;
         if (s->playing) {
@@ -1236,9 +1302,9 @@ struct VideoW {
             for (int i = 0; i < 12; ++i) dl.rect({bar.x + 9.f + f32(i), cy - 6.f + f32(i) * 0.5f, 1.f, 12.f - f32(i)}, pc.tint(pc.style.color));
         const Rect track{bar.x + 30.f, cy - 2.f, bar.w - 100.f, 4.f};
         const f32 f = s->src->frames > 1 ? f32(s->frame) / f32(s->src->frames - 1) : 0.f;
-        dl.rect(track, pc.tint(Color::rgb(0x3A3A45)), 2.f);
+        dl.rect(track, pc.tint(themed(pc, tok::line_strong, 0x3A3A45)), 2.f);
         dl.rect({track.x, track.y, track.w * f, 4.f}, accentOf(pc), 2.f);
-        dot(dl, {track.x + track.w * f, cy}, 6.f, pc.tint(Color::rgb(0xFFFFFF)));
+        dot(dl, {track.x + track.w * f, cy}, 6.f, pc.tint(themed(pc, tok::knob_hi, 0xFFFFFF)));
         char b[32];
         const f32 secs = f32(s->frame) / std::max(1.f, s->src->fps);
         std::snprintf(b, sizeof b, "%d:%02d.%02d", int(secs) / 60, int(secs) % 60, int(std::fmod(secs, 1.f) * 100.f));
@@ -1604,6 +1670,26 @@ void timelineSetView(UiContext& ui, NodeHandle tl, f32 startSec, f32 spanSec) {
 Vec2 timelineView(const UiContext& ui, NodeHandle tl) {
     const TimelineState* s = tlPool().get(ui, tl);
     return s ? Vec2{s->viewStart, s->viewSpan} : Vec2{};
+}
+TimelineClipDrag timelineClipDrag(const UiContext& ui, NodeHandle tl) {
+    const TimelineState* s = tlPool().get(ui, tl);
+    if (!s) return {};
+    return {s->dTrack, s->dClip, s->downSec, s->pointerSec, s->fromStart, s->drag == 2};
+}
+void timelineSelectClip(UiContext& ui, NodeHandle tl, i32 track, i32 clip) {
+    if (TimelineState* s = tlPool().get(ui, tl)) {
+        s->selTrack = track;
+        s->selClip = clip;
+        if (!s->hasSel()) s->selTrack = s->selClip = -1;
+        ui.invalidate(tl);
+    }
+}
+bool timelineSelectedClip(const UiContext& ui, NodeHandle tl, u32& track, u32& clip) {
+    const TimelineState* s = tlPool().get(ui, tl);
+    if (!s || !s->hasSel()) return false;
+    track = u32(s->selTrack);
+    clip = u32(s->selClip);
+    return true;
 }
 void timelineSetSnap(UiContext& ui, NodeHandle tl, f32 sec) { if (TimelineState* s = tlPool().get(ui, tl)) s->snap = std::max(0.f, sec); }
 Vec2 timelineClip(const UiContext& ui, NodeHandle tl, u32 track, u32 clip) {

@@ -23,9 +23,10 @@ struct KernelCode {
 KernelCode kernelCode(TemporalKernel kernel, TemporalKernelLanguage language);
 
 /// Pipeline layout (the bindless set + a 16-byte compute push range) and the compute pipeline. False (both
-/// null) on failure.
-bool createComputePipeline(VulkanDevice& device, const BindlessDescriptors& bindless, const KernelCode& code,
-                           void*& layout, void*& pipeline);
+/// null) on failure. The pipeline is built with buildComputePipeline(owner, ...): while a PipelineBatch is open
+/// it is written later, and the owner calls waitPipelineBuilds(owner) before destroyComputePipeline.
+bool createComputePipeline(const void* owner, VulkanDevice& device, const BindlessDescriptors& bindless,
+                           const KernelCode& code, void*& layout, void*& pipeline);
 void destroyComputePipeline(VulkanDevice& device, void*& layout, void*& pipeline);
 
 /// Binds pipeline + bindless set, pushes `push` (16 bytes) and dispatches.

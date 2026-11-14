@@ -18,7 +18,7 @@ inline constexpr std::array<const char*, 9> kTimelineChannels = {
 
 /// Editor keyframe timeline (GUI-5): per-entity Transform channel lanes built on
 /// `cinematics::PropertyTrack` (target_object_id = entity index, property_path = channel).
-/// Qt-free; the Qt Timeline dock draws and edits it, and edits go through `TimelineEditCommand`.
+/// toolkit-free; the Timeline panel draws and edits it, and edits go through `TimelineEditCommand`.
 class EditorTimeline {
 public:
     using Tracks = std::vector<cinematics::PropertyTrack>;

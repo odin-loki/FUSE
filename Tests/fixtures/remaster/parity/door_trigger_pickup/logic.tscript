@@ -1,0 +1,36 @@
+// FUSE Remaster W1.7 parity fixture logic (ours). Datablock fields are read by the harness through the W1.6
+// analysis; the callbacks run in the compat TorqueScript VM. Engine commands are echo lines starting with '@'.
+datablock TriggerData(DoorTriggerData)
+{
+   tickPeriodMS = 100;
+};
+
+datablock StaticShapeData(DoorData)
+{
+   category = "Doors";
+};
+
+datablock ItemData(HealthKitData)
+{
+   category = "Health";
+   pickupRadius = 1.0;
+   repairAmount = 25;
+};
+
+function DoorTriggerData::onEnterTrigger(%this, %trigger, %obj)
+{
+   echo("door trigger: ", %obj, " entered ", %trigger, "\n");
+   echo("@open Door1\n");
+}
+
+function DoorTriggerData::onLeaveTrigger(%this, %trigger, %obj)
+{
+   echo("door trigger: ", %obj, " left ", %trigger, "\n");
+   echo("@close Door1\n");
+}
+
+function HealthKitData::onPickup(%this, %item, %obj)
+{
+   echo("@heal ", %obj, " 25\n");
+   echo("@delete ", %item, "\n");
+}

@@ -1,0 +1,10 @@
+{
+  "schema": "fuse.remaster.parity-scenario/1",
+  "comment": "Headless input: the player walks from the spawn (Torque 0 -8 1) north past the item, then back out of the trigger.",
+  "dt": 0.05,
+  "speed": 4.0,
+  "player": "Player",
+  "max_ticks": 400,
+  "settle_ticks": 5,
+  "waypoints_torque": [[0, -8, 1], [0, 6.5, 1], [0, -8, 1]]
+}

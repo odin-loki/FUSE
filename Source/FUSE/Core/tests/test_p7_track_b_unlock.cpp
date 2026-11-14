@@ -74,6 +74,14 @@ void testHostFeatureIsScoped() {
     fuse::core::setTrackBHostFeature(TrackBHostFeature::EditorViewportPresent, false);
     expectTrue(!fuse::core::trackBHostFeatureEnabled(TrackBHostFeature::EditorViewportPresent),
                "host opt-in can be withdrawn");
+    // UI5 app hosts: AppPresent is independent of the editor bit and honoured in every build
+    fuse::core::setTrackBHostFeature(TrackBHostFeature::AppPresent, true);
+    expectTrue(fuse::core::trackBHostFeatureEnabled(TrackBHostFeature::AppPresent) &&
+                   !fuse::core::trackBHostFeatureEnabled(TrackBHostFeature::EditorViewportPresent),
+               "AppPresent opt-in enables only AppPresent");
+    expectTrue(!fuse::core::trackBUnlockedRuntime(), "AppPresent never flips the compile-time Track B gate");
+    fuse::core::setTrackBHostFeature(TrackBHostFeature::AppPresent, false);
+    expectTrue(!fuse::core::trackBHostFeatureEnabled(TrackBHostFeature::AppPresent), "AppPresent can be withdrawn");
 }
 
 void testDamageOverTimeTick() {

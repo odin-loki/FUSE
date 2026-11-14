@@ -25,7 +25,7 @@ include(CMakePackageConfigHelpers)
 
 # (every library target of this directory; the ones a configuration does not build are skipped)
 set(_fuse_ui_roots fuse_text fuse_ui_core fuse_ui_widgets fuse_ui_doc fuse_ui_render fuse_ui_vk fuse_ui_script fuse_ui_game
-    fuse_ui_game_ecs fuse_ui_game_audio fuse_ui_a11y fuse_ui_sql fuse_ui_video fuse_ui_designer_lib fuse_app fuse_app_native)
+    fuse_ui_game_ecs fuse_ui_game_audio fuse_ui_l10n_lib fuse_ui_os fuse_ui_extras fuse_ui_a11y fuse_ui_sql fuse_ui_video fuse_ui_designer_lib fuse_app fuse_app_native)
 
 # Collects, depth first, every static library target reachable from `target` into _fuse_ui_install_set (dependencies
 # before dependents is not needed: static archives are listed per target with their own dependencies).

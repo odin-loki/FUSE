@@ -370,10 +370,10 @@ void gateSystemFonts(const TempFonts& tmp) {
         }
     }
 
-    // the whole tree: 6 vendored files + 2 collection faces; the corrupt and non-font files are skipped
+    // the whole tree: 8 vendored files (6 until the Noto Sans Thai and CJK SC subset faces were vendored) + 2 collection faces; the corrupt and non-font files are skipped
     out.clear();
     ft::scanFontDirectory(tmp.dir.string(), out);
-    UI_CHECK_EQ(out.size(), std::size_t(8));
+    UI_CHECK_EQ(out.size(), std::size_t(10));
     int openSans = 0;
     for (const auto& f : out) openSans += f.family == "Open Sans";
     UI_CHECK_EQ(openSans, 2);
@@ -381,7 +381,7 @@ void gateSystemFonts(const TempFonts& tmp) {
     // the cached system list over that tree
     ft::setSystemFontDirectories({tmp.empty.string(), tmp.dir.string(), (tmp.dir / "missing").string()});
     const auto fonts = ft::systemFonts();
-    UI_CHECK_EQ(fonts.size(), std::size_t(8));
+    UI_CHECK_EQ(fonts.size(), std::size_t(10));
     UI_CHECK(ft::systemFonts().data() == fonts.data()); // cached
     for (std::size_t k = 1; k < fonts.size(); ++k) { // sorted by family, case-insensitively
         std::string a = fonts[k - 1].family, b = fonts[k].family;
@@ -390,7 +390,7 @@ void gateSystemFonts(const TempFonts& tmp) {
         UI_CHECK(a <= b);
     }
     const auto families = ft::systemFontFamilies();
-    UI_CHECK_EQ(families.size(), std::size_t(6));
+    UI_CHECK_EQ(families.size(), std::size_t(8));
     UI_CHECK(std::find(families.begin(), families.end(), "Open Sans") != families.end());
     UI_CHECK(std::find(families.begin(), families.end(), "Noto Sans Hebrew") != families.end());
     UI_CHECK(std::find(families.begin(), families.end(), "Noto Sans Arabic") != families.end());
@@ -416,7 +416,7 @@ void gateSystemFonts(const TempFonts& tmp) {
     UI_CHECK(ft::systemFonts().empty() && ft::systemFontFamilies().empty());
     UI_CHECK(ft::findSystemFont("Open Sans") == nullptr);
     UI_CHECK(!ft::Font::fromSystem("Open Sans").has_value());
-    UI_CHECK(fonts.size() == 8 && fonts[0].family.size() > 0); // a span taken before the rescan is still readable
+    UI_CHECK(fonts.size() == 10 && fonts[0].family.size() > 0); // a span taken before the rescan is still readable
     ft::refreshSystemFonts();
     UI_CHECK(ft::systemFonts().empty());
 }
@@ -655,7 +655,7 @@ void gateCss(const TempFonts& tmp) {
         u32 devRow = 0, rows = 0;
         for (; rows < 64 && !w::listItem(ui, list, rows).empty(); ++rows)
             if (w::listItem(ui, list, rows) == "Noto Sans Devanagari") devRow = rows;
-        UI_CHECK_EQ(rows, 5u + 5u); // 5 built in + the 6 scanned families less Open Sans
+        UI_CHECK_EQ(rows, 5u + 7u); // 5 built in + the 8 scanned families less Open Sans
         UI_CHECK(devRow >= 5);
         UI_CHECK(ui.textLayout(preview)->font == &font());
         UI_CHECK(!w::fontPickerBold(ui, fp) && !w::fontPickerItalic(ui, fp));
@@ -829,6 +829,11 @@ int main(int argc, char** argv) {
     const char* out = nullptr;
     for (int i = 1; i < argc; ++i)
         if (std::strncmp(argv[i], "--out=", 6) == 0) out = argv[i] + 6;
+    if (fuse::text::textProfile() == fuse::text::TextProfile::Cooked) {
+        // .fusefont packs carry no face names, no outlines to shear and one weight; installed .ttf files cannot be loaded
+        std::printf("fuse_text_font_styles: COOKED text profile (packs only), skipped\n");
+        return 77;
+    }
     const TempFonts tmp;
     gateFaces();
     gateSynthesis();

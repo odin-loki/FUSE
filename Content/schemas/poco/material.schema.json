@@ -1,0 +1,54 @@
+{
+  "$id": "fuse.poco/1/material.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "Kind 'material' payload.",
+  "properties": {
+    "alphaCutoff": {
+      "type": "number"
+    },
+    "baseColor": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 4,
+      "minItems": 4,
+      "type": "array"
+    },
+    "emissiveNits": {
+      "type": "number"
+    },
+    "layerRecipe": {
+      "type": "string"
+    },
+    "metallic": {
+      "type": "number"
+    },
+    "model": {
+      "enum": [
+        "Opaque",
+        "Masked",
+        "Translucent",
+        "Emissive",
+        "Subsurface",
+        "ClearCoat",
+        "Cloth"
+      ],
+      "type": "string"
+    },
+    "physicalCategory": {
+      "type": "string"
+    },
+    "roughness": {
+      "type": "number"
+    },
+    "textureSetId": {
+      "type": "string"
+    },
+    "twoSided": {
+      "type": "boolean"
+    }
+  },
+  "title": "material",
+  "type": "object"
+}

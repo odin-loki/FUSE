@@ -1,0 +1,17 @@
+# FAILING: the hull extends 0.5 m past the crate in +X (an invisible wall).
+# Hand-authored W5.2 fixture (FUSE Remaster plan §4.3 step 4); metres, +Y up. CC0.
+o hull
+v -0.02 0 -0.02
+v 1.5 0 -0.02
+v 1.5 1.04 -0.02
+v -0.02 1.04 -0.02
+v -0.02 0 1.02
+v 1.5 0 1.02
+v 1.5 1.04 1.02
+v -0.02 1.04 1.02
+f 1 2 3 4
+f 5 8 7 6
+f 1 5 6 2
+f 2 6 7 3
+f 3 7 8 4
+f 4 8 5 1

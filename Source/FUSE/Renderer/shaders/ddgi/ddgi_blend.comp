@@ -9,8 +9,9 @@
 //      distance moments with cos^power weights, hysteresis blend
 //   4  octahedral border rings from the blended interiors (ddgi_cpu::copyOctahedralBorder), update count,
 //      the slot's fast-response texel count
-// Same expressions in the same order, `precise`: irradiance is bit-identical to the oracle on the same ray
-// results; distance moments differ only through the device pow (fuse_rp_ddgi_gpu_vk_* tolerances).
+// Same expressions in the same order, `precise`, quotients via fuse_div_rn (common/exact_math): irradiance
+// is bit-identical to the oracle on the same ray results; distance moments differ only through the device
+// pow (fuse_rp_ddgi_gpu_vk_* tolerances).
 // The blended interiors are kept in shared memory, so phase 4 reads no global data written by other
 // invocations of the dispatch. A probe listed twice in one schedule is not supported (DdgiGpu dedups).
 // Distances: |signed trace distance| clamped to distanceClamp (the oracle's BlendParams::max_distance).
@@ -90,7 +91,7 @@ void main() {
             s_irr[t] = vec4(0.0);
             continue;
         }
-        precise float inv = 1.0 / weightSum;
+        precise float inv = fuse_div_rn(1.0, weightSum);
         precise vec4 incoming = vec4(sumR * inv, sumG * inv, sumB * inv, 1.0);
         s_irr[t] = incoming;
     }
@@ -113,7 +114,7 @@ void main() {
             ++valid;
         }
         if (valid > 0u) {
-            precise float inv = 1.0 / float(valid);
+            precise float inv = fuse_div_rn(1.0, float(valid)); // feeds the probe-changed decision
             precise vec3 inMean = vec3(inSum.x * inv, inSum.y * inv, inSum.z * inv);
             precise vec3 histMean = vec3(histSum.x * inv, histSum.y * inv, histSum.z * inv);
             const float scale = max(max(fuse_ddgi_max_component(inMean), fuse_ddgi_max_component(histMean)), F.changeFloor);
@@ -183,7 +184,7 @@ void main() {
             continue;
         }
         precise float keep = 1.0 - hysteresis;
-        precise vec2 incoming = vec2(sumD / weightSum, sumD2 / weightSum);
+        precise vec2 incoming = vec2(fuse_div_rn(sumD, weightSum), fuse_div_rn(sumD2, weightSum));
         precise vec2 blended = vec2(incoming.x * keep + texel.x * hysteresis, incoming.y * keep + texel.y * hysteresis);
         dist.v[o + 0u] = blended.x;
         dist.v[o + 1u] = blended.y;

@@ -39,6 +39,19 @@ struct SceneViewportFrame {
     u64 serial = 0;        ///< frames rendered so far
 };
 
+/// GPU timings of one rendered viewport frame (fuse::renderer::GpuProfiler timestamp zones, one per render-graph pass
+/// through rg::PassHooks). Device time, resolved a frame or two after the submit.
+struct SceneViewportGpuPass {
+    std::string name; ///< render-graph pass name ("scene.gbuffer", "present.blit", ...)
+    u32 depth = 0;
+    f32 ms = 0.f;
+};
+struct SceneViewportGpuTimings {
+    u64 frame = 0;   ///< GPU profiler frame number (increases)
+    f32 totalMs = 0.f; ///< sum of the top-level pass zones
+    std::vector<SceneViewportGpuPass> passes;
+};
+
 class SceneViewportHost {
 public:
     /// Never null; check valid() (reason() says why not: no Vulkan device, stub backend, renderer init failure).
@@ -66,6 +79,11 @@ public:
     /// Waits for the GPU and copies the last frame into `out` (premultiplied RGBA8 words, opaque). False without
     /// readback or before the first frame.
     bool readback(std::vector<u32>& out, u32& width, u32& height);
+    /// Non-blocking: resolves the GPU profiler's finished frames and copies the newest one into `out`. True only when
+    /// that frame is newer than the one the previous call returned (false: nothing new, or no timestamp support).
+    bool pollGpuTimings(SceneViewportGpuTimings& out);
+    /// False when the device has no timestamp queries (the profiler then shows no GPU time).
+    bool gpuTimingsSupported() const;
     /// Blocks until the device is idle.
     void waitIdle();
     /// Decoded triangle edges of an engine mesh id (x0 y0 z0 x1 y1 z1 per edge; wireframe view modes); null when

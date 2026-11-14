@@ -170,7 +170,7 @@ int dockLayoutRoundtrip() {
     // malformed blobs change nothing; unknown ids are ignored
     UI_CHECK(w::dockRestoreLayout(ui, b.area, blob));
     ui.update();
-    for (const char* bad : {"", "fusedock 2\n", "nonsense\n", "fusedock 1\nsize left -5\n", "fusedock 1\nsize middle 10\n",
+    for (const char* bad : {"", "fusedock 3\n", "nonsense\n", "fusedock 1\nsize left -5\n", "fusedock 1\nsize middle 10\n",
                             "fusedock 1\ndock B.log up 0 open\n", "fusedock 1\ndock B.log left x open\n", "fusedock 1\ndock B.log left 0 maybe\n"}) {
         UI_CHECK(!w::dockRestoreLayout(ui, b.area, bad));
         ui.update();
@@ -543,6 +543,25 @@ int tierD() {
         ui.setValue(cal, f32(w::daysFromCivil(2026, 10, 29)));
         key(ui, Key::Right);
         key(ui, Key::Left);
+    }
+    { // A calendar made by class name (a document, the designer) has no shown page yet: it shows the month of its value
+      // (it used to index the month names out of bounds: the MSVC crash of fuse_ui_theme_focus_ring).
+        UiContext byName({.viewport = {400, 300}, .font = &font()});
+        w::install(byName);
+        auto made = byName.create("calendar", byName.root(), "cal");
+        UI_CHECK(made.has_value());
+        if (made) {
+            byName.setCss(*made, "width", "238px");
+            byName.setCss(*made, "height", "220px");
+            byName.setRange(*made, -1e7f, 1e7f, 1.f); // (w::calendar sets this; a by-name node has the 0..1 default)
+            byName.setValue(*made, f32(w::daysFromCivil(2026, 12, 1)));
+            byName.update();
+            const Rect c = byName.contentRect(*made);
+            const f32 hh = std::ceil(font().metrics(byName.computed(*made).fontSize).lineHeight()) + 8.f, cw = c.w / 7.f, ch = (c.h - hh) / 7.f;
+            click(byName, {c.x + cw * 2.5f, c.y + hh + ch + ch * 2.5f}); // December 2026: row 2, Wednesday
+            w::calendarDate(byName, *made, y, mo, d);
+            UI_CHECK(y == 2026 && mo == 12 && d == 16);
+        }
     }
 
     // charts

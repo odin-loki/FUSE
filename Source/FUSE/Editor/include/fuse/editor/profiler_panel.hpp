@@ -7,7 +7,7 @@
 
 namespace fuse::editor {
 
-/// Headless profiler ring buffer (B6.10 stub — Qt plots deferred to U6 chrome).
+/// Headless profiler ring buffer (B6.10; the FUSE UI shell's Profiler panel plots it).
 class ProfilerPanel {
 public:
     static constexpr u32 kHistoryFrames = 256;

@@ -32,7 +32,7 @@ struct GizmoHandle2D {
     f32 x1 = 0.f, y1 = 0.f; ///< handle tip
 };
 
-/// Qt-free screen-space transform gizmo for the editor viewport (GUI-2): projects X/Y/Z handles at
+/// toolkit-free screen-space transform gizmo for the editor viewport (GUI-2): projects X/Y/Z handles at
 /// an entity, hit-tests the mouse against them and turns a drag into a `TransformCommand::State`.
 /// Callers push `TransformCommand`s inside an UndoStack macro so one drag is one undo step.
 class TransformGizmo {
