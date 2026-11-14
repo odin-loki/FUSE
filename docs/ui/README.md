@@ -6,13 +6,7 @@ FUSE's own GUI framework ([plan](../plans/FUSE_UI_PLAN.md)). One retained core, 
 through a backend-neutral draw list, plus an immediate-mode front-end on the same primitives. Engine rules apply:
 handles, not pointers; `std::expected`; one owner thread (other threads `post()`); no steady-state allocation.
 
-Status (2026-10-29): headless core (UI2) with all nine gates green, `.fuseui` documents and Lua bindings, MINIMAL
-text plus an opt-in FULL profile (HarfBuzz + FreeType, SheenBidi bidi, libunibreak line breaking, shaped-run cache),
-Tier A and Tier B widgets including splitters, dock area, item models and a table view (UI6), a Vulkan compute
-backend for the draw list feeding both the runtime UI stage (`UiFrameSource`) and app windows (UI4), desktop text
-input / IME / wheel / clipboard on Win32 and X11 (UI1), the `fuse_app` application shell with real OS windows and a
-Vulkan swapchain presenter (UI5), and the game UI library `fuse_ui_game` (UI7). Relight's dev menu runs on the
-immediate-mode front-end. See the plan's status table for what is still open.
+Status per phase: the plan's §9 table.
 
 ## Layout of the code
 
@@ -445,7 +439,9 @@ Things that differ on these platforms:
   on the press, so a pan that starts on a row selects it. One finger drives the UI; there is no pinch.
 - Popups are overlays inside the window (`osPopups` is X11 / Win32 / Wayland only). Packaging: see below.
 
-These backends are compiled in CI (`fuse-core-android.yml`, `fuse-core-ios.yml`) and have not been run on a device.
+These backends are compiled in CI (`fuse-core-android.yml`, `fuse-core-ios.yml`). The macOS one also runs there (the
+headless UI gates and the editor shell's `fuse_editor_ui` gates on the hosted runner); the iOS and Android ones have
+not run anywhere.
 
 ### Platform services (plan §4.13)
 
@@ -518,7 +514,8 @@ fuse::app::openUrl("https://example.org");
 - **Window-less dialogs** (free functions in `native.hpp`, `std::expected<..., PlatformError>`): `openFileDialog`
   (several filters, `multiple`), `saveFileDialog`, `pickFolderDialog`, `colorDialog`, `messageBox`,
   `revealInFileManager`. Win32: `IFileOpenDialog` / `IFileSaveDialog`, `ChooseColorW`, `MessageBoxW`; Linux / BSD:
-  `zenity`, else `kdialog` (`messageBox`: zenity only); `Unavailable` without a helper and on macOS / iOS / Android.
+  `zenity`, else `kdialog` (`messageBox`: zenity only); macOS: `NSOpenPanel` / `NSSavePanel`, `NSColorPanel` run
+  modally (`messageBox` unavailable); `Unavailable` without a helper and on iOS / Android.
   `fuse/app/platform.hpp` and `fuse/app/clipboard.hpp` are compatibility headers over `services.hpp` / `native.hpp`
   for code written against the `claude/magical-bassi-815825` branch (the FUSE-UI editor shell).
 - **OS drag and drop** (`NativeOptions::dragAndDrop`, on by default; X11 XDND v5, Win32 OLE; Wayland: in only). In: files or text
@@ -528,7 +525,7 @@ fuse::app::openUrl("https://example.org");
   `kDragText` / `kDragFiles` is offered to the application under the pointer once it leaves the app's windows
   (`NativePlatform::externalDragActive()`), and the source gets `DragEnd` with what the other side did
   (`UiContext::dragFinishExternal`). Other data types stay inside the app.
-- **OS tool windows** (`NativeOptions::osWindows`, off by default; X11 and Win32, ignored on Wayland). `UiContext::setOsWindows(true)`
+- **OS tool windows** (`NativeOptions::osWindows`, off by default; X11, Win32 and macOS (child `NSPanel`s), ignored on Wayland). `UiContext::setOsWindows(true)`
   takes overlay nodes with the class `os-window` out of the window's draw list and into `windowSurfaces()`;
   `widgets::dockFloat` gives floating docks that class, so with the option on a floated dock is its own borderless OS
   window that can leave the main window (title drag, drop zones, `dockTo` work as before; keys stay with the main
@@ -549,7 +546,7 @@ fuse::app::openUrl("https://example.org");
   by `show()` (cross-compiled only, never run on a device).
 - **Frame pacing.** `AppWindow::setMaxFrameRate(hz)` caps a window whose presenter does not wait for the display
   (`Presenter::vsynced` false): a `Continuous` window sleeps between frames instead of spinning. 0 = unlimited.
-- **Synthetic input** for tests: `postClick`, `postPointerMove`, `postPointerButton`, `postClose` (X11 / Win32 through the OS; Wayland inside the process).
+- **Synthetic input** for tests: `postClick`, `postPointerMove`, `postPointerButton`, `postClose` (X11 / Win32 / macOS through the OS; Wayland inside the process).
 
 #### Wayland (Linux / FreeBSD)
 
@@ -614,9 +611,9 @@ What the Wayland backend does:
   `screenOrigin` stay 0, minimise sends the request but `mode()` never reads `Minimized`, `postClick` and the other
   synthetic input calls are delivered inside the process, `capture()` reads the app's last committed buffer.
 
-The macOS / iOS parts are compiled in CI only; the Win32 parts are cross-compiled with MinGW and have not been run
-(that includes all of `App/src/native_platform_win32.inl`: tool windows, chrome, OLE drag and drop, clipboard formats,
-dialogs). The Wayland backend has met headless weston and the gate's own compositor only. X11 window-manager paths (`_NET_WM_MOVERESIZE`, decorations off) were exercised without a window manager only.
+The macOS parts run in CI (hosted runner), the iOS parts are compiled only. The Win32 parts build with MSVC / clang-cl
+and run only in the Windows CI jobs; several (OLE drag and drop with another application, `MessageBoxW`, DPI changes)
+no gate reaches. The Wayland backend has met headless weston and the gate's own compositor only. X11 window-manager paths (`_NET_WM_MOVERESIZE`, decorations off) were exercised without a window manager only.
 
 ### Samples
 
@@ -643,8 +640,8 @@ own: feed your platform's pad into the `GamepadState` in its loop (`--pad=udlrab
   `FUSE_APP_BUNDLE_SHORT_VERSION`) and, with `-DFUSE_APP_MACOS_BUNDLE=ON`, a macOS `.app` with
   `Info.plist.macos.in` and an icon built from `Source/FUSE/Branding/fuse_256.png` (sips + iconutil).
   `fuse_app_bundle_resources(target BASE dir FILES ...)` copies files into the bundle's `Resources` keeping their
-  path under `BASE`; the samples ship `ui/*.fuseui` and the fallback fonts that way. Written on Linux: these rules
-  have not been run on macOS yet.
+  path under `BASE`; the samples ship `ui/*.fuseui` and the fallback fonts that way. The iOS rules build for the
+  simulator in CI; no CI job sets `FUSE_APP_MACOS_BUNDLE`, and no bundle has been launched.
 - **Android.** `App/android/` is a Gradle project template (`build.gradle`, `settings.gradle`, the manifest):
   `gradle -PfuseApp=hello_app assembleDebug` builds `lib<app>.so` through `externalNativeBuild` from this CMake project
   and packs `assets/ui` + `assets/fonts`. It has never produced an APK (the machine it was written on has no Android
@@ -1528,4 +1525,21 @@ Extra: `fuse_ui_text_basics`, `fuse_ui_text_full`, `fuse_ui_widget_interaction`,
 
 ## Editor shell (UI9)
 
-Configure with `-DFUSE_EDITOR_SHELL=fuse` to build `fuse_editor_fuse`, which is the editor chrome in FUSE UI on the shared Qt-free `EditorController`. Run `ctest -L fuse_editor_ui`. (State on this tree, 2026-11-13: it builds and links on Linux, also with `-DFUSE_BUILD_VULKAN=OFF`; under Xvfb without a Vulkan device the gates pass except the four GPU ones, which skip, and the wall-clock raster budget of `ui_frame` on a loaded machine. The a11y gates need `fuse_app_a11y`, which is not ported. The description below is the branch's.) All ten editor panels and the New Project wizard are ported (45 gates, including the Top / Front / Side orthographic views with View > Viewport Layout single / two / quad on Ctrl+Alt+1..3 (`multi_viewport`), the play-mode frame / badge and Maximize Viewport on Play (`play_frame`), the asset browser grid / type filter / breadcrumb / context menu (`asset_browser_polish`), timeline zoom / pan / loop / snap / key jumps (`timeline_nav`), Preferences shortcut rebinding (`shortcut_rebind`), File > Recent Projects (`recent_projects`), Group / Ungroup / Duplicate subtree / Frame Selected (`entity_group`), collider wireframes and drag handles (`colliders`), Entity > Open Script (`open_script`), the Terrain panel (`terrain`), the Navigation panel (`navigation`), Edit > Preferences (`preferences`) and view modes Lit / Unlit / Wireframe / Lit Wireframe and mesh bounds: `view_modes`). `--gpu-viewport` shows the live 3D scene in the viewport, zero-copy through a `ui_vk` external-texture slot (gates `scene_viewport`, `gpu_viewport`), with a Move/Rotate/Scale gizmo drawn as a viewport overlay (`viewport_gizmo`). Status is in [FUSE_EDITOR_QT_FIRST_PLAN.md §11](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md).
+The editor is `fuse_editor_fuse` (`Source/FUSE/EditorShell`): the editor chrome in FUSE UI on the Qt-free
+`EditorController`. Qt and the `FUSE_EDITOR_SHELL` option are gone; configure the engine with `-DFUSE_BUILD_EDITOR=ON`
+and run `ctest -L fuse_editor_ui` (79 entries, including the lint `fuse_lint_editor_shell_fuse_ui`). CI runs them on
+Linux under Xvfb + Lavapipe (`fuse-umbrella-linux.yml`), on the Windows runner's desktop (`fuse-windows-native.yml`)
+and on macOS / Cocoa (`fuse-core-ios.yml`, where the four GPU gates skip). The a11y gates are not registered: they
+need `fuse_app_a11y`, which is not ported ([`KNOWN_GAPS.md`](KNOWN_GAPS.md)).
+
+All ten editor panels and the New Project wizard are there, plus the Top / Front / Side orthographic views with View >
+Viewport Layout single / two / quad on Ctrl+Alt+1..3 (`multi_viewport`), the play-mode frame / badge and Maximize
+Viewport on Play (`play_frame`), the asset browser grid / type filter / breadcrumb / context menu
+(`asset_browser_polish`), timeline zoom / pan / loop / snap / key jumps (`timeline_nav`), Preferences shortcut
+rebinding (`shortcut_rebind`), File > Recent Projects (`recent_projects`), Group / Ungroup / Duplicate subtree / Frame
+Selected (`entity_group`), collider wireframes and drag handles (`colliders`), Entity > Open Script (`open_script`),
+the Terrain and Navigation panels, Edit > Preferences, and view modes Lit / Unlit / Wireframe / Lit Wireframe with mesh
+bounds (`view_modes`). `--gpu-viewport` shows the live 3D scene in the viewport, zero-copy through a `ui_vk`
+external-texture slot (gates `scene_viewport`, `gpu_viewport`), with a Move / Rotate / Scale gizmo drawn as a viewport
+overlay (`viewport_gizmo`). History of the switch: [FUSE_EDITOR_QT_FIRST_PLAN.md](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md)
+§11-§12.

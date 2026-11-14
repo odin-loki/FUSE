@@ -6,6 +6,11 @@ what blocks it and how to check it once it is ported. Background and the survey 
 [`BRANCH_MERGE_INVENTORY.md`](BRANCH_MERGE_INVENTORY.md). The same list for the other big branch:
 [`PORT_magical_bassi.md`](PORT_magical_bassi.md) ("mb" below); §6 compares the features both branches implement.
 
+> **Archived (2026-11-14).** The parked items below are still accurate; the current state of everything is in
+> [`../KNOWN_GAPS.md`](../KNOWN_GAPS.md). Changed since this was written: main's own `native_apple.mm` gained OS tool
+> windows, window-less file / colour dialogs and synthetic input and runs in CI on macOS (the editor shell); the Win32
+> code builds with MSVC / clang-cl and runs in the Windows CI jobs. Nothing of this branch's Apple code is built.
+
 Names used below:
 
 - **base** = `5dcee19e` (common ancestor), **branch** = `363ecf87d` (tip of `gui-framework`, now an ancestor of main;
@@ -27,7 +32,7 @@ half). §2 lists files and gates of what is live, §3 what is left of each item.
 | Live (built, gated) | Item |
 |---|---|
 | Extras that compiled against main from the start: `fuse_ui_os`, undo, declarative bindings, PDF, desktop helpers, tray, web view, charts, 3D data visualisation | §2 |
-| OS drag and drop: X11 XDND both ways; Win32 OLE (compiled with MinGW-w64, never run) | 3.1 |
+| OS drag and drop: X11 XDND both ways; Win32 OLE (compiled, no gate drives it) | 3.1 |
 | OS tool windows (bassi's API), frame pacing, live retitle, `dpiScale` | 3.5 |
 | Widgets: line edit options / validators / masks, completer, editable combo, spin box and tab options (§3.7), and the Extras widgets as `widgets/extra.hpp` (LCD number, key sequence edit, MDI, graphics view, on-screen keyboard, dialogs / containers: §3.12) | 3.7 (part), 3.12 |
 | Style engine: selectors level 4 with targeted invalidation, `@media` / `@container` / `@layer` / `@scope` / `@supports` / `@keyframes`, `animation-*`, the scripted animation API, `position` / `inset` / `z-index` / `aspect-ratio` / subgrid | 3.8 (part) |
@@ -220,7 +225,8 @@ five files when done. The original description follows.
   `U/Extras/src/{tray_cocoa.mm,webview_cocoa.mm,media_avf.mm}`; test `U/tests/test_mobile_map.cpp` (needs
   `A11yState` from 3.6).
 - **Overlap on main**: `U/App/src/native_apple.mm` and `entry_ios.mm` are main's Cocoa / UIKit backends; they build in
-  CI (`fuse-core-ios.yml`). The merge did not touch them.
+  CI (`fuse-core-ios.yml`). The merge did not touch them; later work for the editor shell added tool windows,
+  window-less file / colour dialogs and synthetic input to `native_apple.mm`, and the macOS job runs it.
 - **Blocks**: do not replace main's files. Port single features into them after reading the branch code as a sketch:
   NSAccessibility / VoiceOver elements from `snapshotA11y`, `CVDisplayLink` pacing, `UITextInput` marked text, Cocoa
   drag-in; then `tray_cocoa.mm` and `webview_cocoa.mm` can be added to `fuse_ui_extras` on macOS.
@@ -250,7 +256,8 @@ five files when done. The original description follows.
 - **Overlap on main**: popups as OS windows on X11 / Win32 (`fuse_app_os_popups`), render scale (`a925efbd1`),
   window-state service; floating docks are in-window panels (KNOWN_GAPS).
 - **Blocks**: same files as 3.1; port after it.
-- **Status (2026-11-13)**: tool windows (X11 / Win32; not on Wayland, see 3.2) and frame pacing are live (§2.0).
+- **Status (2026-11-13)**: tool windows (X11 / Win32, macOS since 2026-11-14; not on Wayland, see 3.2) and frame
+  pacing are live (§2.0).
   On Wayland `Presenter::vsynced` is set for the Vulkan FIFO swapchain; `wl_shm` windows are held back by the
   `wl_surface.frame` throttle of the live backend (`wl::frameReady`, which replaces the branch's
   `setFramePending`) and `setMaxFrameRate` applies to them as well.

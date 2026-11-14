@@ -4,6 +4,11 @@ Written 2026-11-12 with the merge commit that brought the branch into main. It i
 merge: every feature of the branch that is **not** live in the merged build, where its code is, what blocks it and how
 to check it once it is ported. Background and the survey of all branches: [`BRANCH_MERGE_INVENTORY.md`](BRANCH_MERGE_INVENTORY.md).
 
+> **Archived (2026-11-14).** The parked items below are still accurate; the current state of everything is in
+> [`../KNOWN_GAPS.md`](../KNOWN_GAPS.md). Changed since this was written: Qt and `-DFUSE_EDITOR_SHELL` were removed,
+> the FUSE UI shell is the editor (`FUSE_BUILD_EDITOR=ON`, `ctest -L fuse_editor_ui`) and runs in CI on Linux, Windows
+> and macOS; `native_apple.mm` gained OS tool windows, window-less file / colour dialogs and synthetic input for it.
+
 Names used below:
 
 - **base** = `5dcee19e` (common ancestor), **branch** = `7178393b4fea` (tip of `claude/magical-bassi-815825`, now an
@@ -33,7 +38,7 @@ with each other. This is the split the rest of the file details; §2 has the fil
 | Performance gates: `fuse_ui_bench_hud`, `fuse_app_binary_size` | 3.14 |
 | i18n fold (`fuse/text/i18n.hpp` into `fuse_ui_l10n_lib`), `LocaleHooks`, `StringTable`, `doc::Translator`, extract-strings CLI | 3.16, §2 |
 | From 3.2 (core deltas), ported with the final merge because the editor shell needs them: a hover change keeps `:hover` on shared ancestors (no whole-window damage), unconsumed keys reach the root's `Event` signal `{value = key, event}`, the viewport widget forwards Tab without trapping the focus; `setMsdfThreshold` came with 3.1 | 3.2 (part) |
-| `-DFUSE_EDITOR_SHELL=fuse`: `fuse_editor_fuse`, `fuse_editor_fuse_app` and the `fuse_editor_ui_*` gates build and link on Linux without Vulkan; see §5 for the run | §5 |
+| Editor shell (then behind `-DFUSE_EDITOR_SHELL=fuse`, now the only editor): `fuse_editor_fuse`, `fuse_editor_fuse_app` and the `fuse_editor_ui_*` gates build and link on Linux without Vulkan; see §5 for the run | §5 |
 
 | Remaining (in the tree unbuilt, or a branch delta not taken) | Item |
 |---|---|
@@ -44,7 +49,7 @@ with each other. This is the split the rest of the file details; §2 has the fil
 | Android: the branch backend's JNI IME, APK packer, emulator gates | 3.10 |
 | Widgets: per-class gates and goldens (`test_widget_gates.cpp`), RTL mirroring of hit tests, `setListRowFont`, keyboard additions; icons by name on menu items / tabs / list rows | 3.12 |
 | Designer: icon picker, effect picker, registry-driven property grid | 3.15 |
-| Apple `.mm` backends were not touched by any port; nothing here was compiled for Apple or run on Windows | §6 |
+| Verification on Apple / Windows: at the time nothing here was compiled for Apple or run on Windows; CI does both now (`../KNOWN_GAPS.md`), no real device has | §6 |
 
 ## 1. How the merge was resolved
 
@@ -130,7 +135,7 @@ structure was taken). X11 parts run under Xvfb without a window manager; Win32 p
 | Window-less dialogs: open (filters, multiple) / save / folder / colour / message box, `revealInFileManager`, `PlatformError`, `isOpenableUrl` (3.5) | types in `fuse/app/services.hpp`, functions in `fuse/app/native.hpp`; X11 / BSD through zenity / kdialog (`native_platform.inl`), Win32 `IFileDialog` / `ChooseColorW` / `MessageBoxW`; `Unavailable` on macOS / iOS / Android (`native_common.cpp`). `fuse/app/platform.hpp` is now a compatibility header (differences: `openUrl` returns `bool`, `DisplayInfo::workArea` instead of `work`) | `fuse_app_dialog_helpers`, `fuse_app_native_services` (fake helpers) |
 | Clipboard images, MIME types, lazy items, primary selection (3.5) | `ClipboardItem`, `kClipboardText / kClipboardImage`, `encodePng / decodePng` in `services.hpp`; `NativePlatform::setClipboard / setClipboardImage / clipboardImage / clipboardData / clipboardFormats / clipboardOwned / setPrimarySelectionText / primarySelectionText`. X11: on the platform's own connection, `TARGETS`, INCR both ways. Wayland: `wl_data_source` with every item's MIME type, `zwp_primary_selection_v1` (`native_wayland_platform.cpp`). `fuse/app/clipboard.hpp` is a compatibility header (the branch's free functions became methods of the platform that owns the display) | `fuse_app_clipboard_png`, `fuse_app_native_services`, `fuse_app_wayland_seat` |
 | X11 XSETTINGS: `Xft/DPI` live, theme name / prefer-dark live, cursor theme and size (3.5) | `XSetting`, `parseXSettings`, `buildXSettings` in `services.hpp`; `NativePlatform::Impl::readXSettings`, `cursorThemeSize()` | `fuse_app_dialog_helpers` (parser), `fuse_app_native_services` (the gate is the settings manager) |
-| OS tool windows for floating docks (3.5; `PORT_gui_framework.md` 3.5) | `UiContext::setOsWindows / osWindows / windowSurfaces`, class `os-window` (set by `widgets::dockFloat`); `NativeOptions::osWindows` (default **off** on main, the branch had on), `NativePlatform::toolWindowCount / toolWindow / toolWindowScreenRect / captureToolWindow`. X11 / Win32 only: ignored on Wayland (0 / false) | `fuse_app_tool_surfaces`, `fuse_app_native_services` |
+| OS tool windows for floating docks (3.5; `PORT_gui_framework.md` 3.5) | `UiContext::setOsWindows / osWindows / windowSurfaces`, class `os-window` (set by `widgets::dockFloat`); `NativeOptions::osWindows` (default **off** on main, the branch had on), `NativePlatform::toolWindowCount / toolWindow / toolWindowScreenRect / captureToolWindow`. X11 / Win32 (macOS since 2026-11-14): ignored on Wayland (0 / false) | `fuse_app_tool_surfaces`, `fuse_app_native_services` |
 | Synthetic input `postPointerMove`, `postPointerButton`, `postClose` (3.5) | `NativePlatform` (Wayland: delivered in-process, `wl::injectPointer` / `injectClose`) | used by the XDND / chrome / tool-window sections of `fuse_app_native_services`; `fuse_app_wayland`, `fuse_app_wayland_seat` |
 | Saved state across process death (3.5) | `Settings::items / toText / fromText`, `AppWindow::saveUiState / restoreUiState / saveWindowState / restoreWindowState`, `Application::saveState / restoreState / saveStateTo / restoreStateFrom / restored / restoredState`, `StateHooks` (function table instead of the branch's `InlineFn` callbacks); Android `APP_CMD_SAVE_STATE` hook in `native_android.cpp` (cross-compiled only) | `fuse_app_saved_state`, `fuse_app_native_services` |
 | Window chrome (3.7) | `WindowFrame`, `WindowChrome`, `WindowCommand`, `WindowDesc::frame / resizeBorder`, `AppWindow::chrome / command`; `fuse/app/chrome.hpp`, `U/App/src/chrome.cpp` (built into `fuse_app`). The branch's backend command hook is gone: the buttons call main's window management (`minimize`, `setMode`, `tryClose`). X11 without a window manager moves / resizes in the backend. Wayland: caption / edge presses become `xdg_toplevel.move` / `resize` (`chromePress` in `native_wayland.cpp`), and the chrome is the client-side decoration of windows the compositor does not decorate | `fuse_app_window_chrome`, `fuse_app_native_services`, `fuse_app_wayland`, `fuse_app_wayland_seat` |
@@ -150,8 +155,8 @@ branch's `U/tests/CMakeLists.txt` (`git show 7178393b4fea:Source/FUSE/UI/tests/C
 Order (as written before the ports; §0 has the state now): 3.1 (text) and 3.2 (core deltas) first; 3.3, 3.4, 3.6
 and 3.9 depend on them. Of what is left, 3.4 (GPU) needs a Vulkan device to verify on and 3.9 a Rust toolchain for
 AccessKit; the rest of 3.2 is independent work per sub-feature.
-Items tagged **editor** were needed before `-DFUSE_EDITOR_SHELL=fuse` compiled; it builds now (§5), 3.9 is what its
-a11y gates still wait for.
+Items tagged **editor** were needed before the editor shell (then `-DFUSE_EDITOR_SHELL=fuse`) compiled; it builds now
+(§5), 3.9 is what its a11y gates still wait for.
 
 ### 3.1 Text: COOKED profile, MSDF, colour glyphs, variable fonts, OpenType features, font catalogue — **ported 2026-11-13**
 
@@ -560,13 +565,13 @@ files is a branch delta assigned to the item in the last column.
 
 | Target | Enabled by | State | Needs |
 |---|---|---|---|
-| `fuse_editor_fuse`, `fuse_editor_fuse_app`, gates `fuse_editor_ui_*` (`Source/FUSE/EditorShell/Fuse`, `EditorShell/tests/test_editor_ui_*.cpp`) | `-DFUSE_EDITOR_SHELL=fuse` (default `qt`) | **Builds and links (2026-11-13, Linux, GCC 13.3, `-DFUSE_BUILD_VULKAN=OFF`, in tree).** `ctest -L fuse_editor_ui` under Xvfb: 78 entries, 72 passed, 4 skipped (`live_present`, `scene_viewport`, `gpu_viewport`, `present_adopt`: no Vulkan device), and the `ui_frame` gate (registered twice: `fuse_editor_ui_ui_frame`, `fuse_editor_ui_frame`) fails on one wall-clock budget: a full 1600x900 CPU raster took 7.5 to 9.0 ms on the merge machine against 8 ms (it passed in one run of several; with `FUSE_UI_PERF_REPORT_ONLY=1` both pass; the rasteriser is as fast as before the ports: 4.2 ms for a 1600x900 widget page with either binary). `fuse_editor_ui_a11y*` are not configured (no `fuse_app_a11y` target: 3.9). | Changed for it: `editor_shell_panels.cpp` no longer sets `position: absolute` on flame-graph bars (ignored before the style engine port, now CSS out-of-flow positioning; the bars are placed by their `layout: absolute` parent); core: shared-ancestor hover, unconsumed keys on the root's `Event` signal, Tab through the viewport widget (§0). Still missing: 3.9 (`fuse/app/accessibility.hpp`) for the a11y gates; a run with a Vulkan device; Windows / macOS |
+| `fuse_editor_fuse`, `fuse_editor_fuse_app`, gates `fuse_editor_ui_*` (`Source/FUSE/EditorShell/Fuse`, `EditorShell/tests/test_editor_ui_*.cpp`) | `FUSE_BUILD_EDITOR=ON` (at the time `-DFUSE_EDITOR_SHELL=fuse`, default `qt`; Qt removed 2026-11-14) | **Builds and links (2026-11-13, Linux, GCC 13.3, `-DFUSE_BUILD_VULKAN=OFF`, in tree).** `ctest -L fuse_editor_ui` under Xvfb: 78 entries, 72 passed, 4 skipped (`live_present`, `scene_viewport`, `gpu_viewport`, `present_adopt`: no Vulkan device), and the `ui_frame` gate (registered twice: `fuse_editor_ui_ui_frame`, `fuse_editor_ui_frame`) fails on one wall-clock budget: a full 1600x900 CPU raster took 7.5 to 9.0 ms on the merge machine against 8 ms (it passed in one run of several; with `FUSE_UI_PERF_REPORT_ONLY=1` both pass; the rasteriser is as fast as before the ports: 4.2 ms for a 1600x900 widget page with either binary). `fuse_editor_ui_a11y*` are not configured (no `fuse_app_a11y` target: 3.9). | Changed for it: `editor_shell_panels.cpp` no longer sets `position: absolute` on flame-graph bars (ignored before the style engine port, now CSS out-of-flow positioning; the bars are placed by their `layout: absolute` parent); core: shared-ancestor hover, unconsumed keys on the root's `Event` signal, Tab through the viewport widget (§0). Still missing: 3.9 (`fuse/app/accessibility.hpp`) for the a11y gates; a run on a real GPU (CI runs the gates on Lavapipe, on Windows and on macOS since, see `../KNOWN_GAPS.md`) |
 | `fuse_editor_controller`, `fuse_editor_scene_host`, `fuse_editor_controller_api`, `fuse_editor_panel_models` | `FUSE_BUILD_EDITOR_API` / `FUSE_BUILD_EDITOR` | Qt-free, no UI dependency; taken from the branch | nothing |
 | `fuse_runtime_android` (`Source/FUSE/Renderer/android`) | Android + command `fuse_app_add_android_app` | Off (the command is not defined) | 3.10 |
-| `demo_hybrid_hud` with `hud_ui.cpp` | `fuse_ui_game` + `fuse_ui_vk` + Vulkan | Compiles against main's UI (syntax check) | nothing; gate `fuse_demo_hybrid_hud_ui` not run |
+| `demo_hybrid_hud` with `hud_ui.cpp` | `fuse_ui_game` + `fuse_ui_vk` + Vulkan | Builds; gate `fuse_demo_hybrid_hud_ui` registered (label `vulkan`, Lavapipe in the Linux core job) | nothing; its present-mode readback checks are still skipped |
 | `fuse_app_host` | standalone and in tree | Live since the ProjectHost port (3.11) | nothing |
 
-The editor shell was built in a tree configured with `cmake -S . -DFUSE_EDITOR_SHELL=fuse -DFUSE_BUILD_VULKAN=OFF`
+The editor shell was built (at the time) in a tree configured with `cmake -S . -DFUSE_EDITOR_SHELL=fuse -DFUSE_BUILD_VULKAN=OFF`
 (targets `fuse_editor_fuse`, `fuse_editor_fuse_app`, `fuse_editor_ui_gates`, `fuse_editor_ui_parity_gates`,
 `fuse_editor_ui_panels2_gates`; they pull in `fuse_editor_controller`, `fuse_editor_scene_host`, `fuse_editor_api`,
 `fuse_navigation` and through them most engine libraries, all of which build without Vulkan). The gates that failed

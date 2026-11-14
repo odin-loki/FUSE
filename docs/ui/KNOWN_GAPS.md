@@ -1,139 +1,188 @@
 # FUSE UI — not done and not verified
 
-Status as of 2026-11-13, branch `ccr-111d9b83-2iujo8`. This lists what is missing or has never been exercised, so
-nobody mistakes "compiles in CI" for "works on a device". Phase-by-phase detail is in
-[`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md) §9; usage is in [`README.md`](README.md).
+Status 2026-11-14: branch `ccr-111d9b83-2iujo8` as it is merged into `main`. This lists what is open, what fails on
+`main` as well and was left alone, what has never run on real hardware or a GPU, and what is parked, so nobody
+mistakes "passes in CI" for "works on a device". Phase detail: [`../plans/FUSE_UI_PLAN.md`](../plans/FUSE_UI_PLAN.md)
+§9; usage: [`README.md`](README.md).
 
-Several gaps below (GPU blur, damage present, custom shaders) have an implementation in the
-tree that no target builds yet: the UI code of the merged
-branch `claude/magical-bassi-815825`. They stay gaps until ported; [`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md)
-says where each one is and what blocks it.
+Qt is gone. The editor is the FUSE UI shell (`Source/FUSE/EditorShell`, built with `FUSE_BUILD_EDITOR=ON`); its gates
+are `ctest -L fuse_editor_ui`, its lint is `fuse_lint_editor_shell_fuse_ui`.
 
-The merged branch `gui-framework` is in the same position: part of its `Extras/` module is live (`fuse_ui_os`,
-`fuse_ui_extras`: undo, declarative bindings, PDF, desktop helpers, tray, web view, charts, 3D data visualisation);
-everything else of it (a second Wayland backend whose drag-out and subsurface tool windows are not ported, `@keyframes` and the other CSS engine work, GPU
-paths / filters / HDR, more widgets, rich text, SVG documents, media) is in the tree unbuilt and listed in
-[`archive/PORT_gui_framework.md`](archive/PORT_gui_framework.md), which also says which of the two branches'
-implementations to port where both have one. Its FORGE submodule was not taken.
+The two merged branches left code in the tree that no target builds (`claude/magical-bassi-815825`: GPU blur, damage
+present, custom shaders, native-window accessibility, ...; `gui-framework`: a second Wayland backend, the branch's own
+CSS engine, GPU paths / filters / HDR, SVG documents, media, ...). They are gaps until ported;
+[`archive/PORT_magical_bassi.md`](archive/PORT_magical_bassi.md) and
+[`archive/PORT_gui_framework.md`](archive/PORT_gui_framework.md) say where each one is and what blocks it.
 
-## What has been verified
+## CI on the merge head
+
+> TODO (filled in when the runs for the final head finish):
+>
+> - Linux (`fuse-umbrella-linux.yml`: core, single-thread, U8 present, `-Werror` x4, ASan + UBSan, editor UI): TODO
+> - Windows (`fuse-windows-native.yml`: MSVC release / profile / shipping / debug, clang-cl, editor, Vulkan build): TODO
+> - Android (`fuse-core-android.yml`): TODO
+> - iOS + macOS (`fuse-core-ios.yml`: iOS simulator, macOS UI, macOS editor): TODO
+
+Earlier runs on this branch, for reference:
 
 | Platform | How | Result |
 |---|---|---|
-| Linux (UI standalone) | Local build + ctest | After all ports (2026-11-13): MINIMAL 327/327 (4 skipped: no Vulkan device, FULL-only text gates), FULL 298/298 (2 skipped), COOKED 326/326 (7 skipped: real-font gates, FULL-only gates). Before the two branch merges 178/178 (MINIMAL), 177/177 (FULL) |
-| Linux (FUSE-UI editor shell, in tree, `-DFUSE_EDITOR_SHELL=fuse -DFUSE_BUILD_VULKAN=OFF`) | Local build + `ctest -L fuse_editor_ui` under Xvfb | Builds and links; 78 entries: 72 passed, 4 skipped (Vulkan), 2 failed (one gate under two names, `ui_frame`: its 8 ms full-window CPU raster budget measured 7.5 to 9.0 ms here). The rest of the in-tree suite was not run in that configuration |
-| Linux (whole engine, in-tree) | `fuse-umbrella-linux.yml`, run 43477707978 | 1457 of 1460 in the core job (two fail on `main` as well, one timed out once), Qt editor gates 44 of 47 (the three that fail on `main`), single-thread and U8 present jobs pass; the `-Werror` and ASan jobs have never run for this branch: they need the core job, which fails on `main` too. See "Known failures" |
-| Android arm64 (NDK r26d) | `fuse-core-android.yml` + local cross-build | Builds and links, apps as `lib<name>.so` |
-| macOS | `fuse-core-ios.yml` (macOS job, MoltenVK headers) | Builds; headless gates pass |
-| iOS simulator | `fuse-core-ios.yml` (iOS job) | Builds and links |
-| FreeBSD 14 x86-64 | `fuse-ui-freebsd.yml` in a FreeBSD VM | Builds; headless gates pass |
-| Windows (MSVC release / profile / shipping / debug, clang-cl) | `fuse-windows-native.yml`, runs 43370404838 and 43377707488 | All five build with warnings as errors and run ctest (747 tests; shipping 670). Failing: `fuse_core_ui1_text_input` (all five) and `fuse_ui_bench_10k` (all but debug); see "Known failures" |
-| Windows + Qt 6 editor | same run | Builds for the first time (it does not on `main`); `ctest -R editor`: 76 of 81, see "Known failures" |
-| Windows + Vulkan (build only) | run 43377707488 | Builds |
+| Linux, UI standalone | local build + ctest (2026-11-13) | MINIMAL 327/327 (4 skipped), FULL 298/298 (2 skipped), COOKED 326/326 (7 skipped) |
+| Linux, whole engine | `fuse-umbrella-linux.yml` run 43477707978 (before the fixes below) | core job 1457 of 1460 (see the two lists below) |
+| macOS, editor shell on Cocoa | `fuse-core-ios.yml` job `fuse-editor-macos`, run 43564444878 | 79 `fuse_editor_ui` tests: 75 passed, 4 skipped (`live_present`, `scene_viewport`, `gpu_viewport`, `present_adopt`: the runner's Apple Paravirtual device through MoltenVK lacks the T0 features `drawIndirectCount` and `shaderBufferInt64Atomics`) |
+| macOS, UI standalone | `fuse-core-ios.yml` | builds; headless gates (`-LE "vulkan\|perf"`) pass |
+| iOS simulator | `fuse-core-ios.yml` | builds and links; nothing runs |
+| Android arm64 (NDK r26d) | `fuse-core-android.yml` | builds and links (apps as `lib<name>.so`); nothing runs |
+| FreeBSD 14 x86-64 | `fuse-ui-freebsd.yml` (VM) | builds; headless gates (`-LE "vulkan\|perf"`) pass |
+| Windows (MSVC release / profile / shipping / debug, clang-cl) | `fuse-windows-native.yml` runs 43370404838, 43377707488 | all five build with warnings as errors; ctest fails only on the main-identical gates below |
+| Windows + Vulkan | same | build only |
 
+## Fixed on this branch
 
-## Never run
+For reviewers comparing with `main`; none of these is open.
 
-- **No real device or desktop session.** Nothing has run on a phone, tablet, Mac, Windows desktop, or an iOS /
-  Android simulator. Every mobile and Apple path is compile-checked plus headless tests.
-- **Win32 platform code has never executed** (only compiled by MSVC / clang-cl / MinGW): per-monitor DPI and
-  `WM_DPICHANGED`, clipboard, cursors, fullscreen / min-max handling, theme registry watch, native file dialogs.
-  The same holds for everything in `App/src/native_platform_win32.inl` (MinGW-w64 13 compile and link only): OS tool
-  windows, custom chrome (`WM_NCCALCSIZE` / `WM_NCHITTEST`), OLE drop target and `DoDragDrop`, clipboard images /
-  registered formats, `IFileDialog` / `ChooseColorW` / `MessageBoxW`, and the tray balloon of `TrayIcon::showMessage`.
-- **Apple platform code has never executed**: Cocoa and UIKit windows, `NSTextInputClient` IME, native menu bar,
-  cursors (diagonal-resize and busy cursors use private `NSCursor` selectors behind `respondsToSelector`), window
-  management, theme observer, file panels, HiDPI layout, touch path on iOS.
-- **Android platform code has never executed**: NativeActivity lifecycle, surface loss / restore, touch, JNI
-  clipboard and key-character lookups, soft keyboard, HiDPI buffer geometry.
-- **X11 window-manager features** (maximise, fullscreen, minimise, activate) were only exercised under Xvfb with no
-  window manager, i.e. as "state stays Normal". The same for custom chrome: the `_NET_WM_MOVERESIZE` hand-over and
-  `_MOTIF_WM_HINTS` were never seen by a window manager (the gate runs the backend's own move / resize), and OS tool
-  windows were never stacked or focused by one. XDND and the clipboard formats were tested between two connections
-  of the same process, not against GTK / Qt applications.
-- **Android saved state** (`APP_CMD_SAVE_STATE` -> `Application::saveState`, restored by `show()`) is cross-compiled
-  only. **`Presenter::vsynced`** is set for a FIFO Vulkan swapchain, which no gate here can create.
-- **GPU output for the new work is untested** (no Vulkan device where this was developed): vector paths, gradients,
-  9-slice, clip-path, layer, transform, filter and mask groups are pre-rasterised on the CPU and packed as images
-  (translation groups as moved kernel commands), checked only against a C++
-  model of the kernel's image op; render scale other than 1 on the GPU path; synthetic bold / italic glyphs.
-  `fuse_ui_vk_parity` has not been run with any of these.
-- **Installed-font scanning** ran on Linux only; the macOS, iOS, Android and Windows directory lists are untested,
-  and Windows font paths go through narrow `fopen` (non-ANSI paths may fail).
-- **Packaging was never built**: the Android Gradle template (`App/android/`), the Apple bundle rules and
-  `Info.plist` templates, and whether bundle resources land where `readResource("ui/...")` looks on iOS under a
-  non-Xcode generator.
-- **AccessKit backend** (`A11y/src/a11y_accesskit.cpp`) with the extended accessibility data was not compiled (needs
-  accesskit-c / a Rust toolchain).
-- **`fuse_ui_os` / `fuse_ui_extras`** (from `gui-framework`): off by default on Windows and Apple platforms, where
-  they were never built (MinGW-w64 syntax check only). On Android and FreeBSD they are cross-built, no gate run. The
-  web view gate passed without a web engine installed (it skips inside the test); URL opening and printing were
-  checked as command lines only; the tray and the native notifications (`desktop::Notifier`,
-  `TrayIcon::showMessage`) only against a private `dbus-daemon` with an in-process stand-in for the tray host /
-  notification service, never against a desktop's own. The charts
-  were not compared image by image with the branch's renderer. Nothing GPU-side of that branch is built.
-- **Sanitizers**: one ASan + UBSan pass over the UI suite was done before the last fixes; not repeated on the final
-  tree. Not built at all: `-DFUSE_UI_TEXT=FULL` on any platform other than Linux.
+- `fuse_ui_extras_notify` timed out (120 s): the test's fake notification service and its main thread starved each
+  other of libdbus's I/O lock. The service now sends its signals from its own thread (537113ac8). The gate runs
+  against a private `dbus-daemon` it starts, not the runner's session bus.
+- ASan / LSan: libdbus stays loaded for the process lifetime (tray / notify leak reports); the zero-alloc gates new
+  on this branch that replace `operator new` / `delete` replace the nothrow forms too (so those allocations are
+  counted); the xkb keymap leak in `fuse_app_wayland_seat` (7a41beab6).
+- `-Werror`: `test_rp_skinning` (e1bdac66a), `test_draw_fx_groups` noinline replacements (b1859575f).
+- Packaged `demo_3d_empty` resolves `TSStatic` shapes from `<projectRoot>/shapes` (085ec35f8).
+- `fuse_u8_demo_2d_sprites_present`: in present mode the readback was never filled, a bug `main` has too.
+  `HybridSceneRendererDesc::presentReadback` now copies the presented frame into it (566c94783). It went unseen
+  because the CI U8 present job selected its tests with `-L 'u8;present'`, which matched none (fixed in 49a863f1a,
+  together with `--no-tests=error` on the ctest calls).
+- `fuse_runtime_boot_time`: the renderer phase on Lavapipe took 12.2 s (Release) / 26.3 s (ASan), warm Mesa cache.
+  `FrameComposer::init` now creates the pipelines on worker threads (`PipelineBatch`, b2dfa1594): about 4 s / 9.2 s.
+  Budgets unchanged (see "Open").
+- iOS configure: `BUNDLE DESTINATION` for the `fuse_*` tools restored (5721c1095).
+- Qt editor shell, its tests and `FUSE_EDITOR_SHELL` removed (770d96037, 4d3716d0a).
 
-## Known failures
+## Open
 
-- `fuse_core_ui1_text_input` fails on Windows (every MSVC job): `IMM32 composition string -> TextComposition`
-  (`ImmSetCompositionStringW` succeeds on the hosted runner, the composition read back is empty). It is an engine-core
-  test (`Source/FUSE/Core/tests`), not the UI module, and fails the same way on `main` (run 43323981954).
-- Qt editor gates on Windows (never run there before; the Qt editor is outside the UI module):
-  `fuse_editor_qt_context_menu_dpr1_5` (QMenu placed elsewhere than computed), `fuse_editor_qt_idle_frames` and
-  `fuse_editor_qt_shell_assets` (both also fail on Linux on `main`), `fuse_editor_qt_e20_inspector`,
-  `fuse_editor_qt_e20_reparent`. Not investigated.
-- `fuse_ui_bench_10k` misses its wall-clock budget on the hosted Windows runners (0.5 ms for one dirty panel in a
-  10k-node tree; measured 0.50 to 0.94 ms there, 0.38 to 0.43 ms on the Linux development machine). It fails on `main`
-  too. The budget is enforced there on purpose; nothing was relaxed.
-- MSVC Debug only: the "zero heap allocations in steady frames" checks of `fuse_ui_zero_alloc_steady`,
-  `fuse_ui_style_motion`, `fuse_ui_mv_selection_1m`, `fuse_ui_mv_async`, `fuse_ui_vector_steady`,
-  `fuse_ui_port_zero_alloc`, `fuse_ui_css_animations` (`UI_CHECK_NO_ALLOC`) and of `fuse_editor_b6_idle_frame_gates`
-  print the count and do not fail: MSVC's debug STL allocates a `_Container_proxy` per container object. This is the
-  engine's existing rule (`Core/tests/fuse_test_msvc_debug_stl.hpp`); MSVC Release / Profile / Shipping and all other
-  compilers enforce them. Whether every one of the counted allocations is such a proxy was not checked one by one.
-- `fuse_runtime_boot_time` (label `perf`, new with the renderer work merged from `claude/magical-bassi-815825`) has
-  two budgets. Its 3 s are for a hardware GPU; on Linux the gate runs the GPU frame on Lavapipe, where "hybrid
-  renderer + 4 GPU frames" is the driver compiling the frame composer's kernels on the CPU. That phase took 4.7 s
-  on `main` and 18.4 s after the merge on the same machine (the kernels gained the correctly rounded division /
-  square root of `common/exact_math` and the tiled light loop: SSRC 0.25 -> 6.4 s, SSFX 0.05 -> 1.9 s, DDGI
-  0.1 -> 1.5 s, material resolve 2.4 -> 3.6 s, lighting + VSM 0.75 -> 1.9 s). The SSRC kernels are now created
-  by the first frame that enables SSRC (off by default), which leaves 12.3 s, and on a software device that phase
-  is held to 20 s (`--boot-budget-software-gpu-ms`) while the rest of the boot keeps the 3 s. In the fuse-asan
-  build the same phase took 24.6-26 s: with Mesa's shader disk cache warm (the earlier Lavapipe gates of the run
-  fill it) it is almost all `vkCreate*Pipelines` (SPIR-V -> NIR in Lavapipe, allocation-bound, so ASan's allocator
-  doubles it). FrameComposer::init now builds its subsystems' pipelines on worker threads (`PipelineBatch`,
-  `Renderer/include/fuse/renderer/vk/pipeline_batch.hpp`; same create infos, same results): on a 4-CPU machine
-  12.2 -> 4 s in Release and 26 -> 9.5 s in fuse-asan (2 CPUs: 7.4 s / 16 s). A cold disk cache adds the LLVM
-  compile at the first dispatch of each kernel (one queue thread: +9 s Release, +17 s fuse-asan). Each kernel's
-  compile is still slower than on `main`, so a Lavapipe gate that builds a frame composer on its own is too.
-- `fuse_ui_extras_notify` timed out (120 s) in the core job of run 43477707978 and passed in 8.8 s in the run
-  before (43387912364); the commit between them touches no UI code. The gate talks to the session D-Bus of the
-  runner. Not investigated.
-- `fuse_hybrid_renderer_bootstrap` fails in an in-tree build without a Vulkan loader (stub backend): "disabled
-  software placeholder skips RGBA buffer writes" (the first frame fills the placeholder buffer, nothing empties it
-  when the placeholder is switched off). The test and the code it runs are the same on `main`; no CI job builds
-  that configuration.
+Judgement calls (accepted, not bugs):
+
+- **MSVC Debug only** (`_ITERATOR_DEBUG_LEVEL > 0`): seven UI zero-alloc checks (`UI_CHECK_NO_ALLOC` in
+  `Source/FUSE/UI/tests/test_util.hpp`: `fuse_ui_zero_alloc_steady`, `fuse_ui_style_motion`, `fuse_ui_mv_selection_1m`,
+  `fuse_ui_mv_async`, `fuse_ui_vector_steady`, `fuse_ui_port_zero_alloc`, `fuse_ui_css_animations`) and
+  `fuse_editor_b6_idle_frame_gates` print the count instead of failing: the debug STL allocates a `_Container_proxy`
+  per container. Every other configuration enforces zero. Whether each counted allocation is such a proxy was not
+  checked one by one.
+- **`fuse_runtime_boot_time`** (label `perf`) keeps its 3 s boot budget and holds the renderer phase to a separate
+  20 s when the GPU frame runs on a software Vulkan device (`deviceType` CPU; `--boot-budget-software-gpu-ms`). The
+  3 s budget has never passed on Lavapipe anywhere: the test came from `claude/magical-bassi-815825`, where it never
+  ran in CI, and `main`'s renderer phase alone took 4.7 s. Each kernel still compiles slower than on `main` (exact
+  division / square root in `common/exact_math`, tiled light loop); a cold Mesa cache adds the LLVM compile at each
+  kernel's first dispatch.
+
+Intermittent or load-sensitive:
+
+- `fuse_audio_output_wave` on Windows: failed 2 of about 25 runs, passed on rerun. The branch does not touch Audio.
+- `fuse_editor_ui_ui_frame` / `fuse_editor_ui_frame` (one gate, two names): wall-clock CPU raster budget (8 ms for a
+  full 1600x900 window). The opaque-rect fill in `draw_list.cpp` took it from 7.5 to 4.8 ms; a loaded machine can
+  still miss it.
+- `fuse_editor_ui_gpu_viewport`, `fuse_editor_ui_live_present`: fail under parallel ctest load, pass alone.
+- Wall-clock gates in general (label `perf`: `fuse_ui_bench_10k`, `fuse_ui_vector_steady`, `fuse_ui_modelview_1m_rows`,
+  `fuse_ui_mv_selection_1m`, `fuse_ui_mv_tree_1m`, `fuse_app_hello_startup`) miss on a loaded Linux machine. They are
+  excluded on the FreeBSD and macOS VMs, so their non-timing checks do not run there either.
+- `fuse_world_extract_synthetic` failed once and passed on the next run; not investigated.
+
+Hazards:
+
 - `Renderer/shaders/ssfx/sx_ssr.comp` is written around a glslangValidator 15.1 defect: with
   `vec4(sx_sky(..), useRoughness ? sx_gloss_fade(..) : 1.0)` the compiler allocated more than 13 GB and the hosted
-  Linux runners were shut down mid-build ("the runner has received a shutdown signal"). Nothing guards against the
-  next shader that trips it; a build that dies that way a few minutes in is this, not the runner.
-- Failing on `main` as well and left alone (outside the UI module):
-  - Linux: `fuse_vulkan_validation_gate` (VUID-VkImageViewCreateInfo-image-04441), `fuse_runtime_steady_state_alloc`
-    (editor phase allocates), Qt gates `fuse_editor_qt_idle_frames`, `fuse_editor_qt_lighting`,
-    `fuse_editor_qt_shell_assets`.
-  - Windows: the build errors `main` has in `EditorShell` (`meshlet_builder.hpp` not found, deprecated
-    `std::filesystem::u8path`) and in the Qt editor tests (`far`, discarded `[[nodiscard]]`) are fixed on this
-    branch; see "What has been verified" for what the Windows jobs do now.
-- `fuse_world_extract_synthetic` (Tools/FUSE/WorldExtract) failed once on this branch and passed on the next run;
-  cause not investigated.
-- Wall-clock gates (label `perf`: `fuse_ui_bench_10k`, `fuse_ui_modelview_1m_rows`, `fuse_ui_mv_selection_1m`,
-  `fuse_ui_mv_tree_1m`, `fuse_ui_vector_steady`, `fuse_app_hello_startup`) are excluded on the FreeBSD and macOS CI
-  VMs, so their non-timing checks do not run there either. `fuse_ui_bench_10k` can also miss its budget on a loaded
-  Linux machine.
+  Linux runners were shut down mid-build. Nothing guards against the next shader that trips it.
+- `demo_hybrid_hud` still skips its readback checks in present mode; with `presentReadback` they could be enabled.
+
+## Fails on `main` too (left alone by policy)
+
+Same failure with the same test and code on `main`; not fixed here.
+
+- Linux: `fuse_vulkan_validation_gate` (VUID-VkImageViewCreateInfo-image-04441); `fuse_runtime_steady_state_alloc`
+  (the editor phase allocates); `fuse_hybrid_renderer_bootstrap` under ASan, and in a build without a Vulkan loader
+  ("disabled software placeholder skips RGBA buffer writes").
+- Windows: `fuse_core_ui1_text_input` on every job (`ImmSetCompositionStringW` succeeds on the hosted runner, the
+  composition read back is empty; `main` run 43323981954); `fuse_ui_bench_10k` on every job but debug (0.5 ms budget,
+  0.50 to 0.94 ms on the hosted runners, 0.38 to 0.43 ms on a Linux machine; the budget stays).
+- UBSan: null `memcpy` at `Source/FUSE/Core/src/platform/platform_window.cpp:1608` (`fuse_core_ui1_text_input`);
+  left shift of a negative value in the vendored libtheora 1.2.0 `lib/analyze.c:1216` (`fuse_ui_theora_video`).
+- ASan alloc-dealloc-mismatch in 21 UI gates: `fuse_ui_zero_alloc_steady`, `touch_scroll`, `doc_load`, `vk_parity`,
+  `dock_layout_roundtrip`, `modelview_1m_rows`, `tier_c`, `tier_d`, `style_motion`, `vector_steady` and
+  `fuse_ui_mv_{notify,selection,selection_1m,tree,tree_1m,editing,view,proxy,async,dir_model,golden_tree,golden_table_edit}`.
+  `std::stable_sort`'s temporary buffer uses nothrow `new`; these tests' replacement hooks lack the nothrow forms (the
+  same hooks as on `main`).
+- `-Werror` (g++-13): `widgets.cpp:543` `-Wdangling-reference`, `test_modelview.cpp:51` and `test_vk_parity.cpp:20`
+  `-Wmismatched-new-delete` (shipping / profile; so the `fuse-warnings-as-errors` job fails on every config), and a
+  `-Wformat-truncation` in `test_relight_equivalence.cpp` (release / debug; the file is identical to `main`'s).
+
+## Never run on real hardware or a GPU
+
+- **GPU.** Every Vulkan gate ran on Lavapipe (Linux) only. The Windows Vulkan job builds; it runs nothing. On macOS
+  the GPU gates skip (MoltenVK on the runner's paravirtual device lacks T0 features; real Apple GPUs may also fail T0
+  on 64-bit buffer atomics). The GPU viewport through MoltenVK has never run. No discrete or integrated GPU of any
+  vendor has run any of it.
+- **GPU output of the newer UI work**: vector paths, gradients, 9-slice, clip-path, layer, transform, filter and mask
+  groups are pre-rasterised on the CPU and packed as images (translation groups as moved kernel commands), checked
+  only against a C++ model of the kernel's image op; render scale other than 1 on the GPU path; synthetic bold /
+  italic glyphs. `fuse_ui_vk_parity` has not been run with any of these.
+- **No person's machine.** Everything ran on CI runners or a Linux build machine. Nothing has run on a phone, tablet,
+  an iOS / Android simulator or emulator, or a desktop someone used.
+- **macOS.** The Cocoa backend and the editor shell run in CI (above). The gate process sets
+  `NSUseRemoteSavePanel=NO` so it can drive the file panels in-process; the real editor uses the remote panel, which
+  CI only saw open and close. Never checked by a person: interactive mouse / keyboard / IME / menus, HiDPI above 1x,
+  several monitors, `openExternal` / `revealFile`, the Dock icon. Cursors use private `NSCursor` selectors behind
+  `respondsToSelector`.
+- **iOS / Android** code has never executed: UIKit window and touch path, NativeActivity lifecycle, surface loss /
+  restore, touch, JNI clipboard and key-character lookups, soft keyboard, HiDPI buffer geometry, Android saved state
+  (`APP_CMD_SAVE_STATE`).
+- **Windows** code has run only in CI on the hosted runners (the native ctest jobs, and the editor job on a 1920x1080
+  desktop, which drives `IFileDialog` / `ChooseColorW`). Not exercised there: `WM_DPICHANGED` / several monitors,
+  OLE drag and drop with another application, the theme registry watch, `MessageBoxW`, the tray balloon of
+  `TrayIcon::showMessage` (`fuse_ui_extras` is off on Windows).
+- **X11 window-manager features** (maximise, fullscreen, minimise, activate) ran under Xvfb without a window manager,
+  i.e. as "state stays Normal". Custom chrome's `_NET_WM_MOVERESIZE` and `_MOTIF_WM_HINTS` were never seen by a window
+  manager; OS tool windows were never stacked or focused by one. XDND and the clipboard formats were tested between
+  two connections of the same process, not against GTK / Qt applications.
+- **`Presenter::vsynced`** is set for a FIFO Vulkan swapchain, which no gate creates.
+- **Installed-font scanning** ran on Linux only; the macOS, iOS, Android and Windows directory lists are untested, and
+  Windows font paths go through narrow `fopen` (non-ANSI paths may fail).
+- **Packaging**: the Android Gradle template (`App/android/`) never produced an APK; the iOS `.app` rules and
+  `Info.plist` template build for the simulator in CI, a macOS bundle (`-DFUSE_APP_MACOS_BUNDLE=ON`) is built by no
+  job, and no bundle was launched; whether bundle resources land where
+  `readResource("ui/...")` looks on iOS under a non-Xcode generator is unchecked.
+- **`fuse_ui_os` / `fuse_ui_extras`**: off by default on Windows and Apple platforms and never built there (MinGW-w64
+  syntax check only); cross-built for Android and FreeBSD, no gate run. The web view gate passes without a web engine
+  installed (it skips inside the test); URL opening and printing were checked as command lines only; the tray and the
+  notifications only against a private `dbus-daemon` with an in-process stand-in for the tray host / notification
+  service. The charts were not compared image by image with the branch's renderer.
+- `-DFUSE_UI_TEXT=FULL` was built on Linux only.
+
+## Parked (not ported, not built)
+
+- **Accessibility on a native window** (`PORT_magical_bassi.md` 3.9): `fuse_app_a11y`, `WindowAccessibility`, the UIA
+  and AT-SPI adapters. `App/src/accessibility.cpp` and `tests/test_a11y_linux.cpp` are in the tree unbuilt;
+  `fuse_editor_ui_a11y*` and `fuse_ui_a11y_linux` are registered on no platform (they need the `fuse_app_a11y`
+  target). The AccessKit backend (`A11y/src/a11y_accesskit.cpp`) has never been compiled (needs accesskit-c / Rust).
+- **GPU work** of `claude/magical-bassi-815825` (3.4): backdrop-blur pass, damage-driven present, SDF-quad backend,
+  custom effects, pipeline cache; colour-image and MSDF glyphs on the GPU path. No Vulkan device to verify on.
+- **Core deltas** (3.2): zoom / kinetic zoom, Alt-release menu-bar focus, the keyboard-only pass, OS text scale,
+  `PointerKind` / pressure, the CPU rasteriser work (span runs, worker bands, SIMD).
+- **Platform**: XIM pre-edit, RandR change notification, presenter work (async Vulkan start, dirty-rect copy, MAILBOX,
+  `presentTiming`), Win32 delayed clipboard rendering / `WM_POINTER` / extra theme fields, the gates that need a
+  window manager (3.5).
+- **Wayland** (3.6): drag out of the app, OS tool windows, live desktop settings, the sway-driven gates.
+- **Android** (3.10): the branch backend's JNI IME, APK packer, emulator gates; `fuse_runtime_android`.
+- **Widgets / Designer** (3.12, 3.15): per-class gates of `test_widget_gates.cpp`, RTL hit-test mirroring, icons by
+  name on menu items / tabs / list rows; Designer icon / effect pickers and registry-driven property grid.
+- **`gui-framework`** (`PORT_gui_framework.md`): its Apple backends (`cocoa.mm`, `uikit.mm`, tray / web view /
+  AVFoundation `.mm`; never compiled; Cocoa drag and drop is there), its Android backend, its Wayland backend (drag out, subsurface tool windows),
+  accessibility `PlatformAdapter` / `A11yState`, the rest of its style / drawing work, GPU-native paths / filters /
+  backdrop kernel, colour management / HDR, SVG documents, system video / audio, FORGE bindings, SIMD kernels, and the
+  widget options of its §3.7. Its FORGE submodule was not taken.
 
 ## Not implemented
+
 
 ### Platform
 
@@ -196,12 +245,13 @@ implementations to port where both have one. Its FORGE submodule was not taken.
   iOS.
 - macOS: moving a window to a screen with a different backing scale is picked up only on the next layout.
 - Native dialogs block the app's windows while open. No custom image cursors. Multi-file selection, colour and
-  message dialogs exist only as the window-less functions (zenity / kdialog on Linux / BSD, Win32 not run, nothing
-  on macOS / iOS / Android). `fuse_app` itself has no tray icon, notification or web view API; those exist in
+  message dialogs exist only as the window-less functions: zenity / kdialog on Linux / BSD, Win32 (`MessageBoxW` not
+  run), macOS open / save / folder / colour panels (no message box); nothing on iOS / Android. `fuse_app` itself has no tray icon, notification or web view API; those exist in
   `fuse_ui_extras` (verified on Linux only) and are not tied to `fuse_app` windows. Native notifications
   (`desktop::Notifier`) are D-Bus only; Windows and macOS go through the helper programs, without click callbacks
   (except the Win32 tray balloon, not run).
-- OS tool windows for floating docks: X11 and Win32 only (not Wayland, see above), off by default. They are not hidden when the main window
+- OS tool windows for floating docks: X11, Win32 and macOS (child `NSPanel`s) only (not Wayland, see above), off by
+  default. They are not hidden when the main window
   is minimised or hidden, have no task-bar / pager presence of their own, and on X11 are override-redirect (no
   window-manager stacking; they stay above other applications' windows).
 - Custom window chrome: X11, Wayland and Win32 (the frame kind is ignored on macOS / iOS / Android). No snap-layout flyout
@@ -241,11 +291,8 @@ implementations to port where both have one. Its FORGE submodule was not taken.
   filters; to be folded into main's `SvgImage`), system video and audio output (`extras/media.hpp`), the Designer
   additions of both branches. `l10n::parsePo` does not rewrite `%1`-style positional arguments of singular strings. `PdfDocument::renderDrawList` writes a gradient as the
   mean of its stops and skips nine-patches and layer effects.
-- `fuse_ui_vector_steady` (label `perf`) has a wall-clock budget (a 2000-point stroked series at 1080p < 8 ms) that the
-  port machine misses under load: it measures 3.3 to 7.8 ms alone, the same on the base commit, and fails in a parallel
-  `ctest` run with a load average above 30. It passes alone and in a serial run.
 - `fuse_app_binary_size` has a budget only for Linux x86-64 GCC Release MINIMAL in the standalone tree; the HUD binary
-  size gate of the branch needs the COOKED text profile and is not registered.
+  size gate of the branch (`fuse_ui_hud_binary_size`) is not registered.
 - In-window menus built from `MenuDesc` show `[x]` text for checkable items and do not grey disabled ones.
 - These are native backends, not the SDL3 route decision D1 recommended for macOS / iOS / Android.
 
@@ -358,7 +405,7 @@ Ported from `gui-framework` onto this tree's engine as a subset; the branch's ow
 - Transitions do not follow inherited values into descendants.
 - RTL does not mirror the inside of self-painting widgets or scroll origins.
 - Docks: no tab groups inside a floating dock; floating docks are panels inside the window unless the host turns on
-  OS tool windows (`NativeOptions::osWindows`, X11 / Win32, not Wayland); a destroyed dock area does not destroy its floating docks.
+  OS tool windows (`NativeOptions::osWindows`, X11 / Win32 / macOS, not Wayland); a destroyed dock area does not destroy its floating docks.
 - Model / view: rows are single-line and fixed-height; a filtered or sorted proxy rebuilds fully on any source
   change; tree selection is by visible row (collapsing deselects); `SqliteModel` is not async; the combo-box cell
   editor commits on Enter / Tab / click-away, not on picking from the popup.
@@ -389,12 +436,12 @@ Ported from `gui-framework` onto this tree's engine as a subset; the branch's ow
 - The Designer and the Lua bindings were not extended for the new style properties.
 - Side tables `TreeFold`, `DockDrag` and the game `richBindings` still key on the `UiContext` address (compared,
   never dereferenced): a new context at the same address can match a stale entry.
-- Accessibility: no native adapters; tree item ids above about 32 million fall back to visible-row keys; menu
+- Accessibility: no native adapters (parked, see above); tree item ids above about 32 million fall back to visible-row keys; menu
   shortcuts are not in the snapshot.
 - The interaction golden and the `fuse_ui_port_golden_*` goldens exist for the MINIMAL text profile only. `widget_gallery` page gates check layout, not
   that each widget paints.
 
-### Engine integration (plan items untouched)
+### Engine integration (plan items left)
 
-- `project.json` schema 2 / `AppPresent`, `demo_hybrid_hud` on a UI context, `UiSurface` depth-tested rendering,
-  the Qt editor replacement (UI9) beyond what was already in the tree, binary-size and Android startup gates.
+- No Android startup / lifecycle gate on a device (`fuse_app_lifecycle_android`), no HUD-less `frame.ui_composite`
+  invariant gate.
