@@ -61,7 +61,7 @@ jobs:
             -DFUSE_BUILD_EDITOR=OFF \
             -DFUSE_BUILD_VULKAN=ON \
             -DFUSE_BUILD_CUDA=ON \
-            -DFUSE_VULKAN_TEST_SLOTS=2
+            -DFUSE_VULKAN_TEST_SLOTS=4
       - name: Build
         run: cmake --build build-fuse --config Release
 
@@ -228,7 +228,7 @@ jobs:
           cmake --preset fuse-asan \
             -DCMAKE_CXX_COMPILER=g++-13 \
             -DFUSE_BUILD_SMOKE=ON \
-            -DFUSE_VULKAN_TEST_SLOTS=2
+            -DFUSE_VULKAN_TEST_SLOTS=4
 
       - name: Build
         run: cmake --build build/fuse-asan
