@@ -19,7 +19,7 @@ struct MacDialogAnswer {
 /// when no modal dialog came up, negative on a failure (`what` says which).
 struct MacDialogState {
     int answered = 0;
-    bool okSent = false; ///< OK went to a file panel (accepted once its modal session is over)
+    bool okSent = false; ///< Return / Escape went to a file panel (taken once its modal session is over)
     std::string what;
     void* timer = nullptr; ///< the armed NSTimer (retained)
 };
