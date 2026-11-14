@@ -42,6 +42,8 @@ void applyGameWindowToBootstrapDesc(fuse::hybrid::HybridRendererBootstrapDesc& d
     desc.presentable.swapchainHeight = height;
     desc.scene.width = 0;
     desc.scene.height = 0;
+    // Present-mode gates check the presented frame by GPU readback (checkOverlayReadback), as the headless runs do.
+    desc.scene.presentReadback = true;
 #else
     (void)desc;
     (void)width;

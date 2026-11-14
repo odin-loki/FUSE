@@ -28,6 +28,7 @@
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/scene_renderer/scene_renderer.hpp>
+#include <fuse/renderer/vk/present_path.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/world3d/render_scene.hpp>
 
@@ -83,6 +84,10 @@ struct HybridSceneRendererDesc {
     u32 maxQuads = 1024;       ///< sprites + UI quads per frame
     /// Keep an RGBA8 copy of every headless frame in host-visible memory (readbackPixels()).
     bool headlessReadback = true;
+    /// Also read back swapchain frames (needs headlessReadback): the frame is blitted to the headless target as well as
+    /// the acquired image, then copied to the readback buffer, so present-mode gates check the presented frame. Off by
+    /// default (one extra blit + copy per presented frame).
+    bool presentReadback = false;
     /// Use runtimeComposerDesc() / runtimeFrameSettings() (Lavapipe T0 composer; frame settings match the
     /// shared presets but without volumetric clouds — see runtimeFrameSettings()).
     /// False: `composer` / `settings` below as given.
@@ -167,10 +172,10 @@ public:
     /// Submits the recorded frame without an RhiContext (headless target, own fence-less submission).
     bool submitHeadless();
 
-    /// Blocks until every submitted frame completed (then readbackPixels() holds the last headless frame).
+    /// Blocks until every submitted frame completed (then readbackPixels() holds the last read-back frame).
     bool waitIdle();
-    /// RGBA8 (R, G, B, A byte order), width() x height(), top row first: the last completed headless frame.
-    /// Null when headlessReadback is off or nothing was rendered headless yet.
+    /// RGBA8 (R, G, B, A byte order), width() x height(), top row first: the last completed headless frame (or
+    /// presented frame, with presentReadback). Null when headlessReadback is off or nothing was read back yet.
     const u8* readbackPixels() const;
     u32 readbackFrames() const { return m_readbackFrames; }
     /// The headless RGBA8 target (sampled usage) and its current VkImageLayout, as left by the last submitted frame:
@@ -268,6 +273,7 @@ private:
         u32 height = 0;
     };
     Copy m_copy{};
+    renderer::PresentBlit m_readbackBlit{}; ///< presentReadback: scene output -> headless target on a swapchain frame
     u32 m_readbackFrames = 0;
     bool m_readbackPending = false;
 
@@ -287,10 +293,10 @@ private:
     HybridSceneFrameStats m_stats{};
 };
 
-/// GPU readback check for demos / gates (call after waitIdle, on a headless frame): the pixels where the CPU sprite
+/// GPU readback check for demos / gates (call after waitIdle, on a read-back headless or presentReadback frame): the pixels where the CPU sprite
 /// layer (spriteLayerTexel over overlayQuads()) is opaque must equal the quad colour within `tolerance` / 255.
 struct OverlayReadbackCheck {
-    bool valid = false;  ///< a headless frame was read back
+    bool valid = false;  ///< a frame was read back
     u32 covered = 0;     ///< pixels fully covered by the overlay
     u32 mismatched = 0;  ///< channels off by more than the tolerance
 };

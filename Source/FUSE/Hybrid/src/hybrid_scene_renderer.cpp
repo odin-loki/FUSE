@@ -662,9 +662,35 @@ bool HybridSceneRenderer::execute(void* waitSemaphore, void* signalSemaphore, vo
         m_recorded = false;
         return false;
     }
-    const bool readback = swapchain == nullptr && m_readback.handle != nullptr;
+    const bool readback = m_readback.handle != nullptr && (swapchain == nullptr || m_desc.presentReadback);
     if (readback) {
         m_copy.src = targets.target;
+        if (swapchain != nullptr) {
+            // presentReadback: the same scene output also goes to the headless RGBA8 target (same-extent blit: an exact
+            // per-texel conversion, like the headless path), which is copied below. The swapchain image keeps its own
+            // format / extent and needs no TRANSFER_SRC usage.
+            renderer::PresentTargetDesc h{};
+            h.image = m_headless.image;
+            h.view = m_headless.view;
+            h.format = kRgba8;
+            h.width = m_width;
+            h.height = m_height;
+            h.layoutTracker = &m_headlessLayout;
+            h.queueTracker = &m_headlessQueue;
+            h.name = "hybrid.headless_target";
+            m_readbackBlit = renderer::PresentBlit{};
+            m_readbackBlit.source = m_outputs.output; // what addPresent blits (no frame-generation target here)
+            m_readbackBlit.sourceWidth = m_scene->composer().outputWidth();
+            m_readbackBlit.sourceHeight = m_scene->composer().outputHeight();
+            m_readbackBlit.target = renderer::importPresentTarget(m_graph, h);
+            m_readbackBlit.targetWidth = m_width;
+            m_readbackBlit.targetHeight = m_height;
+            if (!renderer::addPresentBlit(m_graph, m_readbackBlit)) {
+                m_recorded = false;
+                return false;
+            }
+            m_copy.src = m_readbackBlit.target;
+        }
         m_copy.dst = m_graph.importBuffer(
             rg::ImportedBuffer{m_readback.handle, m_readback.desc.size, rg::kNoQueue, nullptr, "hybrid.headless_readback"});
         m_copy.width = m_width;
