@@ -368,14 +368,18 @@ bool makeKeymap() {
     auto ctxNew = reinterpret_cast<void* (*)(int)>(dlsym(so, "xkb_context_new"));
     auto fromNames = reinterpret_cast<void* (*)(void*, const void*, int)>(dlsym(so, "xkb_keymap_new_from_names"));
     auto asString = reinterpret_cast<char* (*)(void*, int)>(dlsym(so, "xkb_keymap_get_as_string"));
-    if (!ctxNew || !fromNames || !asString) return false;
+    auto keymapUnref = reinterpret_cast<void (*)(void*)>(dlsym(so, "xkb_keymap_unref"));
+    auto ctxUnref = reinterpret_cast<void (*)(void*)>(dlsym(so, "xkb_context_unref"));
+    if (!ctxNew || !fromNames || !asString || !keymapUnref || !ctxUnref) return false;
     struct Names { const char *rules, *model, *layout, *variant, *options; } names{"evdev", "pc105", "us", "", ""};
     void* ctx = ctxNew(0);
     void* km = ctx ? fromNames(ctx, &names, 0) : nullptr;
     char* text = km ? asString(km, 1) : nullptr;
+    if (km) keymapUnref(km);
+    if (ctx) ctxUnref(ctx);
     if (!text) return false;
     g.keymap = text;
-    std::free(text); // keymap / context are left to the process exit
+    std::free(text);
     return true;
 }
 

@@ -67,7 +67,10 @@ struct Api {
     unsigned (*message_iter_next)(void*);
 };
 Api* api() {
-    static Api a{};
+    // Never destroyed: libdbus keeps process-wide state (thread locks, the shared connection machinery) and is not
+    // safe to unload, so the library stays loaded until exit instead of being closed by a static destructor (which
+    // would also turn that state into leaks under LSan, its references gone with the unloaded library).
+    static Api& a = *new Api{};
     static bool ok = [] {
         a.lib = os::loadLibrary({"libdbus-1.so.3", "libdbus-1.so", "libdbus-1.3.dylib", "libdbus-1.dylib"});
         if (!a.lib) return false;

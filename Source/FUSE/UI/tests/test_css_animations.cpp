@@ -31,6 +31,13 @@ void* operator new(std::size_t n) {
 }
 void operator delete(void* p) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t) noexcept { std::free(p); }
+// The nothrow forms too (std::stable_sort's temporary buffer uses them): left to the runtime they would allocate
+// with its operator new and free through ours (an alloc-dealloc mismatch under ASan), and go uncounted.
+void* operator new(std::size_t n, const std::nothrow_t&) noexcept {
+    if (g_count) ++g_allocs;
+    return std::malloc(n ? n : 1);
+}
+void operator delete(void* p, const std::nothrow_t&) noexcept { std::free(p); }
 
 namespace {
 bool near(f32 a, f32 b, f32 eps = 2e-3f) { return std::fabs(a - b) <= eps; }

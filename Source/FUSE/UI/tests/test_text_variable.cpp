@@ -42,6 +42,15 @@ void operator delete(void* p) noexcept { std::free(p); }
 void operator delete[](void* p) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+// The nothrow forms too (std::stable_sort's temporary buffer uses them): left to the runtime they would allocate
+// with its operator new and free through ours (an alloc-dealloc mismatch under ASan), and go uncounted.
+void* operator new(std::size_t n, const std::nothrow_t&) noexcept {
+    if (g_counting) g_allocs.fetch_add(1, std::memory_order_relaxed);
+    return std::malloc(n ? n : 1);
+}
+void* operator new[](std::size_t n, const std::nothrow_t& t) noexcept { return operator new(n, t); }
+void operator delete(void* p, const std::nothrow_t&) noexcept { std::free(p); }
+void operator delete[](void* p, const std::nothrow_t&) noexcept { std::free(p); }
 
 using namespace fuse::ui;
 using namespace fuse::text;
