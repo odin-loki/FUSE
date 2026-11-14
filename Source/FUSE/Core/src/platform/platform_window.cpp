@@ -1605,7 +1605,9 @@ void EventPump::pushTextInput(std::string_view utf8, Window* window) {
 
 void EventPump::pushComposition(std::string_view utf8, i32 cursor, Window* window) {
     const usize n = utf8Prefix(utf8, kMaxComposition);
-    std::memcpy(m_composition, utf8.data(), n);
+    if (n != 0u) {
+        std::memcpy(m_composition, utf8.data(), n); // an empty view (ends the pre-edit) may have a null data()
+    }
     m_composition[n] = '\0';
     m_compositionLength = static_cast<u32>(n);
     m_compositionCursor = cursor < 0 ? 0 : (cursor > static_cast<i32>(n) ? static_cast<i32>(n) : cursor);
