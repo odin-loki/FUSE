@@ -917,10 +917,11 @@ int gateNativeDialogs() {
     std::thread([] { std::this_thread::sleep_for(std::chrono::seconds(240)); std::fprintf(stderr, "native_dialogs watchdog\n"); std::_Exit(3); }).detach();
     using Ans = fuse::editor::test::MacDialogAnswer;
     auto answer = [](Ans a, const std::function<void()>& call) {
+        std::fprintf(stderr, "native_dialogs: driver armed (kind %d)\n", int(a.kind));
         auto st = fuse::editor::test::macAnswerNextDialog(std::move(a));
         call();
         fuse::editor::test::macDialogFinish(*st);
-        std::printf("native_dialogs: driver %d (%s)\n", st->answered, st->what.c_str());
+        std::fprintf(stderr, "native_dialogs: driver %d (%s)\n", st->answered, st->what.c_str());
         return st->answered;
     };
     // Save As through NSSavePanel

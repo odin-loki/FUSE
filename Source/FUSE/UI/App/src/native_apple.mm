@@ -126,6 +126,9 @@ struct NativePlatform::Impl {
     static bool windowRequest(void* user, AppWindow& w, WindowRequest what);
 #if TARGET_OS_OSX
     bool postedLeftDown = false; ///< postPointerButton state: a posted move with the button held is a drag
+    /// The Dock icon setIcon built (every raster a representation); AppKit's applicationIconImage getter hands back
+    /// its own single-representation copy, so iconSizes reads this one.
+    NSImage* appIcon = nil;
     /// Shows / moves / repaints / removes the tool windows after a present (the surfaces of the last update).
     void syncTools(Rec& r);
     void destroyTools(Rec& r);
@@ -1307,6 +1310,7 @@ bool NativePlatform::setIcon(const AppWindow& w, std::span<const Image> sizes) {
             [icon addRepresentation:rep];
         }
         NSApp.applicationIconImage = icon;
+        m->appIcon = icon;
     }
     return true;
 }
@@ -1320,7 +1324,7 @@ bool NativePlatform::resizeWindow(const AppWindow& w, unsigned width, unsigned h
 std::vector<int> NativePlatform::iconSizes(const AppWindow& w) const {
     std::vector<int> out;
     if (!m->find(w)) return out;
-    if (NSImage* icon = NSApp.applicationIconImage)
+    if (NSImage* icon = m->appIcon ?: NSApp.applicationIconImage) // what setIcon handed the Dock
         for (NSImageRep* rep in icon.representations) out.push_back(int(rep.pixelsWide));
     return out;
 }

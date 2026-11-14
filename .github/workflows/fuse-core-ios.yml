@@ -83,7 +83,7 @@ jobs:
         run: |
           cmake --build build-editor-macos -- -k 0 \
             fuse_editor_fuse_app fuse_editor_ui_gates fuse_editor_ui_parity_gates fuse_editor_ui_panels2_gates \
-            fuse_editor_controller_tests fuse_editor_panel_models_tests fuse_cook
+            fuse_editor_controller_tests fuse_editor_panel_models_tests fuse_cook fuse_lint
       - name: List editor gates
         if: always()
         run: ctest --test-dir build-editor-macos -L fuse_editor_ui -N
@@ -93,6 +93,13 @@ jobs:
           if [ -f "$icd" ]; then export VK_ICD_FILENAMES="$icd"; fi
           echo "VK_ICD_FILENAMES=${VK_ICD_FILENAMES:-<loader default>}"
           ctest --test-dir build-editor-macos -L fuse_editor_ui --output-on-failure --no-tests=error --timeout 1200
+      # ctest prints nothing for a skipped test: the GPU gates' skip reasons (77 = no Vulkan device / presenter)
+      - name: GPU editor gates (verbose)
+        if: always()
+        run: |
+          icd="$(brew --prefix molten-vk)/etc/vulkan/icd.d/MoltenVK_icd.json"
+          if [ -f "$icd" ]; then export VK_ICD_FILENAMES="$icd"; fi
+          ctest --test-dir build-editor-macos -R "fuse_editor_ui_(scene_viewport|gpu_viewport|live_present|present_adopt)$" -V --timeout 1200
       - name: Upload editor screenshots
         if: always()
         uses: actions/upload-artifact@v4

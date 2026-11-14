@@ -3,6 +3,8 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include <cstdio>
+
 namespace fuse::editor::test {
 namespace {
 NSString* ns(const std::string& s) { return [NSString stringWithUTF8String:s.c_str()] ?: @""; }
@@ -30,6 +32,16 @@ std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
         };
         ++ticks;
         NSWindow* m = NSApp.modalWindow;
+        if (!m) // a panel whose modal session AppKit does not report through modalWindow: the visible one
+            for (NSWindow* w in NSApp.windows)
+                if (w.visible && ([w isKindOfClass:[NSSavePanel class]] || [w isKindOfClass:[NSColorPanel class]])) m = w;
+        if (ticks % 25 == 1) { // what the driver sees (the gate's log, while a dialog may block the test)
+            std::string seen;
+            for (NSWindow* w in NSApp.windows)
+                seen += std::string(" ") + NSStringFromClass([w class]).UTF8String + (w.visible ? "(visible)" : "");
+            std::fprintf(stderr, "dialog driver tick %d: modal %s, stage %d, windows:%s\n", ticks,
+                         NSApp.modalWindow ? NSStringFromClass([NSApp.modalWindow class]).UTF8String : "none", stage, seen.c_str());
+        }
         if (!m) {
             if (st->okSent) return; // accepted; macDialogFinish settles it
             if (ticks > 300) done(0, "no modal dialog came up");
