@@ -16,12 +16,16 @@ CSS engine, GPU paths / filters / HDR, SVG documents, media, ...). They are gaps
 
 ## CI on the merge head
 
-> TODO (filled in when the runs for the final head finish):
->
-> - Linux (`fuse-umbrella-linux.yml`: core, single-thread, U8 present, `-Werror` x4, ASan + UBSan, editor UI): TODO
-> - Windows (`fuse-windows-native.yml`: MSVC release / profile / shipping / debug, clang-cl, editor, Vulkan build): TODO
-> - Android (`fuse-core-android.yml`): TODO
-> - iOS + macOS (`fuse-core-ios.yml`: iOS simulator, macOS UI, macOS editor): TODO
+Merged via PR #2280; `main` was then red on MinGW cross, Relight, Windows MSVC and the ASan job. PR #2281 fixed
+those; its CI runs on the PR head. Runs that verified the fixes on the way:
+
+- Linux (`fuse-umbrella-linux.yml`) run 43572986508: core 1415 / 1415, single-thread, U8 present (7 present tests),
+  FUSE UI editor gates. The ASan job had never finished inside its 120-min limit (1004 of 1405 tests in 94 min);
+  it now runs ctest in parallel with a 240-min limit, and `-Werror` waits on core instead of ASan (ec5b4b0e2).
+- Windows (`fuse-windows-native.yml`) run 43583797372: every job green.
+- MinGW cross + Wine (`fuse-windows-cross.yml`) run 43591439942: debug / release / profile / shipping green
+  (debug 700 / 700); Relight (`fuse-relight-wine.yml`) run 43591439933 green.
+- iOS + macOS (`fuse-core-ios.yml`) run 43572988648: all four jobs green. Android: green.
 
 Earlier runs on this branch, for reference:
 
@@ -78,7 +82,6 @@ Judgement calls (accepted, not bugs):
 
 Intermittent or load-sensitive:
 
-- `fuse_audio_output_wave` on Windows: failed 2 of about 25 runs, passed on rerun. The branch does not touch Audio.
 - `fuse_editor_ui_ui_frame` / `fuse_editor_ui_frame` (one gate, two names): wall-clock CPU raster budget (8 ms for a
   full 1600x900 window). The opaque-rect fill in `draw_list.cpp` took it from 7.5 to 4.8 ms, the per-command column
   map of image commands (the viewport) halved the instructions again (8.2 ms Linux / 10.4 ms macOS runner before,
@@ -96,29 +99,29 @@ Hazards:
   Linux runners were shut down mid-build. Nothing guards against the next shader that trips it.
 - `demo_hybrid_hud` still skips its readback checks in present mode; with `presentReadback` they could be enabled.
 
-Fixed on this branch, failing on `main` before: `fuse_vulkan_validation_gate` (VUID-VkImageViewCreateInfo-image-04441:
-views of transfer-only images in the RHI allocator and the UI CPU-upload canvas), `fuse_runtime_steady_state_alloc`
-(the editor's mesh / SDF preview catalog allocated 256 times a frame), `fuse_hybrid_renderer_bootstrap` without a
-Vulkan device (a disabled placeholder kept the last software frame). Linux umbrella run 43572986508: core job 1415 of
-1415.
+Fixed in PR #2281, failing on `main` before:
+
+- `fuse_vulkan_validation_gate` (VUID-VkImageViewCreateInfo-image-04441: views of transfer-only images in the RHI
+  allocator and the UI CPU-upload canvas); `fuse_runtime_steady_state_alloc` (the editor's mesh / SDF preview catalog
+  allocated 256 times a frame); `fuse_hybrid_renderer_bootstrap` without a Vulkan device (a disabled placeholder kept
+  the last software frame).
+- Windows: `fuse_core_ui1_text_input` (no IME on the runners; the test now fills the input context as an IME does);
+  `fuse_ui_bench_10k` (paint memo for unchanged subtrees, checked by `fuse_ui_paint_memo`; budget unchanged); the
+  editor job's build (`[[nodiscard]]`), its missing `vulkan-1.dll`, `fuse_editor_ui_float_window`, the editor-shell
+  lint timeout in Debug, `fuse_audio_b7_perf` on profile (`/Ob2`).
+- Audio: `fuse_audio_output_wave` underruns (openal-soft's device thread drained the 4-buffer AL queue in a late
+  burst; the device now pulls from the ring through `AL_SOFT_callback_buffer`, 6fb7abc18 and 297becd15).
+- UBSan: null `memcpy` in `EventPump::pushComposition`; 15 negative left shifts in the vendored libtheora encoder
+  (build-time patch, `UI/Video/patches/`).
+- ASan alloc-dealloc-mismatch in 21 UI gates: one shared `tests/test_alloc_hooks.hpp` replaces every `new` / `delete`
+  form, so `std::stable_sort`'s nothrow buffer is matched and counted.
+- `-Werror` / MinGW: `widgets.cpp` dangling reference, `-Wmismatched-new-delete` in `test_modelview.cpp` /
+  `test_vk_parity.cpp`, `-Wformat-truncation` in `test_relight_equivalence.cpp`, `test_icons.cpp`'s private stb copy.
+- MinGW + Wine: the remaster CLI gates ran Windows `.exe` files directly instead of through the emulator.
 
 ## Fails on `main` too (left alone by policy)
 
-Same failure with the same test and code on `main`; not fixed here.
-
-- Windows: `fuse_core_ui1_text_input` on every job (`ImmSetCompositionStringW` succeeds on the hosted runner, the
-  composition read back is empty; `main` run 43323981954); `fuse_ui_bench_10k` on every job but debug (0.5 ms budget,
-  0.50 to 0.94 ms on the hosted runners, 0.38 to 0.43 ms on a Linux machine; the budget stays).
-- UBSan: null `memcpy` at `Source/FUSE/Core/src/platform/platform_window.cpp:1608` (`fuse_core_ui1_text_input`);
-  left shift of a negative value in the vendored libtheora 1.2.0 `lib/analyze.c:1216` (`fuse_ui_theora_video`).
-- ASan alloc-dealloc-mismatch in 21 UI gates: `fuse_ui_zero_alloc_steady`, `touch_scroll`, `doc_load`, `vk_parity`,
-  `dock_layout_roundtrip`, `modelview_1m_rows`, `tier_c`, `tier_d`, `style_motion`, `vector_steady` and
-  `fuse_ui_mv_{notify,selection,selection_1m,tree,tree_1m,editing,view,proxy,async,dir_model,golden_tree,golden_table_edit}`.
-  `std::stable_sort`'s temporary buffer uses nothrow `new`; these tests' replacement hooks lack the nothrow forms (the
-  same hooks as on `main`).
-- `-Werror` (g++-13): `widgets.cpp:543` `-Wdangling-reference`, `test_modelview.cpp:51` and `test_vk_parity.cpp:20`
-  `-Wmismatched-new-delete` (shipping / profile; so the `fuse-warnings-as-errors` job fails on every config), and a
-  `-Wformat-truncation` in `test_relight_equivalence.cpp` (release / debug; the file is identical to `main`'s).
+Nothing known.
 
 ## Never run on real hardware or a GPU
 
