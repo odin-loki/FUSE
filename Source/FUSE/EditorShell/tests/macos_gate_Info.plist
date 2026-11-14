@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Embedded in fuse_editor_ui_parity_gates on macOS (__TEXT,__info_plist): an unbundled executable has no bundle
+     identifier, and the in-process NSSavePanel (native_dialogs) keeps its view settings in that defaults domain. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>org.fuse.fuse_editor_ui_parity_gates</string>
+    <key>CFBundleName</key>
+    <string>fuse_editor_ui_parity_gates</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+</dict>
+</plist>
