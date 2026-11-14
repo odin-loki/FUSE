@@ -1,6 +1,8 @@
 #include <fuse/audio/audio_backend.hpp>
 
 #include <fuse/audio/spsc_ring.hpp>
+#include <fuse/platform/sleep.hpp>
+#include <fuse/platform/thread.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -289,6 +291,10 @@ struct AudioBackend::OpenALStream {
         const double block_seconds = static_cast<double>(std::min(block_frames, buffer_frames)) / static_cast<double>(rate);
         const auto poll = std::chrono::microseconds(
             std::max<long long>(500, static_cast<long long>(block_seconds * 1e6 / 4.0)));
+        // The device queue is a few blocks (tens of ms): the feeder must wake on time. Above-normal threads go first
+        // on a loaded machine, and the poll is a real sub-block wait: std::this_thread::sleep_for rounds up to the
+        // Windows timer tick (15.6 ms, six polls), which left the queue one late wake from starving.
+        fuse::platform::setThreadPriority(0, 2);
         while (!stop.load(std::memory_order_acquire)) {
             bool lost = simulate_loss.exchange(false, std::memory_order_acq_rel);
             if (!lost && has_disconnect && device != nullptr) {
@@ -310,7 +316,7 @@ struct AudioBackend::OpenALStream {
                 }
             }
             pump();
-            std::this_thread::sleep_for(poll);
+            fuse::platform::sleepAtLeast(poll);
         }
     }
 };
