@@ -24,14 +24,19 @@ struct AudioOutputStats {
     double latency_seconds = 0; ///< Queued frames / rate (+ device latency when AL_SOFT_source_latency).
     bool float32_output = false;///< OpenAL buffers carry AL_FORMAT_STEREO_FLOAT32 (else 16-bit PCM).
     bool connected = false;     ///< Device currently connected.
+    bool device_callback = false;///< OpenAL: AL_SOFT_callback_buffer (the device pulls from the ring).
+    u64 first_underrun_frame = 0;///< frames_played when the first underrun began (diagnostics).
+    u32 first_underrun_gap_us = 0;///< Consumer wake gap (device callback / feeder poll) at that underrun.
 };
 
 /// Audio output: the engine's software mix goes to one output stream.
 ///
-/// * OpenAL: one streaming AL source (direct channels, source-relative) with `device_buffers`
-///   buffers of `frames_per_buf` stereo frames, refilled by a feeder thread from a lock-free SPSC
-///   ring that submit() writes on the game thread. AL_EXT_float32 buffers when available, else
-///   16-bit. Underruns insert one block of silence and are counted; ALC_EXT_disconnect is polled
+/// * OpenAL: one streaming AL source (direct channels, source-relative) fed from a lock-free SPSC
+///   ring that submit() writes on the game thread. With AL_SOFT_callback_buffer (openal-soft) the
+///   device's mixer thread reads the ring directly (ring = output_ring_blocks + device_buffers
+///   blocks), so the whole ring absorbs a late device thread; otherwise a feeder thread refills
+///   `device_buffers` queued buffers of `frames_per_buf` stereo frames from it. AL_EXT_float32 when
+///   available, else 16-bit. Underruns insert silence and are counted; ALC_EXT_disconnect is polled
 ///   and a lost device is re-opened (ALC_SOFT_reopen_device, else a full close / reopen). All AL
 ///   calls after init happen on the feeder thread.
 /// * Null: consumes each submitted block immediately into an optional capture buffer that tests
