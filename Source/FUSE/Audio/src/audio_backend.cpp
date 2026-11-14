@@ -11,10 +11,15 @@
 #include <thread>
 
 #if defined(FUSE_AUDIO_OPENAL)
+#if __has_include(<AL/al.h>)
 #include <AL/al.h>
 #include <AL/alc.h>
 #if __has_include(<AL/alext.h>)
 #include <AL/alext.h>
+#endif
+#else // the macOS OpenAL framework (find_package(OpenAL) on Apple): <OpenAL/al.h>
+#include <OpenAL/al.h>
+#include <OpenAL/alc.h>
 #endif
 #endif
 

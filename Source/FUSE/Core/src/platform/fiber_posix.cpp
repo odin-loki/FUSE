@@ -1,3 +1,11 @@
+#if defined(__APPLE__) && !defined(_XOPEN_SOURCE)
+// macOS declares the (deprecated) ucontext routines only with _XOPEN_SOURCE; _DARWIN_C_SOURCE keeps the rest of the
+// Darwin API visible next to it. Before any system header.
+#define _XOPEN_SOURCE 700
+#ifndef _DARWIN_C_SOURCE
+#define _DARWIN_C_SOURCE 1
+#endif
+#endif
 #include <fuse/platform/fiber.hpp>
 
 // ucontext is unavailable on Android NDK (aarch64) and deprecated on iOS.

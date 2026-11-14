@@ -64,8 +64,10 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
+      # No brew glslang: glslang 16.6 (brew) never finished one of the engine's GLSL twin shaders (run 43537460907:
+      # the build sat 3 h on it). The editor needs none of the twins; FUSE UI's kernel comes from its SPIR-V fixture.
       - name: Install Ninja and Vulkan (MoltenVK)
-        run: brew install ninja molten-vk vulkan-headers vulkan-loader glslang
+        run: brew install ninja molten-vk vulkan-headers vulkan-loader
       - name: Configure (Release, editor shell)
         run: |
           cmake -B build-editor-macos -G Ninja \
@@ -77,6 +79,7 @@ jobs:
       # The targets the fuse_editor_ui label runs (gate executables, the editor, fuse_cook they launch), not the
       # whole engine tree.
       - name: Build (editor shell + gate binaries)
+        timeout-minutes: 150
         run: |
           cmake --build build-editor-macos -- -k 0 \
             fuse_editor_fuse_app fuse_editor_ui_gates fuse_editor_ui_parity_gates fuse_editor_ui_panels2_gates \
