@@ -20,6 +20,12 @@ NSButton* findButton(NSView* v, NSString* title) {
 /// remote views: calling -ok: / -cancel: on them from inside their modal session never returned (run 43559067293),
 /// a key event goes the way a user's does.
 void pressKey(NSWindow* w, unsigned short keyCode, NSString* chars) {
+    // AppKit sends key events to the key window: make the panel key (the app may not be frontmost on a CI session)
+    if (!NSApp.active) [NSApp activateIgnoringOtherApps:YES];
+    if (!w.keyWindow) [w makeKeyAndOrderFront:nil];
+    std::fprintf(stderr, "dialog driver: key %u to %s (app active %d, panel key %d, key window %s)\n", unsigned(keyCode),
+                 NSStringFromClass([w class]).UTF8String, int(NSApp.active), int(w.keyWindow),
+                 NSApp.keyWindow ? NSStringFromClass([NSApp.keyWindow class]).UTF8String : "none");
     for (NSEventType type : {NSEventTypeKeyDown, NSEventTypeKeyUp}) {
         NSEvent* e = [NSEvent keyEventWithType:type
                                       location:NSZeroPoint
