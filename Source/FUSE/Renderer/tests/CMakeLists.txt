@@ -56,6 +56,11 @@ add_executable(fuse_bindless_descriptors test_bindless_descriptors.cpp)
 target_link_libraries(fuse_bindless_descriptors PRIVATE fuse_rhi)
 add_test(NAME fuse_bindless_descriptors COMMAND fuse_bindless_descriptors)
 
+# PipelineBatch: pipeline builds on worker threads during FrameComposer::init (CPU only, no device).
+add_executable(fuse_pipeline_batch test_pipeline_batch.cpp)
+target_link_libraries(fuse_pipeline_batch PRIVATE fuse_rhi)
+add_test(NAME fuse_pipeline_batch COMMAND fuse_pipeline_batch)
+
 add_executable(fuse_pipeline_cache test_pipeline_cache.cpp)
 target_link_libraries(fuse_pipeline_cache PRIVATE fuse_rhi)
 target_compile_definitions(fuse_pipeline_cache PRIVATE

@@ -57,9 +57,13 @@ endif()
 # physics steps -> a tone through the audio mixer, and fails over the budget. The editor is not in this
 # process. Label "perf": the 3 s budget is for the reference workstation (ThinkStation P920 + RTX 3090).
 # The Lavapipe variant below runs the GPU frame on a software rasteriser, where "hybrid renderer + 4 GPU frames" is
-# the driver compiling the frame composer's kernels on the CPU (LLVM): 4.7 s before the kernels took the correctly
+# the driver building the frame composer's pipelines on the CPU: 4.7 s before the kernels took the correctly
 # rounded division / square root (common/exact_math) and the tiled light loop, 12.3 s with them on the machine that
-# measured both (a GitHub ubuntu-24.04 runner ran the 18.6 s of the tree before the SSRC change in 11.9 s). That
+# measured both (a GitHub ubuntu-24.04 runner ran the 18.6 s of the tree before the SSRC change in 11.9 s), and
+# 24.6-26 s in the fuse-asan build (Lavapipe's SPIR-V -> NIR work is allocation-bound, and every allocation goes
+# through ASan's allocator). With LLVM's machine code in Mesa's shader disk cache (every earlier Lavapipe gate of
+# the run fills it), almost all of the phase is vkCreate*Pipelines in FrameComposer::init; that init builds them on
+# worker threads (PipelineBatch), on a 4-CPU machine 12.2 -> 4 s (Release) and 26 -> 9.5 s (fuse-asan). That
 # phase gets its own budget there (--boot-budget-software-gpu-ms, applied only when the device is a
 # CPU one); everything else of the boot (about 60 ms) keeps the 3 s. On a hardware device the 3 s cover it all.
 if(TARGET fuse_audio AND FUSE_BUILD_PROJECT)

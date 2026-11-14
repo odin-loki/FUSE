@@ -8,6 +8,7 @@
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/pipeline_batch.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -248,32 +249,14 @@ bool DdgiGpu::createPipelines() {
         return false;
     }
     m_layoutHandle = layout;
+    const u32 createFlags =
+        m_desc.bindless != nullptr ? static_cast<u32>(m_desc.bindless->pipelineCreateFlags()) : 0u;
+    // On the open PipelineBatch's workers when there is one (FrameComposer::init), else here.
     for (u32 k = 0; k < kKernelCount; ++k) {
-        VkShaderModuleCreateInfo mi{};
-        mi.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        mi.codeSize = code[k].bytes;
-        mi.pCode = code[k].words;
-        VkShaderModule module = VK_NULL_HANDLE;
-        if (vkCreateShaderModule(vk, &mi, nullptr, &module) != VK_SUCCESS) {
-            m_reason = "vkCreateShaderModule failed";
-            return false;
-        }
-        VkComputePipelineCreateInfo ci{};
-        ci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-        ci.flags = m_desc.bindless != nullptr ? static_cast<VkPipelineCreateFlags>(m_desc.bindless->pipelineCreateFlags()) : 0u;
-        ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-        ci.stage.module = module;
-        ci.stage.pName = "main";
-        ci.layout = layout;
-        VkPipeline pipeline = VK_NULL_HANDLE;
-        const VkResult result = vkCreateComputePipelines(vk, VK_NULL_HANDLE, 1, &ci, nullptr, &pipeline);
-        vkDestroyShaderModule(vk, module, nullptr);
-        if (result != VK_SUCCESS) {
+        if (!buildComputePipeline(this, vk, code[k].words, code[k].bytes, layout, createFlags, &m_pipelines[k])) {
             m_reason = "vkCreateComputePipelines failed";
             return false;
         }
-        m_pipelines[k] = pipeline;
     }
     m_language = name;
     return true;
@@ -284,6 +267,7 @@ bool DdgiGpu::createPipelines() {
 }
 
 void DdgiGpu::destroy() {
+    waitPipelineBuilds(this); // builds queued on a PipelineBatch write m_pipelines
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_desc.device != nullptr) {
         const VkDevice vk = static_cast<VkDevice>(m_desc.device->nativeHandle());

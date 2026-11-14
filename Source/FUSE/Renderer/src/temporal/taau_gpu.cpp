@@ -3,6 +3,8 @@
 
 #include "temporal_pipeline.hpp"
 
+#include <fuse/renderer/vk/pipeline_batch.hpp>
+
 #include <fuse/math/mat.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
@@ -129,7 +131,7 @@ bool TaauGpu::init(const TaauGpuDesc& desc) {
     ring.memoryUsage = MemoryUsage::CpuToGpu;
     ring.name = "taau_gpu.frame";
     if (!m_desc.allocator->createBuffer(ring, m_frameRing) || m_frameRing.mapped == nullptr || m_frameRing.deviceAddress == 0u ||
-        !detail::createComputePipeline(*desc.device, *desc.bindless, code, m_layoutHandle, m_pipeline) ||
+        !detail::createComputePipeline(this, *desc.device, *desc.bindless, code, m_layoutHandle, m_pipeline) ||
         !createResources(m_res, desc.resolution)) {
         destroy();
         return false;
@@ -146,6 +148,7 @@ void TaauGpu::destroy() {
     if (!m_initialized) {
         return;
     }
+    waitPipelineBuilds(this); // a build queued on a PipelineBatch writes m_pipeline
     collectRetired(~0ull);
     destroyResources(m_res);
     if (m_frameRing.handle != nullptr) {

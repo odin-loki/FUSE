@@ -100,8 +100,14 @@ implementations to port where both have one. Its FORGE submodule was not taken.
   square root of `common/exact_math` and the tiled light loop: SSRC 0.25 -> 6.4 s, SSFX 0.05 -> 1.9 s, DDGI
   0.1 -> 1.5 s, material resolve 2.4 -> 3.6 s, lighting + VSM 0.75 -> 1.9 s). The SSRC kernels are now created
   by the first frame that enables SSRC (off by default), which leaves 12.3 s, and on a software device that phase
-  is held to 20 s (`--boot-budget-software-gpu-ms`) while the rest of the boot keeps the 3 s. Nothing shortens the
-  kernel compile itself, so every Lavapipe gate that builds a frame composer stays slower than on `main`.
+  is held to 20 s (`--boot-budget-software-gpu-ms`) while the rest of the boot keeps the 3 s. In the fuse-asan
+  build the same phase took 24.6-26 s: with Mesa's shader disk cache warm (the earlier Lavapipe gates of the run
+  fill it) it is almost all `vkCreate*Pipelines` (SPIR-V -> NIR in Lavapipe, allocation-bound, so ASan's allocator
+  doubles it). FrameComposer::init now builds its subsystems' pipelines on worker threads (`PipelineBatch`,
+  `Renderer/include/fuse/renderer/vk/pipeline_batch.hpp`; same create infos, same results): on a 4-CPU machine
+  12.2 -> 4 s in Release and 26 -> 9.5 s in fuse-asan (2 CPUs: 7.4 s / 16 s). A cold disk cache adds the LLVM
+  compile at the first dispatch of each kernel (one queue thread: +9 s Release, +17 s fuse-asan). Each kernel's
+  compile is still slower than on `main`, so a Lavapipe gate that builds a frame composer on its own is too.
 - `fuse_ui_extras_notify` timed out (120 s) in the core job of run 43477707978 and passed in 8.8 s in the run
   before (43387912364); the commit between them touches no UI code. The gate talks to the session D-Bus of the
   runner. Not investigated.

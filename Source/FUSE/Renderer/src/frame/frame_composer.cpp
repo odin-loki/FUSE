@@ -7,6 +7,7 @@
 #include <fuse/renderer/upscale/upscale_inputs.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/pipeline_batch.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -218,7 +219,12 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
     m_initialized = true; // destroy() releases partial state from here on
     const u32 w = desc.renderWidth;
     const u32 h = desc.renderHeight;
+    // The subsystems below queue their pipeline builds on this batch, which runs them on worker threads while
+    // the next subsystems initialise (each build is the same vkCreate*Pipelines call as before). On a software
+    // rasteriser (Lavapipe) the builds are most of this init: SPIR-V -> NIR and NIR optimisation on the CPU.
+    PipelineBatch pipelineBatch;
     auto fail = [&](const char* why) {
+        (void)pipelineBatch.wait(); // no build may still write a subsystem that destroy() releases
         m_reason = why;
         destroy();
         m_reason = why;
@@ -537,6 +543,38 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         return fail("material sampler");
     }
     m_samplerHandle = desc.bindless->shaderHandle(m_sampler);
+    if (!pipelineBatch.wait()) {
+        // A queued build failed: an optional subsystem drops its stage(s) (as a failed init() does above), a
+        // mandatory one (the only other owners on the batch) fails the init.
+        struct OptionalOwner {
+            const void* owner;
+            u32 stages;
+            const char* why;
+        };
+        const OptionalOwner optionalOwners[] = {
+            {&m_ddgi, kStageDdgi, "ddgi"},
+            {&m_ssfx, kStageSsfx, "ssfx"},
+            {&m_fog, kStageFog, "froxel fog"},
+            {&m_clouds, kStageClouds, "clouds"},
+            {&m_gsplat, kStageSplats, "gaussian splats"},
+            {&m_taau, kStageTaau, "taau"},
+            {&m_forward, kStageForward, "forward transparency"},
+        };
+        u32 optionalFailures = 0;
+        for (const OptionalOwner& o : optionalOwners) {
+            if (pipelineBatch.failed(o.owner)) {
+                ++optionalFailures;
+                m_available &= ~o.stages;
+                if (std::strcmp(m_reason, "ok") == 0) {
+                    m_reason = o.why;
+                }
+            }
+        }
+        if (pipelineBatch.failed(&m_lighting) || pipelineBatch.failed(&m_resolve) || pipelineBatch.failed(&m_motion) ||
+            optionalFailures == 0u) {
+            return fail("pipeline build (clustered lighting, material resolve or motion vectors)");
+        }
+    }
     if (!createPipeline()) {
         return fail("frame kernel not built / pipeline");
     }

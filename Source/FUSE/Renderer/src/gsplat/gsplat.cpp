@@ -4,6 +4,7 @@
 #include <fuse/renderer/compute/gpu_radix_sort.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/pipeline_batch.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -151,6 +152,7 @@ void GsplatRenderer::destroy() {
     if (!m_initialized) {
         return;
     }
+    waitPipelineBuilds(this); // builds queued on a PipelineBatch write m_pipelines
 #if defined(FUSE_VULKAN_BACKEND)
     collectRetired(~0ull);
     m_sortBinding.reset();
@@ -236,28 +238,10 @@ bool GsplatRenderer::createPipelines() {
     }
     m_layoutHandle = layout;
     const VkPipelineCreateFlags createFlags = static_cast<VkPipelineCreateFlags>(m_desc.bindless->pipelineCreateFlags());
+    // On the open PipelineBatch's workers when there is one (FrameComposer::init), else here.
     for (u32 i = 0; i < kKernelCount; ++i) {
-        VkShaderModuleCreateInfo moduleInfo{};
-        moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        moduleInfo.codeSize = k[i].bytes;
-        moduleInfo.pCode = k[i].words;
-        VkShaderModule module = VK_NULL_HANDLE;
-        if (vkCreateShaderModule(device, &moduleInfo, nullptr, &module) != VK_SUCCESS) {
-            return false;
-        }
-        VkComputePipelineCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-        info.flags = createFlags;
-        info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-        info.stage.module = module;
-        info.stage.pName = "main";
-        info.layout = layout;
-        VkPipeline pipeline = VK_NULL_HANDLE;
-        const VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
-        vkDestroyShaderModule(device, module, nullptr);
-        m_pipelines[i] = pipeline;
-        if (result != VK_SUCCESS) {
+        if (!buildComputePipeline(this, device, k[i].words, k[i].bytes, layout, createFlags,
+                                  &m_pipelines[i])) {
             return false;
         }
     }

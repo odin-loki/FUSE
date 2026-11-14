@@ -6,6 +6,7 @@
 #include <fuse/renderer/visbuffer/visbuffer.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/pipeline_batch.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -129,6 +130,7 @@ void ForwardTransparency::destroy() {
     if (!m_initialized) {
         return;
     }
+    waitPipelineBuilds(this); // a build queued on a PipelineBatch writes m_pipeline
 #if defined(FUSE_VULKAN_BACKEND)
     collectRetired(~0ull);
     if (m_color.image.image != nullptr) {
@@ -202,104 +204,110 @@ bool ForwardTransparency::createPipeline() {
         return false;
     }
     m_layoutHandle = layout;
-    auto module = [&](const Code& c) {
-        VkShaderModuleCreateInfo info{};
-        info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        info.codeSize = c.bytes;
-        info.pCode = c.words;
-        VkShaderModule m = VK_NULL_HANDLE;
-        vkCreateShaderModule(device, &info, nullptr, &m);
-        return m;
-    };
-    VkShaderModule vs = module(vsCode);
-    VkShaderModule fs = module(fsCode);
-    if (vs == VK_NULL_HANDLE || fs == VK_NULL_HANDLE) {
+    // On the open PipelineBatch's workers when there is one (FrameComposer::init), else here: the build owns
+    // copies of what it reads.
+    const ForwardCullMode cull = m_desc.cull;
+    const VkPipelineCreateFlags createFlags = static_cast<VkPipelineCreateFlags>(m_desc.bindless->pipelineCreateFlags());
+    return buildPipeline(this, [device, layout, vsCode, fsCode, cull, createFlags, out = &m_pipeline] {
+        auto module = [&](const Code& c) {
+            VkShaderModuleCreateInfo info{};
+            info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+            info.codeSize = c.bytes;
+            info.pCode = c.words;
+            VkShaderModule m = VK_NULL_HANDLE;
+            vkCreateShaderModule(device, &info, nullptr, &m);
+            return m;
+        };
+        VkShaderModule vs = module(vsCode);
+        VkShaderModule fs = module(fsCode);
+        if (vs == VK_NULL_HANDLE || fs == VK_NULL_HANDLE) {
+            vkDestroyShaderModule(device, vs, nullptr);
+            vkDestroyShaderModule(device, fs, nullptr);
+            return false;
+        }
+        VkPipelineShaderStageCreateInfo stages[2]{};
+        stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+        stages[0].module = vs;
+        stages[0].pName = "main";
+        stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        stages[1].module = fs;
+        stages[1].pName = "main";
+        VkPipelineVertexInputStateCreateInfo vertexInput{};
+        vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        VkPipelineInputAssemblyStateCreateInfo assembly{};
+        assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        VkPipelineViewportStateCreateInfo viewport{};
+        viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewport.viewportCount = 1;
+        viewport.scissorCount = 1;
+        VkPipelineRasterizationStateCreateInfo rasterization{};
+        rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterization.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterization.cullMode = cull == ForwardCullMode::Back
+                                     ? VK_CULL_MODE_BACK_BIT
+                                     : (cull == ForwardCullMode::Front ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_NONE);
+        rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // dynamic (per draw)
+        rasterization.lineWidth = 1.f;
+        VkPipelineMultisampleStateCreateInfo multisample{};
+        multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        // Test against the opaque depth (the visibility buffer's LESS convention), never write it.
+        VkPipelineDepthStencilStateCreateInfo depth{};
+        depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depth.depthTestEnable = VK_TRUE;
+        depth.depthWriteEnable = VK_FALSE;
+        depth.depthCompareOp = VK_COMPARE_OP_LESS;
+        // Premultiplied over: src = (radiance * a, a); colour and alpha ONE / ONE_MINUS_SRC_ALPHA.
+        VkPipelineColorBlendAttachmentState blendAttachment{};
+        blendAttachment.blendEnable = VK_TRUE;
+        blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+        blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+        blendAttachment.colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        VkPipelineColorBlendStateCreateInfo blend{};
+        blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        blend.attachmentCount = 1;
+        blend.pAttachments = &blendAttachment;
+        const VkDynamicState dynamics[3] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_FRONT_FACE};
+        VkPipelineDynamicStateCreateInfo dynamic{};
+        dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamic.dynamicStateCount = 3;
+        dynamic.pDynamicStates = dynamics;
+        const VkFormat colorFormat = static_cast<VkFormat>(kForwardColorFormat);
+        VkPipelineRenderingCreateInfo rendering{};
+        rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+        rendering.colorAttachmentCount = 1;
+        rendering.pColorAttachmentFormats = &colorFormat;
+        rendering.depthAttachmentFormat = static_cast<VkFormat>(visbuffer::kVisDepthFormat);
+        VkGraphicsPipelineCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        info.pNext = &rendering;
+        info.flags = createFlags;
+        info.stageCount = 2;
+        info.pStages = stages;
+        info.pVertexInputState = &vertexInput;
+        info.pInputAssemblyState = &assembly;
+        info.pViewportState = &viewport;
+        info.pRasterizationState = &rasterization;
+        info.pMultisampleState = &multisample;
+        info.pDepthStencilState = &depth;
+        info.pColorBlendState = &blend;
+        info.pDynamicState = &dynamic;
+        info.layout = layout;
+        VkPipeline pipeline = VK_NULL_HANDLE;
+        const VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
         vkDestroyShaderModule(device, vs, nullptr);
         vkDestroyShaderModule(device, fs, nullptr);
-        return false;
-    }
-    VkPipelineShaderStageCreateInfo stages[2]{};
-    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-    stages[0].module = vs;
-    stages[0].pName = "main";
-    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    stages[1].module = fs;
-    stages[1].pName = "main";
-    VkPipelineVertexInputStateCreateInfo vertexInput{};
-    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    VkPipelineInputAssemblyStateCreateInfo assembly{};
-    assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    VkPipelineViewportStateCreateInfo viewport{};
-    viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewport.viewportCount = 1;
-    viewport.scissorCount = 1;
-    VkPipelineRasterizationStateCreateInfo rasterization{};
-    rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterization.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterization.cullMode = m_desc.cull == ForwardCullMode::Back
-                                 ? VK_CULL_MODE_BACK_BIT
-                                 : (m_desc.cull == ForwardCullMode::Front ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_NONE);
-    rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // dynamic (per draw)
-    rasterization.lineWidth = 1.f;
-    VkPipelineMultisampleStateCreateInfo multisample{};
-    multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-    // Test against the opaque depth (the visibility buffer's LESS convention), never write it.
-    VkPipelineDepthStencilStateCreateInfo depth{};
-    depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depth.depthTestEnable = VK_TRUE;
-    depth.depthWriteEnable = VK_FALSE;
-    depth.depthCompareOp = VK_COMPARE_OP_LESS;
-    // Premultiplied over: src = (radiance * a, a); colour and alpha ONE / ONE_MINUS_SRC_ALPHA.
-    VkPipelineColorBlendAttachmentState blendAttachment{};
-    blendAttachment.blendEnable = VK_TRUE;
-    blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-    blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-    blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-    blendAttachment.colorWriteMask =
-        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    VkPipelineColorBlendStateCreateInfo blend{};
-    blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    blend.attachmentCount = 1;
-    blend.pAttachments = &blendAttachment;
-    const VkDynamicState dynamics[3] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_FRONT_FACE};
-    VkPipelineDynamicStateCreateInfo dynamic{};
-    dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamic.dynamicStateCount = 3;
-    dynamic.pDynamicStates = dynamics;
-    const VkFormat colorFormat = static_cast<VkFormat>(kForwardColorFormat);
-    VkPipelineRenderingCreateInfo rendering{};
-    rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachmentFormats = &colorFormat;
-    rendering.depthAttachmentFormat = static_cast<VkFormat>(visbuffer::kVisDepthFormat);
-    VkGraphicsPipelineCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    info.pNext = &rendering;
-    info.flags = static_cast<VkPipelineCreateFlags>(m_desc.bindless->pipelineCreateFlags());
-    info.stageCount = 2;
-    info.pStages = stages;
-    info.pVertexInputState = &vertexInput;
-    info.pInputAssemblyState = &assembly;
-    info.pViewportState = &viewport;
-    info.pRasterizationState = &rasterization;
-    info.pMultisampleState = &multisample;
-    info.pDepthStencilState = &depth;
-    info.pColorBlendState = &blend;
-    info.pDynamicState = &dynamic;
-    info.layout = layout;
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    const VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
-    vkDestroyShaderModule(device, vs, nullptr);
-    vkDestroyShaderModule(device, fs, nullptr);
-    m_pipeline = pipeline;
-    return result == VK_SUCCESS;
+        *out = pipeline;
+        return result == VK_SUCCESS;
+    }, vsCode.bytes + fsCode.bytes);
 #else
     return false;
 #endif

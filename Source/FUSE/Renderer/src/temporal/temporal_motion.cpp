@@ -3,6 +3,8 @@
 
 #include "temporal_pipeline.hpp"
 
+#include <fuse/renderer/vk/pipeline_batch.hpp>
+
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
 
@@ -52,7 +54,7 @@ bool TemporalMotion::init(const TemporalMotionDesc& desc) {
     if (!m_desc.allocator->createBuffer(ring, m_frameRing) || m_frameRing.mapped == nullptr || m_frameRing.deviceAddress == 0u ||
         !m_desc.allocator->createBuffer(out, m_motion) || m_motion.deviceAddress == 0u ||
         !m_desc.allocator->createBuffer(depth, m_depth) || m_depth.deviceAddress == 0u ||
-        !detail::createComputePipeline(*desc.device, *desc.bindless, code, m_layoutHandle, m_pipeline)) {
+        !detail::createComputePipeline(this, *desc.device, *desc.bindless, code, m_layoutHandle, m_pipeline)) {
         destroy();
         return false;
     }
@@ -66,6 +68,7 @@ void TemporalMotion::destroy() {
     if (!m_initialized) {
         return;
     }
+    waitPipelineBuilds(this); // a build queued on a PipelineBatch writes m_pipeline
     Buffer* buffers[3] = {&m_frameRing, &m_motion, &m_depth};
     for (Buffer* b : buffers) {
         if (b->handle != nullptr) {

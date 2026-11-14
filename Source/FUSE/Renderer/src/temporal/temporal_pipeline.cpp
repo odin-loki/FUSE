@@ -3,6 +3,7 @@
 
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/pipeline_batch.hpp>
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
@@ -41,8 +42,8 @@ KernelCode kernelCode(TemporalKernel kernel, TemporalKernelLanguage language) {
     return KernelCode{};
 }
 
-bool createComputePipeline(VulkanDevice& device, const BindlessDescriptors& bindless, const KernelCode& code,
-                           void*& layoutOut, void*& pipelineOut) {
+bool createComputePipeline(const void* owner, VulkanDevice& device, const BindlessDescriptors& bindless,
+                           const KernelCode& code, void*& layoutOut, void*& pipelineOut) {
     layoutOut = nullptr;
     pipelineOut = nullptr;
 #if defined(FUSE_VULKAN_BACKEND)
@@ -62,34 +63,18 @@ bool createComputePipeline(VulkanDevice& device, const BindlessDescriptors& bind
     if (vkCreatePipelineLayout(vk, &layoutInfo, nullptr, &layout) != VK_SUCCESS) {
         return false;
     }
-    VkShaderModuleCreateInfo moduleInfo{};
-    moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    moduleInfo.codeSize = code.bytes;
-    moduleInfo.pCode = code.words;
-    VkShaderModule module = VK_NULL_HANDLE;
-    if (vkCreateShaderModule(vk, &moduleInfo, nullptr, &module) != VK_SUCCESS) {
-        vkDestroyPipelineLayout(vk, layout, nullptr);
-        return false;
-    }
-    VkComputePipelineCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    info.flags = static_cast<VkPipelineCreateFlags>(bindless.pipelineCreateFlags());
-    info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    info.stage.module = module;
-    info.stage.pName = "main";
-    info.layout = layout;
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    const VkResult result = vkCreateComputePipelines(vk, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
-    vkDestroyShaderModule(vk, module, nullptr);
-    if (result != VK_SUCCESS) {
-        vkDestroyPipelineLayout(vk, layout, nullptr);
-        return false;
-    }
+    // On the open PipelineBatch's workers when there is one (FrameComposer::init), else here; the layout is
+    // the caller's from here on (destroyComputePipeline releases it).
     layoutOut = layout;
-    pipelineOut = pipeline;
+    if (!buildComputePipeline(owner, vk, code.words, code.bytes, layout,
+                              static_cast<u32>(bindless.pipelineCreateFlags()), &pipelineOut)) {
+        vkDestroyPipelineLayout(vk, layout, nullptr);
+        layoutOut = nullptr;
+        return false;
+    }
     return true;
 #else
+    (void)owner;
     (void)device;
     (void)bindless;
     (void)code;
