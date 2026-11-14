@@ -153,7 +153,7 @@ Resolved in round 5: split docking (several tab stacks per side, nested splitter
 tabify by drag, saved layouts; gate `dock_split`).
 
 Remaining:
-1. macOS: no native window backend for the FUSE shell, so no NSAccessibility gate.
+1. macOS: the shell builds and runs on Cocoa (`fuse-core-ios.yml` macOS editor job, run 43564444878: 75 of 79 `fuse_editor_ui` gates pass on a hosted runner, floating panels as child NSPanels and NSSavePanel / NSOpenPanel / NSColorPanel included; the four GPU gates skip because the runner's MoltenVK device lacks the renderer's T0 `drawIndirectCount` / `shaderBufferInt64Atomics`). Still open: no NSAccessibility adapter or gate (the tree has no `fuse_app_a11y` / AccessKit build on any platform), GPU viewport on MoltenVK not run on real Apple hardware, nothing seen by a person.
 2. The Qt reference gates `theme` (hover) and `live_present` (screen pixels) still need a dedicated, unobscured
    desktop on Windows.
 3. Owner sign-off.
