@@ -16,11 +16,12 @@
 //   banned-deps    Appendix A: no Meridian; no ImGui (Source/FUSE text + fuse_* link graph).
 //   cxx-standard   Appendix C: CMAKE_CXX_STANDARD 23 on all non-CUDA fuse_* host targets.
 //   qt-includes    Appendix C: no #include <Q*> in core/renderer/physics/ecs/compute.
-//   editor-qt6     B6 "Qt 6 only for editor chrome — no Dear ImGui": fuse_editor's transitive link
-//                  closure has Qt6::Widgets, no ImGui and no non-Qt6 Qt; Editor sources include no
-//                  ImGui, Qt only in the Qt host (src/qt/, *_qt.*), and the Qt host includes only
-//                  FUSE public headers, Qt, Vulkan and the standard library (B6.1 on FUSE APIs).
-//                  Exit 77 when fuse_editor is not configured (Qt6 not found / FUSE_BUILD_EDITOR=OFF).
+//   editor-shell   Editor plan §8.5 (Stage 3, the successor of B6 "Qt 6 only for editor chrome"): no Qt anywhere
+//                  in --root (Source/FUSE) and --dir (Tools/FUSE) sources and CMake files or in any fuse_* target's
+//                  links; the editor executable's link closure reaches FUSE UI (fuse_app, fuse_ui_widgets) and no
+//                  ImGui; the shell (EditorShell/Fuse) includes FUSE UI and otherwise only FUSE / std / OS / Vulkan
+//                  headers; Editor/, EditorShell/Controller and EditorShell/SceneHost stay toolkit-free (no FUSE UI).
+//                  The closure rows run once fuse_editor_fuse is configured (FUSE_BUILD_EDITOR=ON); the rest always.
 //   doc-headings   Appendix C: every `### B*.*` has a matching `## N.M` in docs/sources/P*.md.
 //   vendored-pins  B1 gate "Third-party dependencies build from vendored source with pinned commits":
 //                  --dir <vendored lib> holds a VERSION pin (upstream, version, tag, 40-hex commit,
@@ -632,14 +633,19 @@ Violations checkBannedDeps(const fs::path& root, const fs::path& manifest) {
     return v;
 }
 
-// ---- check: editor-qt6 --------------------------------------------------------------------------------
+// ---- check: editor-shell -------------------------------------------------------------------------------
 
-struct EditorQtScan {
+/// Plan FUSE_EDITOR_QT_FIRST_PLAN §8.5: the Stage 3 successor of the B6 "Qt 6 only for editor chrome" lint.
+struct EditorShellScan {
     Violations v;
-    bool configured = false; ///< fuse_editor present in the manifest
+    bool configured = false; ///< fuse_editor_fuse (the FUSE UI shell) present in the manifest
+    size_t sourcesScanned = 0;
+    size_t cmakeScanned = 0;
+    size_t targetsChecked = 0;
     size_t closureTargets = 0;
-    size_t hostFiles = 0;
-    std::vector<std::string> qtLinks;
+    size_t shellFiles = 0;
+    size_t shellUiIncludes = 0;
+    std::string closureRoot;
 };
 
 /// `$<LINK_ONLY:Qt6::Gui>` -> `Qt6::Gui`; plain names unchanged.
@@ -659,8 +665,117 @@ std::string stripGenex(std::string t) {
     return b == std::string::npos ? std::string() : t.substr(b, e - b + 1);
 }
 
-EditorQtScan checkEditorQt6(const fs::path& root, const fs::path& manifest, size_t minHostFiles) {
-    EditorQtScan out;
+/// Rules (every configuration; the link closure rows once the shell is configured):
+///  1. no Qt anywhere: no Qt include and no Qt meta-object macro in any C++ source under `roots` (Source/FUSE,
+///     Tools/FUSE), no find_package(Qt*), Qt*:: link, qt_* CMake command or AUTOMOC / AUTOUIC / AUTORCC in their
+///     CMake files, and no fuse_* target in the manifest links a Qt target;
+///  2. the editor chrome is FUSE UI: the editor executable's (fuse_editor_fuse_app, else fuse_editor_fuse) link
+///     closure reaches fuse_app and fuse_ui_widgets and holds no ImGui; the shell sources (EditorShell/Fuse) include
+///     FUSE UI and otherwise only FUSE public headers, std / OS headers and Vulkan;
+///  3. the editor model stays toolkit-free (the Q1 seam): Editor/ (fuse_editor_api), EditorShell/Controller and
+///     EditorShell/SceneHost include no FUSE UI (fuse/ui/, fuse/app/) and no ImGui.
+EditorShellScan checkEditorShell(const std::vector<fs::path>& roots, const fs::path& manifest, size_t minSources,
+                                 size_t minShellFiles) {
+    EditorShellScan out;
+    const fs::path& root = roots.front(); // Source/FUSE
+    const std::regex include(R"(^\s*#\s*include\s*([<"])([^>"]+)[>"])");
+    const std::regex qtHeader(R"(^(Q[A-Za-z0-9_]*|Qt[A-Za-z0-9_]*/.*)$)");
+    const std::regex qtQuoted(R"(^(Q[A-Z][A-Za-z0-9_]*|Qt[A-Za-z0-9_]*/.*)$)");
+    const std::regex qtMacro(R"(\b(Q_OBJECT|Q_GADGET|Q_PROPERTY|Q_SIGNALS|Q_SLOTS|Q_INVOKABLE|QT_BEGIN_NAMESPACE)\b)");
+    const std::regex imgui(R"(imgui)", std::regex::icase);
+    const std::regex cmakeQt(
+        R"((find_package\s*\(\s*Qt[0-9]*\b|\bQt[0-9]*::|\bqt[0-9]*_(add|wrap|standard|finalize|import|deploy|generate)_[a-z_]+\s*\(|\bAUTO(MOC|UIC|RCC)\b|CMAKE_AUTO(MOC|UIC|RCC)))",
+        std::regex::icase);
+
+    // 1. Sources and CMake files.
+    for (const fs::path& dir : roots) {
+        for (const fs::path& f : listFiles(dir, [](const fs::path& p, const std::string&) {
+                 const std::string name = p.filename().string();
+                 return isCxxSource(p) || name == "CMakeLists.txt" || hasExt(p, {".cmake"});
+             })) {
+            const bool cmake = !isCxxSource(f);
+            (cmake ? out.cmakeScanned : out.sourcesScanned) += 1;
+            const auto lines = scanLines(readFile(f));
+            for (size_t i = 0; i < lines.size(); ++i) {
+                std::smatch m;
+                if (cmake) {
+                    const std::string text = lines[i].raw.substr(0, lines[i].raw.find('#'));
+                    if (std::regex_search(text, m, cmakeQt)) {
+                        out.v.push_back(where(f, dir.parent_path().parent_path(), i) + ": Qt in CMake ('" + m.str(1) + "')");
+                    }
+                    continue;
+                }
+                if (std::regex_search(lines[i].code, m, include) && m.str(1) == "<" &&
+                    std::regex_match(m.str(2), qtHeader)) {
+                    out.v.push_back(where(f, dir.parent_path().parent_path(), i) + ": Qt include <" + m.str(2) + ">");
+                } else if (std::regex_search(lines[i].code, m, include) && m.str(1) == "\"" &&
+                           std::regex_match(m.str(2), qtQuoted)) {
+                    out.v.push_back(where(f, dir.parent_path().parent_path(), i) + ": Qt include \"" + m.str(2) + "\"");
+                }
+                if (std::regex_search(lines[i].bare, m, qtMacro)) {
+                    out.v.push_back(where(f, dir.parent_path().parent_path(), i) + ": Qt meta-object macro " + m.str(1));
+                }
+            }
+        }
+    }
+    if (out.sourcesScanned < minSources) {
+        out.v.push_back(root.generic_string() + ": only " + std::to_string(out.sourcesScanned) +
+                        " C++ sources scanned (wrong --root?)");
+    }
+
+    // 2. Shell sources: FUSE UI, FUSE public headers, std / OS headers and Vulkan only.
+    //    3. Toolkit-free editor model.
+    const std::regex fuseUi(R"(^fuse/(ui|app)/)");
+    const auto scanIncludes = [&](const fs::path& dir, bool shell) {
+        for (const fs::path& f : listFiles(dir, [](const fs::path& p, const std::string&) { return isCxxSource(p); })) {
+            out.shellFiles += shell ? 1u : 0u;
+            const auto lines = scanLines(readFile(f));
+            for (size_t i = 0; i < lines.size(); ++i) {
+                std::smatch m;
+                if (!std::regex_search(lines[i].code, m, include)) {
+                    continue;
+                }
+                const std::string header = m.str(2);
+                const bool angle = m.str(1) == "<";
+                if (std::regex_search(header, imgui)) {
+                    out.v.push_back(where(f, root, i) + ": ImGui include <" + header + "> in the editor");
+                    continue;
+                }
+                const bool ui = std::regex_search(header, fuseUi);
+                if (!shell) {
+                    if (ui) {
+                        out.v.push_back(where(f, root, i) + ": FUSE UI include <" + header +
+                                        "> in the toolkit-free editor model (only EditorShell/Fuse uses FUSE UI)");
+                    }
+                    continue;
+                }
+                out.shellUiIncludes += ui ? 1u : 0u;
+                if (angle) {
+                    const bool fuseApi = header.rfind("fuse/", 0) == 0;
+                    const bool vulkan = header.rfind("vulkan/", 0) == 0;
+                    const bool sys = header.rfind("sys/", 0) == 0;
+                    const bool stdOrOs = header.find('/') == std::string::npos;
+                    if (!fuseApi && !vulkan && !sys && !stdOrOs) {
+                        out.v.push_back(where(f, root, i) + ": editor shell includes <" + header +
+                                        "> (only FUSE public headers, std / OS headers and Vulkan allowed)");
+                    }
+                }
+            }
+        }
+    };
+    scanIncludes(root / "EditorShell" / "Fuse", true);
+    scanIncludes(root / "Editor", false);
+    scanIncludes(root / "EditorShell" / "Controller", false);
+    scanIncludes(root / "EditorShell" / "SceneHost", false);
+    if (out.shellFiles < minShellFiles) {
+        out.v.push_back((root / "EditorShell" / "Fuse").generic_string() + ": only " + std::to_string(out.shellFiles) +
+                        " editor shell sources (wrong --root?)");
+    }
+    if (out.shellFiles > 0u && out.shellUiIncludes == 0u) {
+        out.v.push_back("EditorShell/Fuse: no source includes FUSE UI (fuse/ui/, fuse/app/): the editor chrome is FUSE UI");
+    }
+
+    // 1. / 2. Target graph.
     std::vector<TargetRow> rows;
     if (!readManifest(manifest, rows, out.v)) {
         return out;
@@ -669,105 +784,66 @@ EditorQtScan checkEditorQt6(const fs::path& root, const fs::path& manifest, size
     for (const TargetRow& r : rows) {
         byName[r.name] = &r;
     }
-    if (!byName.count("fuse_editor")) {
-        return out; // not configured: caller skips
-    }
-    out.configured = true;
-
-    // Transitive link closure of the editor executable over the fuse_* target graph.
-    std::set<std::string> seenTargets;
-    std::set<std::string> leaves;
-    std::vector<std::string> stack{"fuse_editor"};
-    while (!stack.empty()) {
-        const std::string name = stack.back();
-        stack.pop_back();
-        if (!seenTargets.insert(name).second) {
-            continue;
-        }
-        const TargetRow* row = byName[name];
-        for (const std::string* list : {&row->links, &row->interfaceLinks}) {
+    const std::regex anyQt(R"(^Qt[0-9]*(::|Core$|Gui$|Widgets$))");
+    const auto cells = [](const TargetRow& r) {
+        std::vector<std::string> deps;
+        for (const std::string* list : {&r.links, &r.interfaceLinks}) {
             std::stringstream ss(*list);
             std::string cell;
             while (std::getline(ss, cell, ',')) {
                 const std::string dep = stripGenex(cell);
-                if (dep.empty()) {
-                    continue;
-                }
-                if (byName.count(dep)) {
-                    stack.push_back(dep);
-                } else {
-                    leaves.insert(dep);
+                if (!dep.empty()) {
+                    deps.push_back(dep);
                 }
             }
         }
-    }
-    out.closureTargets = seenTargets.size();
-    const std::regex imgui(R"(imgui)", std::regex::icase);
-    const std::regex anyQt(R"(^Qt([0-9]*)::)");
-    bool widgets6 = false;
-    for (const std::string& dep : leaves) {
-        std::smatch m;
-        if (std::regex_search(dep, imgui)) {
-            out.v.push_back("fuse_editor link closure contains ImGui ('" + dep + "')");
-        }
-        if (std::regex_search(dep, m, anyQt)) {
-            out.qtLinks.push_back(dep);
-            if (m.str(1) != "6") {
-                out.v.push_back("fuse_editor link closure contains non-Qt6 Qt target '" + dep + "' (Qt 6 only)");
+        return deps;
+    };
+    for (const TargetRow& r : rows) {
+        ++out.targetsChecked;
+        for (const std::string& dep : cells(r)) {
+            if (std::regex_search(dep, anyQt)) {
+                out.v.push_back("target " + r.name + ": links Qt ('" + dep + "')");
             }
-            widgets6 = widgets6 || dep == "Qt6::Widgets";
         }
     }
-    for (const std::string& t : seenTargets) {
+    if (!byName.count("fuse_editor_fuse")) {
+        return out; // FUSE_BUILD_EDITOR=OFF: the source and graph-wide rows above still ran
+    }
+    out.configured = true;
+    out.closureRoot = byName.count("fuse_editor_fuse_app") ? "fuse_editor_fuse_app" : "fuse_editor_fuse";
+    std::set<std::string> seen;
+    std::set<std::string> leaves;
+    std::vector<std::string> stack{out.closureRoot};
+    while (!stack.empty()) {
+        const std::string name = stack.back();
+        stack.pop_back();
+        if (!seen.insert(name).second) {
+            continue;
+        }
+        for (const std::string& dep : cells(*byName[name])) {
+            if (byName.count(dep)) {
+                stack.push_back(dep);
+            } else {
+                leaves.insert(dep);
+            }
+        }
+    }
+    out.closureTargets = seen.size();
+    for (const std::string& t : seen) {
         if (std::regex_search(t, imgui)) {
-            out.v.push_back("fuse_editor link closure contains ImGui target '" + t + "'");
+            out.v.push_back(out.closureRoot + " link closure contains ImGui target '" + t + "'");
         }
     }
-    if (!widgets6) {
-        out.v.push_back("fuse_editor does not link Qt6::Widgets (editor chrome must be Qt 6 widgets)");
-    }
-
-    // Includes across the editor module.
-    const fs::path editor = root / "Editor";
-    const std::regex include(R"(^\s*#\s*include\s*([<"])([^>"]+)[>"])");
-    const std::regex qtHeader(R"(^(Q[A-Za-z0-9_]*|Qt[A-Za-z0-9_]*/.*)$)");
-    for (const fs::path& f : listFiles(editor, [](const fs::path& p, const std::string&) { return isCxxSource(p); })) {
-        const std::string r = rel(f, editor);
-        const std::string stem = f.stem().string();
-        const bool qtHost = r.find("/qt/") != std::string::npos || r.rfind("qt/", 0) == 0 ||
-                            (stem.size() > 3 && stem.compare(stem.size() - 3, 3, "_qt") == 0);
-        const bool qtHostDir = r.rfind("src/qt/", 0) == 0;
-        out.hostFiles += qtHostDir ? 1u : 0u;
-        const auto lines = scanLines(readFile(f));
-        for (size_t i = 0; i < lines.size(); ++i) {
-            std::smatch m;
-            if (!std::regex_search(lines[i].code, m, include)) {
-                continue;
-            }
-            const std::string header = m.str(2);
-            const bool angle = m.str(1) == "<";
-            if (std::regex_search(header, imgui)) {
-                out.v.push_back(where(f, root, i) + ": ImGui include <" + header + "> in the editor");
-                continue;
-            }
-            const bool isQt = angle && std::regex_match(header, qtHeader);
-            if (isQt && !qtHost) {
-                out.v.push_back(where(f, root, i) + ": Qt include <" + header + "> outside the Qt host (src/qt/, *_qt.*)");
-            }
-            if (qtHostDir && angle && !isQt) {
-                const bool fuseApi = header.rfind("fuse/", 0) == 0;
-                const bool vulkan = header.rfind("vulkan/", 0) == 0;
-                const bool stdOrC = header.find('/') == std::string::npos;
-                if (!fuseApi && !vulkan && !stdOrC) {
-                    out.v.push_back(where(f, root, i) + ": Qt host includes <" + header +
-                                    "> (only FUSE public headers, Qt, Vulkan and std allowed)");
-                }
-            }
+    for (const std::string& dep : leaves) {
+        if (std::regex_search(dep, imgui)) {
+            out.v.push_back(out.closureRoot + " link closure contains ImGui ('" + dep + "')");
         }
     }
-    if (out.hostFiles < minHostFiles) {
-        out.v.push_back(editor.generic_string() + ": only " + std::to_string(out.hostFiles) +
-                        " Qt host sources under src/qt/ (wrong --root?)");
+    for (const char* need : {"fuse_app", "fuse_ui_widgets"}) {
+        if (!seen.count(need)) {
+            out.v.push_back(out.closureRoot + " does not link " + need + " (the editor chrome must be FUSE UI)");
+        }
     }
     return out;
 }
@@ -1389,38 +1465,72 @@ bool selfTest(const std::string& check, const fs::path& scratch, const fs::path&
             std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
         }
         t.expect(vg.empty(), "banned-deps: clean tree and Qt-only editor links pass");
-    } else if (check == "editor-qt6") {
-        seedTree(bad, {{"Editor/src/qt/w.cpp", "#include <imgui.h>\n#include <console/console.h>\n#include <QWidget>\n"},
-                       {"Editor/src/panel.cpp", "#include <QWidget>\n"}});
+    } else if (check == "editor-shell") {
+        seedTree(bad, {{"src/Renderer/src/r.cpp", "#include <QWindow>\n"},
+                       {"src/UI/src/w.cpp", "class W {\n    Q_OBJECT\n};\n"},
+                       {"tools/Cook/c.cpp", "#include <QtCore/QString>\n"},
+                       {"src/Editor/CMakeLists.txt", "find_package(Qt6 COMPONENTS Widgets)\n"
+                                                     "target_link_libraries(fuse_editor_api PRIVATE Qt6::Gui)\n"
+                                                     "set_target_properties(x PROPERTIES AUTOMOC ON)\n"},
+                       {"tools/CMakeLists.txt", "qt_add_resources(x fonts FILES a.ttf)\n"},
+                       {"src/EditorShell/Fuse/src/s.cpp", "#include <imgui.h>\n#include <console/console.h>\n"},
+                       {"src/EditorShell/Controller/src/c.cpp", "#include <fuse/ui/widgets/widgets.hpp>\n"},
+                       {"src/Editor/src/e.cpp", "#include \"fuse/app/app.hpp\"\n"}});
         writeFile(scratch / "bad.manifest",
-                  "fuse_editor|EXECUTABLE|/x|23|1|0|fuse_editor_qt|\n"
-                  "fuse_editor_qt|STATIC_LIBRARY|/x|23|1|0|fuse_editor_api,Qt5::Widgets,imgui_backend|\n"
-                  "fuse_editor_api|STATIC_LIBRARY|/x|23|1|0|fuse_core|\n");
-        const EditorQtScan sb = checkEditorQt6(bad, scratch / "bad.manifest", 1);
+                  "fuse_editor_fuse_app|EXECUTABLE|/x|23|1|0|fuse_editor_fuse|\n"
+                  "fuse_editor_fuse|STATIC_LIBRARY|/x|23|1|0|fuse_editor_controller,imgui_backend|\n"
+                  "fuse_editor_controller|STATIC_LIBRARY|/x|23|1|0|fuse_editor_api|\n"
+                  "fuse_editor_api|STATIC_LIBRARY|/x|23|1|0|fuse_core,$<LINK_ONLY:Qt6::Gui>|\n"
+                  "fuse_core|STATIC_LIBRARY|/x|23|1|0||\n"
+                  "fuse_tool|EXECUTABLE|/x|23|1|0|Qt5::Core|\n");
+        const EditorShellScan sb = checkEditorShell({bad / "src", bad / "tools"}, scratch / "bad.manifest", 1, 1);
         for (const auto& s : sb.v) {
             std::fprintf(stderr, "  seeded: %s\n", s.c_str());
         }
-        t.expect(sb.configured && sb.v.size() == 6u,
-                 "editor-qt6: seeded ImGui include, Torque include, Qt outside host, Qt5 link, ImGui link and "
-                 "missing Qt6::Widgets flagged (got " + std::to_string(sb.v.size()) + ")");
-        seedTree(good, {{"Editor/src/qt/a.cpp", "#include \"a.hpp\"\n#include <fuse/editor/editor_host.hpp>\n#include <QWidget>\n#include <QtCore/QObject>\n#include <vector>\n#include <vulkan/vulkan.h>\n#include <unistd.h>\n"},
-                        {"Editor/src/qt/b.cpp", "// #include <imgui.h>\n#include <QMenu>\n"},
-                        {"Editor/src/viewport_vulkan_surface_qt.cpp", "#include <QVulkanInstance>\n"},
-                        {"Editor/src/panel.cpp", "#include <fuse/editor/editor_host.hpp>\n#include <queue>\n"}});
+        t.expect(countContaining(sb.v, "Qt include") == 2u, "editor-shell: seeded Qt includes (Source and Tools) flagged");
+        t.expect(countContaining(sb.v, "meta-object macro Q_OBJECT") == 1u, "editor-shell: seeded Q_OBJECT flagged");
+        t.expect(countContaining(sb.v, "Qt in CMake") == 4u,
+                 "editor-shell: seeded find_package(Qt6), Qt6:: link, AUTOMOC and qt_add_resources flagged");
+        t.expect(countContaining(sb.v, ": links Qt") == 2u, "editor-shell: seeded Qt6 / Qt5 target links flagged");
+        t.expect(countContaining(sb.v, "ImGui") == 2u, "editor-shell: seeded ImGui include and ImGui link flagged");
+        t.expect(countContaining(sb.v, "<console/console.h>") == 1u, "editor-shell: shell include outside FUSE / std / OS flagged");
+        t.expect(countContaining(sb.v, "no source includes FUSE UI") == 1u, "editor-shell: shell without FUSE UI flagged");
+        t.expect(countContaining(sb.v, "toolkit-free editor model") == 2u,
+                 "editor-shell: FUSE UI includes in the controller and fuse_editor_api flagged");
+        t.expect(countContaining(sb.v, "does not link fuse_") == 2u, "editor-shell: closure without fuse_app / fuse_ui_widgets flagged");
+        t.expect(sb.configured && sb.v.size() == 17u, "editor-shell: exactly the seeded violations (got " + std::to_string(sb.v.size()) + ")");
+        seedTree(good, {{"src/EditorShell/Fuse/src/s.cpp",
+                         "#include \"editor_shell_panels.hpp\"\n#include <fuse/ui/widgets/widgets.hpp>\n"
+                         "#include \"fuse/app/native.hpp\"\n#include <vector>\n#include <windows.h>\n#include <sys/wait.h>\n"
+                         "#include <vulkan/vulkan.h>\n// #include <imgui.h>\n// the former Qt shell used QDockWidget\n"},
+                        {"src/Editor/src/e.cpp", "#include <fuse/editor/editor_host.hpp>\n#include \"quat.hpp\"\n#include <queue>\n"
+                                                 "const char* s = \"Q_OBJECT\";\n"},
+                        {"src/Apps/x.cpp", "static_assert(shipping_qt_include(\"#include <QWidget>\"));\n"},
+                        {"src/UI/CMakeLists.txt", "# Qt-parity options (find_package(Qt6) is gone)\nadd_library(fuse_ui_widgets STATIC w.cpp)\n"},
+                        {"tools/Lint/CMakeLists.txt", "add_executable(fuse_lint lint.cpp) # no Qt6::Core\n"}});
         writeFile(scratch / "good.manifest",
-                  "fuse_editor|EXECUTABLE|/x|23|1|0|fuse_editor_qt|\n"
-                  "fuse_editor_qt|STATIC_LIBRARY|/x|23|1|0|fuse_editor_api,Qt6::Widgets,Qt6::Gui|fuse_editor_api,Qt6::Widgets,$<LINK_ONLY:Qt6::Gui>\n"
-                  "fuse_editor_api|STATIC_LIBRARY|/x|23|1|0|fuse_core,Qt6::Gui|fuse_core,$<LINK_ONLY:Qt6::Gui>\n"
-                  "fuse_core|STATIC_LIBRARY|/x|23|1|0|Threads::Threads|\n");
-        const EditorQtScan sg = checkEditorQt6(good, scratch / "good.manifest", 2);
+                  "fuse_editor_fuse_app|EXECUTABLE|/x|23|1|0|fuse_editor_fuse,fuse_app_native|\n"
+                  "fuse_editor_fuse|STATIC_LIBRARY|/x|23|1|0|fuse_editor_controller,fuse_app|fuse_editor_controller,$<LINK_ONLY:fuse_app>\n"
+                  "fuse_app|STATIC_LIBRARY|/x|23|1|0|fuse_ui_widgets|\n"
+                  "fuse_ui_widgets|STATIC_LIBRARY|/x|23|1|0|fuse_core|\n"
+                  "fuse_app_native|STATIC_LIBRARY|/x|23|1|0|fuse_app,X11|\n"
+                  "fuse_editor_controller|STATIC_LIBRARY|/x|23|1|0|fuse_editor_api|\n"
+                  "fuse_editor_api|STATIC_LIBRARY|/x|23|1|0|fuse_core|\n"
+                  "fuse_core|STATIC_LIBRARY|/x|23|1|0|Threads::Threads|\n"
+                  "fuse_quat_tool|EXECUTABLE|/x|23|1|0|fuse_core|\n");
+        const EditorShellScan sg = checkEditorShell({good / "src", good / "tools"}, scratch / "good.manifest", 3, 1);
         for (const auto& s : sg.v) {
             std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
         }
-        t.expect(sg.configured && sg.v.empty() && sg.closureTargets == 4u,
-                 "editor-qt6: Qt6-only closure, host-scoped Qt includes and FUSE/std/Vulkan includes pass");
-        writeFile(scratch / "none.manifest", "fuse_core|STATIC_LIBRARY|/x|23|1|0||\n");
-        const EditorQtScan sn = checkEditorQt6(good, scratch / "none.manifest", 2);
-        t.expect(!sn.configured && sn.v.empty(), "editor-qt6: manifest without fuse_editor reports not-configured");
+        t.expect(sg.configured && sg.v.empty() && sg.closureTargets == 8u && sg.closureRoot == "fuse_editor_fuse_app",
+                 "editor-shell: FUSE UI closure, FUSE / std / OS / Vulkan shell includes, comments and strings pass");
+        writeFile(scratch / "none.manifest", "fuse_core|STATIC_LIBRARY|/x|23|1|0|Threads::Threads|\n");
+        const EditorShellScan sn = checkEditorShell({good / "src", good / "tools"}, scratch / "none.manifest", 3, 1);
+        t.expect(!sn.configured && sn.v.empty() && sn.targetsChecked == 1u,
+                 "editor-shell: manifest without fuse_editor_fuse still runs the source and graph rows");
+        writeFile(scratch / "qt.manifest", "fuse_core|STATIC_LIBRARY|/x|23|1|0|Qt6::Core|\n");
+        const EditorShellScan sq = checkEditorShell({good / "src", good / "tools"}, scratch / "qt.manifest", 3, 1);
+        t.expect(!sq.configured && sq.v.size() == 1u, "editor-shell: Qt link flagged without the editor configured");
     } else if (check == "qt-includes") {
         seedTree(bad, {{"Core/src/a.cpp", "#include <QString>\n"},
                        {"Renderer/include/fuse/r.hpp", "#  include <QtGui/QWindow>\n"},
@@ -1586,7 +1696,7 @@ bool selfTest(const std::string& check, const fs::path& scratch, const fs::path&
 int usage() {
     std::fprintf(stderr,
                  "usage: fuse_lint <ownership|namespace|macros|torque-macros|torque-names|banned-deps|cxx-standard|"
-                 "qt-includes|editor-qt6|doc-headings|vendored-pins|branding|asset-licences|asset-credits> [--root DIR] [--dir DIR] "
+                 "qt-includes|editor-shell|doc-headings|vendored-pins|branding|asset-licences|asset-credits> [--root DIR] [--dir DIR] "
                  "[--manifest FILE] [--repo DIR] [--plan FILE] [--sources DIR] [--cache DIR] --scratch DIR\n");
     return 2;
 }
@@ -1630,18 +1740,20 @@ int main(int argc, char** argv) {
     else if (a.check == "torque-names") v = checkTorqueNames(shown = a.root);
     else if (a.check == "banned-deps") v = checkBannedDeps(shown = a.root, a.manifest);
     else if (a.check == "qt-includes") v = checkQtIncludes(shown = a.root, a.manifest);
-    else if (a.check == "editor-qt6") {
-        const EditorQtScan scan = checkEditorQt6(shown = a.root, a.manifest, 5);
-        if (!scan.configured && scan.v.empty()) {
-            std::printf("SKIP fuse_lint editor-qt6: fuse_editor not configured (Qt6 not found or FUSE_BUILD_EDITOR=OFF)\n");
-            return 77;
+    else if (a.check == "editor-shell") {
+        std::vector<fs::path> roots{shown = a.root};
+        if (!a.dir.empty()) {
+            roots.push_back(a.dir); // Tools/FUSE
         }
-        std::string qt;
-        for (const std::string& l : scan.qtLinks) {
-            qt += (qt.empty() ? "" : ", ") + l;
+        const EditorShellScan scan = checkEditorShell(roots, a.manifest, 500, 4);
+        std::printf("editor-shell: %zu C++ sources and %zu CMake files scanned for Qt, %zu fuse_* targets' links checked; "
+                    "%zu shell sources (%zu FUSE UI includes); ",
+                    scan.sourcesScanned, scan.cmakeScanned, scan.targetsChecked, scan.shellFiles, scan.shellUiIncludes);
+        if (scan.configured) {
+            std::printf("%s link closure: %zu fuse_* targets\n", scan.closureRoot.c_str(), scan.closureTargets);
+        } else {
+            std::printf("editor shell not configured (FUSE_BUILD_EDITOR=OFF): link closure not checked\n");
         }
-        std::printf("fuse_editor link closure: %zu fuse_* targets, Qt links: %s; %zu Qt host sources scanned\n",
-                    scan.closureTargets, qt.c_str(), scan.hostFiles);
         v = scan.v;
     }
     else if (a.check == "cxx-standard") v = checkCxxStandard(shown = a.manifest, a.repo);
