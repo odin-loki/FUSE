@@ -80,8 +80,10 @@ struct UiContext::Node {
 };
 
 // One memoised text paint (UiContext::textPaintSlot): the inputs that decide the glyph commands, and the commands.
-struct UiContext::TextPaintEntry {
-    std::string text; ///< paintString: the string; the node's own text: empty (layoutSerial names the layout)
+// The key is plain data, so building one per paint costs no allocation (MSVC's debug STL allocates a proxy for every
+// string / vector object, empty or not).
+namespace {
+struct TextPaintKey {
     const fuse::text::Font* font = nullptr;
     const fuse::text::ITextShaper* shaper = nullptr;
     std::uint32_t fontId = 0, chainGen = 0, atlasGen = 0, layoutSerial = 0;
@@ -89,42 +91,32 @@ struct UiContext::TextPaintEntry {
     Color col;
     f32 px = 0.f, letterSpacing = 0.f, renderScale = 0.f, msdfThreshold = 0.f;
     u8 align = 0, deco = 0, features = 0;
-    bool valid = false;
-    std::vector<DrawCmd> cmds;
 
-    bool sameInputs(const TextPaintEntry& k, std::string_view s) const {
-        return valid && font == k.font && shaper == k.shaper && fontId == k.fontId && chainGen == k.chainGen &&
+    bool operator==(const TextPaintKey& k) const {
+        return font == k.font && shaper == k.shaper && fontId == k.fontId && chainGen == k.chainGen &&
                atlasGen == k.atlasGen && layoutSerial == k.layoutSerial && box.x == k.box.x && box.y == k.box.y &&
                box.w == k.box.w && box.h == k.box.h && col.r == k.col.r && col.g == k.col.g && col.b == k.col.b &&
                col.a == k.col.a && px == k.px && letterSpacing == k.letterSpacing && renderScale == k.renderScale &&
-               msdfThreshold == k.msdfThreshold && align == k.align && deco == k.deco && features == k.features &&
-               std::string_view(text) == s;
+               msdfThreshold == k.msdfThreshold && align == k.align && deco == k.deco && features == k.features;
     }
-    /// Takes `k`'s inputs and the commands `dl` got from `at` on; `ok` false (the glyph atlas was reset while they
-    /// were recorded) leaves the entry invalid. Reuses the entry's buffers.
-    void store(const TextPaintEntry& k, std::string_view s, const DrawList& dl, std::size_t at, bool ok) {
-        font = k.font;
-        shaper = k.shaper;
-        fontId = k.fontId;
-        chainGen = k.chainGen;
-        atlasGen = k.atlasGen;
-        layoutSerial = k.layoutSerial;
-        box = k.box;
-        col = k.col;
-        px = k.px;
-        letterSpacing = k.letterSpacing;
-        renderScale = k.renderScale;
-        msdfThreshold = k.msdfThreshold;
-        align = k.align;
-        deco = k.deco;
-        features = k.features;
+};
+} // namespace
+struct UiContext::TextPaintEntry {
+    TextPaintKey key;
+    bool valid = false;
+    std::string text; ///< paintString: the string; the node's own text: empty (layoutSerial names the layout)
+    std::vector<DrawCmd> cmds;
+
+    bool sameInputs(const TextPaintKey& k, std::string_view s) const { return valid && key == k && std::string_view(text) == s; }
+    /// Takes `k` and the commands `dl` got from `at` on; `ok` false (the glyph atlas was reset while they were
+    /// recorded) leaves the entry invalid. Reuses the entry's buffers.
+    void store(const TextPaintKey& k, std::string_view s, const DrawList& dl, std::size_t at, bool ok) {
+        key = k;
         text.assign(s);
         cmds.assign(dl.cmds().begin() + std::ptrdiff_t(at), dl.cmds().end());
         valid = ok;
     }
-    void replay(DrawList& dl) const {
-        for (const DrawCmd& c : cmds) dl.push(c);
-    }
+    void replay(DrawList& dl) const { dl.cmds().insert(dl.cmds().end(), cmds.begin(), cmds.end()); }
 };
 
 struct UiContext::Cold {
@@ -1160,7 +1152,7 @@ void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color co
 void UiContext::paintStringMemo(DrawList& dl, const fuse::text::Font& font, std::string_view s, Rect box, Color col,
                                 const fuse::text::TextLayoutDesc& d, u32 nodeIdx, u8 deco) {
     TextPaintEntry* e = textPaintSlot(nodeIdx);
-    TextPaintEntry k;
+    TextPaintKey k;
     if (e) {
         k.font = &font;
         k.shaper = &fuse::text::defaultShaper();
@@ -1655,7 +1647,7 @@ void UiContext::paintBody(u32 i, f32 opacity, DrawList& dl) {
         const f32 y = content.y + std::floor(std::max(0.f, content.h - tl.height) * 0.5f);
         const Color col = tint(s.color);
         TextPaintEntry* e = m_font ? textPaintSlot(i) : nullptr;
-        TextPaintEntry k;
+        TextPaintKey k;
         if (e) {
             k.font = tl.font ? tl.font : m_font;
             k.fontId = k.font->id();
