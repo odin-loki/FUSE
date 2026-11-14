@@ -54,6 +54,51 @@ jobs:
       - name: Headless UI gates
         run: ctest --test-dir build-ui-macos --output-on-failure -j 3 -LE "vulkan|perf"
 
+  # FUSE editor (Source/FUSE/EditorShell, FUSE UI shell) on Cocoa: the whole tree with the editor, then the
+  # fuse_editor_ui gates. Hosted macOS runners have a logged-in GUI session (a window server), so the windowed gates
+  # run on real NSWindows; MoltenVK through the Khronos loader is the Vulkan device (GPU gates skip with 77 inside
+  # the test when no Vulkan device / presenter comes up).
+  fuse-editor-macos:
+    name: FUSE editor shell macOS (Cocoa) + fuse_editor_ui gates
+    runs-on: macos-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja and Vulkan (MoltenVK)
+        run: brew install ninja molten-vk vulkan-headers vulkan-loader glslang
+      - name: Configure (Release, editor shell)
+        run: |
+          cmake -B build-editor-macos -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFUSE_BUILD_CORE=ON \
+            -DFUSE_BUILD_CORE_TESTS=ON \
+            -DFUSE_BUILD_VULKAN=ON \
+            -DFUSE_BUILD_EDITOR_API=ON \
+            -DFUSE_EDITOR_SHELL=fuse
+      # The targets the fuse_editor_ui label runs (gate executables, the editor, fuse_cook they launch), not the
+      # whole engine tree.
+      - name: Build (editor shell + gate binaries)
+        run: |
+          cmake --build build-editor-macos -- -k 0 \
+            fuse_editor_fuse_app fuse_editor_ui_gates fuse_editor_ui_parity_gates fuse_editor_ui_panels2_gates \
+            fuse_editor_controller_tests fuse_editor_panel_models_tests fuse_cook
+      - name: List editor gates
+        if: always()
+        run: ctest --test-dir build-editor-macos -L fuse_editor_ui -N
+      - name: fuse_editor_ui gates
+        run: |
+          icd="$(brew --prefix molten-vk)/etc/vulkan/icd.d/MoltenVK_icd.json"
+          if [ -f "$icd" ]; then export VK_ICD_FILENAMES="$icd"; fi
+          echo "VK_ICD_FILENAMES=${VK_ICD_FILENAMES:-<loader default>}"
+          ctest --test-dir build-editor-macos -L fuse_editor_ui --output-on-failure --no-tests=error --timeout 1200
+      - name: Upload editor screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: editor-ui-macos-shots
+          path: build-editor-macos/editor_ui_shots
+          if-no-files-found: ignore
+
   fuse-ui-ios:
     name: FUSE UI iOS simulator (UIKit) compile
     runs-on: macos-latest
