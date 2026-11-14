@@ -16,6 +16,10 @@ NSButton* findButton(NSView* v, NSString* title) {
         if (NSButton* b = findButton(c, title)) return b;
     return nil;
 }
+bool isFilePanel(NSWindow* w) {
+    return [w isKindOfClass:[NSSavePanel class]] ||
+           ([w respondsToSelector:@selector(nameFieldStringValue)] && [w respondsToSelector:@selector(ok:)]);
+}
 } // namespace
 
 std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
@@ -46,7 +50,7 @@ std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
         NSWindow* m = NSApp.modalWindow;
         if (!m) // a panel whose modal session AppKit does not report through modalWindow: the visible one
             for (NSWindow* w in NSApp.windows)
-                if (w.visible && ([w isKindOfClass:[NSSavePanel class]] || [w isKindOfClass:[NSColorPanel class]])) m = w;
+                if (w.visible && (isFilePanel(w) || [w isKindOfClass:[NSColorPanel class]])) m = w;
         if (ticks % 25 == 1) { // what the driver sees (the gate's log, while a dialog may block the test)
             std::string seen;
             for (NSWindow* w in NSApp.windows)
@@ -79,13 +83,15 @@ std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
             }
             return;
         }
-        if (![m isKindOfClass:[NSSavePanel class]]) {
+        // NSLocalSavePanel / NSLocalOpenPanel (the in-process panels) implement the NSSavePanel / NSOpenPanel API
+        // without being subclasses of them
+        if (!isFilePanel(m)) {
             [NSApp stopModalWithCode:NSModalResponseCancel];
             done(-5, ("unexpected modal window " + std::string(NSStringFromClass([m class]).UTF8String)).c_str());
             return;
         }
         NSSavePanel* p = (NSSavePanel*)m;
-        const bool open = [p isKindOfClass:[NSOpenPanel class]];
+        const bool open = [m respondsToSelector:@selector(allowsMultipleSelection)];
         if (a.kind == K::Cancel) {
             if (++stage < 6) return; // let the panel come up first (see below)
             if (stage == 6 || stage % 10 == 0) std::fprintf(stderr, "dialog driver stage %d: cancel:\n", stage);
