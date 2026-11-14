@@ -9,6 +9,7 @@
 //           CPU raster goldens tests/golden/icons.png and icons_color.png (FUSE_UI_UPDATE_GOLDEN=1 rewrites them).
 #include "fuse/ui/icons.hpp"
 #include "fuse/ui/icons/icon_cook.hpp"
+#include "fuse/text/png_codec.hpp"
 #include "fuse/ui/widgets/widgets.hpp"
 #include "test_util.hpp"
 
@@ -25,27 +26,6 @@
 #include <fstream>
 #include <string>
 
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#pragma GCC diagnostic ignored "-Wconversion"
-#pragma GCC diagnostic ignored "-Wdouble-promotion"
-#pragma GCC diagnostic ignored "-Wcast-qual"
-#pragma GCC diagnostic ignored "-Wshadow"
-#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
-#endif
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_PNG
-#include "stb_image.h"
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-
 using namespace fuse::ui;
 namespace w = fuse::ui::widgets;
 namespace ic = fuse::ui::icons;
@@ -59,6 +39,12 @@ int ch(u32 p, int k) { return int((p >> (8 * k)) & 0xFFu); }
 std::vector<u8> readBytes(const std::string& path) {
     std::ifstream f(path, std::ios::binary);
     return std::vector<u8>((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+}
+
+/// RGBA8 pixels (R in the low byte) to a PNG file, through fuse_text's shared codec.
+bool writePng(const std::string& path, const Image& img) {
+    return fuse::text::png::writeRgba(path, reinterpret_cast<const u8*>(img.pixels.data()), img.width, img.height,
+                                      img.width * 4);
 }
 
 /// One image drawn into a size x size surface through a Painter (the path every icon takes), on opaque black.
@@ -330,14 +316,15 @@ int litIn(const Image& img, Rect r, f32 scale = 1.f) {
 void golden(const Image& img, const std::string& path) {
     const char* update = std::getenv("FUSE_UI_UPDATE_GOLDEN");
     if (update && update[0] == '1') {
-        stbi_write_png(path.c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
+        writePng(path, img);
         std::printf("golden written: %s\n", path.c_str());
         return;
     }
-    int gw = 0, gh = 0, n = 0;
-    unsigned char* ref = stbi_load(path.c_str(), &gw, &gh, &n, 4);
-    UI_CHECK(ref != nullptr);
-    if (!ref) {
+    int gw = 0, gh = 0;
+    std::vector<u8> ref;
+    const bool loaded = fuse::text::png::decodeRgba(readBytes(path), 1 << 14, gw, gh, ref);
+    UI_CHECK(loaded);
+    if (!loaded) {
         std::fprintf(stderr, "missing golden %s (run from the tests directory; FUSE_UI_UPDATE_GOLDEN=1 writes it)\n", path.c_str());
         return;
     }
@@ -353,7 +340,6 @@ void golden(const Image& img, const std::string& path) {
         std::printf("%s diff: %d pixels > 3, max channel diff %d\n", path.c_str(), bad, maxd);
         UI_CHECK(bad <= gw * gh / 1000);
     }
-    stbi_image_free(ref);
 }
 
 int renderGate(int argc, char** argv) {
@@ -380,7 +366,7 @@ int renderGate(int argc, char** argv) {
         UI_CHECK_EQ(ui.computed(first).iconSize, 16.f);
         Image img;
         fuse::ui::test::render(ui, img);
-        if (!out.empty()) stbi_write_png((out + "/icons.png").c_str(), img.width, img.height, 4, img.pixels.data(), img.width * 4);
+        if (!out.empty()) writePng(out + "/icons.png", img);
         // tint: the theme colour, a class, a disabled button
         NodeHandle accent = first;
         for (int k = 0; k < 6; ++k) accent = ui.nextSibling(accent);
@@ -522,7 +508,7 @@ int renderGate(int argc, char** argv) {
             uc.update();
             Image ci;
             fuse::ui::test::render(uc, ci);
-            if (!out.empty()) stbi_write_png((out + "/icons_color.png").c_str(), ci.width, ci.height, 4, ci.pixels.data(), ci.width * 4);
+            if (!out.empty()) writePng(out + "/icons_color.png", ci);
             // per icon: the tintable ones change with the row's colour, fixed colours do not
             NodeHandle a = uc.firstChild(uc.find("row0")), b = uc.firstChild(uc.find("row1"));
             for (u32 i = 0; i < cs->count(); ++i, a = uc.nextSibling(a), b = uc.nextSibling(b)) {
