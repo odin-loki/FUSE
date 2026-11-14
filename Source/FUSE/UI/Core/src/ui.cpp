@@ -186,6 +186,11 @@ struct ContextSubject final : StyleSubject {
             if (nodes[n].classes[k] == h) return true;
         return false;
     }
+    bool classList(u32 n, const u32*& first, u32& count) const override {
+        first = nodes[n].classes.data();
+        count = nodes[n].classCount;
+        return true;
+    }
     u32 states(u32 n) const override { return nodes[n].state; }
     u32 parent(u32 n) const override { return nodes[n].parent; }
     u32 prevSibling(u32 n) const override { return nodes[n].prev; }

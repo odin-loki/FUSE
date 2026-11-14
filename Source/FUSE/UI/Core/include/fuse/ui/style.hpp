@@ -494,6 +494,9 @@ struct StyleSubject {
     /// Content-box size of the nearest ancestor that is a query container (named `name` when non-zero; one that
     /// answers the block size when `needHeight`). False when there is none.
     virtual bool containerSize(u32 /*node*/, u32 /*name*/, bool /*needHeight*/, Size& /*out*/) const { return false; }
+    /// The node's classes (hashId values; repeats allowed), so StyleEngine::compute only tries the rules whose subject
+    /// compound can match. False when the subject cannot list them: every rule is tried (hasClass answers).
+    virtual bool classList(u32 /*node*/, const u32*& /*first*/, u32& /*count*/) const { return false; }
 };
 
 /// What else has to be restyled when a class / state / attribute of a node changes (StyleEngine::invalidation).
@@ -664,6 +667,18 @@ private:
     u32 m_interned = 0;
     std::vector<StyleSheet> m_sheets;
     std::vector<Ordered> m_ordered; ///< rules whose @media chain holds, sorted by (layer, specificity, sheet, order)
+    /// Rule index: each m_ordered rule under the most selective key of its subject compound (id, else its first class,
+    /// else its type), sorted by (kind, key, rule); m_anyRules: the rest (universal / state-only subjects, :root),
+    /// ascending. compute() tries only the candidates of a node's id, classes and type, in cascade order.
+    struct RuleKey {
+        u32 kind; ///< 0 id, 1 class, 2 type
+        u32 key;
+        u32 rule; ///< m_ordered index
+    };
+    std::vector<RuleKey> m_ruleIndex;
+    std::vector<u32> m_anyRules;
+    std::vector<u32> m_candidates; ///< compute() scratch (capacity kept)
+    void buildRuleIndex();
     std::vector<const StyleRule*> m_scratch;
     std::vector<std::pair<u32, std::string_view>> m_localTokens;
     std::vector<ComputedStyle> m_table;
