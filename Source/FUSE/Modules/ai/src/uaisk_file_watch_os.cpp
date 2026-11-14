@@ -155,6 +155,7 @@ bool createOsFileWatch(std::string_view path, OsFileWatchHandle& outHandle) {
         outHandle.inotifyFd = -1;
     }
 #elif defined(__APPLE__)
+    { // own scope: the stat-poll fallback below declares the same names
     // FSEvents stub — CoreServices API not linked; stat poll with coalesce/latency tracking.
     const fsevents_stub::CoreServicesWatchConfig csConfig = fsevents_stub::makeDefaultCoreServicesWatchConfig();
     outHandle.fseventsStream =
@@ -169,6 +170,7 @@ bool createOsFileWatch(std::string_view path, OsFileWatchHandle& outHandle) {
     outHandle.fseventsCoalesceThreshold = csConfig.coalesceThreshold;
     outHandle.active = true;
     return true;
+    }
 #endif
 
     u64 fileSize = 0;
