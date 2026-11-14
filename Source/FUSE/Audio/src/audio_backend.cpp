@@ -1,6 +1,8 @@
 #include <fuse/audio/audio_backend.hpp>
 
 #include <fuse/audio/spsc_ring.hpp>
+#include <fuse/platform/sleep.hpp>
+#include <fuse/platform/thread.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -51,6 +53,15 @@ namespace {
 
 using ReopenDeviceFn = ALCboolean(ALC_APIENTRY*)(ALCdevice*, const ALCchar*, const ALCint*);
 using GetSourcedvFn = void(AL_APIENTRY*)(ALuint, ALenum, ALdouble*);
+// AL_SOFT_callback_buffer (declared here so headers without it still build).
+using BufferCallbackTypeFn = ALsizei(AL_APIENTRY*)(ALvoid*, ALvoid*, ALsizei);
+using BufferCallbackFn = void(AL_APIENTRY*)(ALuint, ALenum, ALsizei, BufferCallbackTypeFn, ALvoid*);
+
+u64 steady_us() {
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                std::chrono::steady_clock::now().time_since_epoch())
+                                .count());
+}
 
 constexpr u32 kMaxDeviceBuffers = 8;
 
@@ -76,6 +87,17 @@ struct AudioBackend::OpenALStream {
     GetSourcedvFn get_sourcedv = nullptr;
     ALCint attrs[9] = {};
 
+    // AL_SOFT_callback_buffer: the device's mixer thread pulls the mix straight from the ring, so every
+    // block the ring holds is slack against a late device thread. With a queue, only the few queued AL
+    // buffers are: a device thread that wakes late renders the periods it missed back to back (openal-soft's
+    // wave writer and null driver catch up on their sample clock), and drained the queue faster than any
+    // feeder could refill it. Without the extension (e.g. the macOS framework) the queued-buffer feeder runs.
+    std::atomic<bool> use_callback{false};
+    bool cb_started = false; ///< Mixer thread: the ring was primed and playback began.
+    bool cb_starved = false; ///< Mixer thread: inside an underrun (counted once per episode).
+    usize cb_prime_samples = 0;
+    u64 cb_last_us = 0;
+
     u32 block_frames = 512;  ///< Engine block (what submit() writes).
     u32 buffer_frames = 512; ///< Frames per AL buffer: a multiple of block_frames sized so the queue
                              ///< covers at least two device periods (see size_buffers()).
@@ -83,6 +105,7 @@ struct AudioBackend::OpenALStream {
     u32 device_period = 0;   ///< Device update size in frames (rate / ALC_REFRESH), 0 if unknown.
 
     SpscRing<float> ring;
+    usize ring_slack_samples = 0; ///< Capacity beyond the configured depth (power-of-two rounding): never filled.
     std::vector<float> scratch;
     std::vector<std::int16_t> scratch16;
 
@@ -100,6 +123,67 @@ struct AudioBackend::OpenALStream {
     std::atomic<u32> device_queued_frames{0};
     std::atomic<double> device_latency{0.0};
     std::atomic<bool> connected{false};
+    std::atomic<u64> first_underrun_frame{0};  ///< frames_played when the first underrun began.
+    std::atomic<u32> first_underrun_gap_us{0}; ///< Consumer wake gap (callback / pump interval) at that underrun.
+    u64 pump_last_us = 0;
+
+    void note_underrun(u64 gap_us) {
+        if (underruns.fetch_add(1, std::memory_order_relaxed) == 0) {
+            first_underrun_frame.store(frames_played.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            first_underrun_gap_us.store(static_cast<u32>(std::min<u64>(gap_us, 0xFFFFFFFFu)), std::memory_order_relaxed);
+        }
+    }
+
+    static ALsizei AL_APIENTRY device_callback(ALvoid* user, ALvoid* data, ALsizei bytes) {
+        return static_cast<OpenALStream*>(user)->fill(data, bytes);
+    }
+
+    /// Mixer thread (callback mode): copy what the ring holds, pad the rest with silence. Always returns the
+    /// full request: a short return would stop the source for good.
+    ALsizei fill(ALvoid* data, ALsizei bytes) {
+        const u64 now_us = steady_us();
+        const u64 gap_us = cb_last_us != 0 ? now_us - cb_last_us : 0;
+        cb_last_us = now_us;
+        const usize sample_bytes = float32 ? sizeof(float) : sizeof(std::int16_t);
+        const usize want = (static_cast<usize>(std::max<ALsizei>(bytes, 0)) / (sample_bytes * 2)) * 2;
+        usize avail = ring.read_available() & ~static_cast<usize>(1);
+        if (!cb_started) {
+            if (avail < cb_prime_samples) {
+                avail = 0; // still priming: leading silence, not an underrun
+            } else {
+                cb_started = true;
+            }
+        }
+        const usize take = std::min(want, avail);
+        if (float32) {
+            float* out = static_cast<float*>(data);
+            ring.read(out, take);
+            std::fill(out + take, out + want, 0.f);
+        } else {
+            std::int16_t* out = static_cast<std::int16_t*>(data);
+            float chunk[512];
+            for (usize done = 0; done < take;) {
+                const usize n = std::min<usize>(take - done, 512);
+                ring.read(chunk, n);
+                for (usize i = 0; i < n; ++i) {
+                    out[done + i] = static_cast<std::int16_t>(std::lrint(std::clamp(chunk[i], -1.f, 1.f) * 32767.f));
+                }
+                done += n;
+            }
+            std::fill(out + take, out + want, std::int16_t{0});
+        }
+        frames_played.fetch_add(take / 2, std::memory_order_relaxed);
+        if (cb_started && take < want) {
+            silence_frames.fetch_add((want - take) / 2, std::memory_order_relaxed);
+            if (!cb_starved) {
+                cb_starved = true;
+                note_underrun(gap_us);
+            }
+        } else if (cb_started) {
+            cb_starved = false;
+        }
+        return static_cast<ALsizei>(want * sample_bytes);
+    }
 
     bool open(const char* device_name) {
         device = alcOpenDevice(device_name);
@@ -144,8 +228,25 @@ struct AudioBackend::OpenALStream {
             alSourcei(source, AL_DIRECT_CHANNELS_SOFT, AL_TRUE);
         }
         alGetError();
+        use_callback = false;
+        if (alIsExtensionPresent("AL_SOFT_callback_buffer") == AL_TRUE) {
+            auto set_callback = reinterpret_cast<BufferCallbackFn>(alGetProcAddress("alBufferCallbackSOFT"));
+            if (set_callback != nullptr) {
+                set_callback(buffers[0], format, static_cast<ALsizei>(rate), &OpenALStream::device_callback, this);
+                alSourcei(source, AL_BUFFER, static_cast<ALint>(buffers[0]));
+                use_callback = alGetError() == AL_NO_ERROR;
+                if (!use_callback) {
+                    alSourcei(source, AL_BUFFER, 0);
+                    alGetError();
+                }
+            }
+        }
+        // Both modes: the device's share of the buffering must span >= 2 device periods (the mixer pulls a
+        // whole period at a time and, waking late, renders the periods it missed back to back). Callback mode
+        // adds buffer_count * buffer_frames to the ring (init()) instead of queueing that many AL buffers.
         size_buffers();
         reset_queue();
+        // Callback mode: the feeder thread starts the source (run()), after init() has sized the ring.
         return true;
     }
 
@@ -194,6 +295,9 @@ struct AudioBackend::OpenALStream {
 
     /// Detach every buffer from the source and mark them all free (source stopped).
     void reset_queue() {
+        if (use_callback) {
+            return; // the callback buffer stays attached; run() restarts the source
+        }
         alSourceStop(source);
         alSourcei(source, AL_BUFFER, 0);
         for (u32 i = 0; i < buffer_count; ++i) {
@@ -219,7 +323,29 @@ struct AudioBackend::OpenALStream {
     }
 
     /// Move played buffers back to the free list, refill them from the ring, restart on starvation.
+    /// Callback mode: keep the source playing (after a reopen) and publish its latency.
+    void pump_callback() {
+        ALint state = AL_STOPPED;
+        alGetSourcei(source, AL_SOURCE_STATE, &state);
+        if (state != AL_PLAYING) {
+            alSourcePlay(source);
+        }
+        device_queued_frames.store(0, std::memory_order_relaxed);
+        if (get_sourcedv != nullptr) {
+            ALdouble values[2] = {0.0, 0.0};
+            get_sourcedv(source, AL_SEC_OFFSET_LATENCY_SOFT, values);
+            device_latency.store(values[1], std::memory_order_relaxed);
+        }
+    }
+
     void pump() {
+        if (use_callback) {
+            pump_callback();
+            return;
+        }
+        const u64 now_us = steady_us();
+        const u64 gap_us = pump_last_us != 0 ? now_us - pump_last_us : 0;
+        pump_last_us = now_us;
         ALint processed = 0;
         alGetSourcei(source, AL_BUFFERS_PROCESSED, &processed);
         while (processed > 0 && queued > 0) {
@@ -234,7 +360,7 @@ struct AudioBackend::OpenALStream {
         const u32 block_samples = block_frames * 2;
         const bool starved = started && queued == 0;
         if (starved) {
-            underruns.fetch_add(1, std::memory_order_relaxed);
+            note_underrun(gap_us);
         }
         while (free_count > 0) {
             u32 filled_frames = 0;
@@ -289,6 +415,10 @@ struct AudioBackend::OpenALStream {
         const double block_seconds = static_cast<double>(std::min(block_frames, buffer_frames)) / static_cast<double>(rate);
         const auto poll = std::chrono::microseconds(
             std::max<long long>(500, static_cast<long long>(block_seconds * 1e6 / 4.0)));
+        // The device queue is a few blocks (tens of ms): the feeder must wake on time. Above-normal threads go first
+        // on a loaded machine, and the poll is a real sub-block wait: std::this_thread::sleep_for rounds up to the
+        // Windows timer tick (15.6 ms, six polls), which left the queue one late wake from starving.
+        fuse::platform::setThreadPriority(0, 2);
         while (!stop.load(std::memory_order_acquire)) {
             bool lost = simulate_loss.exchange(false, std::memory_order_acq_rel);
             if (!lost && has_disconnect && device != nullptr) {
@@ -310,7 +440,7 @@ struct AudioBackend::OpenALStream {
                 }
             }
             pump();
-            std::this_thread::sleep_for(poll);
+            fuse::platform::sleepAtLeast(poll);
         }
     }
 };
@@ -345,10 +475,19 @@ bool AudioBackend::init(const AudioDesc& desc) {
                                 0, 0, 0};
         std::copy(std::begin(attrs), std::end(attrs), stream->attrs);
         if (stream->open(nullptr)) {
-            // The ring holds at least two AL buffers' worth so the feeder always finds a full one.
+            // Queue mode: the ring holds at least two AL buffers' worth so the feeder always finds a full one.
+            // Callback mode: the ring is the whole device queue, so it also takes the device_buffers AL buffers
+            // (buffer_frames each, sized to the device period) a queue would have held: same total depth as
+            // queue mode. Playback starts once that much is primed.
             const u32 blocks_per_buffer = stream->buffer_frames / m_blockFrames;
-            const u32 ring_blocks = std::max<u32>(std::max<u32>(desc.output_ring_blocks, 1), 2 * blocks_per_buffer);
-            stream->ring.reset(static_cast<usize>(ring_blocks) * m_blockFrames * 2);
+            u32 ring_blocks = std::max<u32>(std::max<u32>(desc.output_ring_blocks, 1), 2 * blocks_per_buffer);
+            if (stream->use_callback) {
+                ring_blocks += stream->buffer_count * blocks_per_buffer;
+                stream->cb_prime_samples = static_cast<usize>(stream->buffer_count) * stream->buffer_frames * 2;
+            }
+            const usize ring_samples = static_cast<usize>(ring_blocks) * m_blockFrames * 2;
+            stream->ring.reset(ring_samples);
+            stream->ring_slack_samples = stream->ring.capacity() - ring_samples;
             // Sized for a larger device period after a reconnect too (size_buffers only grows).
             const usize scratch_frames = static_cast<usize>(stream->buffer_frames) * 4;
             stream->scratch.assign(scratch_frames * 2, 0.f);
@@ -412,7 +551,10 @@ u32 AudioBackend::writable_blocks() const {
     }
 #if defined(FUSE_AUDIO_OPENAL)
     if (m_al) {
-        return static_cast<u32>(m_al->ring.write_available() / (static_cast<usize>(m_blockFrames) * 2));
+        // Only the configured depth: the latency stays what was asked, not the power-of-two capacity.
+        const usize free = m_al->ring.write_available();
+        const usize usable = free > m_al->ring_slack_samples ? free - m_al->ring_slack_samples : 0;
+        return static_cast<u32>(usable / (static_cast<usize>(m_blockFrames) * 2));
     }
 #endif
     return 1;
@@ -457,6 +599,9 @@ AudioOutputStats AudioBackend::output_stats() const {
             + m_al->device_latency.load(std::memory_order_relaxed);
         s.float32_output = m_al->float32;
         s.connected = m_al->connected.load(std::memory_order_acquire);
+        s.device_callback = m_al->use_callback.load(std::memory_order_relaxed);
+        s.first_underrun_frame = m_al->first_underrun_frame.load(std::memory_order_relaxed);
+        s.first_underrun_gap_us = m_al->first_underrun_gap_us.load(std::memory_order_relaxed);
         return s;
     }
 #endif

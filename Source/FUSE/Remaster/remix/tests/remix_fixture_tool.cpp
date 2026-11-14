@@ -151,7 +151,9 @@ bool author(const fs::path& project) {
 bool lintNegative(const fs::path& project, const fs::path& mod, const fs::path& scratch) {
     std::error_code ec;
     fs::remove_all(scratch, ec);
-    fs::create_directories(scratch, ec);
+    // copy() creates `scratch` itself: MinGW-w64's libstdc++ fails a recursive directory copy onto an existing
+    // directory with EEXIST (glibc's accepts it), so only the parent is made here.
+    fs::create_directories(scratch.parent_path(), ec);
     fs::copy(mod, scratch, fs::copy_options::recursive, ec);
     if (ec) {
         std::fprintf(stderr, "copy: %s\n", ec.message().c_str());

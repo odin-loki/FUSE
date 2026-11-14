@@ -59,6 +59,7 @@ struct Button {
     static constexpr A11yRole kRole = A11yRole::Button;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
+    static constexpr bool kPurePaint = true; // text, icon and style of the node only (WidgetClass::purePaint)
     static Size measure(UiContext& ui, NodeHandle n, Size) { return detail::iconContentSize(ui, n, textSize(ui, n, ui.text(n))); }
     static void paint(const PaintContext& pc, DrawList& dl) {
         Rect textBox;
@@ -540,7 +541,9 @@ void install(UiContext& ui) {
 
 u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, bool theme) {
     // every library class, registered once into a scratch context and copied from there by name
-    static const WidgetRegistry& all = [] () -> const WidgetRegistry& {
+    // returned by pointer: g++ -Wdangling-reference flags a reference returned from a call on the
+    // temporary lambda object, although `scratch` is a function-local static that outlives it
+    static const WidgetRegistry* const all = [] () -> const WidgetRegistry* {
         static UiContext scratch({.viewport = {1.f, 1.f}, .font = nullptr, .reserveNodes = 4, .atlasSize = 64});
         registerTierA(scratch);
         registerTierB(scratch);
@@ -551,14 +554,14 @@ u32 installClasses(UiContext& ui, std::span<const std::string_view> classes, boo
         registerPlatformFeel(scratch); // kineticscroll (not part of install(): its factory registers it on first use)
         registerEditWidgets(scratch);
         registerExtraWidgets(scratch);
-        return scratch.registry();
+        return &scratch.registry();
     }();
     u32 unknown = 0;
     for (std::string_view name : classes) {
         if (ui.registry().find(name) != 0xFFFFFFFFu) continue;
-        const u32 id = all.find(name);
+        const u32 id = all->find(name);
         if (id == 0xFFFFFFFFu) { ++unknown; continue; }
-        ui.registry().add(all.get(id));
+        ui.registry().add(all->get(id));
     }
     if (theme) {
         (void)ui.setThemeStyleSheet(defaultThemeCss());

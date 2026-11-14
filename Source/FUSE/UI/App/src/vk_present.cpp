@@ -513,13 +513,18 @@ struct VkWin {
         if (mai.memoryTypeIndex == ~0u) mai.memoryTypeIndex = memType(ctx->phys, mr.memoryTypeBits, 0);
         if (!ok(vkAllocateMemory(d, &mai, nullptr, &canvasMem), "canvas memory", err)) return false;
         vkBindImageMemory(d, canvas, canvasMem, 0);
-        VkImageViewCreateInfo vi{};
-        vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        vi.image = canvas;
-        vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        vi.format = VK_FORMAT_R8G8B8A8_UNORM;
-        vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        if (!ok(vkCreateImageView(d, &vi, nullptr, &canvasView), "canvas view", err)) return false;
+        // The storage view is the GPU draw kernel's target. The CPU upload path only copies into the canvas and
+        // blits it (transfer usage alone), and a view of such an image is invalid
+        // (VUID-VkImageViewCreateInfo-image-04441).
+        if (gpuDraw) {
+            VkImageViewCreateInfo vi{};
+            vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            vi.image = canvas;
+            vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            vi.format = VK_FORMAT_R8G8B8A8_UNORM;
+            vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            if (!ok(vkCreateImageView(d, &vi, nullptr, &canvasView), "canvas view", err)) return false;
+        }
         canvasFresh = true;
         if (!gpuDraw) {
             uploadSize = VkDeviceSize(extent.width) * extent.height * 4;

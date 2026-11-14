@@ -160,9 +160,12 @@ jobs:
     # applies -Wall -Wextra -Werror to every Source/FUSE + Tools/FUSE target (cmake/FuseWarnings.cmake;
     # vendored vendor/ subprojects excluded).
     name: FUSE -Werror (${{ matrix.config }})
-    needs: [fuse-smoke-asan]
+    # Only needs the core build to have gone green, not ASan: -Werror reports while the (long) sanitizer run is still
+    # going. Own concurrency group: in the shared host group it would queue beside fuse-smoke-asan, and GitHub cancels
+    # a pending job when another one queues in the same group. max-parallel 1 keeps it to one leg at a time.
+    needs: [fuse-core-linux]
     concurrency:
-      group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
+      group: fuse-umbrella-linux-werror-${{ github.head_ref || github.ref }}
       cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -200,7 +203,10 @@ jobs:
       group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
       cancel-in-progress: false
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    # Debug ASan+UBSan build ~25 min; the full suite (~1400 tests) is ~2 h of test time serially on the 4-vCPU runner
+    # (1004 tests took 94 min before the old 120-min limit cancelled the job), ~1 h with -j$(nproc). 240 leaves
+    # headroom for slow runners without letting a hung job hold the host group for the 6 h default.
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
 
@@ -218,11 +224,14 @@ jobs:
       - name: Build
         run: cmake --build build/fuse-asan
 
+      # Parallel: Lavapipe / display / audio / bench gates carry RUN_SERIAL (ctest runs those alone) and the Vulkan ICD
+      # ones also take the run_vulkan_icd_locked.sh flock; the UI wall-clock budgets are NDEBUG-only, so in this Debug
+      # build the rest are CPU-bound unit tests that can share the runner.
       - name: Run CTest under ASan+UBSan
         env:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
-        run: ctest --test-dir build/fuse-asan --no-tests=error --output-on-failure -j1 --timeout 2400
+        run: ctest --test-dir build/fuse-asan --no-tests=error --output-on-failure -j"$(nproc)" --timeout 2400
 
       - name: U8 parity demos + editor PIE embed (ASan+UBSan)
         env:

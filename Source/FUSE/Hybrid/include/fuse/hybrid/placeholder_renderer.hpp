@@ -11,6 +11,8 @@ namespace fuse::hybrid {
 class PlaceholderRenderer {
 public:
     void beginFrame(u32 width, u32 height);
+    /// Drops the frame buffer (0 x 0, no pixels); no-op when already released.
+    void release();
     void clear3D(float r, float g, float b);
     void drawSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b);
     void drawMeshPreviewStub(float x, float y, float z, u8 r, u8 g, u8 b);

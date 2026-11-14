@@ -45,8 +45,10 @@ if(FUSE_BUILD_CORE_TESTS OR BUILD_TESTING)
     endif()
     if(TARGET fuse_relight_mods_import_tests)
         get_filename_component(_rm_repo "${CMAKE_CURRENT_SOURCE_DIR}/../../../.." ABSOLUTE)
+        string(REPLACE ";" "|" _rm_remix_emu "${CMAKE_CROSSCOMPILING_EMULATOR}")  # PE under MinGW: run via the emulator
         add_test(NAME remaster_remix
                  COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:fuse_remaster> -DFIXTURE_TOOL=$<TARGET_FILE:remaster_remix_fixture>
+                         "-DEMU=${_rm_remix_emu}"
                          -DSTAGER=$<TARGET_FILE:fuse_relight_mods_import_tests>
                          -DFIXTURE=${_rm_repo}/Tests/fixtures/remaster/remix/capture_basic
                          -DOUT=${CMAKE_CURRENT_BINARY_DIR}/remaster_remix_gate

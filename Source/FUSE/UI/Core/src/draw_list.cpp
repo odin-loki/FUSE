@@ -363,6 +363,36 @@ void detail::renderRange(const RasterEnv& env, const DrawList& list, std::size_t
         if (area.empty()) continue;
         const int x0 = int(std::floor(area.x)), y0 = int(std::floor(area.y));
         const int x1 = int(std::ceil(area.right())), y1 = int(std::ceil(area.bottom()));
+        if (c.op == DrawOp::Image && clip.radius <= 0.f) {
+            // Images under a rectangular clip (the editor viewport, icons): the per-pixel loop below computed the
+            // source column with a float divide per pixel. Same texel mapping and blend, the column of each device x
+            // is computed once per command (in chunks, no allocation) and the row once per y.
+            if (c.image >= images.size() || !images[c.image]) continue;
+            const Image& img = *images[c.image];
+            const f32 k = c.fill.a > 0.f ? c.fill.a : 1.f;
+            constexpr int kChunk = 256;
+            int sxs[kChunk];
+            for (int cx0 = x0; cx0 < x1; cx0 += kChunk) {
+                const int cx1 = std::min(x1, cx0 + kChunk);
+                for (int x = cx0; x < cx1; ++x) {
+                    const f32 px = f32(x) + 0.5f;
+                    sxs[x - cx0] = std::clamp(int((px - c.rect.x) / c.rect.w * f32(img.width)), 0, img.width - 1);
+                }
+                for (int y = y0; y < y1; ++y) {
+                    const f32 py = f32(y) + 0.5f;
+                    const int sy = std::clamp(int((py - c.rect.y) / c.rect.h * f32(img.height)), 0, img.height - 1);
+                    const u32* src = img.pixels.data() + std::size_t(sy) * std::size_t(img.width);
+                    u32* row = target.row(y) - ox; // indexed by device x
+                    for (int x = cx0; x < cx1; ++x) {
+                        const u32 t = src[sxs[x - cx0]];
+                        if (k >= 1.f && (t >> 24) == 255u) { row[x] = t; continue; } // opaque texel: blend() would store it
+                        blend(row[x], {f32(t & 0xFF) / 255.f * k, f32((t >> 8) & 0xFF) / 255.f * k,
+                                       f32((t >> 16) & 0xFF) / 255.f * k, f32(t >> 24) / 255.f * k});
+                    }
+                }
+            }
+            continue;
+        }
         const Rect clipOuter = clip.r; // the rounded clip uses the top clip rect's own shape
         const std::array<f32, 4> clipRad{clip.radius, clip.radius, clip.radius, clip.radius};
         // fast path: the interior of an opaque, ungraded rect (pixel centres at least max radius + border + 0.5 inside

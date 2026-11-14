@@ -11,6 +11,15 @@ void PlaceholderRenderer::beginFrame(u32 width, u32 height) {
     m_pixels.assign(static_cast<size_t>(m_width) * m_height * 4u, 0u);
 }
 
+void PlaceholderRenderer::release() {
+    if (m_pixels.empty() && m_width == 0 && m_height == 0) {
+        return;
+    }
+    m_width = 0;
+    m_height = 0;
+    std::vector<u8>().swap(m_pixels);
+}
+
 void PlaceholderRenderer::setPixel(u32 x, u32 y, u8 r, u8 g, u8 b, u8 a) {
     if (x >= m_width || y >= m_height) {
         return;

@@ -1,0 +1,203 @@
+libtheora 1.2.0 encoder: shifts with undefined behaviour (UBSan, fuse_ui_theora_video under the fuse-asan preset).
+Left shifts of negative signed values become multiplications by the same power of two, and the 64-bit token flag
+masks shift an unsigned 1 (bit 63 of a signed 1<<63 does not fit). Every result is the same value as before on the
+two's-complement targets FUSE builds for; only the undefined behaviour goes.
+  lib/analyze.c   oc_mb_activity: edge-energy sums of pixel differences (x<<1 -> x*2)
+  lib/enquant.c   oc_enc_quantize_c: val<<1 -> val*2
+  lib/fdct.c      oc_enc_fdct8x8_c: _x[i]<<2 -> _x[i]*4
+  lib/mcenc.c     full-pel -> half-pel motion vectors (v<<1 -> v*2)
+  lib/tokenize.c  oc_analyze_token / zero-run flags: (ogg_int64_t)1<<zzi -> unsigned shift, then the signed type
+
+diff --git a/lib/analyze.c b/lib/analyze.c
+index 8d3d70a..32ede11 100644
+--- a/lib/analyze.c
++++ b/lib/analyze.c
+@@ -1211,13 +1211,13 @@ static unsigned oc_mb_activity(oc_enc_ctx *_enc,unsigned _mbi,
+       s=src+frag_offs-1;
+       for(i=0;i<8;i++){
+         for(j=0;j<8;j++){
+-          e1+=abs((s[j+2]-s[j]<<1)+(s-ystride)[j+2]-(s-ystride)[j]
++          e1+=abs((s[j+2]-s[j])*2+(s-ystride)[j+2]-(s-ystride)[j]
+            +(s+ystride)[j+2]-(s+ystride)[j]);
+-          e2+=abs(((s+ystride)[j+1]-(s-ystride)[j+1]<<1)
++          e2+=abs(((s+ystride)[j+1]-(s-ystride)[j+1])*2
+            +(s+ystride)[j]-(s-ystride)[j]+(s+ystride)[j+2]-(s-ystride)[j+2]);
+-          e3+=abs(((s+ystride)[j+2]-(s-ystride)[j]<<1)
++          e3+=abs(((s+ystride)[j+2]-(s-ystride)[j])*2
+            +(s+ystride)[j+1]-s[j]+s[j+2]-(s-ystride)[j+1]);
+-          e4+=abs(((s+ystride)[j]-(s-ystride)[j+2]<<1)
++          e4+=abs(((s+ystride)[j]-(s-ystride)[j+2])*2
+            +(s+ystride)[j+1]-s[j+2]+s[j]-(s-ystride)[j+1]);
+         }
+         s+=ystride;
+diff --git a/lib/enquant.c b/lib/enquant.c
+index bb11209..6152794 100644
+--- a/lib/enquant.c
++++ b/lib/enquant.c
+@@ -230,7 +230,7 @@ int oc_enc_quantize_c(ogg_int16_t _qdct[64],const ogg_int16_t _dct[64],
+   for(zzi=0;zzi<64;zzi++){
+     val=_dct[zzi];
+     d=_dequant[zzi];
+-    val=val<<1;
++    val=val*2;
+     if(abs(val)>=d){
+       s=OC_SIGNMASK(val);
+       /*The bias added here rounds ties away from zero, since token
+diff --git a/lib/fdct.c b/lib/fdct.c
+index 6f01150..74680f9 100644
+--- a/lib/fdct.c
++++ b/lib/fdct.c
+@@ -133,7 +133,7 @@ void oc_enc_fdct8x8_c(ogg_int16_t _y[64],const ogg_int16_t _x[64]){
+   int                i;
+   /*Add two extra bits of working precision to improve accuracy; any more and
+      we could overflow.*/
+-  for(i=0;i<64;i++)w[i]=_x[i]<<2;
++  for(i=0;i<64;i++)w[i]=_x[i]*4;
+   /*These biases correct for some systematic error that remains in the full
+      fDCT->iDCT round trip.*/
+   w[0]+=(w[0]!=0)+1;
+diff --git a/lib/mcenc.c b/lib/mcenc.c
+index 5a2595a..13db8b3 100644
+--- a/lib/mcenc.c
++++ b/lib/mcenc.c
+@@ -502,14 +502,14 @@ void oc_mcenc_search_frame(oc_enc_ctx *_enc,oc_mv _accum,int _mbi,int _frame,
+   candy=best_vec[1];
+   embs[_mbi].satd[_frame]=oc_mcenc_ysatd_check_mbcandidate_fullpel(_enc,
+    frag_buf_offs,fragis,candx,candy,src,satd_ref,ystride);
+-  embs[_mbi].analysis_mv[0][_frame]=OC_MV(candx<<1,candy<<1);
++  embs[_mbi].analysis_mv[0][_frame]=OC_MV(candx*2,candy*2);
+   if(_frame==OC_FRAME_PREV&&_enc->sp_level<OC_SP_LEVEL_FAST_ANALYSIS){
+     for(bi=0;bi<4;bi++){
+       candx=best_block_vec[bi][0];
+       candy=best_block_vec[bi][1];
+       embs[_mbi].block_satd[bi]=oc_mcenc_ysatd_check_bcandidate_fullpel(_enc,
+        frag_buf_offs[fragis[bi]],candx,candy,src,satd_ref,ystride);
+-      embs[_mbi].block_mv[bi]=OC_MV(candx<<1,candy<<1);
++      embs[_mbi].block_mv[bi]=OC_MV(candx*2,candy*2);
+     }
+   }
+ }
+@@ -586,8 +586,8 @@ static int oc_mcenc_ysad_halfpel_mbrefine(const oc_enc_ctx *_enc,int _mbi,
+          (_vec[0]<<1)+dx,(_vec[1]<<1)+dy,ref_ystride,0);
+       However, it should also be much faster, as it involves no multiplies and
+        doesn't have to handle chroma vectors.*/
+-    xmask=OC_SIGNMASK(((_vec[0]<<1)+dx)^dx);
+-    ymask=OC_SIGNMASK(((_vec[1]<<1)+dy)^dy);
++    xmask=OC_SIGNMASK(((_vec[0]*2)+dx)^dx);
++    ymask=OC_SIGNMASK(((_vec[1]*2)+dy)^dy);
+     mvoffset0=mvoffset_base+(dx&xmask)+(offset_y[site]&ymask);
+     mvoffset1=mvoffset_base+(dx&~xmask)+(offset_y[site]&~ymask);
+     err=oc_sad16_halfpel(_enc,frag_buf_offs,fragis,
+@@ -597,8 +597,8 @@ static int oc_mcenc_ysad_halfpel_mbrefine(const oc_enc_ctx *_enc,int _mbi,
+       best_site=site;
+     }
+   }
+-  _vec[0]=(_vec[0]<<1)+OC_SQUARE_DX[best_site];
+-  _vec[1]=(_vec[1]<<1)+OC_SQUARE_DY[best_site];
++  _vec[0]=(_vec[0]*2)+OC_SQUARE_DX[best_site];
++  _vec[1]=(_vec[1]*2)+OC_SQUARE_DY[best_site];
+   return _best_err;
+ }
+ #endif
+@@ -641,8 +641,8 @@ static unsigned oc_mcenc_ysatd_halfpel_mbrefine(const oc_enc_ctx *_enc,
+          (_vec[0]<<1)+dx,(_vec[1]<<1)+dy,ref_ystride,0);
+       However, it should also be much faster, as it involves no multiplies and
+        doesn't have to handle chroma vectors.*/
+-    xmask=OC_SIGNMASK(((_vec[0]<<1)+dx)^dx);
+-    ymask=OC_SIGNMASK(((_vec[1]<<1)+dy)^dy);
++    xmask=OC_SIGNMASK(((_vec[0]*2)+dx)^dx);
++    ymask=OC_SIGNMASK(((_vec[1]*2)+dy)^dy);
+     mvoffset0=mvoffset_base+(dx&xmask)+(offset_y[site]&ymask);
+     mvoffset1=mvoffset_base+(dx&~xmask)+(offset_y[site]&~ymask);
+     if(_enc->sp_level<OC_SP_LEVEL_NOSATD){
+@@ -658,8 +658,8 @@ static unsigned oc_mcenc_ysatd_halfpel_mbrefine(const oc_enc_ctx *_enc,
+       best_site=site;
+     }
+   }
+-  _vec[0]=(_vec[0]<<1)+OC_SQUARE_DX[best_site];
+-  _vec[1]=(_vec[1]<<1)+OC_SQUARE_DY[best_site];
++  _vec[0]=(_vec[0]*2)+OC_SQUARE_DX[best_site];
++  _vec[1]=(_vec[1]*2)+OC_SQUARE_DY[best_site];
+   return _best_err;
+ }
+ 
+@@ -700,8 +700,8 @@ static int oc_mcenc_ysad_halfpel_brefine(const oc_enc_ctx *_enc,
+          (_vec[0]<<1)+dx,(_vec[1]<<1)+dy,ref_ystride,0);
+       However, it should also be much faster, as it involves no multiplies and
+        doesn't have to handle chroma vectors.*/
+-    xmask=OC_SIGNMASK(((_vec[0]<<1)+dx)^dx);
+-    ymask=OC_SIGNMASK(((_vec[1]<<1)+dy)^dy);
++    xmask=OC_SIGNMASK(((_vec[0]*2)+dx)^dx);
++    ymask=OC_SIGNMASK(((_vec[1]*2)+dy)^dy);
+     mvoffset0=mvoffset_base+(dx&xmask)+(_offset_y[site]&ymask);
+     mvoffset1=mvoffset_base+(dx&~xmask)+(_offset_y[site]&~ymask);
+     err=oc_enc_frag_sad2_thresh(_enc,_src,
+@@ -711,8 +711,8 @@ static int oc_mcenc_ysad_halfpel_brefine(const oc_enc_ctx *_enc,
+       best_site=site;
+     }
+   }
+-  _vec[0]=(_vec[0]<<1)+OC_SQUARE_DX[best_site];
+-  _vec[1]=(_vec[1]<<1)+OC_SQUARE_DY[best_site];
++  _vec[0]=(_vec[0]*2)+OC_SQUARE_DX[best_site];
++  _vec[1]=(_vec[1]*2)+OC_SQUARE_DY[best_site];
+   return _best_err;
+ }
+ #endif
+@@ -743,8 +743,8 @@ static unsigned oc_mcenc_ysatd_halfpel_brefine(const oc_enc_ctx *_enc,
+          (_vec[0]<<1)+dx,(_vec[1]<<1)+dy);
+       However, it should also be much faster, as it involves no multiplies and
+        doesn't have to handle chroma vectors.*/
+-    xmask=OC_SIGNMASK(((_vec[0]<<1)+dx)^dx);
+-    ymask=OC_SIGNMASK(((_vec[1]<<1)+dy)^dy);
++    xmask=OC_SIGNMASK(((_vec[0]*2)+dx)^dx);
++    ymask=OC_SIGNMASK(((_vec[1]*2)+dy)^dy);
+     mvoffset0=mvoffset_base+(dx&xmask)+(_offset_y[site]&ymask);
+     mvoffset1=mvoffset_base+(dx&~xmask)+(_offset_y[site]&~ymask);
+     err=oc_enc_frag_satd2(_enc,&dc,_src,
+@@ -755,8 +755,8 @@ static unsigned oc_mcenc_ysatd_halfpel_brefine(const oc_enc_ctx *_enc,
+       best_site=site;
+     }
+   }
+-  _vec[0]=(_vec[0]<<1)+OC_SQUARE_DX[best_site];
+-  _vec[1]=(_vec[1]<<1)+OC_SQUARE_DY[best_site];
++  _vec[0]=(_vec[0]*2)+OC_SQUARE_DX[best_site];
++  _vec[1]=(_vec[1]*2)+OC_SQUARE_DY[best_site];
+   return _best_err;
+ }
+ 
+diff --git a/lib/tokenize.c b/lib/tokenize.c
+index cc26e16..45e4422 100644
+--- a/lib/tokenize.c
++++ b/lib/tokenize.c
+@@ -639,7 +639,7 @@ int oc_enc_tokenize_ac(oc_enc_ctx *_enc,int _pli,ptrdiff_t _fragi,
+       tokens[zzi][0].cost=best_cost;
+       tokens[zzi][0].bits=best_bits;
+       tokens[zzi][0].qc=best_qc;
+-      zflags|=(ogg_int64_t)1<<zzi;
++      zflags|=(ogg_int64_t)((ogg_uint64_t)1<<zzi);
+       if(qc_m){
+         dq=_dequant[zzi];
+         if(zzi<_acmin)_lambda=0;
+@@ -656,9 +656,9 @@ int oc_enc_tokenize_ac(oc_enc_ctx *_enc,int _pli,ptrdiff_t _fragi,
+         tokens[zzi][1].cost=d2+_lambda*bits+tokens[zzj][tj].cost;
+         tokens[zzi][1].bits=bits+tokens[zzj][tj].bits;
+         tokens[zzi][1].qc=1+s^s;
+-        nzflags|=(ogg_int64_t)1<<zzi;
++        nzflags|=(ogg_int64_t)((ogg_uint64_t)1<<zzi);
+         best_flags|=
+-         (ogg_int64_t)(tokens[zzi][1].cost<tokens[zzi][0].cost)<<zzi;
++         (ogg_int64_t)((ogg_uint64_t)(tokens[zzi][1].cost<tokens[zzi][0].cost)<<zzi);
+       }
+     }
+     else{
+@@ -694,8 +694,8 @@ int oc_enc_tokenize_ac(oc_enc_ctx *_enc,int _pli,ptrdiff_t _fragi,
+       tokens[zzi][1].cost=best_cost+tokens[zzj][tj].cost;
+       tokens[zzi][1].bits=best_bits+tokens[zzj][tj].bits;
+       tokens[zzi][1].qc=qc;
+-      nzflags|=(ogg_int64_t)1<<zzi;
+-      best_flags|=(ogg_int64_t)1<<zzi;
++      nzflags|=(ogg_int64_t)((ogg_uint64_t)1<<zzi);
++      best_flags|=(ogg_int64_t)((ogg_uint64_t)1<<zzi);
+     }
+     zzj=zzi;
+   }

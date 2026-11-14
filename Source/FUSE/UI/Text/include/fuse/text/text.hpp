@@ -115,6 +115,9 @@ bool msdfEnabled();
 /// (or call refreshSystemFonts() after it).
 void enableVariableFonts();
 bool variableFontsEnabled();
+/// Bumped whenever any font's fallback chain, bold face or pinned variation changes (what text shapes to may differ
+/// although the Font object is the same): caches of laid-out or painted text key on it.
+std::uint32_t fontChainGeneration();
 
 // ---- Variable fonts (fvar / avar / gvar / HVAR / MVAR, COLRv1 Var* paints) ----------------------------------------
 /// OpenType tag from four characters: fontTag("wght").

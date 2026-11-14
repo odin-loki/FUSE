@@ -106,6 +106,23 @@ bool hasExt(const fs::path& p, std::initializer_list<const char*> exts) {
     return false;
 }
 
+/// ASCII case-insensitive substring test (`needle` lower case).
+bool containsNoCase(std::string_view hay, std::string_view needle) {
+    if (needle.size() > hay.size()) {
+        return false;
+    }
+    for (size_t i = 0; i + needle.size() <= hay.size(); ++i) {
+        size_t k = 0;
+        while (k < needle.size() && std::tolower(static_cast<unsigned char>(hay[i + k])) == needle[k]) {
+            ++k;
+        }
+        if (k == needle.size()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool isHeader(const fs::path& p) { return hasExt(p, {".hpp", ".h", ".hh", ".hxx", ".inl"}); }
 bool isCxxSource(const fs::path& p) {
     return isHeader(p) || hasExt(p, {".cpp", ".cc", ".cxx", ".cu", ".cuh", ".mm", ".ipp"});
@@ -698,21 +715,25 @@ EditorShellScan checkEditorShell(const std::vector<fs::path>& roots, const fs::p
             const auto lines = scanLines(readFile(f));
             for (size_t i = 0; i < lines.size(); ++i) {
                 std::smatch m;
+                // Cheap substring guards first: every alternative of each pattern contains the guarded text, so the
+                // results are unchanged, and std::regex runs on a few lines instead of all of them (unoptimised
+                // builds, MSVC Debug's checked STL above all, spent minutes here).
                 if (cmake) {
                     const std::string text = lines[i].raw.substr(0, lines[i].raw.find('#'));
-                    if (std::regex_search(text, m, cmakeQt)) {
+                    if ((containsNoCase(text, "qt") || containsNoCase(text, "auto")) && std::regex_search(text, m, cmakeQt)) {
                         out.v.push_back(where(f, dir.parent_path().parent_path(), i) + ": Qt in CMake ('" + m.str(1) + "')");
                     }
                     continue;
                 }
-                if (std::regex_search(lines[i].code, m, include) && m.str(1) == "<" &&
-                    std::regex_match(m.str(2), qtHeader)) {
-                    out.v.push_back(where(f, dir.parent_path().parent_path(), i) + ": Qt include <" + m.str(2) + ">");
-                } else if (std::regex_search(lines[i].code, m, include) && m.str(1) == "\"" &&
-                           std::regex_match(m.str(2), qtQuoted)) {
-                    out.v.push_back(where(f, dir.parent_path().parent_path(), i) + ": Qt include \"" + m.str(2) + "\"");
+                if (lines[i].code.find("include") != std::string::npos && std::regex_search(lines[i].code, m, include)) {
+                    if (m.str(1) == "<" && std::regex_match(m.str(2), qtHeader)) {
+                        out.v.push_back(where(f, dir.parent_path().parent_path(), i) + ": Qt include <" + m.str(2) + ">");
+                    } else if (m.str(1) == "\"" && std::regex_match(m.str(2), qtQuoted)) {
+                        out.v.push_back(where(f, dir.parent_path().parent_path(), i) + ": Qt include \"" + m.str(2) + "\"");
+                    }
                 }
-                if (std::regex_search(lines[i].bare, m, qtMacro)) {
+                if ((lines[i].bare.find("Q_") != std::string::npos || lines[i].bare.find("QT_BEGIN_NAMESPACE") != std::string::npos) &&
+                    std::regex_search(lines[i].bare, m, qtMacro)) {
                     out.v.push_back(where(f, dir.parent_path().parent_path(), i) + ": Qt meta-object macro " + m.str(1));
                 }
             }
@@ -732,7 +753,7 @@ EditorShellScan checkEditorShell(const std::vector<fs::path>& roots, const fs::p
             const auto lines = scanLines(readFile(f));
             for (size_t i = 0; i < lines.size(); ++i) {
                 std::smatch m;
-                if (!std::regex_search(lines[i].code, m, include)) {
+                if (lines[i].code.find("include") == std::string::npos || !std::regex_search(lines[i].code, m, include)) {
                     continue;
                 }
                 const std::string header = m.str(2);

@@ -241,11 +241,18 @@ u32 CookedAssetBindings::glslangShaderCount() const {
     return count;
 }
 
-std::optional<CookedMaterialBinding> CookedAssetBindings::findMaterial(u32 materialId) const {
+const CookedMaterialBinding* CookedAssetBindings::findMaterialPtr(u32 materialId) const {
     for (const CookedMaterialBinding& binding : m_materials) {
         if (binding.materialId == materialId && binding.headerValid) {
-            return binding;
+            return &binding;
         }
+    }
+    return nullptr;
+}
+
+std::optional<CookedMaterialBinding> CookedAssetBindings::findMaterial(u32 materialId) const {
+    if (const CookedMaterialBinding* binding = findMaterialPtr(materialId)) {
+        return *binding;
     }
     return std::nullopt;
 }
@@ -260,8 +267,8 @@ std::optional<CookedShaderBinding> CookedAssetBindings::findShader(u32 shaderId)
 }
 
 float CookedAssetBindings::materialTintBoost(u32 materialId) const {
-    const std::optional<CookedMaterialBinding> binding = findMaterial(materialId);
-    if (!binding.has_value()) {
+    const CookedMaterialBinding* binding = findMaterialPtr(materialId);
+    if (binding == nullptr) {
         return 0.f;
     }
 

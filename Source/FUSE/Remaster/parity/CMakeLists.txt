@@ -24,8 +24,9 @@ if(MSVC)
 endif()
 
 if(FUSE_BUILD_CORE_TESTS OR BUILD_TESTING)
+    string(REPLACE ";" "|" _rm_parity_emu "${CMAKE_CROSSCOMPILING_EMULATOR}")  # PE under MinGW: run via the emulator
     add_test(NAME remaster_parity
-             COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:fuse_remaster_parity>
+             COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:fuse_remaster_parity> "-DEMU=${_rm_parity_emu}"
                      -DFIXTURE=${FUSE_REMASTER_REPO_ROOT}/Tests/fixtures/remaster/parity/door_trigger_pickup
                      -DOUT=${CMAKE_CURRENT_BINARY_DIR}/remaster_parity_gate
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/remaster_parity_gate.cmake)

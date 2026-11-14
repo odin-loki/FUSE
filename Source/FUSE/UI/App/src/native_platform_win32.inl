@@ -490,6 +490,13 @@ void NativePlatform::Impl::raiseToolOs(Rec::Popup& p) {
 bool NativePlatform::Impl::postInputOs(unsigned long long h, Vec2 at, int kind) {
     HWND hwnd = reinterpret_cast<HWND>(h);
     const LPARAM lp = MAKELPARAM(int(at.x), int(at.y));
+    if (kind <= 2) {
+        // The real cursor goes where the posted input says: Windows sends a window that moves under the cursor (a
+        // tool window following its title drag, with capture) a WM_MOUSEMOVE at the real cursor position, which would
+        // otherwise drag it back toward wherever the cursor rests.
+        POINT pt{int(at.x), int(at.y)};
+        if (ClientToScreen(hwnd, &pt)) SetCursorPos(pt.x, pt.y);
+    }
     switch (kind) {
     case 0: return PostMessageW(hwnd, WM_MOUSEMOVE, 0, lp) != 0;
     case 1: return PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lp) != 0;

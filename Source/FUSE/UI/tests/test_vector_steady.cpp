@@ -7,6 +7,7 @@
 //     under 0.1 ms from the coverage cache and stays inside a sane bound when rasterised from scratch, so icons do
 //     not put the 10k-node frame budget at risk
 #include "fuse/ui/painter.hpp"
+#include "test_alloc_hooks.hpp"
 #include "test_util.hpp"
 
 #include <algorithm>
@@ -21,16 +22,10 @@ std::atomic<long> g_allocs{0};
 std::atomic<bool> g_counting{false};
 } // namespace
 
-void* operator new(std::size_t n) {
+// Every global allocation form is replaced and counted (test_alloc_hooks.hpp).
+void fuse::ui::test::countAlloc(std::size_t) noexcept {
     if (g_counting) g_allocs.fetch_add(1, std::memory_order_relaxed);
-    if (void* p = std::malloc(n ? n : 1)) return p;
-    throw std::bad_alloc();
 }
-void* operator new[](std::size_t n) { return operator new(n); }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 using namespace fuse::ui;
 using namespace fuse::ui::test;

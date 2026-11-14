@@ -4,6 +4,7 @@
 //   tier_c                 sort / filter proxy, cell delegates, virtualised grid view
 //   tier_d                 property grid, colour picker, calendar, chart, markdown view
 // Optional --out=<dir>: PNG of the screen (tier_c.png / tier_d.png / dock_layout.png).
+#include "test_alloc_hooks.hpp"
 #include "test_util.hpp"
 #include "fuse/text/from_chars.hpp"
 
@@ -30,17 +31,11 @@
 namespace {
 std::atomic<unsigned long long> g_allocs{0}, g_bytes{0};
 }
-void* operator new(std::size_t n) {
+// Every global allocation form is replaced and counted (test_alloc_hooks.hpp).
+void fuse::ui::test::countAlloc(std::size_t n) noexcept {
     g_allocs.fetch_add(1, std::memory_order_relaxed);
     g_bytes.fetch_add(n, std::memory_order_relaxed);
-    if (void* p = std::malloc(n ? n : 1)) return p;
-    throw std::bad_alloc();
 }
-void* operator new[](std::size_t n) { return operator new(n); }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 using namespace fuse::ui;
 using namespace fuse::ui::test;

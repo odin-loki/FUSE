@@ -2,6 +2,7 @@
 // actions), bindings (one-way templates, two-way value / checked / text, conditional disabled / visible), refresh is
 // incremental and allocation-free when nothing changed, hot reload keeps per-id state and focus, error paths.
 #include "fuse/ui/doc/document.hpp"
+#include "test_alloc_hooks.hpp"
 #include "test_util.hpp"
 
 #include <atomic>
@@ -9,13 +10,10 @@
 #include <new>
 
 static std::atomic<unsigned long long> g_allocs{0};
-void* operator new(std::size_t n) {
+// Every global allocation form is replaced and counted (test_alloc_hooks.hpp).
+void fuse::ui::test::countAlloc(std::size_t) noexcept {
     ++g_allocs;
-    if (void* p = std::malloc(n ? n : 1)) return p;
-    throw std::bad_alloc();
 }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 
 using namespace fuse::ui;
 using namespace fuse::ui::test;

@@ -487,7 +487,7 @@ void gateMultiViewport(Rig& r) {
         r.ui().keyDown(Key::F);
         r.frames();
         CHECK(tv.scale > zs * 1.5f && std::abs(tv.centerU - zu) > 1e-3f);
-        r.c.projectPoint(0.f, 0.f, 0.f, cx2, cy2);
+        CHECK(r.c.projectPoint(0.f, 0.f, 0.f, cx2, cy2));
         CHECK(std::abs(cx - cx2) < 0.5f && std::abs(cy - cy2) < 0.5f); // perspective camera untouched
         std::printf("multi_viewport: F in Top %.1f -> %.1f px/unit\n", zs, tv.scale);
         const float fs = tv.scale;

@@ -41,6 +41,7 @@
 #include <vector>
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <fstream>
 #include <optional>
@@ -729,16 +730,24 @@ void RuntimeViewportHook::syncMeshSdfPreviewFromEcs_(EditorHost& host) {
                 hint.y = transform.position.y;
                 hint.z = transform.position.z;
                 hint.materialId = mesh.material_id;
-                hint.cookedMeshPath = "cooked/mesh/preview_" + std::to_string(mesh.material_id) + ".fusemesh";
-                const std::optional<fuse::hybrid::CookedMaterialBinding> cookedMaterial =
-                    gpu->hybrid->composer().cookedAssets().findMaterial(mesh.material_id);
-                if (cookedMaterial.has_value()) {
-                    hint.cookedMeshPath = cookedMaterial->cookedPath;
-                    hint.cookedMeshResolved = true;
-                }
+                const fuse::hybrid::CookedMaterialBinding* cookedMaterial =
+                    gpu->hybrid->composer().cookedAssets().findMaterialPtr(mesh.material_id);
+                hint.cookedMeshResolved = cookedMaterial != nullptr;
                 hint.visible = true;
                 applyCatalogColor(host.materials(), mesh.material_id, hint);
-                catalog.addMesh(hint);
+                // The path is written into the catalog slot, whose string keeps its capacity from the previous
+                // frame: a steady frame does not allocate here (fuse_runtime_steady_state_alloc, editor phase).
+                std::string& path = catalog.addMesh(hint).cookedMeshPath;
+                if (cookedMaterial != nullptr) {
+                    path.assign(cookedMaterial->cookedPath);
+                } else {
+                    char digits[16];
+                    const std::to_chars_result id =
+                        std::to_chars(digits, digits + sizeof(digits), mesh.material_id);
+                    path.assign("cooked/mesh/preview_");
+                    path.append(digits, id.ptr);
+                    path.append(".fusemesh");
+                }
                 return;
             }
 

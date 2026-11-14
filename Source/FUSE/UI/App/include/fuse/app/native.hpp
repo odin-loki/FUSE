@@ -188,7 +188,8 @@ public:
     bool postClick(unsigned long long nativeWin, fuse::ui::Vec2 at);
     /// Posts a pointer move / a left button press or release / a close request (the title-bar close button) to a
     /// native window at window-local device pixels `at`; delivered by the normal event pump. `at` may lie outside
-    /// the window (a drag that left it). Wayland: delivered inside the process, like postClick.
+    /// the window (a drag that left it). Wayland: delivered inside the process, like postClick. Windows: the cursor is
+    /// moved there too (SetCursorPos), so the moves Windows synthesises for a window moving under it agree.
     bool postPointerMove(unsigned long long nativeWin, fuse::ui::Vec2 at);
     bool postPointerButton(unsigned long long nativeWin, fuse::ui::Vec2 at, bool down);
     bool postClose(unsigned long long nativeWin);

@@ -35,3 +35,6 @@ Content/recipes/ai/** text=auto eol=lf
 # Vendored third-party trees pinned by sha256 (fuse_lint vendored-pins): keep upstream bytes (CRLF) as-is.
 vendor/streamline/** -text
 vendor/gdeflate/** -text
+
+# Patches applied with `git apply` to vendored sources extracted into the build tree: LF like the sources they patch.
+Source/FUSE/UI/Video/patches/*.patch text eol=lf

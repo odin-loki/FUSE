@@ -3,6 +3,7 @@
 // decays and stops (nextWakeSeconds() back to +inf); a new touch stops a fling; widgets that own their drags
 // (slider, setCapturesDrag) keep them; widgets that scroll on Wheel (list / table / text / code edit) follow the
 // finger; nested containers chain; the drag axis picks the container; the mouse path is unchanged.
+#include "test_alloc_hooks.hpp"
 #include "test_util.hpp"
 
 #include <atomic>
@@ -15,16 +16,10 @@ std::atomic<long> g_allocs{0};
 bool g_counting = false;
 } // namespace
 
-void* operator new(std::size_t n) {
+// Every global allocation form is replaced and counted (test_alloc_hooks.hpp).
+void fuse::ui::test::countAlloc(std::size_t) noexcept {
     if (g_counting) g_allocs.fetch_add(1, std::memory_order_relaxed);
-    if (void* p = std::malloc(n ? n : 1)) return p;
-    throw std::bad_alloc();
 }
-void* operator new[](std::size_t n) { return operator new(n); }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 using namespace fuse::ui;
 using namespace fuse::ui::test;

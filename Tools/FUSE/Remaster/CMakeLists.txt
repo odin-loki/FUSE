@@ -73,8 +73,9 @@ if(TARGET fuse_lua)
     target_link_libraries(fuse_remaster_lua_parity PRIVATE fuse_lua fuse_poco)
     _fuse_remaster_cxx(fuse_remaster_lua_parity)
     set(_fx "${FUSE_REMASTER_TOOLS_DIR}/tests/fixtures/port")
+    string(REPLACE ";" "|" _rm_lua_emu "${CMAKE_CROSSCOMPILING_EMULATOR}")  # PE under MinGW: run via the emulator
     add_test(NAME remaster_lua_parity
-             COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:fuse_remaster_lua_parity> -DFX=${_fx}
+             COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:fuse_remaster_lua_parity> -DFX=${_fx} "-DEMU=${_rm_lua_emu}"
                      -P "${FUSE_REMASTER_TOOLS_DIR}/lua_parity/lua_parity_gate.cmake")
     set_tests_properties(remaster_lua_parity PROPERTIES LABELS "remaster;port" TIMEOUT 60)
 endif()
@@ -86,6 +87,11 @@ if(Python3_Interpreter_FOUND)
     endif()
     if(TARGET fuse_remaster_lua_parity)
         list(APPEND _ai_env "FUSE_REMASTER_LUA_PARITY=$<TARGET_FILE:fuse_remaster_lua_parity>")
+    endif()
+    if(CMAKE_CROSSCOMPILING_EMULATOR)
+        # Those tools are PE in a MinGW tree: fuse_ai.portflow runs them through the emulator ('|'-joined).
+        string(REPLACE ";" "|" _rm_ai_emu "${CMAKE_CROSSCOMPILING_EMULATOR}")
+        list(APPEND _ai_env "FUSE_REMASTER_EMULATOR=${_rm_ai_emu}")
     endif()
     foreach(_area textures gemini port world)
         add_test(NAME remaster_ai_${_area}

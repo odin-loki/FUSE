@@ -11,6 +11,7 @@
 //   * robustness: bad side-record indices, unbalanced groups, empty and enormous bounds, NaN matrices
 //   * rendering a recorded list again allocates nothing
 #include "fuse/ui/painter.hpp"
+#include "test_alloc_hooks.hpp"
 #include "test_util.hpp"
 
 #include <cmath>
@@ -23,20 +24,10 @@ using namespace fuse::ui::test;
 
 static long g_allocs = 0;
 static bool g_count = false;
-// GCC may inline the replacement operators into callers and then report a false
-// -Wmismatched-new-delete at -O2; replacement functions must not be inline anyway.
-#if defined(__GNUC__)
-#define FUSE_TEST_REPLACEMENT_NOINLINE __attribute__((noinline))
-#else
-#define FUSE_TEST_REPLACEMENT_NOINLINE
-#endif
-FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t n) {
+// Every global allocation form is replaced and counted (test_alloc_hooks.hpp).
+void fuse::ui::test::countAlloc(std::size_t) noexcept {
     if (g_count) ++g_allocs;
-    if (void* p = std::malloc(n ? n : 1)) return p;
-    throw std::bad_alloc();
 }
-FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p) noexcept { std::free(p); }
-FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 
 namespace {
 constexpr int W = 240, H = 180;

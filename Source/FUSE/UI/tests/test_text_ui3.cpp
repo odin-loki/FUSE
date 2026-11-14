@@ -17,6 +17,7 @@
 //                    spot checks and colour glyph commands through the UI.
 // Optional --out=<dir> writes the rendered images.
 #include "test_env.hpp"
+#include "test_alloc_hooks.hpp"
 #include "test_util.hpp"
 
 #if defined(__GNUC__) || defined(__clang__) // (clang-cl defines only __clang__)
@@ -41,25 +42,10 @@ std::atomic<long> g_allocs{0};
 bool g_counting = false;
 } // namespace
 
-void* operator new(std::size_t n) {
+// Every global allocation form is replaced and counted (test_alloc_hooks.hpp).
+void fuse::ui::test::countAlloc(std::size_t) noexcept {
     if (g_counting) g_allocs.fetch_add(1, std::memory_order_relaxed);
-    if (void* p = std::malloc(n ? n : 1)) return p;
-    throw std::bad_alloc();
 }
-void* operator new[](std::size_t n) { return operator new(n); }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
-// The nothrow forms too (std::stable_sort's temporary buffer uses them): left to the runtime they would allocate
-// with its operator new and free through ours (an alloc-dealloc mismatch under ASan), and go uncounted.
-void* operator new(std::size_t n, const std::nothrow_t&) noexcept {
-    if (g_counting) g_allocs.fetch_add(1, std::memory_order_relaxed);
-    return std::malloc(n ? n : 1);
-}
-void* operator new[](std::size_t n, const std::nothrow_t& t) noexcept { return operator new(n, t); }
-void operator delete(void* p, const std::nothrow_t&) noexcept { std::free(p); }
-void operator delete[](void* p, const std::nothrow_t&) noexcept { std::free(p); }
 
 using namespace fuse::ui;
 using namespace fuse::text;

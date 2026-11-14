@@ -36,11 +36,18 @@ SANDBOX_FORBIDDEN = ("io", "os", "require", "load", "loadfile", "dofile", "loads
 ALLOWED_GLOBAL_TABLES = ("Entity", "Physics", "Scene", "Audio", "Input", "CVar", "Remaster", "math", "string", "table")
 
 
+def _tool_cmd(exe: str, *args: str) -> List[str]:
+    """argv for a built tool: prefixed with ``FUSE_REMASTER_EMULATOR`` ('|'-joined CMAKE_CROSSCOMPILING_EMULATOR,
+    e.g. fuse-wine-run.sh + its prefix) when the tool is a cross-compiled executable."""
+    emu = [part for part in os.environ.get("FUSE_REMASTER_EMULATOR", "").split("|") if part]
+    return [*emu, exe, *args]
+
+
 def tscript_context(source: Path, *, exe: Optional[str] = None) -> Dict[str, Any]:
     """{diagnostics, analysis} of a TorqueScript file: from the C++ dump tool, else the committed snapshot."""
     exe = exe or os.environ.get("FUSE_REMASTER_TSCRIPT_DUMP")
     if exe and Path(exe).is_file():
-        proc = subprocess.run([exe, str(source)], capture_output=True, timeout=60)
+        proc = subprocess.run(_tool_cmd(exe, str(source)), capture_output=True, timeout=60)
         if proc.returncode not in (0, 1):
             raise RecipeError(f"{exe} failed on {source}: {proc.stderr.decode(errors='replace')}")
         full = json.loads(proc.stdout.decode("utf-8"))
@@ -169,7 +176,7 @@ def run_parity(lua_path: Path, trace: Path, expected: Path, *, exe: Optional[str
     exe = exe or os.environ.get("FUSE_REMASTER_LUA_PARITY")
     if not exe or not Path(exe).is_file():
         return None
-    proc = subprocess.run([exe, str(lua_path), str(trace), "--expect", str(expected)], capture_output=True,
+    proc = subprocess.run(_tool_cmd(exe, str(lua_path), str(trace), "--expect", str(expected)), capture_output=True,
                           timeout=60)
     res = {"rc": proc.returncode, "log": proc.stdout.decode("utf-8", errors="replace"),
            "stderr": proc.stderr.decode("utf-8", errors="replace")}
