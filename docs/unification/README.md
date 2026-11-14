@@ -1,5 +1,7 @@
 # FUSE Unification — Phase U0 Deliverables
 
+> **2026-11-14:** the U6 editor documents here describe the Qt 6 shell, which was removed. The editor is now the FUSE UI shell — see [../editor.md](../editor.md).
+
 **Engine:** FUSE — Fast Unified Simulation Engine  
 **Phase:** U0 — Inventory & collision map  
 **Date:** 2026-09-15  

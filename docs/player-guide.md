@@ -70,15 +70,13 @@ This runs all seven parity demo binaries plus editor embed PIE smoke (`fuse_u8_p
 
 ## Editor (optional, desktop)
 
-With Qt 6 installed:
-
 ```bash
 cmake -B build -G Ninja \
   -DFUSE_BUILD_EDITOR=ON
-cmake --build build --target fuse_editor
+cmake --build build --target fuse_editor_fuse_app
 ```
 
-See [editor.md](editor.md). Editor embed converts bundled/golden worlds before load; with a display the viewport presents through an embedded Vulkan window (editor-scoped Track B present unlock; software placeholder when headless).
+See [editor.md](editor.md). Editor embed converts bundled/golden worlds before load; `--gpu-viewport` shows the live engine frame in the viewport (zero-copy); without a Vulkan device the viewport falls back to a software view.
 
 ## Enable 2D / 3D / modules in a project
 

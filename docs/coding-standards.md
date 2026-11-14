@@ -16,10 +16,10 @@ These rules apply to product code under `Source/FUSE/` and `Tools/FUSE/`.
 |---------|------|
 | Owning raw `T*` in public APIs | Ban — use `fuse::Handle`, allocator + size, or tooling-only `unique_ptr` |
 | `new` / `delete` / `malloc` in engine libs | Ban after the allocator milestone; debug overload asserts |
-| Exceptions across engine ↔ script ↔ Qt | No. `std::expected` / error codes. Qt may throw at the UI edge only |
+| Exceptions across engine ↔ script ↔ editor UI | No. `std::expected` / error codes |
 | Unbounded C arrays of objects | Prefer `span` + sized buffers |
 | Silent narrowing | `-Wconversion` on FUSE-owned code in CI |
-| `#include <Q*>` in engine libs | Hard ban |
+| `#include <Q*>` in engine libs | Hard ban. The editor is Qt-free too since 2026-11-14 (editor-shell lint) |
 
 Prefer `Handle` / `HandleMap` for long-lived objects (scene, resources, GPU). Route allocations through `fuse/alloc/`.
 
@@ -45,4 +45,6 @@ Prefer `Handle` / `HandleMap` for long-lived objects (scene, resources, GPU). Ro
 
 ## Editor
 
-Qt owns chrome. The engine owns the viewport. UI posts commands; the game thread drains them. See [editor.md](editor.md).
+FUSE UI owns chrome (`Source/FUSE/EditorShell`). The engine owns the viewport. The shell talks only to `EditorController`; UI posts commands; the game thread drains them. See [editor.md](editor.md).
+
+> Superseded 2026-11-14: this section said "Qt owns chrome" until the Qt shell was removed. See [FUSE_EDITOR_QT_FIRST_PLAN.md](plans/FUSE_EDITOR_QT_FIRST_PLAN.md) §12.

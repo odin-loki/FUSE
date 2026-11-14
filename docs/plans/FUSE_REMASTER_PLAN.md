@@ -1059,6 +1059,8 @@ What is **not feasible** (and not planned):
 
 ### 5.3 Editor: the Remaster workspace (Qt)
 
+> 2026-11-14: Qt was removed from the editor. Build this workspace in the FUSE UI shell (`Source/FUSE/EditorShell`) and gate it with `fuse_editor_ui_*` tests instead of Qt offscreen tests.
+
 A new workspace in `Source/FUSE/Editor`, built from existing pieces (`asset_browser`,
 `property_inspector`, `viewport_panel`, `material_editor_panel`, `command_stack`/undo):
 

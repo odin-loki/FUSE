@@ -12,6 +12,7 @@
 **Document control:** v0.3 full fidelity  
 **Language:** ISO C++23 host; CUDA device dialect may remain C++20  
 **Editor GUI:** Qt 6 (not ImGui — stakeholder requirement)  
+**Editor GUI, 2026-11-14:** FUSE UI. Qt was removed on the owner's decision (see §A3 note)  
 **Date:** 2026-09-14
 
 ---
@@ -106,6 +107,8 @@ FUSE treats Torque3D as a **behavioural and asset-compat reference**, not as sac
 - Later: clang-tidy (`modernize-*`, `cppcoreguidelines-owning-memory`)
 
 ## A3. Qt replaces GUI
+
+> **Superseded 2026-11-14.** The editor no longer uses Qt. On the owner's decision the Qt shell was removed and the editor chrome is FUSE UI (`Source/FUSE/EditorShell`, `fuse_editor_fuse`). The rest of this section is kept as the original plan. See [FUSE_EDITOR_QT_FIRST_PLAN.md](FUSE_EDITOR_QT_FIRST_PLAN.md) §12.
 
 ### In scope
 
@@ -4535,6 +4538,8 @@ Phase 5 delivers a visually complete engine. Every pixel is shaded correctly, li
 
 ## B6 — Editor (Qt 6 — not ImGui)
 
+> **2026-11-14:** the B6 items below were built and gated on Qt. The Qt shell is removed; the same features now run in the FUSE UI shell and are gated by `fuse_editor_ui_*` (see [`../editor/QT_PARITY.md`](../editor/QT_PARITY.md)). Gate names such as `fuse_editor_qt_*` and `fuse_lint_b6_editor_qt6_only` below are historical.
+
 **Duration:** 5–6 weeks  
 **Depends on (phase-level):** P5 Qt vertical slice; B3 scene serialisation; B5 for full visual fidelity (can start earlier with simpler viewport)
 
@@ -6464,6 +6469,7 @@ Parallelism: B1 coincides with P1–P3; later B tracks overlap only where Track 
 4. TorqueScript: maintain indefinitely vs freeze after content migration.
 5. Networking priority: rollback vs authoritative-first for first product.
 6. Qt licence path: LGPL vs commercial for shipping editor.
+   - 2026-11-14: moot. Qt was removed; the editor ships with FUSE UI.
 
 ---
 
@@ -6483,6 +6489,7 @@ Parallelism: B1 coincides with P1–P3; later B tracks overlap only where Track 
 
 - Preserve MIT notices from Torque3D and all `third_party/` components.
 - Qt: LGPL or commercial per distribution plan — document in `THIRD_PARTY.md`.
+  - 2026-11-14: no longer applies. Qt was removed from the tree, so there are no Qt LGPL obligations.
 - Confirm “FUSE” trademark clearance before public release.
 - CUDA / proprietary SDK redistributables: follow NVIDIA (and any audio codec) EULAs.
 - Do not strip copyright headers when moving files into `compat/` or FUSE trees.
@@ -6505,6 +6512,7 @@ Retain Foundation deliverable gates under FUSE naming, plus:
 |---------|------|-------|
 | 0.2 | 2026-09-14 | Condensed unified plan (~30 KB) |
 | 0.3 | 2026-09-14 | **Full fidelity:** Track A retained; every Phase 1–7 `##` → `### Bn.M`; ImGui→Qt; C++23 host; TOC companion |
+| 0.3 + note | 2026-11-14 | Qt removed from the editor (FUSE UI shell only); dated notes in §A3, B6 and Appendix B. Body text unchanged |
 
 **Inputs read in full:** Phases 1–7 source plans; condensed Track A retained and polished.
 

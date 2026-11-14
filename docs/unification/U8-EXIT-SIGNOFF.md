@@ -1,5 +1,7 @@
 # U8 exit — sign-off checklist
 
+> **2026-11-14: Qt removed.** The editor described here was the Qt 6 shell. On the owner's decision it was deleted and the FUSE UI shell (`Source/FUSE/EditorShell`, `fuse_editor_fuse`, built with `FUSE_BUILD_EDITOR=ON`) is the only editor. The `fuse_editor_qt_*` rows below are historical; their `fuse_editor_ui_*` twins are the current gates. See [FUSE_EDITOR_QT_FIRST_PLAN.md](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md) §12.
+
 **Purpose:** Single “one program” gate for unification exit (prestarter §13.2).
 
 **Engineering exit:** 2026-10-25 (CI-backed)  

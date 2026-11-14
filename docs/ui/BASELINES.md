@@ -69,6 +69,10 @@ Build trees: full tree `-DFUSE_BUILD_VULKAN=ON -DFUSE_BUILD_EDITOR=OFF -DFUSE_ED
 `cmake -S Source/FUSE/UI -DFUSE_UI_TEXT=MINIMAL|FULL` (what an app links: fuse_app + fuse_ui_vk, no engine); Qt editor
 tree `-DFUSE_BUILD_EDITOR=ON -DCMAKE_PREFIX_PATH=C:/Qt/6.11.0/msvc2022_64`.
 
+> **2026-11-14: Qt removed.** The Qt editor shell is deleted, so the Qt editor rows in this document are a historical
+> record and the `--qt` tree above can no longer be built. `FUSE_EDITOR_SHELL` is gone: the FUSE UI editor shell is
+> built whenever `FUSE_BUILD_EDITOR=ON`. See [FUSE_EDITOR_QT_FIRST_PLAN.md](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md) §12.
+
 ## Binary size (stripped)
 
 Linux sizes are of `strip`ped copies; MSVC Release executables carry no symbols (PDB separate), so their file size is

@@ -21,7 +21,7 @@ All third-party libraries are committed under `vendor/`; clone and configure —
 
 ### Linux system packages (Ubuntu 24.04)
 
-Vendored libraries live under `vendor/`; you only need a C++23 toolchain plus optional GPU/Qt packages for the CMake options you enable.
+Vendored libraries live under `vendor/`; you only need a C++23 toolchain plus optional GPU packages for the CMake options you enable.
 
 **Toolchain** (`FUSE_BUILD_CORE` only, no Vulkan tests):
 
@@ -60,7 +60,7 @@ python3 -m pip install -r Tools/FUSE/WorldExtract/requirements.txt
 ctest --test-dir build -R fuse_world_extract_synthetic --output-on-failure
 ```
 
-**Qt 6 editor** (`FUSE_BUILD_EDITOR=ON`, optional): `qt6-base-dev` plus the Xvfb/xcb packages listed in the Qt editor CI job — see [editor.md](editor.md).
+**Editor** (`FUSE_BUILD_EDITOR=ON`, optional): no UI toolkit package. The shell is FUSE UI; `fuse_app_native` loads libX11, libXrandr, libXcursor, libxkbcommon and libdbus-1 at run time (no X11 headers at build time). CI installs `FUSE_APT_LINUX_UI_EDITOR` (`xvfb xauth libx11-6 libxrandr2 libxcursor1 libxkbcommon0 libdbus-1-3 dbus`) to run `ctest -L fuse_editor_ui` under Xvfb — see [editor.md](editor.md). (Qt 6 was needed until 2026-11-14; the Qt shell is removed.)
 
 **CUDA** (`FUSE_BUILD_CUDA=ON`, optional): install the distro CUDA toolkit when you want real device code; without it, configure continues with CUDA stubs. The compile-only CUDA workflow installs `nvidia-cuda-toolkit` on `ubuntu-24.04`.
 
@@ -80,8 +80,8 @@ ctest --test-dir build -R fuse_world_extract_synthetic --output-on-failure
 | `FUSE_BUILD_AUDIO` | ON | `fuse_audio` |
 | `FUSE_BUILD_SCRIPT` | ON | `fuse_script` |
 | `FUSE_BUILD_MODULES` | ON | `fuse_ai`, `fuse_fx`, `fuse_cinematics`, `fuse_mechanics`, `fuse_adventure` |
-| `FUSE_BUILD_EDITOR_API` | ON | Qt-free `fuse_editor_api` |
-| `FUSE_BUILD_EDITOR` | OFF | Qt 6 `fuse_editor` (desktop only) |
+| `FUSE_BUILD_EDITOR_API` | ON | `fuse_editor_api` (editor boundary library) |
+| `FUSE_BUILD_EDITOR` | OFF | FUSE UI editor `fuse_editor_fuse` and `fuse_editor_ui_*` gates (desktop only) |
 | `FUSE_BUILD_VULKAN` | ON | `fuse_rhi` (stub if the loader is missing) |
 | `FUSE_BUILD_CUDA` | OFF | CUDA job lane / `fuse_compute` |
 | `FUSE_JOBS_SINGLE_THREAD` | OFF | Inline jobs on the caller thread |
@@ -136,7 +136,7 @@ Smoke and hybrid demo:
 
 1. Install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) with **Ubuntu 24.04**.
 2. In the WSL shell, install dependencies: run **`bash scripts/wsl-bootstrap.sh`** (needs `sudo` once), then **re-configure** `build-wsl` so CMake picks up `glslangValidator` and embedded shaders (`cmake -B build-wsl …` as below). Or install the same packages as [Linux system packages](#linux-system-packages-ubuntu-2404) manually.
-3. Clone or use the repo from the Linux filesystem when you can (`~/FUSE`). A tree on `/mnt/c/...` (OneDrive/Desktop, **drvfs**) is fine for core/Vulkan work but I/O is slower; prefer `~/FUSE` for large `ctest -j` sweeps. Drvfs is case-insensitive, so `vendor/volk/VERSION` can shadow the libc++ `<version>` header (see `cmake/FuseVolk.cmake`) and break **Qt editor** configures — build with `FUSE_BUILD_EDITOR=ON` only under `~/FUSE` (or another Linux-native path).
+3. Clone or use the repo from the Linux filesystem when you can (`~/FUSE`). A tree on `/mnt/c/...` (OneDrive/Desktop, **drvfs**) is fine for core/Vulkan work but I/O is slower; prefer `~/FUSE` for large `ctest -j` sweeps. Drvfs is case-insensitive, so `vendor/volk/VERSION` can shadow the libc++ `<version>` header (see `cmake/FuseVolk.cmake`) and broke **Qt editor** configures while the editor used Qt (removed 2026-11-14). Prefer `~/FUSE` (or another Linux-native path) for `FUSE_BUILD_EDITOR=ON` trees.
 
 ```bash
 # Inside WSL (Ubuntu 24.04)
@@ -169,18 +169,18 @@ bash scripts/wsl-build-local.sh
 
 Renderer frame integration (T0 Lavapipe) lives under the `gate;renderer;frame` labels, for example `fuse_rp_frame_vk_full_t0` and `fuse_scene_renderer_vk_golden_t0`. Those Vulkan tests **skip (exit 77)** if `VK_LAYER_KHRONOS_validation` is missing — install `vulkan-validationlayers` (included in `scripts/wsl-bootstrap.sh`) and confirm `/usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json` exists. A ctest run where frame VK tests only skip is **not** the same as passing the frame gates (`scripts/wsl-run-frame-gates.sh`).
 
-Windowed core/editor tests run through `build-wsl/fuse_run_with_display.sh` (generated at configure). It may use `xvfb-run` when `DISPLAY` is unset or is WSLg’s `:0`; the wrapper **unsets `WAYLAND_DISPLAY`** and defaults `QT_QPA_PLATFORM=xcb` so Qt does not select Wayland under Xvfb (teardown aborts). Leave **`FUSE_FORCE_XVFB` unset** for the default `build-wsl` gate sweep; use **`FUSE_FORCE_XVFB=1`** for the Qt editor playbook below so every wrapped gate matches CI’s Xvfb path even on WSLg `:0`.
+Windowed core/editor tests run through `build-wsl/fuse_run_with_display.sh` (generated at configure). It may use `xvfb-run` when `DISPLAY` is unset or is WSLg’s `:0`; the wrapper **unsets `WAYLAND_DISPLAY`**. Leave **`FUSE_FORCE_XVFB` unset** for the default `build-wsl` gate sweep; use **`FUSE_FORCE_XVFB=1`** for the editor gates below so every wrapped gate runs on Xvfb even on WSLg `:0`.
 
-### Qt editor gates (local playbook)
+### Editor gates (local playbook)
 
-The **`fuse-editor-qt`** job in [fuse-umbrella-linux.yml](../.github/workflows/fuse-umbrella-linux.yml) uses a separate **`build/editor-qt`** tree in **Release** with `FUSE_BUILD_EDITOR=ON`, builds `fuse_editor`, `fuse_editor_qt_gates_all`, and `fuse_lint`, then runs `ctest -L qt` under `xvfb-run`. Reproduce that from **`~/FUSE`** (not `/mnt/c/...` — drvfs breaks Qt editor configures; see above). Install `FUSE_APT_LINUX_QT_EDITOR` from the workflow env (`qt6-base-dev`, `xvfb`, xcb libs, plus the Vulkan packages from `wsl-bootstrap.sh`).
+The **`fuse-editor-ui`** job in [fuse-umbrella-linux.yml](../.github/workflows/fuse-umbrella-linux.yml) uses a separate **`build/editor-ui`** tree in **Release** with `FUSE_BUILD_EDITOR=ON`, builds the whole tree, and runs `ctest -L fuse_editor_ui` under `xvfb-run`. Work from **`~/FUSE`**, not `/mnt/c/...`. Install `FUSE_APT_LINUX_UI_EDITOR` from the workflow env plus the Vulkan packages from `wsl-bootstrap.sh`.
 
 ```bash
 cd ~/FUSE
 export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
 export FUSE_FORCE_XVFB=1
 
-cmake -B build/editor-qt -G Ninja \
+cmake -B build/editor-ui -G Ninja \
   -DCMAKE_CXX_COMPILER=g++-13 \
   -DCMAKE_BUILD_TYPE=Release \
   -DFUSE_BUILD_CORE=ON \
@@ -188,20 +188,15 @@ cmake -B build/editor-qt -G Ninja \
   -DFUSE_BUILD_VULKAN=ON \
   -DFUSE_BUILD_EDITOR=ON
 
-cmake --build build/editor-qt --target fuse_editor fuse_editor_qt_gates_all fuse_lint
+# whole tree: the fuse_editor_ui tests span several executables and launch fuse_cook / demo players
+cmake --build build/editor-ui
 
-ctest --test-dir build/editor-qt -L qt --output-on-failure --timeout 2400
+ctest --test-dir build/editor-ui -L fuse_editor_ui --output-on-failure --timeout 2400
 ```
 
-`ui_frame` and `idle_frames` enforce budgets only in **Release** (Debug exits 77). Qt gates are **`RUN_SERIAL`**; use **`-j1`** when iterating on slow xvfb work (`fuse_editor_qt_live_present`, `fuse_editor_qt_idle_frames`) so they do not share the X server or CPU with other tests. CI sets **`FUSE_QT_IDLE_DEBUG_FRAMES=2000`** for a shorter `idle_frames` run (default is 10,000 frames × multiple runs):
+`ui_frame` and `idle_frames` enforce budgets only in **Release** (Debug exits 77). `fuse_editor_ui_frame` is `RUN_SERIAL`; use **`-j1`** when timing budgets on a shared machine. CTest names are `fuse_editor_ui_<gate>`; the binary is `fuse_editor_ui_gates --gate=<gate>` (some gates live in the parity, panels2 and a11y gate binaries) — see `Source/FUSE/EditorShell/tests/test_editor_ui_gates.cpp`.
 
-```bash
-export FUSE_QT_IDLE_DEBUG_FRAMES=2000
-ctest --test-dir build/editor-qt -R 'fuse_editor_qt_idle_frames' -j1 --output-on-failure
-ctest --test-dir build/editor-qt -R 'fuse_editor_qt_live_present' -j1 --output-on-failure
-```
-
-CTest names are `fuse_editor_qt_<gate>` (`startup`, `layout`, `live_present`, `idle_frames`, …); the binary is `fuse_editor_qt_gates <gate>` — see `Source/FUSE/Editor/tests/qt/test_editor_qt_gates.cpp`.
+(Until 2026-11-14 this section described the Qt gates: `build/editor-qt`, `ctest -L qt`, `fuse_editor_qt_<gate>`. They were removed with the Qt shell; the CI job was `fuse-editor-qt`.)
 
 `glslangValidator` must be on `PATH` **when you configure** CMake: it embeds the GPU radix-sort shaders (WP-9.2 splats, `hybrid.sprite_layer`, and several other packages). If you configured before installing `glslang-tools`, re-run `cmake -B build-wsl …` after `wsl-bootstrap.sh` and rebuild (`fuse_gsplat`, `fuse_hybrid`, `fuse_compute`).
 
@@ -259,7 +254,7 @@ ctest --test-dir build/fuse-debug --output-on-failure
 | `fuse-asan` | Sanitizer sweep |
 | `fuse-shipping` | Game runtime without editor |
 | `fuse-track-b-unlock` | Local production-present defaults (still locked in CI) |
-| `fuse-editor-debug` | Qt editor shell |
+| `fuse-editor-debug` | Editor (`FUSE_BUILD_EDITOR=ON`) |
 
 ## CUDA (optional)
 

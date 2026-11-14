@@ -1,7 +1,7 @@
 # FUSE Editor — Qt First, FUSE UI Later
 
 Author: Odin Loch
-Status: Draft — adopts decision D5 of [`FUSE_UI_PLAN.md`](FUSE_UI_PLAN.md): the editor stays on Qt 6 until FUSE UI can carry it
+Status: Done — the switch happened on 2026-11-14 and Qt is removed (Section 12). Originally a draft adopting decision D5 of [`FUSE_UI_PLAN.md`](FUSE_UI_PLAN.md): the editor stays on Qt 6 until FUSE UI can carry it
 Scope: How the Qt editor keeps growing now without making the later move to FUSE UI more expensive, what has to move out of the Qt shell first, the parity checklist for the switch, and the part of the UI plan the switch actually depends on.
 
 Related: [`../editor.md`](../editor.md), [`../architecture.md`](../architecture.md) (threading table), [`FUSE_MASTER_PLAN.md`](FUSE_MASTER_PLAN.md) §A3 and B6, [`FUSE_UI_PLAN.md`](FUSE_UI_PLAN.md) UI9.
@@ -237,6 +237,8 @@ Toolkit-independent editor features (gizmos, more panels, play-mode work) keep l
 
 ## 8. The switch (Stage 3)
 
+> 2026-11-14: done. Section 12 records what was removed and what stays open.
+
 1. Add `FUSE_EDITOR_SHELL` (`qt` default, `fuse`). Both shells link the same `fuse_editor_api` and the same `EditorController`; `fuse_editor_fuse` is a new target beside `fuse_editor_qt`.
 2. Bring the FUSE UI shell up in this order, each step with its twin gates: main window, docks and action-table menus → viewport widget → console → hierarchy → inspector → project hub and wizard → asset browser → profiler → material editor → SDF sculpt → sequencer.
 3. The editor UI context runs on the editor UI thread and talks only to `EditorController`, so the "UI posts, game thread drains" rule is unchanged.
@@ -317,3 +319,27 @@ Fallback if the whole-shell switch stalls: host individual FUSE UI panels inside
 - **Split docking (round 5, 2026-11-05)**: each side holds several tab stacks in nested splitters (FUSE UI `dockSplit`; Qt `splitDockWidget` / `tabifyDockWidget`). Dragging a tab or a floating title over a stack shows its drop zones: an edge band (a quarter of the stack, at most 64 px) splits that stack on that edge, the middle adds the panel as a tab (`dock.dropzone.split` previews it; the side zones still take drops away from any stack). `EditorShellWindow::splitPanel(panel, target, edge)`, tab-bar menu Split Right / Split Down; split stacks are `dock.split.N` / `tabs.split.N`, titled after their current panel, and go away (collapsing their split) when their last panel leaves. The layout text adds `stack:` lines and the format-2 dock tree; layouts saved before still restore. Gate `fuse_editor_ui_dock_split` (API split, edge-zone drag split with preview, centre-zone tabify, nested split, handle drag, save / reset / restore with identical rects, collapse, tab menu, reset).
 - **Profiler GPU times (round 5)**: `SceneViewportHost` owns a `GpuProfiler` on the viewport renderer's executor (a timestamp zone per render-graph pass); `pollGpuTimings()` hands the newest finished frame to `EditorPanels::profilerSetGpu`, which fills `gpuMs` and buckets passes into G-buffer / depth / shadows / DDGI / SDF / deferred. The profiler tab shows the GPU total in the summary, a "GPU ms" chart series and a `gpu.viewport` flame root with one bar per pass. `fuse_editor_ui_profiler` and `fuse_editor_ui_gpu_viewport` require non-zero GPU history on the RTX 3090 and lavapipe.
 - **Totals**: see QT_PARITY.md (79 `fuse_editor_ui` gates with `dock_split`).
+
+## 12. Switch done (2026-11-14)
+
+The owner decided to replace Qt with FUSE UI. That decision is the sign-off Section 8 step 4 asks for. Qt was removed on 2026-11-14.
+
+Removed:
+- The Qt shell (`Source/FUSE/Editor/src/qt`, target `fuse_editor_qt`) and the `fuse_editor` Qt binary.
+- The Qt tests (`Source/FUSE/Editor/tests/qt`) and every `fuse_editor_qt_*` gate.
+- `find_package(Qt6)` and the `FUSE_EDITOR_SHELL` option.
+
+Now:
+- The FUSE UI shell (`Source/FUSE/EditorShell`, `fuse_editor_fuse`) is the only editor. It is built whenever `FUSE_BUILD_EDITOR=ON`.
+- The `fuse_editor_ui_*` twins (ctest label `fuse_editor_ui`) are the editor gates.
+- `fuse_lint_b6_editor_qt6_only` is replaced by the editor-shell lint, which forbids Qt in the editor (Section 8 step 5).
+- [`../editor.md`](../editor.md), [`../coding-standards.md`](../coding-standards.md), the threading table in [`../architecture.md`](../architecture.md) and master plan §A3 are updated or carry a superseded note.
+- Qt LGPL obligations (Section 9) end: no Qt binaries are built or shipped.
+- [`../editor/QT_PARITY.md`](../editor/QT_PARITY.md) is kept as the historical gate record.
+
+QT_PARITY.md "Remaining", item by item:
+1. Open. macOS: QT_PARITY.md listed no native window backend for the FUSE shell. `fuse_app_native` now has a Cocoa backend (`Source/FUSE/UI/App/src/native_apple.mm`), but it has never run ([`../ui/KNOWN_GAPS.md`](../ui/KNOWN_GAPS.md)). The editor is not verified on macOS and there is no NSAccessibility gate.
+2. Moot. The Windows reference-desktop item (Qt `theme` hover and `live_present` screen-pixel gates need an unobscured desktop) is moot: those were Qt gates and are gone. Their twins `fuse_editor_ui_theme` and `fuse_editor_ui_live_present` stay.
+3. Done. Owner sign-off: given by the decision above.
+
+Sections 0 to 11 are kept as written, as the record of the Qt-first period.

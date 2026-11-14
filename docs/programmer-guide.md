@@ -113,7 +113,7 @@ composer.render(ctx);  // software placeholder unless Track B present path wired
 
 ## Editor embed (U6)
 
-Qt-free API: `fuse_editor_api`. PIE smoke across all seven parity demos: `ctest -R fuse_u8_parity_embed_pie_smoke`.
+Editor API: `fuse_editor_api`. PIE smoke across all seven parity demos: `ctest -R fuse_u8_parity_embed_pie_smoke`.
 
 `RuntimeEmbedSession` converts worlds before load, drains async material VFS, and mirrors ECS into `World3D` for viewport compositing. Details: [U6-EDITOR.md](unification/U6-EDITOR.md).
 

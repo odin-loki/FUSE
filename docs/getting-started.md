@@ -12,7 +12,6 @@ Build FUSE from source, run tests, and launch a hybrid demo.
 
 Optional:
 
-- Qt 6 Widgets — desktop editor (`fuse_editor`)
 - Vulkan SDK — real RHI path (`fuse_rhi`); otherwise a stub backend is used
 - CUDA toolkit — compute / interop (`FUSE_BUILD_CUDA=ON`)
 - Lua — script VM backend (`FUSE_SCRIPT_ENABLE_LUA`)
@@ -97,4 +96,4 @@ More demos: [samples.md](samples.md) and the [player guide](player-guide.md). AP
 | Feature modules | `Source/FUSE/Modules` |
 | Headless apps | `Source/FUSE/Apps` |
 
-The editor is off by default. Enable it with `-DFUSE_BUILD_EDITOR=ON` when Qt 6 is installed — see [editor.md](editor.md).
+The editor is off by default. Enable it with `-DFUSE_BUILD_EDITOR=ON`; it needs no extra UI toolkit — see [editor.md](editor.md).

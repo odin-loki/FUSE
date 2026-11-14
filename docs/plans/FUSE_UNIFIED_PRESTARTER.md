@@ -40,6 +40,8 @@ This pre-starter sits **in front of** (and feeds) the full [FUSE_MASTER_PLAN.md]
 | `fuse_runtime` / game player | Headless of editor chrome; loads FUSE projects (2D, 3D, or hybrid) |
 | `fuse_tools` | Cookers, asset converters, DTS/DIFF/T2D asset pipelines (CLI; optional Qt) |
 
+> 2026-11-14: Qt was removed. `fuse_editor` is now the FUSE UI shell `fuse_editor_fuse` ([../editor.md](../editor.md)).
+
 Shipping configs: `debug`, `release`, `profile`, `shipping` (from master plan). No separate “Torque2D.exe” / “Torque3D.exe” for end users.
 
 ### 1.2 Unified feature surface (what “all the features” means)

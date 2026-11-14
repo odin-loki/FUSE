@@ -1063,7 +1063,7 @@ These have no mutual file overlap and none depends on another's code to start:
 | AD-11 | Read `rtx.conf`, `user.conf` and `dxvk.conf` with `rtx.*` keys; the native namespace is `relight.*` with an alias table | Compatibility without adopting NVIDIA naming for our own options |
 | AD-12 | FUSE-native C API plus Remix API 0.6 compat exports | Engines and source ports already written against `remix_c.h` work unchanged |
 | AD-13 | Product and binary names are FUSE-native ("FUSE Relight", `fuse_relight_host.exe`); only the system DLL names `d3d9.dll`/`d3d8.dll` are fixed | Trademark hygiene (§0.4.5) |
-| AD-14 | Dear ImGui (vendored upstream) for the in-game overlay; the Qt editor (Remaster workspace) for authoring | An in-game overlay cannot be Qt; ImGui is the Remix UX users know |
+| AD-14 | Dear ImGui (vendored upstream) for the in-game overlay; the Qt editor (Remaster workspace) for authoring (2026-11-14: Qt was removed; authoring moves to the FUSE UI editor) | An in-game overlay cannot be Qt; ImGui is the Remix UX users know |
 | AD-15 | D3D8 via DXVK's native d3d8 (not d3d8to9) | Maintained, same licence family, one code path |
 | AD-16 | Compatibility baseline dxvk-remix @0867d3c / API 0.6. Rebase review every quarter: re-run the hash KAT generator against upstream `rtx_hashing.cpp` / `d3d9_rtx_geometry.cpp` diffs | Remix changes fast (Remaster risk table) |
 | AD-17 | GDeflate CPU decode from the Apache-2.0 reference for `.pkg`/`.rtxio` | rtxio is proprietary |

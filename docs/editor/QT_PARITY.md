@@ -1,5 +1,13 @@
 # Qt → FUSE UI editor parity
 
+> **Historical record (2026-11-14).** Qt was removed on the owner's decision. The Qt shell, the Qt tests and every
+> `fuse_editor_qt_*` gate are gone; `FUSE_EDITOR_SHELL` is gone and the FUSE UI shell is built whenever
+> `FUSE_BUILD_EDITOR=ON`. The `fuse_editor_ui_*` twins are now the editor gates (`ctest -L fuse_editor_ui`). The matrix
+> below is kept as the record of the parity work; its Qt column and the build instructions cannot be reproduced any more.
+> Of "Remaining" below: item 1 (macOS) is still open (a Cocoa backend is now in `fuse_app_native` but has never run, and
+> there is no NSAccessibility gate); item 2 is moot because it was about Qt gates; item 3 is done (the
+> owner's decision is the sign-off). See [FUSE_EDITOR_QT_FIRST_PLAN.md](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md) §12.
+
 > **State after the merge into main (2026-11-12).** This document was written on the `claude/magical-bassi-815825` branch and describes that branch's UI code. The merge kept main's UI architecture; the branch UI features it refers to are in the tree as unbuilt source until they are ported ([`docs/ui/archive/PORT_magical_bassi.md`](../ui/archive/PORT_magical_bassi.md)). `-DFUSE_EDITOR_SHELL=fuse` does not compile on main until the items marked "editor" in that list are ported, so the `fuse_editor_ui_*` results below are the branch's.
 
 Status of the UI9 switch ([FUSE_EDITOR_QT_FIRST_PLAN.md](../plans/FUSE_EDITOR_QT_FIRST_PLAN.md) §6, §11): every

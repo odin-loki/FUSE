@@ -13,7 +13,7 @@ This is the product documentation. Start here; then pick a guide.
 | [Architecture](architecture.md) | Process model, jobs, worlds, handles |
 | [Compute kernels](compute-kernels.md) | Single-source CPU/CUDA kernels, backends, profiling, porting guide |
 | [Modules](modules.md) | AI, FX, cinematics, mechanics, adventure |
-| [Editor](editor.md) | Qt 6 shell, command queue, desktop policy |
+| [Editor](editor.md) | FUSE UI shell, command queue, desktop policy |
 | [Scripting](scripting.md) | Script host, callbacks, Lua-ready VM |
 | [Projects](projects.md) | `project.json` schema and importers |
 | [Samples](samples.md) | Headless parity demos under `Samples/unification/` |
