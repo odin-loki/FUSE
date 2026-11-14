@@ -1,6 +1,7 @@
 // macOS half of fuse_editor_ui_native_dialogs: answers the next application-modal AppKit dialog (NSSavePanel /
 // NSOpenPanel / NSColorPanel, fuse::app's window-less dialogs) from a timer on the main run loop, which keeps firing
-// inside the dialog's modal session. The Win32 half answers #32770 dialogs from a helper thread.
+// inside the dialog's modal session. The file panels are hosted in-process for this (NSUseRemoteSavePanel = NO in
+// the process's argument domain). The Win32 half answers #32770 dialogs from a helper thread.
 #pragma once
 
 #include <memory>
@@ -19,7 +20,7 @@ struct MacDialogAnswer {
 /// when no modal dialog came up, negative on a failure (`what` says which).
 struct MacDialogState {
     int answered = 0;
-    bool okSent = false; ///< Return / Escape went to a file panel (taken once its modal session is over)
+    bool okSent = false; ///< OK / Cancel went to a file panel (taken once its modal session is over)
     std::string what;
     void* timer = nullptr; ///< the armed NSTimer (retained)
 };

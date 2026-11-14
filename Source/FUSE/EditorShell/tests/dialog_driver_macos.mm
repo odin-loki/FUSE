@@ -16,35 +16,21 @@ NSButton* findButton(NSView* v, NSString* title) {
         if (NSButton* b = findButton(c, title)) return b;
     return nil;
 }
-/// Presses a key in `w` through the event queue (Return = the default button, Escape = Cancel). The file panels are
-/// remote views: calling -ok: / -cancel: on them from inside their modal session never returned (run 43559067293),
-/// a key event goes the way a user's does.
-void pressKey(NSWindow* w, unsigned short keyCode, NSString* chars) {
-    // AppKit sends key events to the key window: make the panel key (the app may not be frontmost on a CI session)
-    if (!NSApp.active) [NSApp activateIgnoringOtherApps:YES];
-    if (!w.keyWindow) [w makeKeyAndOrderFront:nil];
-    std::fprintf(stderr, "dialog driver: key %u to %s (app active %d, panel key %d, key window %s)\n", unsigned(keyCode),
-                 NSStringFromClass([w class]).UTF8String, int(NSApp.active), int(w.keyWindow),
-                 NSApp.keyWindow ? NSStringFromClass([NSApp.keyWindow class]).UTF8String : "none");
-    for (NSEventType type : {NSEventTypeKeyDown, NSEventTypeKeyUp}) {
-        NSEvent* e = [NSEvent keyEventWithType:type
-                                      location:NSZeroPoint
-                                 modifierFlags:0
-                                     timestamp:NSProcessInfo.processInfo.systemUptime
-                                  windowNumber:w.windowNumber
-                                       context:nil
-                                    characters:chars
-                   charactersIgnoringModifiers:chars
-                                     isARepeat:NO
-                                       keyCode:keyCode];
-        if (e) [NSApp postEvent:e atStart:NO];
-    }
-}
-void pressReturn(NSWindow* w) { pressKey(w, 36, @"\r"); }
-void pressEscape(NSWindow* w) { pressKey(w, 53, @"\x1b"); }
 } // namespace
 
 std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
+    // The file panels are remote views by default (their contents live in a system service): neither -ok: from
+    // inside the modal session (never returned, run 43559067293) nor posted Return keys (ignored, run 43561087470)
+    // reach them. NSUseRemoteSavePanel = NO (this process only, argument domain) hosts them in-process, where the
+    // panel's own -ok: / -cancel: answer it; what the app layer configures and reads back is the same.
+    static const bool inProcess = [] {
+        NSMutableDictionary* args =
+            [[[NSUserDefaults standardUserDefaults] volatileDomainForName:NSArgumentDomain] mutableCopy] ?: [NSMutableDictionary dictionary];
+        args[@"NSUseRemoteSavePanel"] = @NO;
+        [[NSUserDefaults standardUserDefaults] setVolatileDomain:args forName:NSArgumentDomain];
+        return true;
+    }();
+    (void)inProcess;
     auto st = std::make_shared<MacDialogState>();
     __block int ticks = 0, stage = 0; // stage: ticks since the expected panel came up
     NSTimer* timer = [NSTimer timerWithTimeInterval:0.2
@@ -102,15 +88,15 @@ std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
         const bool open = [p isKindOfClass:[NSOpenPanel class]];
         if (a.kind == K::Cancel) {
             if (++stage < 6) return; // let the panel come up first (see below)
-            if (stage == 6 || stage % 10 == 0) std::fprintf(stderr, "dialog driver stage %d: Escape\n", stage);
+            if (stage == 6 || stage % 10 == 0) std::fprintf(stderr, "dialog driver stage %d: cancel:\n", stage);
             if (stage < 40) {
-                if ((stage - 6) % 5 == 0) pressEscape(p); // every second until the modal session ends
+                if ((stage - 6) % 5 == 0) [p cancel:nil]; // again a second later while the modal session lasts
                 st->okSent = true;
-                st->what = open ? "open panel: Cancel (Escape)" : "save panel: Cancel (Escape)";
+                st->what = open ? "open panel: Cancel" : "save panel: Cancel";
                 return;
             }
             [p cancel:nil];
-            done(-2, "the panel did not take Escape");
+            done(-2, "the panel did not take Cancel");
             return;
         }
         if (a.kind == K::Colour || (a.kind == K::Save) == open) {
@@ -140,10 +126,10 @@ std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
         }
         if (stage < 11) return;
         if (stage < 40) {
-            if (stage == 11 || stage % 10 == 0) step("Return");
-            if ((stage - 11) % 5 == 0) pressReturn(p); // ignored while OK is not possible yet: again a second later
+            if (stage == 11 || stage % 10 == 0) step("ok:");
+            if ((stage - 11) % 5 == 0) [p ok:nil]; // ignored while OK is not possible yet: again a second later
             st->okSent = true;
-            st->what = open ? "open panel: OK (Return)" : "save panel: OK (Return)";
+            st->what = open ? "open panel: OK" : "save panel: OK";
             return;
         }
         [p cancel:nil];
@@ -158,8 +144,6 @@ void macDialogFinish(MacDialogState& st) {
     if (!st.timer) return;
     NSTimer* timer = (__bridge_transfer NSTimer*)st.timer;
     st.timer = nullptr;
-    // a key press still queued for a panel that has gone must not reach the editor window
-    [NSApp discardEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskKeyUp beforeEvent:nil];
     if (timer.valid) {
         [timer invalidate];
         if (st.okSent && st.answered == 0) st.answered = 1; // the dialog call returned after OK: the panel accepted it
