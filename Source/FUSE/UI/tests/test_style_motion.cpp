@@ -5,6 +5,7 @@
 // transition runs; layout properties transition through layout; animateProperty tween / spring, animateKeyframes;
 // enter / exit animations of popups (fade, slide; an exiting popup is painted but not hit, then destroyed); reduced
 // motion turns all of it into jumps; the default theme declares no motion (its rendering is static).
+#include "test_alloc_hooks.hpp"
 #include "test_util.hpp"
 
 #include <atomic>
@@ -17,16 +18,10 @@ std::atomic<long> g_allocs{0};
 bool g_counting = false;
 } // namespace
 
-void* operator new(std::size_t n) {
+// Every global allocation form is replaced and counted (test_alloc_hooks.hpp).
+void fuse::ui::test::countAlloc(std::size_t) noexcept {
     if (g_counting) g_allocs.fetch_add(1, std::memory_order_relaxed);
-    if (void* p = std::malloc(n ? n : 1)) return p;
-    throw std::bad_alloc();
 }
-void* operator new[](std::size_t n) { return operator new(n); }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 using namespace fuse::ui;
 using namespace fuse::ui::test;

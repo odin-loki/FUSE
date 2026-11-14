@@ -3,6 +3,7 @@
 // clips, images, glyphs) and a scissored redraw. Gate: max channel error <= 2/255 and < 0.5 % of pixels differing at
 // all. Also: packing + upload of an unchanged frame does not allocate. Skips (77) without a Vulkan device.
 #include "fuse/ui/render/ui_vk.hpp"
+#include "test_alloc_hooks.hpp"
 #include "test_util.hpp"
 #include "vk_headless.hpp"
 
@@ -11,20 +12,10 @@
 #include <new>
 
 static std::atomic<unsigned long long> g_allocs{0};
-// GCC may inline the replacement operators into callers and then report a false
-// -Wmismatched-new-delete at -O2; replacement functions must not be inline anyway.
-#if defined(__GNUC__)
-#define FUSE_TEST_REPLACEMENT_NOINLINE __attribute__((noinline))
-#else
-#define FUSE_TEST_REPLACEMENT_NOINLINE
-#endif
-FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t n) {
+// Every global allocation form is replaced and counted (test_alloc_hooks.hpp).
+void fuse::ui::test::countAlloc(std::size_t) noexcept {
     ++g_allocs;
-    if (void* p = std::malloc(n ? n : 1)) return p;
-    throw std::bad_alloc();
 }
-FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p) noexcept { std::free(p); }
-FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 
 using namespace fuse::ui;
 using namespace fuse::ui::test;
