@@ -16,7 +16,7 @@ The editor is a **desktop** application. Its chrome is built with FUSE UI (`Sour
 
 **Locked rule:** the UI thread **posts** `EditorCommand` envelopes; the game thread **drains** them in `EditorHost::gameTick()`. No raw scene pointers cross that boundary — only `fuse::Handle<T>` in payloads. The shell talks only to `EditorController`.
 
-The editor-shell lint checks that no editor target links or includes Qt.
+The editor-shell lint `fuse_lint_editor_shell_fuse_ui` checks that no editor target links or includes Qt (or Dear ImGui).
 
 ## Platform policy
 

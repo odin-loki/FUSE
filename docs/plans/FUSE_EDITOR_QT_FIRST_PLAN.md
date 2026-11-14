@@ -332,7 +332,7 @@ Removed:
 Now:
 - The FUSE UI shell (`Source/FUSE/EditorShell`, `fuse_editor_fuse`) is the only editor. It is built whenever `FUSE_BUILD_EDITOR=ON`.
 - The `fuse_editor_ui_*` twins (ctest label `fuse_editor_ui`) are the editor gates.
-- `fuse_lint_b6_editor_qt6_only` is replaced by the editor-shell lint, which forbids Qt in the editor (Section 8 step 5).
+- `fuse_lint_b6_editor_qt6_only` is replaced by the editor-shell lint `fuse_lint_editor_shell_fuse_ui`, which forbids Qt in the editor (Section 8 step 5).
 - [`../editor.md`](../editor.md), [`../coding-standards.md`](../coding-standards.md), the threading table in [`../architecture.md`](../architecture.md) and master plan §A3 are updated or carry a superseded note.
 - Qt LGPL obligations (Section 9) end: no Qt binaries are built or shipped.
 - [`../editor/QT_PARITY.md`](../editor/QT_PARITY.md) is kept as the historical gate record.

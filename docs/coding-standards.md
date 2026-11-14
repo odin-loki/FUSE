@@ -19,7 +19,7 @@ These rules apply to product code under `Source/FUSE/` and `Tools/FUSE/`.
 | Exceptions across engine ↔ script ↔ editor UI | No. `std::expected` / error codes |
 | Unbounded C arrays of objects | Prefer `span` + sized buffers |
 | Silent narrowing | `-Wconversion` on FUSE-owned code in CI |
-| `#include <Q*>` in engine libs | Hard ban. The editor is Qt-free too since 2026-11-14 (editor-shell lint) |
+| `#include <Q*>` in engine libs | Hard ban. The editor is Qt-free too since 2026-11-14 (editor-shell lint `fuse_lint_editor_shell_fuse_ui`) |
 
 Prefer `Handle` / `HandleMap` for long-lived objects (scene, resources, GPU). Route allocations through `fuse/alloc/`.
 
