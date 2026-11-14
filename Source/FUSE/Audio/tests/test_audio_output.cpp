@@ -876,17 +876,49 @@ int runOpenALNull() {
     scene.engine.simulate_output_device_loss();
     pump_for(300, nullptr);
     const fa::AudioOutputStats after = scene.engine.output_stats();
-    std::printf("[audio-out] after simulated device loss: lost %llu, reconnects %llu, played %llu\n",
+    std::printf("[audio-out] after simulated device loss: lost %llu, reconnects %llu, played %llu, submitted %llu, "
+                "underruns %llu, silence %llu\n",
                 static_cast<unsigned long long>(after.device_lost), static_cast<unsigned long long>(after.reconnects),
-                static_cast<unsigned long long>(after.frames_played));
+                static_cast<unsigned long long>(after.frames_played),
+                static_cast<unsigned long long>(after.frames_submitted),
+                static_cast<unsigned long long>(after.underruns),
+                static_cast<unsigned long long>(after.silence_frames));
     expectTrue(after.device_lost == 1 && after.reconnects == 1 && after.connected,
                "openal: device loss is detected and the device is re-opened");
     expectTrue(after.frames_played > before.frames_played, "openal: playback continues after reconnect");
 
+    // Baseline for the starvation check: the stream must be playing fed audio when the updates stop. An underrun is
+    // counted once per episode (the first short device pull), so a baseline taken inside an episode makes the
+    // starvation below extend that episode without counting a new one. That happens when the game thread is held
+    // off at the end of pump_for (the device drains the ring, and the loop then sees its deadline passed and
+    // exits without refilling). Keep feeding until the device has played fed audio with no silence since the
+    // previous snapshot: every device pull in between was full, so no episode is open. Each snapshot directly
+    // follows a refill, and nothing feeds the ring after the baseline.
+    fa::AudioOutputStats baseline{};
+    bool healthy = false;
+    {
+        scene.engine.update(scene.registry, 1.f / 60.f);
+        fa::AudioOutputStats prev = scene.engine.output_stats();
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!healthy && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            scene.engine.update(scene.registry, 1.f / 60.f);
+            const fa::AudioOutputStats cur = scene.engine.output_stats();
+            healthy = cur.frames_played > prev.frames_played && cur.silence_frames == prev.silence_frames;
+            baseline = cur;
+            prev = cur;
+        }
+    }
+    expectTrue(healthy, "openal: the fed stream plays without inserting silence");
+
     // Starve the device (no updates): silence is inserted and underruns are counted.
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     const fa::AudioOutputStats starved = scene.engine.output_stats();
-    expectTrue(starved.underruns > after.underruns && starved.silence_frames > after.silence_frames,
+    std::printf("[audio-out] starved for 200 ms: underruns %llu -> %llu, silence %llu -> %llu\n",
+                static_cast<unsigned long long>(baseline.underruns), static_cast<unsigned long long>(starved.underruns),
+                static_cast<unsigned long long>(baseline.silence_frames),
+                static_cast<unsigned long long>(starved.silence_frames));
+    expectTrue(starved.underruns > baseline.underruns && starved.silence_frames > baseline.silence_frames,
                "openal: starving the device counts underruns and inserts silence");
     scene.engine.destroy();
     return 0;
