@@ -91,7 +91,8 @@ std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
             return;
         }
         NSSavePanel* p = (NSSavePanel*)m;
-        const bool open = [m respondsToSelector:@selector(allowsMultipleSelection)];
+        // (the local save panel answers the open panel's selectors too: tell them apart by class)
+        const bool open = [m isKindOfClass:[NSOpenPanel class]] || [NSStringFromClass([m class]) containsString:@"OpenPanel"];
         if (a.kind == K::Cancel) {
             if (++stage < 6) return; // let the panel come up first (see below)
             if (stage == 6 || stage % 10 == 0) std::fprintf(stderr, "dialog driver stage %d: cancel:\n", stage);
