@@ -39,17 +39,24 @@
 namespace {
 std::atomic<unsigned long long> g_allocs{0}, g_bytes{0};
 }
-void* operator new(std::size_t n) {
+// GCC may inline the replacement operators into callers and then report a false
+// -Wmismatched-new-delete at -O2; replacement functions must not be inline anyway.
+#if defined(__GNUC__)
+#define FUSE_TEST_REPLACEMENT_NOINLINE __attribute__((noinline))
+#else
+#define FUSE_TEST_REPLACEMENT_NOINLINE
+#endif
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t n) {
     g_allocs.fetch_add(1, std::memory_order_relaxed);
     g_bytes.fetch_add(n, std::memory_order_relaxed);
     if (void* p = std::malloc(n ? n : 1)) return p;
     throw std::bad_alloc();
 }
-void* operator new[](std::size_t n) { return operator new(n); }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new[](std::size_t n) { return operator new(n); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p) noexcept { std::free(p); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p) noexcept { std::free(p); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p, std::size_t) noexcept { std::free(p); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 using namespace fuse::ui;
 using namespace fuse::ui::test;
