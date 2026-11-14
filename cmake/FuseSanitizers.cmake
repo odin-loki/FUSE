@@ -121,10 +121,11 @@ endif()
 # gates 3-4x slower than at -O1 (fuse_svo_ray_kernel_parity: 54 s -O0, 18 s -O1), which pushed the ~1400-test ASan
 # job past per-test timeouts. -O1 is the level the ASan documentation recommends: findings and stacks stay usable
 # (with -fno-omit-frame-pointer / -fno-optimize-sibling-calls), NDEBUG stays undefined so asserts still fire.
-# Applied to every target in the tree (vendored ones are uninstrumented but still run inside the tests). Empty = the
-# build type's own flags (-O0 for Debug).
-set(FUSE_SANITIZE_DEBUG_OPT "-O1" CACHE STRING
-    "Optimisation flag appended to Debug compiles in FUSE_SANITIZE builds (-O1 per ASan guidance; empty = -O0).")
+# -g1 (line tables): sanitizer stacks only need file:line, and full -g made the Debug ASan tree 27 GB+ (the build ran a
+# 30 GB disk out); -g1 cuts object size and link time several-fold. Applied to every target in the tree (vendored ones
+# are uninstrumented but still run inside the tests). Empty = the build type's own flags (-g -O0 for Debug).
+set(FUSE_SANITIZE_DEBUG_OPT "-O1;-g1" CACHE STRING
+    "Flags appended to Debug compiles in FUSE_SANITIZE builds (-O1 per ASan guidance, -g1 line tables; empty = -g -O0).")
 
 set(FUSE_SANITIZE_VK_ICD "/usr/share/vulkan/icd.d/lvp_icd.json" CACHE FILEPATH
     "Vulkan ICD manifest forced for tests in FUSE_SANITIZE builds (Lavapipe). Empty = loader default.")
