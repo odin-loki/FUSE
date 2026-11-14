@@ -1,5 +1,8 @@
 // Vulkan loading through volk (WP-0.2). See include/fuse/renderer/vk/loader.hpp for the policy.
 #include <fuse/renderer/vk/loader.hpp>
+#if defined(__APPLE__)
+#include <dlfcn.h>
+#endif
 
 #if defined(FUSE_VULKAN_BACKEND)
 // This TU holds volk's implementation (volk.c, via VOLK_IMPLEMENTATION). No platform surface
@@ -77,6 +80,23 @@ bool initializeLocked(LoaderState& s) {
     if (!s.initTried) {
         s.initTried = true;
         s.initOk = volkInitialize() == VK_SUCCESS;
+#if defined(__APPLE__)
+        if (!s.initOk) {
+            // Homebrew's vulkan-loader (/opt/homebrew on Apple silicon, /usr/local on Intel) is not on dlopen's
+            // default search path, and volk only tries /usr/local/lib/libvulkan.dylib. The library stays loaded.
+            for (const char* path : {"/opt/homebrew/lib/libvulkan.1.dylib", "/usr/local/lib/libvulkan.1.dylib"}) {
+                void* module = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+                auto gipa = module != nullptr
+                                ? reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(module, "vkGetInstanceProcAddr"))
+                                : nullptr;
+                if (gipa != nullptr) {
+                    volkInitializeCustom(gipa);
+                    s.initOk = true;
+                    break;
+                }
+            }
+        }
+#endif
         s.mode = s.initOk ? DispatchMode::Global : DispatchMode::Unavailable;
     }
     return s.initOk;

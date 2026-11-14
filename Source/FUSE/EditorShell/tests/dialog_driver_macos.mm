@@ -20,7 +20,7 @@ NSButton* findButton(NSView* v, NSString* title) {
 
 std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
     auto st = std::make_shared<MacDialogState>();
-    __block int ticks = 0, stage = 0;
+    __block int ticks = 0, stage = 0; // stage: ticks since the expected panel came up
     NSTimer* timer = [NSTimer timerWithTimeInterval:0.2
                                             repeats:YES
                                               block:^(NSTimer* t) {
@@ -75,6 +75,8 @@ std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
         NSSavePanel* p = (NSSavePanel*)m;
         const bool open = [p isKindOfClass:[NSOpenPanel class]];
         if (a.kind == K::Cancel) {
+            if (++stage < 6) return; // let the panel come up first (see below)
+            std::fprintf(stderr, "dialog driver: cancel:\n");
             [p cancel:nil];
             done(1, open ? "open panel: Cancel" : "save panel: Cancel");
             return;
@@ -84,20 +86,28 @@ std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
             done(-4, open ? "an open panel where a save panel was expected" : "a save panel where an open panel was expected");
             return;
         }
-        if (stage == 0) { // go to the folder / select the file, then OK on a later tick (the panel loads asynchronously)
-            if (a.kind == K::Save) {
-                p.directoryURL = [NSURL fileURLWithPath:ns(a.folder) isDirectory:YES];
-                p.nameFieldStringValue = ns(a.name);
-            } else if (a.kind == K::Folder) {
-                p.directoryURL = [NSURL fileURLWithPath:ns(a.folder) isDirectory:YES];
-            } else {
-                p.directoryURL = [NSURL fileURLWithPath:ns(a.file) isDirectory:NO]; // a file URL selects that file
-            }
-            stage = 1;
+        // Wait ~1 s for the panel (a remote view on recent macOS) to come up, then go to the folder / select the file
+        // and name it on separate ticks, then OK until the modal session ends. Each step is logged: a call into the
+        // remote panel that blocks shows up as the last line.
+        ++stage;
+        auto step = [&](const char* what) { std::fprintf(stderr, "dialog driver stage %d: %s\n", stage, what); };
+        if (stage < 6) return;
+        if (stage == 6) {
+            step(a.kind == K::Open ? "directoryURL = the file" : "directoryURL = the folder");
+            if (a.kind == K::Open) p.directoryURL = [NSURL fileURLWithPath:ns(a.file) isDirectory:NO]; // selects the file
+            else p.directoryURL = [NSURL fileURLWithPath:ns(a.folder) isDirectory:YES];
+            step("directoryURL set");
             return;
         }
-        if (++stage < 4) return;
-        if (stage < 30) {
+        if (stage == 8 && a.kind == K::Save) {
+            step("nameFieldStringValue");
+            p.nameFieldStringValue = ns(a.name);
+            step("nameFieldStringValue set");
+            return;
+        }
+        if (stage < 11) return;
+        if (stage < 40) {
+            if (stage == 11 || stage % 10 == 0) step("ok:");
             [p ok:nil]; // ignored while OK is not possible yet (nothing selected): tried again next tick
             st->okSent = true;
             st->what = open ? "open panel: OK" : "save panel: OK";
