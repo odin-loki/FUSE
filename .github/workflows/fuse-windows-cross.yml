@@ -2,7 +2,7 @@ name: FUSE Windows x64 (MinGW-w64 cross + Wine)
 
 # Master plan rows exercised here:
 #   - "All four build configs produce correct binaries on Windows" — Debug / Release / Profile /
-#     Shipping of the FUSE subset that needs no Vulkan/Qt/CUDA (T3D/T2D off), built for
+#     Shipping of the FUSE subset that needs no Vulkan/CUDA and no editor (T3D/T2D off), built for
 #     x86_64-w64-mingw32 with -Wall -Wextra -Werror, then the whole ctest suite run through Wine
 #     (CMAKE_CROSSCOMPILING_EMULATOR = cmake/toolchains/fuse-wine-run.sh, headless null driver).
 #   - B7.8 "Crash handler writes valid minidump on intentional null dereference"
