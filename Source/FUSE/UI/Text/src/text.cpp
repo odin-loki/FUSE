@@ -601,6 +601,8 @@ void loadColr(std::vector<std::uint8_t>& bytes, std::vector<ColorLayer>& layers,
 #endif
 } // namespace
 
+std::uint32_t fontChainGeneration() { return g_chainGen.load(std::memory_order_relaxed); }
+
 #if !FUSE_TEXT_COOKED
 namespace {
 bool readMem(void* user, std::uint64_t off, void* dst, std::size_t n) {

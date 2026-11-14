@@ -59,6 +59,7 @@ struct Button {
     static constexpr A11yRole kRole = A11yRole::Button;
     static constexpr bool kFocusable = true;
     static constexpr bool kInteractive = true;
+    static constexpr bool kPurePaint = true; // text, icon and style of the node only (WidgetClass::purePaint)
     static Size measure(UiContext& ui, NodeHandle n, Size) { return detail::iconContentSize(ui, n, textSize(ui, n, ui.text(n))); }
     static void paint(const PaintContext& pc, DrawList& dl) {
         Rect textBox;

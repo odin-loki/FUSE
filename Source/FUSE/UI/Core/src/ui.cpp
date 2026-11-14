@@ -25,7 +25,8 @@ enum NodeFlags : u32 {
     kFlagContainer = 1u << 10, ///< a query container (listed in m_containers)
 };
 inline bool outOfFlow(const ComputedStyle& s) { return s.position == PositionKind::Absolute || s.position == PositionKind::Fixed; }
-enum Dirty : u8 { kDirtyStyle = 1, kDirtyLayout = 2, kDirtyPaint = 4, kDirtyText = 8, kDirtyMeasure = 16 };
+enum Dirty : u8 { kDirtyStyle = 1, kDirtyLayout = 2, kDirtyPaint = 4, kDirtyText = 8, kDirtyMeasure = 16,
+                  kDirtySubtree = 32 }; ///< kDirtySubtree: the node or a descendant changed since it was painted (paint memo)
 
 /// uids of the contexts that exist (UiContext::exists). Never destroyed: contexts with static storage duration
 /// unregister during static destruction, in any order.
@@ -78,6 +79,54 @@ struct UiContext::Node {
     u64 user = 0;
 };
 
+// One memoised text paint (UiContext::textPaintSlot): the inputs that decide the glyph commands, and the commands.
+struct UiContext::TextPaintEntry {
+    std::string text; ///< paintString: the string; the node's own text: empty (layoutSerial names the layout)
+    const fuse::text::Font* font = nullptr;
+    const fuse::text::ITextShaper* shaper = nullptr;
+    std::uint32_t fontId = 0, chainGen = 0, atlasGen = 0, layoutSerial = 0;
+    Rect box; ///< paintString: the box; the node's own text: the origin in x / y
+    Color col;
+    f32 px = 0.f, letterSpacing = 0.f, renderScale = 0.f, msdfThreshold = 0.f;
+    u8 align = 0, deco = 0, features = 0;
+    bool valid = false;
+    std::vector<DrawCmd> cmds;
+
+    bool sameInputs(const TextPaintEntry& k, std::string_view s) const {
+        return valid && font == k.font && shaper == k.shaper && fontId == k.fontId && chainGen == k.chainGen &&
+               atlasGen == k.atlasGen && layoutSerial == k.layoutSerial && box.x == k.box.x && box.y == k.box.y &&
+               box.w == k.box.w && box.h == k.box.h && col.r == k.col.r && col.g == k.col.g && col.b == k.col.b &&
+               col.a == k.col.a && px == k.px && letterSpacing == k.letterSpacing && renderScale == k.renderScale &&
+               msdfThreshold == k.msdfThreshold && align == k.align && deco == k.deco && features == k.features &&
+               std::string_view(text) == s;
+    }
+    /// Takes `k`'s inputs and the commands `dl` got from `at` on; `ok` false (the glyph atlas was reset while they
+    /// were recorded) leaves the entry invalid. Reuses the entry's buffers.
+    void store(const TextPaintEntry& k, std::string_view s, const DrawList& dl, std::size_t at, bool ok) {
+        font = k.font;
+        shaper = k.shaper;
+        fontId = k.fontId;
+        chainGen = k.chainGen;
+        atlasGen = k.atlasGen;
+        layoutSerial = k.layoutSerial;
+        box = k.box;
+        col = k.col;
+        px = k.px;
+        letterSpacing = k.letterSpacing;
+        renderScale = k.renderScale;
+        msdfThreshold = k.msdfThreshold;
+        align = k.align;
+        deco = k.deco;
+        features = k.features;
+        text.assign(s);
+        cmds.assign(dl.cmds().begin() + std::ptrdiff_t(at), dl.cmds().end());
+        valid = ok;
+    }
+    void replay(DrawList& dl) const {
+        for (const DrawCmd& c : cmds) dl.push(c);
+    }
+};
+
 struct UiContext::Cold {
     std::string id;
     std::string text;
@@ -87,7 +136,9 @@ struct UiContext::Cold {
     std::vector<std::pair<u32, std::string>> attrs; ///< hashId(name) -> value (attribute selectors)
     fuse::text::TextLayout layout;
     f32 layoutWidth = -1.f, layoutSize = -1.f;
+    std::uint32_t layoutSerial = 0; ///< bumped whenever `layout` is rebuilt (TextPaintEntry::layoutSerial)
     std::unique_ptr<fuse::text::TextEditBuffer> edit;
+    std::vector<TextPaintEntry> textPaint; ///< by slot: the node's own text / paintString calls of its paint, in order
 };
 
 // ---- Registry ------------------------------------------------------------------------------------------------------
@@ -247,7 +298,9 @@ u32 UiContext::alloc() {
         c.inl.clear();
         c.attrs.clear();
         c.layoutWidth = c.layoutSize = -1.f;
+        ++c.layoutSerial;
         c.edit.reset();
+        for (auto& e : c.textPaint) e.valid = false;
     } else {
         i = u32(m_nodes.size());
         m_nodes.emplace_back();
@@ -302,7 +355,7 @@ NodeHandle UiContext::create(u32 cls, NodeHandle parent, std::string_view id) {
         n.idHash = hashId(id);
         m_cold[i]->id.assign(id);
     }
-    n.dirty = kDirtyStyle | kDirtyLayout | kDirtyPaint | kDirtyText | kDirtyMeasure;
+    n.dirty = kDirtyStyle | kDirtyLayout | kDirtyPaint | kDirtyText | kDirtyMeasure | kDirtySubtree;
     if (parent.valid()) {
         linkBefore(i, parent.index, kNone);
         markLayout(parent.index);
@@ -442,6 +495,7 @@ u32 UiContext::classOf(NodeHandle h) const { return node(h) ? node(h)->cls : kNo
 // ---- Dirty tracking ------------------------------------------------------------------------------------------------
 void UiContext::markLayout(u32 i) {
     m_anyLayoutDirty = m_anyPaintDirty = true;
+    if (i != kNone) touchSubtree(i);
     while (i != kNone) {
         Node& n = m_nodes[i];
         n.measureKey = {-2.f, -2.f};
@@ -467,8 +521,15 @@ void UiContext::markStyle(u32 i) {
 void UiContext::markPaint(u32 i) {
     m_nodes[i].dirty |= kDirtyPaint;
     m_anyPaintDirty = true;
+    touchSubtree(i);
+}
+// Up to the root every time: a culled or hidden ancestor keeps its bit until it is painted, so stopping at a set bit
+// could leave a memoised node above it unaware.
+void UiContext::touchSubtree(u32 i) {
+    for (u32 a = i; a != kNone; a = m_nodes[a].parent) m_nodes[a].dirty |= kDirtySubtree;
 }
 void UiContext::markAllDirty() {
+    ++m_paintEpoch;
     for (auto& n : m_nodes)
         if (n.alive) {
             n.dirty |= kDirtyStyle | kDirtyLayout | kDirtyPaint;
@@ -660,6 +721,7 @@ void UiContext::scrollTo(NodeHandle h, Vec2 o) {
     if (o == n->scroll) return;
     n->scroll = o;
     m_anyLayoutDirty = m_anyPaintDirty = true;
+    touchSubtree(h.index);
     for (u32 a = h.index; a != kNone; a = m_nodes[a].parent) {
         if (m_nodes[a].dirty & kDirtyLayout) break;
         m_nodes[a].dirty |= kDirtyLayout; // re-arrange path; measure caches stay valid
@@ -783,6 +845,7 @@ void UiContext::stylePass() {
         for (auto& n : m_nodes)
             if (n.alive) n.dirty |= kDirtyStyle | kDirtyPaint; // paint too: widget paint code reads theme tokens (themeColor)
         m_anyPaintDirty = true;
+        ++m_paintEpoch;
         m_sheetSwap = true; // a theme swap is not a state change: nothing transitions
     }
     styleRec(m_root.index, false);
@@ -805,6 +868,8 @@ void UiContext::ensureText(u32 i, f32 width) {
     if (s.rtl && s.textAlign != TextAlignment::Center) // start / end follow the direction
         d.align = fuse::text::TextAlign(u8(s.textAlign == TextAlignment::Start ? TextAlignment::End : TextAlignment::Start));
     fuse::text::layoutText(*fontFor(s), fuse::text::defaultShaper(), c.text, d, c.layout);
+    ++c.layoutSerial;
+    touchSubtree(i);
     c.layoutWidth = width;
     c.layoutSize = s.fontSize;
     m_nodes[i].dirty &= u8(~kDirtyText);
@@ -853,6 +918,7 @@ void UiContext::addFontFamily(fuse::text::FontFamily& family) {
     for (auto& c : m_cold)
         if (c) c->layoutWidth = -1.f;
     m_anyStyleDirty = m_anyLayoutDirty = m_anyPaintDirty = true;
+    ++m_paintEpoch;
     if (m_root.index < m_nodes.size()) markLayout(m_root.index);
 }
 
@@ -1060,6 +1126,18 @@ void UiContext::paintTextLayout(DrawList& dl, const fuse::text::TextLayout& tl, 
     }
 }
 
+UiContext::TextPaintEntry* UiContext::textPaintSlot(u32 node) {
+    constexpr u32 kSlots = 4; // a widget painting more strings than this (rows of a list) is not memoised past them
+    if (!m_painting || node != m_textPaintNode || node >= m_cold.size() || m_textPaintSlot >= kSlots) return nullptr;
+    auto& v = m_cold[node]->textPaint;
+    if (v.size() <= m_textPaintSlot) v.resize(m_textPaintSlot + 1u);
+    return &v[m_textPaintSlot++];
+}
+u8 UiContext::textPaintFeatures() {
+    return u8((fuse::text::msdfEnabled() ? 1u : 0u) | (fuse::text::colorGlyphsEnabled() ? 2u : 0u) |
+              (fuse::text::variableFontsEnabled() ? 4u : 0u));
+}
+
 void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color col, f32 px, TextAlignment align, u32 nodeIdx) {
     if (!m_font || s.empty()) return;
     fuse::text::TextLayoutDesc d;
@@ -1069,14 +1147,45 @@ void UiContext::paintString(DrawList& dl, std::string_view s, Rect box, Color co
     d.align = fuse::text::TextAlign(u8(align));
     // the node's font when it names one, else the font of the widget callback being run
     const fuse::text::Font* font = m_textScope.font ? m_textScope.font : m_font;
+    u8 deco = 0;
     if (nodeIdx < m_nodes.size() && m_nodes[nodeIdx].alive) {
         const ComputedStyle& ns = m_styles.style(m_nodes[nodeIdx].style);
         font = fontFor(ns);
         d.letterSpacing = ns.letterSpacing;
+        deco = ns.textDecoration;
     }
-    fuse::text::layoutText(*font, fuse::text::defaultShaper(), s, d, m_stringScratch);
+    paintStringMemo(dl, *font, s, box, col, d, nodeIdx, deco);
+}
+
+void UiContext::paintStringMemo(DrawList& dl, const fuse::text::Font& font, std::string_view s, Rect box, Color col,
+                                const fuse::text::TextLayoutDesc& d, u32 nodeIdx, u8 deco) {
+    TextPaintEntry* e = textPaintSlot(nodeIdx);
+    TextPaintEntry k;
+    if (e) {
+        k.font = &font;
+        k.shaper = &fuse::text::defaultShaper();
+        k.fontId = font.id();
+        k.chainGen = fuse::text::fontChainGeneration();
+        k.atlasGen = m_atlas.generation();
+        k.box = box;
+        k.col = col;
+        k.px = d.pixelSize;
+        k.letterSpacing = d.letterSpacing;
+        k.renderScale = m_renderScale;
+        k.msdfThreshold = m_msdfThreshold;
+        k.align = u8(d.align);
+        k.deco = deco;
+        k.features = textPaintFeatures();
+        if (e->sameInputs(k, s)) {
+            e->replay(dl);
+            return;
+        }
+    }
+    const std::size_t at = dl.size();
+    fuse::text::layoutText(font, fuse::text::defaultShaper(), s, d, m_stringScratch);
     const f32 y = box.y + std::floor((box.h - m_stringScratch.height) * 0.5f);
-    paintTextLayout(dl, m_stringScratch, {box.x, y}, col, px, nodeIdx);
+    paintTextLayout(dl, m_stringScratch, {box.x, y}, col, d.pixelSize, nodeIdx, deco);
+    if (e) e->store(k, s, dl, at, m_atlas.generation() == k.atlasGen);
 }
 
 void UiContext::paintString(DrawList& dl, const fuse::text::Font& font, std::string_view s, Rect box, Color col, f32 px,
@@ -1087,9 +1196,7 @@ void UiContext::paintString(DrawList& dl, const fuse::text::Font& font, std::str
     d.maxWidth = box.w;
     d.elide = true;
     d.align = fuse::text::TextAlign(u8(align));
-    fuse::text::layoutText(font, fuse::text::defaultShaper(), s, d, m_stringScratch);
-    const f32 y = box.y + std::floor((box.h - m_stringScratch.height) * 0.5f);
-    paintTextLayout(dl, m_stringScratch, {box.x, y}, col, px, nodeIdx, deco);
+    paintStringMemo(dl, font, s, box, col, d, nodeIdx, deco);
 }
 
 // ---- Layout --------------------------------------------------------------------------------------------------------
@@ -1104,6 +1211,7 @@ bool fixedLen(const Length& l, f32 base) { return l.unit == Unit::Px || (l.unit 
 
 void UiContext::markArrange(u32 i) {
     m_anyLayoutDirty = m_anyPaintDirty = true;
+    touchSubtree(i);
     for (u32 a = i; a != kNone; a = m_nodes[a].parent) {
         if (m_nodes[a].dirty & kDirtyLayout) break;
         m_nodes[a].dirty |= kDirtyLayout;
@@ -1462,13 +1570,21 @@ void UiContext::arrangeChildren(u32 i) {
 
 // ---- Paint ---------------------------------------------------------------------------------------------------------
 void UiContext::paintRec(u32 i, f32 opacity, DrawList& dl) {
-    if (m_nodes[i].flags & kFlagFx) paintEffects(i, opacity, dl);
-    else paintBody(i, opacity, dl);
+    if (m_nodes[i].flags & kFlagFx) {
+        m_memoPure = false; // effect groups record side data and local spaces: never memoised
+        ++m_paintFxDepth;
+        paintEffects(i, opacity, dl);
+        --m_paintFxDepth;
+    } else {
+        paintBody(i, opacity, dl);
+    }
 }
 
 void UiContext::paintBody(u32 i, f32 opacity, DrawList& dl) {
     Node& n = m_nodes[i];
     const ComputedStyle& s = m_styles.style(n.style);
+    const bool touched = (n.dirty & kDirtySubtree) != 0;
+    n.dirty &= u8(~kDirtySubtree);
     if (n.dirty & kDirtyPaint) {
         m_damage = m_damage.unite(n.rect);
         n.dirty &= u8(~kDirtyPaint);
@@ -1476,6 +1592,33 @@ void UiContext::paintBody(u32 i, f32 opacity, DrawList& dl) {
     if (!s.visible) return;
     opacity *= s.opacity * n.animOpacity;
     if (opacity <= 0.001f || n.rect.empty()) return;
+    // Paint memo: a clipped container whose subtree did not change since the previous paint copies that paint's
+    // commands. Its content is clipped to its rect, so nothing outside it depends on them either.
+    const WidgetClass& wcls = m_registry.get(n.cls);
+    const bool nodePure = (!wcls.paint || wcls.purePaint) && !(n.flags & (kFlagZKids | kFlagOutOfFlow)) &&
+                          s.overflow != Overflow::Scroll;
+    const bool memo = m_memoOn && m_paintFxDepth == 0 && &dl == &m_draw && n.first != kNone && s.overflow == Overflow::Clip;
+    const bool outerPure = m_memoPure;
+    const u32 memoFirst = u32(dl.size()), memoPainted = m_stats.painted, memoAtlas = m_atlas.generation();
+    if (memo) {
+        if (m_paintMemo.size() < m_nodes.size()) m_paintMemo.resize(m_nodes.size());
+        PaintMemo& pm = m_paintMemo[i];
+        if (!touched && pm.valid && pm.gen == n.gen && pm.serial + 1u == m_paintSerial && pm.epoch == m_paintEpoch &&
+            pm.atlasGen == memoAtlas && pm.rect == n.rect && pm.opacity == opacity) {
+            const auto& src = m_prevDraw.cmds();
+            dl.cmds().insert(dl.cmds().end(), src.begin() + std::ptrdiff_t(pm.first),
+                             src.begin() + std::ptrdiff_t(pm.first + pm.count));
+            pm.first = memoFirst;
+            pm.serial = m_paintSerial;
+            m_stats.painted += pm.painted;
+            m_memoLive = true;
+            return; // m_memoPure unchanged: the memo was only recorded for a pure subtree
+        }
+        pm.valid = false;
+        m_memoPure = nodePure;
+    } else {
+        m_memoPure = m_memoPure && nodePure;
+    }
     ++m_stats.painted;
     const NodeHandle h{i, n.gen};
     auto tint = [&](Color c) { return c.withAlpha(c.a * opacity); };
@@ -1497,18 +1640,45 @@ void UiContext::paintBody(u32 i, f32 opacity, DrawList& dl) {
         dl.gradientRect(n.rect, g, s.radius);
     }
     for (std::size_t k = firstCmd; k < dl.size(); ++k) dl.cmds()[k].node = i;
-    const WidgetClass& wc = m_registry.get(n.cls);
+    const WidgetClass& wc = wcls;
     const Rect content = contentRect(h);
+    m_textPaintNode = i; // text memo slots of this node's paint (textPaintSlot)
+    m_textPaintSlot = 0;
     if (wc.paint) {
         const PaintContext pc{*this, h, n.rect, content, s, n.state, opacity};
         const TextScope prev = enterTextScope(i);
         wc.paint(pc, dl);
         m_textScope = prev;
     } else if (!m_cold[i]->text.empty()) {
-        const auto& tl = m_cold[i]->layout;
+        const Cold& c = *m_cold[i];
+        const auto& tl = c.layout;
         const f32 y = content.y + std::floor(std::max(0.f, content.h - tl.height) * 0.5f);
-        paintTextLayout(dl, tl, {content.x, y}, tint(s.color), s.fontSize, i);
+        const Color col = tint(s.color);
+        TextPaintEntry* e = m_font ? textPaintSlot(i) : nullptr;
+        TextPaintEntry k;
+        if (e) {
+            k.font = tl.font ? tl.font : m_font;
+            k.fontId = k.font->id();
+            k.chainGen = fuse::text::fontChainGeneration();
+            k.atlasGen = m_atlas.generation();
+            k.layoutSerial = c.layoutSerial;
+            k.box = {content.x, y, 0.f, 0.f};
+            k.col = col;
+            k.px = s.fontSize;
+            k.renderScale = m_renderScale;
+            k.msdfThreshold = m_msdfThreshold;
+            k.deco = s.textDecoration;
+            k.features = textPaintFeatures();
+        }
+        if (e && e->sameInputs(k, {})) {
+            e->replay(dl);
+        } else {
+            const std::size_t at = dl.size();
+            paintTextLayout(dl, tl, {content.x, y}, col, s.fontSize, i);
+            if (e) e->store(k, {}, dl, at, m_atlas.generation() == k.atlasGen);
+        }
     }
+    m_textPaintNode = kNone;
     if (n.first == kNone) return;
     const bool clip = s.overflow != Overflow::Visible;
     if (clip) dl.pushClip(n.rect, rad);
@@ -1549,6 +1719,24 @@ void UiContext::paintBody(u32 i, f32 opacity, DrawList& dl) {
             dl.rect(tr, tint(Color::rgb(0x000000, 0.12f)), kScrollBarSize * 0.5f);
             dl.rect(th, tint(Color::rgb(hot ? 0xB4B4C0 : 0x8A8A96, 0.85f)), kScrollBarSize * 0.5f);
         }
+    if (memo) {
+        // plain commands only: the vector ops index side records of their own list
+        bool keep = m_memoPure && m_atlas.generation() == memoAtlas && !(m_nodes[i].dirty & kDirtySubtree);
+        for (std::size_t k = memoFirst; keep && k < dl.size(); ++k) keep = dl.cmds()[k].op < DrawOp::Path;
+        PaintMemo& pm = m_paintMemo[i];
+        pm.gen = m_nodes[i].gen;
+        pm.first = memoFirst;
+        pm.count = u32(dl.size()) - memoFirst;
+        pm.painted = m_stats.painted - memoPainted;
+        pm.serial = m_paintSerial;
+        pm.epoch = m_paintEpoch;
+        pm.atlasGen = memoAtlas;
+        pm.rect = m_nodes[i].rect;
+        pm.opacity = opacity;
+        pm.valid = keep;
+        m_memoLive = m_memoLive || keep;
+        m_memoPure = outerPure && m_memoPure;
+    }
 }
 
 bool UiContext::scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const {
@@ -1568,7 +1756,15 @@ bool UiContext::scrollBarGeom(u32 i, u8 axis, Rect& track, Rect& thumb) const {
 
 void UiContext::paintLists(std::vector<PopupSurface>& next, std::vector<PopupSurface>& nextWindows) {
     const f32 rs = m_renderScale;
+    // The previous paint's commands, for the paint memo; only once it recorded a memo, so a tree without memo
+    // candidates keeps one list (and its warm capacity).
+    if (m_memoLive) std::swap(m_draw, m_prevDraw);
+    m_memoLive = false;
     m_draw.clear();
+    ++m_paintSerial;
+    m_memoOn = rs == 1.f && !m_osPopups && !m_osWindows; // memo commands are logical units, the main list only
+    m_memoPure = true;
+    m_paintFxDepth = 0;
     m_popupPending.clear();
     next.clear();
     nextWindows.clear();
