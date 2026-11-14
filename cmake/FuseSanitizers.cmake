@@ -196,6 +196,12 @@ function(fuse_sanitize_finalize)
         endif()
         get_target_property(_sdir ${_t} SOURCE_DIR)
         _fuse_sanitize_is_fuse_dir("${_sdir}" _is_fuse)
+        # vendor/sqlite amalgamation wrappers (fuse_ui_sqlite3, fuse_remaster_sqlite3) are declared under Source/FUSE
+        # but are third-party: compiled normally like the other vendored libraries. (Optimised, UBSan's object-size
+        # check reports a false positive in balance_nonroot on `(nNew > nOld ? apNew : apOld)[nOld - 1]`.)
+        if(_t MATCHES "_sqlite3$")
+            set(_is_fuse OFF)
+        endif()
         # Targets that pick their own level (-O2 reference kernels, fuse_lint, the shipping probe) keep it.
         get_target_property(_own_opts ${_t} COMPILE_OPTIONS)
         if(_optflags AND NOT "${_own_opts}" MATCHES "-O[0-9sgz]")
