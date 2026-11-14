@@ -189,6 +189,15 @@ bool VulkanInstance::initialize(const VulkanInstanceDesc& desc) {
         }
     }
 
+#if defined(__APPLE__)
+    // MoltenVK behind the Khronos loader is a portability driver: the loader lists it only for an instance that
+    // enables VK_KHR_portability_enumeration and sets the enumerate-portability flag (no devices otherwise).
+    const bool portabilityEnumeration = extensionAvailable("VK_KHR_portability_enumeration");
+    if (portabilityEnumeration && !containsExtensionName(extensions, "VK_KHR_portability_enumeration")) {
+        extensions.push_back("VK_KHR_portability_enumeration");
+    }
+#endif
+
     std::vector<const char*> layers;
     const bool validationRequested = desc.enableValidation;
     const bool validationAvailable = layerAvailable("VK_LAYER_KHRONOS_validation");
@@ -201,6 +210,11 @@ bool VulkanInstance::initialize(const VulkanInstanceDesc& desc) {
     createInfo.pApplicationInfo = &appInfo;
     createInfo.enabledExtensionCount = static_cast<u32>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.empty() ? nullptr : extensions.data();
+#if defined(__APPLE__)
+    if (portabilityEnumeration) {
+        createInfo.flags |= 0x00000001; // VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR
+    }
+#endif
     createInfo.enabledLayerCount = static_cast<u32>(layers.size());
     createInfo.ppEnabledLayerNames = layers.empty() ? nullptr : layers.data();
 

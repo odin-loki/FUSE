@@ -66,6 +66,8 @@ std::unique_ptr<SceneViewportHost> SceneViewportHost::create(const SceneViewport
     const char* exts[] = {"VK_KHR_surface",
 #if defined(_WIN32)
                           "VK_KHR_win32_surface"
+#elif defined(__APPLE__)
+                          "VK_EXT_metal_surface" // the Cocoa presenter's CAMetalLayer surface (MoltenVK)
 #else
                           "VK_KHR_xlib_surface"
 #endif

@@ -1,0 +1,112 @@
+// See dialog_driver_macos.hpp. Objective-C++, ARC.
+#include "dialog_driver_macos.hpp"
+
+#import <Cocoa/Cocoa.h>
+
+namespace fuse::editor::test {
+namespace {
+NSString* ns(const std::string& s) { return [NSString stringWithUTF8String:s.c_str()] ?: @""; }
+/// The button titled `title` somewhere under `v` (the colour panel's OK / Cancel accessory row).
+NSButton* findButton(NSView* v, NSString* title) {
+    if (!v) return nil;
+    if ([v isKindOfClass:[NSButton class]] && [((NSButton*)v).title isEqualToString:title]) return (NSButton*)v;
+    for (NSView* c in v.subviews)
+        if (NSButton* b = findButton(c, title)) return b;
+    return nil;
+}
+} // namespace
+
+std::shared_ptr<MacDialogState> macAnswerNextDialog(MacDialogAnswer a) {
+    auto st = std::make_shared<MacDialogState>();
+    __block int ticks = 0, stage = 0;
+    NSTimer* timer = [NSTimer timerWithTimeInterval:0.2
+                                            repeats:YES
+                                              block:^(NSTimer* t) {
+        using K = MacDialogAnswer::Kind;
+        auto done = [&](int code, const char* what) {
+            st->answered = code;
+            st->what = what;
+            [t invalidate];
+        };
+        ++ticks;
+        NSWindow* m = NSApp.modalWindow;
+        if (!m) {
+            if (st->okSent) return; // accepted; macDialogFinish settles it
+            if (ticks > 300) done(0, "no modal dialog came up");
+            return;
+        }
+        if ([m isKindOfClass:[NSColorPanel class]]) {
+            NSColorPanel* p = (NSColorPanel*)m;
+            if (a.kind == K::Colour) {
+                p.color = [NSColor colorWithSRGBRed:a.r green:a.g blue:a.b alpha:1.0];
+                if (NSButton* ok = findButton(p.accessoryView, @"OK")) {
+                    [ok performClick:nil];
+                    done(1, "colour panel: OK");
+                } else {
+                    [NSApp stopModalWithCode:NSModalResponseCancel];
+                    done(-3, "colour panel without an OK button");
+                }
+            } else if (NSButton* cancel = findButton(p.accessoryView, @"Cancel")) {
+                [cancel performClick:nil];
+                done(a.kind == K::Cancel ? 1 : -4, "colour panel: Cancel");
+            } else {
+                [NSApp stopModalWithCode:NSModalResponseCancel];
+                done(-3, "colour panel without a Cancel button");
+            }
+            return;
+        }
+        if (![m isKindOfClass:[NSSavePanel class]]) {
+            [NSApp stopModalWithCode:NSModalResponseCancel];
+            done(-5, ("unexpected modal window " + std::string(NSStringFromClass([m class]).UTF8String)).c_str());
+            return;
+        }
+        NSSavePanel* p = (NSSavePanel*)m;
+        const bool open = [p isKindOfClass:[NSOpenPanel class]];
+        if (a.kind == K::Cancel) {
+            [p cancel:nil];
+            done(1, open ? "open panel: Cancel" : "save panel: Cancel");
+            return;
+        }
+        if (a.kind == K::Colour || (a.kind == K::Save) == open) {
+            [p cancel:nil];
+            done(-4, open ? "an open panel where a save panel was expected" : "a save panel where an open panel was expected");
+            return;
+        }
+        if (stage == 0) { // go to the folder / select the file, then OK on a later tick (the panel loads asynchronously)
+            if (a.kind == K::Save) {
+                p.directoryURL = [NSURL fileURLWithPath:ns(a.folder) isDirectory:YES];
+                p.nameFieldStringValue = ns(a.name);
+            } else if (a.kind == K::Folder) {
+                p.directoryURL = [NSURL fileURLWithPath:ns(a.folder) isDirectory:YES];
+            } else {
+                p.directoryURL = [NSURL fileURLWithPath:ns(a.file) isDirectory:NO]; // a file URL selects that file
+            }
+            stage = 1;
+            return;
+        }
+        if (++stage < 4) return;
+        if (stage < 30) {
+            [p ok:nil]; // ignored while OK is not possible yet (nothing selected): tried again next tick
+            st->okSent = true;
+            st->what = open ? "open panel: OK" : "save panel: OK";
+            return;
+        }
+        [p cancel:nil];
+        done(-2, "the panel did not accept OK");
+    }];
+    st->timer = (__bridge_retained void*)timer;
+    [[NSRunLoop mainRunLoop] addTimer:timer forMode:NSRunLoopCommonModes]; // fires in the modal panel mode too
+    return st;
+}
+
+void macDialogFinish(MacDialogState& st) {
+    if (!st.timer) return;
+    NSTimer* timer = (__bridge_transfer NSTimer*)st.timer;
+    st.timer = nullptr;
+    if (timer.valid) {
+        [timer invalidate];
+        if (st.okSent && st.answered == 0) st.answered = 1; // the dialog call returned after OK: the panel accepted it
+    }
+}
+
+} // namespace fuse::editor::test

@@ -17,6 +17,7 @@
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <map>
 #include <memory>
 #include <string>
@@ -26,6 +27,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#endif
+#if defined(__APPLE__)
+#include "dialog_driver_macos.hpp"
 #endif
 
 using namespace fuse::editor;
@@ -905,6 +909,66 @@ int gateNativeDialogs() {
         CHECK(!r.shell.panels().lightingPickColour("sun"));
         th2.join();
         CHECK(st2 == 1);
+        r.ds->options().nativeColorDialog = false;
+    }
+#elif defined(__APPLE__)
+    // NSSavePanel / NSOpenPanel / NSColorPanel (fuse::app's window-less dialogs), answered from a main run loop timer
+    // inside their modal sessions (dialog_driver_macos.mm)
+    std::thread([] { std::this_thread::sleep_for(std::chrono::seconds(240)); std::fprintf(stderr, "native_dialogs watchdog\n"); std::_Exit(3); }).detach();
+    using Ans = fuse::editor::test::MacDialogAnswer;
+    auto answer = [](Ans a, const std::function<void()>& call) {
+        auto st = fuse::editor::test::macAnswerNextDialog(std::move(a));
+        call();
+        fuse::editor::test::macDialogFinish(*st);
+        std::printf("native_dialogs: driver %d (%s)\n", st->answered, st->what.c_str());
+        return st->answered;
+    };
+    // Save As through NSSavePanel
+    {
+        bool saved = false;
+        const int st = answer({.kind = Ans::Kind::Save, .folder = dir.string(), .name = scene.filename().string()},
+                              [&] { saved = r.c.fileSaveAs(); });
+        std::printf("native_dialogs: save backend %s, scene %s\n", r.ds->lastBackend(), r.v().scenePath.c_str());
+        CHECK(saved && st == 1 && std::string(r.ds->lastBackend()) == "native" && fs::exists(scene, ec));
+    }
+    // Open through NSOpenPanel
+    {
+        CHECK(r.c.fileNew());
+        settle(r);
+        bool opened = false;
+        const int st = answer({.kind = Ans::Kind::Open, .file = scene.string()}, [&] { opened = r.c.fileOpen(); });
+        settle(r);
+        CHECK(opened && st == 1 && std::string(r.ds->lastBackend()) == "native" && fs::equivalent(r.v().scenePath, scene, ec));
+    }
+    // Cancel: nothing opens
+    {
+        std::optional<std::string> p;
+        const int st = answer({.kind = Ans::Kind::Cancel}, [&] { p = r.ds->pickOpenFile("Open Scene", "FUSE level (*.fuselevel)", dir.string()); });
+        CHECK(st == 1 && !p && std::string(r.ds->lastBackend()) == "native");
+    }
+    // folder picker: accepted, then cancelled
+    {
+        std::optional<std::string> p;
+        int st = answer({.kind = Ans::Kind::Folder, .folder = dir.string()}, [&] { p = r.ds->pickDirectory("Project Location", fs::temp_directory_path().string()); });
+        std::printf("native_dialogs: folder %s\n", p ? p->c_str() : "(none)");
+        CHECK(st == 1 && p && fs::equivalent(*p, dir, ec));
+        st = answer({.kind = Ans::Kind::Cancel}, [&] { p = r.ds->pickDirectory("Project Location", dir.string()); });
+        CHECK(st == 1 && !p);
+    }
+    // native colour dialog (NSColorPanel with OK / Cancel), opt-in
+    {
+        CHECK(r.shell.panels().lightingAddSun().valid());
+        settle(r, 4);
+        r.ds->options().nativeColorDialog = true;
+        bool picked = false;
+        int st = answer({.kind = Ans::Kind::Colour, .r = 0.2f, .g = 0.6f, .b = 0.9f}, [&] { picked = r.shell.panels().lightingPickColour("sun"); });
+        settle(r, 4);
+        const LightingView v = r.shell.panels().lighting();
+        std::printf("native_dialogs: NSColorPanel -> %.3f %.3f %.3f\n", v.sunColor[0], v.sunColor[1], v.sunColor[2]);
+        CHECK(picked && st == 1 && std::string(r.ds->lastBackend()) == "native");
+        CHECK(std::fabs(v.sunColor[0] - 0.2f) < 0.01f && std::fabs(v.sunColor[1] - 0.6f) < 0.01f && std::fabs(v.sunColor[2] - 0.9f) < 0.01f);
+        st = answer({.kind = Ans::Kind::Cancel}, [&] { picked = r.shell.panels().lightingPickColour("sun"); });
+        CHECK(st == 1 && !picked);
         r.ds->options().nativeColorDialog = false;
     }
 #else

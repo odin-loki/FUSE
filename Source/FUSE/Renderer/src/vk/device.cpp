@@ -1100,6 +1100,10 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
             enabledExtensions.push_back(extension);
         }
     }
+    // A portability driver (MoltenVK) that offers VK_KHR_portability_subset must have it enabled (Vulkan spec).
+    if (extensionSupported(selected, "VK_KHR_portability_subset")) {
+        enabledExtensions.push_back("VK_KHR_portability_subset");
+    }
 
     if (desc.requirePresentation &&
         (!instanceHasSurface || !extensionSupported(selected, VK_KHR_SWAPCHAIN_EXTENSION_NAME))) {

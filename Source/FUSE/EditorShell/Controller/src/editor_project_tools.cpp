@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -27,6 +28,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 extern char** environ;
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h> // _NSGetExecutablePath (no /proc on macOS)
 #endif
 
 namespace fuse::editor {
@@ -210,7 +214,17 @@ ProcessResult runProcess(const std::string& program, const std::vector<std::stri
 
 std::string executableDir() {
     std::error_code ec;
+#ifdef __APPLE__
+    std::uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size); // asks for the buffer size
+    std::string buf(size, '\0');
+    if (_NSGetExecutablePath(buf.data(), &size) != 0) return {};
+    buf.resize(std::char_traits<char>::length(buf.c_str()));
+    const fs::path exe = fs::weakly_canonical(fs::path(buf), ec); // the path can hold "." / ".." / symlinks
+    return (ec ? fs::path(buf) : exe).parent_path().string();
+#else
     return fs::read_symlink("/proc/self/exe", ec).parent_path().string();
+#endif
 }
 #endif
 
@@ -511,6 +525,7 @@ PackageResult packageProject(const PackageOptions& opts, const std::function<voi
         std::string base = runtimeName;
         if (base.size() > 4 && lower(base.substr(base.size() - 4)) == ".exe") base.resize(base.size() - 4);
         writeText(pkg / "run.sh", "#!/bin/sh\ncd \"$(dirname \"$0\")\" || exit 1\nexport LD_LIBRARY_PATH=\"$PWD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"\n"
+                                  "export DYLD_LIBRARY_PATH=\"$PWD/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}\"\n"
                                   "exec ./bin/" + base + " --present project \"$@\"\n");
         fs::permissions(pkg / "run.sh", exec, fs::perm_options::add, ec);
         writeText(pkg / "run.bat", "@echo off\r\ncd /d \"%~dp0\"\r\nbin\\" + base + ".exe --present project %*\r\n");

@@ -97,7 +97,8 @@ struct NativeOptions {
     /// (widgets::dockFloat) - each get their own borderless OS window owned by the main one, placed at window origin
     /// + node rect, so a floated panel can leave the main window. Pointer input comes back in context coordinates,
     /// keys keep going to the main window. X11: override-redirect utility windows; Win32: WS_EX_TOOLWINDOW owned
-    /// popups. Elsewhere (Wayland included), and when off (the default), floating docks stay in-window panels.
+    /// popups; macOS: borderless non-activating NSPanels added as child windows of the main one. Elsewhere (Wayland
+    /// included), and when off (the default), floating docks stay in-window panels.
     bool osWindows = false;
     /// OS drag and drop (X11: XDND v5; Win32: OLE; Wayland: drops in only). In: files / text dragged from another
     /// application reach the window's drop targets through UiContext::dragExternalMove / dropExternal (DragData type
@@ -182,7 +183,8 @@ public:
     float scale(const AppWindow& w) const;
     /// Posts a real left click to a native window (XSendEvent / PostMessage) at window-local `at` (window pixels); it
     /// is then delivered by the normal event pump (tests drive popup windows this way). Wayland has no way to post
-    /// input to a surface: the click is delivered inside the process, below the wl_pointer handlers.
+    /// input to a surface: the click is delivered inside the process, below the wl_pointer handlers (macOS too: the
+    /// click goes to the window's context; postPointerMove / postPointerButton post real NSEvents).
     bool postClick(unsigned long long nativeWin, fuse::ui::Vec2 at);
     /// Posts a pointer move / a left button press or release / a close request (the title-bar close button) to a
     /// native window at window-local device pixels `at`; delivered by the normal event pump. `at` may lie outside
@@ -192,7 +194,7 @@ public:
     bool postClose(unsigned long long nativeWin);
 
     /// OS tool windows (NativeOptions::osWindows): how many `w` shows now (back to front), each one's native handle,
-    /// its screen rect (physical px) and a read-back of its pixels. X11 / Win32; 0 / false elsewhere.
+    /// its screen rect (physical px) and a read-back of its pixels. X11 / Win32 / macOS (borderless child panels); 0 / false elsewhere.
     std::size_t toolWindowCount(const AppWindow& w) const;
     unsigned long long toolWindow(const AppWindow& w, std::size_t i) const;
     fuse::ui::Rect toolWindowScreenRect(const AppWindow& w, std::size_t i) const;
@@ -275,7 +277,8 @@ bool revealFile(std::string_view path);
 //   Win32: IFileOpenDialog / IFileSaveDialog (FOS_PICKFOLDERS for folders), ChooseColorW, MessageBoxW.
 //   Linux / BSD: zenity, else kdialog (messageBox: zenity only); Unavailable when no helper is installed or there is
 //   no display.
-//   macOS / iOS / Android: Unavailable (use NativePlatform::fileDialog / the in-toolkit dialogs).
+//   macOS: NSOpenPanel / NSSavePanel, NSColorPanel run modally with OK / Cancel; messageBox Unavailable.
+//   iOS / Android: Unavailable (use NativePlatform::fileDialog / the in-toolkit dialogs).
 /// Paths are UTF-8.
 std::expected<std::vector<std::string>, PlatformError> openFileDialog(const FileDialogDesc& d);
 std::expected<std::string, PlatformError> saveFileDialog(const FileDialogDesc& d);

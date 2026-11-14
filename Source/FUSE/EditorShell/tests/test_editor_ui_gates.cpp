@@ -33,6 +33,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -45,6 +46,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#endif
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
 #endif
 #include <algorithm>
 
@@ -2388,6 +2392,12 @@ void gateBuildPackage(Rig& r) {
         wchar_t self[MAX_PATH] = {};
         GetModuleFileNameW(nullptr, self, MAX_PATH);
         o.runtimePath = fs::path(self).string(); // any executable stands in for the player
+    }
+#elif defined(__APPLE__)
+    {
+        char self[4096] = {};
+        std::uint32_t size = sizeof self;
+        if (_NSGetExecutablePath(self, &size) == 0) o.runtimePath = fs::weakly_canonical(fs::path(self), ec).string();
     }
 #else
     o.runtimePath = fs::read_symlink("/proc/self/exe", ec).string();

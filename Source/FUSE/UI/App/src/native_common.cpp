@@ -1,6 +1,10 @@
 // fuse_app native backends: the parts of NativePlatform that are the same on every platform.
 #include "native_internal.hpp"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 namespace fuse::app {
 
 namespace detail {
@@ -60,7 +64,9 @@ void NativePlatform::openFileDialog(AppWindow& w, const FileDialogOptions& o, Fi
 
 #if defined(__ANDROID__) || defined(__APPLE__)
 // ---- platforms without tool windows, OS drag and drop, clipboard formats or window-less dialogs ----------------------
-// (macOS / iOS / Android): the API is there, each call reports "cannot". Text goes through the platform's text clipboard.
+// (iOS / Android; macOS has tool windows and the file / colour dialogs): the API is there, each call reports "cannot".
+// Text goes through the platform's text clipboard.
+#if !(defined(__APPLE__) && TARGET_OS_OSX) // macOS: borderless child panels + posted NSEvents (native_apple.mm)
 std::size_t NativePlatform::toolWindowCount(const AppWindow&) const { return 0; }
 unsigned long long NativePlatform::toolWindow(const AppWindow&, std::size_t) const { return 0; }
 fuse::ui::Rect NativePlatform::toolWindowScreenRect(const AppWindow&, std::size_t) const { return {}; }
@@ -68,6 +74,7 @@ bool NativePlatform::captureToolWindow(const AppWindow&, std::size_t, fuse::ui::
 bool NativePlatform::postPointerMove(unsigned long long, fuse::ui::Vec2) { return false; }
 bool NativePlatform::postPointerButton(unsigned long long, fuse::ui::Vec2, bool) { return false; }
 bool NativePlatform::postClose(unsigned long long) { return false; }
+#endif
 bool NativePlatform::externalDragActive() const { return false; }
 int NativePlatform::cursorThemeSize() const { return 0; }
 bool NativePlatform::setClipboard(std::vector<ClipboardItem> items) {
@@ -96,10 +103,12 @@ bool NativePlatform::clipboardOwned() const { return false; }
 bool NativePlatform::setPrimarySelectionText(std::string_view) { return false; }
 bool NativePlatform::primarySelectionText(std::string&) { return false; }
 
+#if !(defined(__APPLE__) && TARGET_OS_OSX) // macOS: NSOpenPanel / NSSavePanel / NSColorPanel (native_apple.mm)
 std::expected<std::vector<std::string>, PlatformError> openFileDialog(const FileDialogDesc&) { return std::unexpected(PlatformError::Unavailable); }
 std::expected<std::string, PlatformError> saveFileDialog(const FileDialogDesc&) { return std::unexpected(PlatformError::Unavailable); }
 std::expected<std::string, PlatformError> pickFolderDialog(const FileDialogDesc&) { return std::unexpected(PlatformError::Unavailable); }
 std::expected<fuse::ui::Color, PlatformError> colorDialog(const ColorDialogDesc&) { return std::unexpected(PlatformError::Unavailable); }
+#endif
 std::expected<MessageResult, PlatformError> messageBox(std::string_view, std::string_view, MessageIcon, MessageButtons, unsigned long long) {
     return std::unexpected(PlatformError::Unavailable);
 }

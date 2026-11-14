@@ -145,6 +145,14 @@ set_tests_properties(fuse_editor_ui_build_package fuse_editor_ui_edit_tools fuse
 # display (77 without one; Linux: under Xvfb).
 add_executable(fuse_editor_ui_parity_gates tests/test_editor_ui_parity.cpp)
 target_link_libraries(fuse_editor_ui_parity_gates PRIVATE fuse_editor_fuse)
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # native_dialogs on macOS: answers NSSavePanel / NSOpenPanel / NSColorPanel inside their modal sessions
+    enable_language(OBJCXX)
+    target_sources(fuse_editor_ui_parity_gates PRIVATE tests/dialog_driver_macos.mm)
+    set_source_files_properties(tests/dialog_driver_macos.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    set_target_properties(fuse_editor_ui_parity_gates PROPERTIES OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED ON)
+    target_link_libraries(fuse_editor_ui_parity_gates PRIVATE "-framework Cocoa")
+endif()
 fuse_apply_cxx23(fuse_editor_ui_parity_gates)
 foreach(gate dock_drag dock_split hierarchy_dnd hierarchy_menu color_dialog tab_order float_window native_dialogs)
     if(gate MATCHES "float_window|native_dialogs" AND FUSE_UI_XVFB_RUN AND NOT WIN32)

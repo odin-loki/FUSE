@@ -2799,7 +2799,11 @@ bool DialogServices::openExternal(std::string_view path) {
     std::string q = "'";
     for (char c : path) q += c == '\'' ? std::string("'\\''") : std::string(1, c);
     q += "'";
+#ifdef __APPLE__
+    return std::system(("open " + q + " >/dev/null 2>&1").c_str()) == 0; // LaunchServices: returns once handed over
+#else
     return std::system(("xdg-open " + q + " >/dev/null 2>&1 &").c_str()) == 0;
+#endif
 #endif
 }
 
