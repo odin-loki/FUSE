@@ -73,8 +73,7 @@ jobs:
             -DFUSE_BUILD_CORE=ON \
             -DFUSE_BUILD_CORE_TESTS=ON \
             -DFUSE_BUILD_VULKAN=ON \
-            -DFUSE_BUILD_EDITOR_API=ON \
-            -DFUSE_EDITOR_SHELL=fuse
+            -DFUSE_BUILD_EDITOR=ON
       # The targets the fuse_editor_ui label runs (gate executables, the editor, fuse_cook they launch), not the
       # whole engine tree.
       - name: Build (editor shell + gate binaries)
