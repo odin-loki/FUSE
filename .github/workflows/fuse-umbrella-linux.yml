@@ -69,7 +69,7 @@ jobs:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
           # VK_ADD_LAYER_PATH only: VK_LAYER_PATH would hide FUSE test layers under build-fuse/.
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
-        run: ctest --test-dir build-fuse --output-on-failure --timeout 2400
+        run: ctest --test-dir build-fuse --no-tests=error --output-on-failure --timeout 2400
 
       - name: Run demo_hybrid_hud
         env:
@@ -104,7 +104,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
-          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }} ${{ env.FUSE_APT_LINUX_VULKAN }} xvfb xauth
+          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }} ${{ env.FUSE_APT_LINUX_VULKAN }} xvfb xauth libx11-dev libxi-dev
 
       - name: Configure (parity demos + X11 display wrapper)
         run: |
@@ -124,7 +124,7 @@ jobs:
       - name: Run U8 present ctests
         env:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
-        run: ctest --test-dir build-u8-present -L 'u8;present' --output-on-failure -j1 --timeout 1200
+        run: ctest --test-dir build-u8-present --no-tests=error -L '^u8$' -L '^present$' --output-on-failure -j1 --timeout 1200
 
   fuse-core-single-thread:
     name: fuse_core jobs (FUSE_JOBS_SINGLE_THREAD)
@@ -150,7 +150,7 @@ jobs:
 
       - name: Run single-thread CTest
         run: |
-          ctest --test-dir build-st --output-on-failure \
+          ctest --test-dir build-st --no-tests=error --output-on-failure \
             -R 'fuse_core_jobs|fuse_core_jobs_single_thread|fuse_core_worker_count|fuse_core_fiber'
 
   fuse-warnings-as-errors:
@@ -187,7 +187,7 @@ jobs:
 
       - name: Shipping binary inspection (no assert/profiler code or stripped strings)
         if: matrix.config == 'shipping'
-        run: ctest --test-dir build/fuse-werror-shipping --output-on-failure -R 'fuse_b7_shipping_binaries|fuse_core_b7_shipping_strip'
+        run: ctest --test-dir build/fuse-werror-shipping --no-tests=error --output-on-failure -R 'fuse_b7_shipping_binaries|fuse_core_b7_shipping_strip'
 
   fuse-smoke-asan:
     # Master plan: "ASan/UBSan clean on subsystem smoke" + "All unit tests pass
@@ -222,7 +222,7 @@ jobs:
         env:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
-        run: ctest --test-dir build/fuse-asan --output-on-failure -j1 --timeout 2400
+        run: ctest --test-dir build/fuse-asan --no-tests=error --output-on-failure -j1 --timeout 2400
 
       - name: U8 parity demos + editor PIE embed (ASan+UBSan)
         env:
@@ -231,7 +231,7 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/asan.supp
           LSAN_OPTIONS: suppressions=${{ github.workspace }}/cmake/sanitizers/lsan.supp
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/ubsan.supp
-        run: ctest --test-dir build/fuse-asan -L u8 --output-on-failure -j1 --timeout 1200
+        run: ctest --test-dir build/fuse-asan --no-tests=error -L u8 --output-on-failure -j1 --timeout 1200
 
       - name: Run fuse_runtime_smoke under ASan+UBSan
         env:
@@ -277,4 +277,4 @@ jobs:
             ctest --test-dir build/editor-ui -L fuse_editor_ui --output-on-failure --no-tests=error --timeout 2400
 
       - name: Editor lint (link closure / includes)
-        run: ctest --test-dir build/editor-ui -R "^fuse_lint_.*editor" --output-on-failure
+        run: ctest --test-dir build/editor-ui --no-tests=error -R "^fuse_lint_.*editor" --output-on-failure

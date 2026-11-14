@@ -51,4 +51,4 @@ jobs:
           cmake --build build-tsan --target Source/FUSE/Asset/tests/all
 
       - name: Run TSan CTest (fuse_core + asset runtime)
-        run: ctest --test-dir build-tsan -L tsan --output-on-failure --timeout 2400
+        run: ctest --test-dir build-tsan --no-tests=error -L tsan --output-on-failure --timeout 2400

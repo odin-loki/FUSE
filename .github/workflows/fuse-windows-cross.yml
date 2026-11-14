@@ -64,7 +64,7 @@ jobs:
       - name: CTest under Wine (headless)
         env:
           WINEDEBUG: -all
-        run: ctest --test-dir build/fuse-mingw-${{ matrix.config }} --output-on-failure -j 2 --timeout 900
+        run: ctest --test-dir build/fuse-mingw-${{ matrix.config }} --no-tests=error --output-on-failure -j 2 --timeout 900
 
       - name: Upload crash-handler artifacts on failure
         if: failure()

@@ -52,7 +52,7 @@ jobs:
       # -LE perf: the wall-clock budget gates (fuse_ui_bench_10k, 1M-row frame budgets, icon rasterisation budget,
       # hello_startup) have thresholds for a quiet machine; a shared runner under -j 3 misses them by noise.
       - name: Headless UI gates
-        run: ctest --test-dir build-ui-macos --output-on-failure -j 3 -LE "vulkan|perf"
+        run: ctest --test-dir build-ui-macos --no-tests=error --output-on-failure -j 3 -LE "vulkan|perf"
 
   # FUSE editor (Source/FUSE/EditorShell, FUSE UI shell) on Cocoa: the whole tree with the editor, then the
   # fuse_editor_ui gates. Hosted macOS runners have a logged-in GUI session (a window server), so the windowed gates
