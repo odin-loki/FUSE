@@ -203,7 +203,7 @@ jobs:
       group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
       cancel-in-progress: false
     runs-on: ubuntu-24.04
-    # Debug ASan+UBSan build ~25 min; the full suite (~1400 tests) is ~2 h of test time serially on the 4-vCPU runner
+    # Debug ASan+UBSan (FUSE_SANITIZE_DEBUG_OPT=-O1, cmake/FuseSanitizers.cmake) build ~25 min; at -O0 the full suite (~1400 tests) is ~2 h of test time serially on the 4-vCPU runner
     # (1004 tests took 94 min before the old 120-min limit cancelled the job), ~1 h with -j$(nproc). 240 leaves
     # headroom for slow runners without letting a hung job hold the host group for the 6 h default.
     timeout-minutes: 240
@@ -233,14 +233,8 @@ jobs:
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
         run: ctest --test-dir build/fuse-asan --no-tests=error --output-on-failure -j"$(nproc)" --timeout 2400
 
-      - name: U8 parity demos + editor PIE embed (ASan+UBSan)
-        env:
-          VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
-          VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
-          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/asan.supp
-          LSAN_OPTIONS: suppressions=${{ github.workspace }}/cmake/sanitizers/lsan.supp
-          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/ubsan.supp
-        run: ctest --test-dir build/fuse-asan --no-tests=error -L u8 --output-on-failure -j1 --timeout 1200
+      # The u8 parity demos + editor PIE embed (label u8) run in the step above; a second -L u8 pass only repeated them
+      # (~3 min): the FUSE_SANITIZE test ENVIRONMENT overrides a step's ASAN_OPTIONS, so it was the same run.
 
       - name: Run fuse_runtime_smoke under ASan+UBSan
         env:

@@ -117,6 +117,15 @@ if(NOT "${FUSE_SANITIZE}" STREQUAL "")
     endif()
 endif()
 
+# Optimisation level for Debug sanitizer builds (fuse-asan inherits fuse-debug). ASan + UBSan at -O0 run the CPU-bound
+# gates 3-4x slower than at -O1 (fuse_svo_ray_kernel_parity: 54 s -O0, 18 s -O1), which pushed the ~1400-test ASan
+# job past per-test timeouts. -O1 is the level the ASan documentation recommends: findings and stacks stay usable
+# (with -fno-omit-frame-pointer / -fno-optimize-sibling-calls), NDEBUG stays undefined so asserts still fire.
+# Applied to every target in the tree (vendored ones are uninstrumented but still run inside the tests). Empty = the
+# build type's own flags (-O0 for Debug).
+set(FUSE_SANITIZE_DEBUG_OPT "-O1" CACHE STRING
+    "Optimisation flag appended to Debug compiles in FUSE_SANITIZE builds (-O1 per ASan guidance; empty = -O0).")
+
 set(FUSE_SANITIZE_VK_ICD "/usr/share/vulkan/icd.d/lvp_icd.json" CACHE FILEPATH
     "Vulkan ICD manifest forced for tests in FUSE_SANITIZE builds (Lavapipe). Empty = loader default.")
 
@@ -162,6 +171,10 @@ function(fuse_sanitize_finalize)
         set(_has_ubsan 1)
     endif()
     set(_copts -fsanitize=${_csv} -fno-omit-frame-pointer)
+    set(_optflags)
+    if(NOT "${FUSE_SANITIZE_DEBUG_OPT}" STREQUAL "")
+        set(_optflags $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:C,CXX>>:${FUSE_SANITIZE_DEBUG_OPT};-fno-optimize-sibling-calls>)
+    endif()
     if(_has_ubsan)
         list(APPEND _copts -fno-sanitize-recover=undefined)
     endif()
@@ -182,6 +195,11 @@ function(fuse_sanitize_finalize)
         endif()
         get_target_property(_sdir ${_t} SOURCE_DIR)
         _fuse_sanitize_is_fuse_dir("${_sdir}" _is_fuse)
+        # Targets that pick their own level (-O2 reference kernels, fuse_lint, the shipping probe) keep it.
+        get_target_property(_own_opts ${_t} COMPILE_OPTIONS)
+        if(_optflags AND NOT "${_own_opts}" MATCHES "-O[0-9sgz]")
+            target_compile_options(${_t} PRIVATE ${_optflags})
+        endif()
         # Executables/shared objects anywhere that link a sanitized FUSE lib
         # still need the runtime; only instrument compile for FUSE dirs.
         if(_is_fuse)
