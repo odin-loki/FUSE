@@ -241,8 +241,11 @@ jobs:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
         run: |
-          ctest --test-dir build/fuse-asan --no-tests=error --output-on-failure -j"$(nproc)" --timeout 2400 \
+          ctest --test-dir build/fuse-asan --no-tests=error --output-on-failure -j"$(nproc)" --timeout 2400 -LE perf \
             --resource-spec-file "$PWD/build/fuse-asan/fuse_ctest_resources.json"
+          # Wall-clock gates (label perf) on their own: with the Lavapipe slots filling all 4 cores beside them,
+          # fuse_ui_mv_tree_1m's p95 frame budget missed by 3% (8.27 ms vs 8 ms, run 43666140642).
+          ctest --test-dir build/fuse-asan --no-tests=error --output-on-failure --timeout 2400 -L perf
 
       # The u8 parity demos + editor PIE embed (label u8) run in the step above; a second -L u8 pass only repeated them
       # (~3 min): the FUSE_SANITIZE test ENVIRONMENT overrides a step's ASAN_OPTIONS, so it was the same run.
