@@ -6,7 +6,7 @@ file(TOUCH "${FUSE_VULKAN_ICD_LOCK_FILE}")
 # (The previous wrapper exited 0 on every failure via `if ! cmd; then status=$?`, and retried
 # segfaults — both hid real failures.)
 file(WRITE "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
-"#!/usr/bin/env bash\nexec flock -x \"${FUSE_VULKAN_ICD_LOCK_FILE}\" \"$@\"\n")
+"#!/usr/bin/env bash\n# ctest allocated this test a lavapipe slot (FUSE_VULKAN_TEST_SLOTS + --resource-spec-file): ctest bounds the\n# concurrency, no lock. Otherwise one ICD test at a time.\nif [ -n \"$CTEST_RESOURCE_GROUP_COUNT\" ]; then exec \"$@\"; fi\nexec flock -x \"${FUSE_VULKAN_ICD_LOCK_FILE}\" \"$@\"\n")
 file(CHMOD "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
     FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 

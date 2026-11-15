@@ -34,8 +34,8 @@
 
 #if FUSE_TEST_GLOBAL_NEW_HOOKS
 namespace {
-thread_local bool t_count = false;
-thread_local unsigned long long t_allocations = 0;
+[[maybe_unused]] thread_local bool t_count = false;
+[[maybe_unused]] thread_local unsigned long long t_allocations = 0;
 } // namespace
 #endif
 

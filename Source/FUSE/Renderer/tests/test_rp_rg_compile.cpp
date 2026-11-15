@@ -20,7 +20,7 @@
 
 namespace {
 
-thread_local bool t_count = false;
+[[maybe_unused]] thread_local bool t_count = false;
 thread_local unsigned long t_allocations = 0;
 
 } // namespace

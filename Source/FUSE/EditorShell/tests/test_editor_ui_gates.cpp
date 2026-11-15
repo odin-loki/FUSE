@@ -290,7 +290,8 @@ void gateUiFrame(Rig& r) {
         full = std::min(full, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t1).count());
     }
     const char* reportOnly = std::getenv("FUSE_UI_PERF_REPORT_ONLY");
-    if (!reportOnly || !*reportOnly || std::strcmp(reportOnly, "0") == 0) CHECK(full <= 8.0);
+    const bool enforce = !reportOnly || !*reportOnly || std::strcmp(reportOnly, "0") == 0;
+    if (enforce) CHECK(full <= 8.0);
     // full 9-dock repaint, UI side (restyle + relayout + draw list of every node; plan budget 2 ms)
     std::vector<double> rep;
     for (int i = 0; i < 21; ++i) {
@@ -305,7 +306,7 @@ void gateUiFrame(Rig& r) {
                 ms, n, r.ui().nodeCount(), r.ui().stats().drawCmds, rep[rep.size() / 2], full);
     CHECK(ms < 16.7);
 #if defined(NDEBUG) && !defined(__SANITIZE_ADDRESS__)
-    CHECK(rep[rep.size() / 2] <= 2.0); // plan §6: full 9-dock repaint <= 2 ms (optimised builds only)
+    if (enforce) CHECK(rep[rep.size() / 2] <= 2.0); // plan §6: full 9-dock repaint <= 2 ms (optimised builds only)
 #endif
     // hover only damages the buttons it enters and leaves, never the window (shared :hover ancestors stay put)
     CHECK(maxDamage < 0.05f * r.ui().viewport().w * r.ui().viewport().h);

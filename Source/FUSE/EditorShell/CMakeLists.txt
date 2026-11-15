@@ -132,6 +132,10 @@ foreach(gate ${FUSE_EDITOR_UI_GATES})
     add_test(NAME fuse_editor_ui_${gate} COMMAND fuse_editor_ui_gates --gate=${gate} --out=${FUSE_EDITOR_UI_SHOTS}/${gate}.png)
     set_tests_properties(fuse_editor_ui_${gate} PROPERTIES LABELS "fuse_ui;fuse_editor_ui")
 endforeach()
+# The parallel twin (fuse_editor_ui_ui_frame) runs beside the other gates under ctest -j: it keeps the hover-damage and
+# 16.7 ms frame checks but only reports the wall-clock budgets (2.05 ms vs 2 ms on a loaded windows-2022 runner, run
+# 43611889220, while the serial twin measured 0.91 ms). The budgets are enforced by fuse_editor_ui_frame below.
+set_tests_properties(fuse_editor_ui_ui_frame PROPERTIES ENVIRONMENT "FUSE_UI_PERF_REPORT_ONLY=1")
 # plan §6 / UI9 name of the ui_frame gate: the full 9-dock repaint budget (2 ms) on its own, not beside other tests
 add_test(NAME fuse_editor_ui_frame COMMAND fuse_editor_ui_gates --gate=ui_frame --out=${FUSE_EDITOR_UI_SHOTS}/frame.png)
 set_tests_properties(fuse_editor_ui_frame PROPERTIES LABELS "fuse_ui;fuse_editor_ui;gate" RUN_SERIAL TRUE)

@@ -60,7 +60,8 @@ jobs:
             -DFUSE_BUILD_EDITOR_API=ON \
             -DFUSE_BUILD_EDITOR=OFF \
             -DFUSE_BUILD_VULKAN=ON \
-            -DFUSE_BUILD_CUDA=ON
+            -DFUSE_BUILD_CUDA=ON \
+            -DFUSE_VULKAN_TEST_SLOTS=4
       - name: Build
         run: cmake --build build-fuse --config Release
 
@@ -69,7 +70,13 @@ jobs:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
           # VK_ADD_LAYER_PATH only: VK_LAYER_PATH would hide FUSE test layers under build-fuse/.
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
-        run: ctest --test-dir build-fuse --no-tests=error --output-on-failure --timeout 2400
+        # Two passes: everything but the wall-clock gates in parallel (Lavapipe gates share FUSE_VULKAN_TEST_SLOTS
+        # slots, the rest of the RUN_SERIAL set still runs alone), then the perf-labelled budgets on a quiet runner.
+        # The single serial pass took ~60 min.
+        run: |
+          ctest --test-dir build-fuse --no-tests=error --output-on-failure --timeout 2400 -j"$(nproc)" -LE perf \
+            --resource-spec-file "$PWD/build-fuse/fuse_ctest_resources.json"
+          ctest --test-dir build-fuse --no-tests=error --output-on-failure --timeout 2400 -L perf
 
       - name: Run demo_hybrid_hud
         env:
@@ -198,12 +205,13 @@ jobs:
     # target (cmake/FuseSanitizers.cmake); UBSan is non-recoverable so any
     # finding fails its test. Third-party-only suppressions: cmake/sanitizers/.
     name: FUSE ASan+UBSan (all unit tests + smoke)
-    needs: [fuse-core-linux]
+    # Runs beside fuse-core-linux, not after it (that queued the longest job behind a ~80 min one). Own concurrency
+    # group for the reason the -Werror matrix has one: in the shared host group a second queued job cancels a pending one.
     concurrency:
-      group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
+      group: fuse-umbrella-linux-asan-${{ github.head_ref || github.ref }}
       cancel-in-progress: false
     runs-on: ubuntu-24.04
-    # Debug ASan+UBSan build ~25 min; the full suite (~1400 tests) is ~2 h of test time serially on the 4-vCPU runner
+    # Debug ASan+UBSan (FUSE_SANITIZE_DEBUG_OPT=-O1, cmake/FuseSanitizers.cmake) build ~25 min; at -O0 the full suite (~1400 tests) is ~2 h of test time serially on the 4-vCPU runner
     # (1004 tests took 94 min before the old 120-min limit cancelled the job), ~1 h with -j$(nproc). 240 leaves
     # headroom for slow runners without letting a hung job hold the host group for the 6 h default.
     timeout-minutes: 240
@@ -219,28 +227,25 @@ jobs:
         run: |
           cmake --preset fuse-asan \
             -DCMAKE_CXX_COMPILER=g++-13 \
-            -DFUSE_BUILD_SMOKE=ON
+            -DFUSE_BUILD_SMOKE=ON \
+            -DFUSE_VULKAN_TEST_SLOTS=4
 
       - name: Build
         run: cmake --build build/fuse-asan
 
-      # Parallel: Lavapipe / display / audio / bench gates carry RUN_SERIAL (ctest runs those alone) and the Vulkan ICD
-      # ones also take the run_vulkan_icd_locked.sh flock; the UI wall-clock budgets are NDEBUG-only, so in this Debug
-      # build the rest are CPU-bound unit tests that can share the runner.
+      # Parallel: display / audio / bench gates carry RUN_SERIAL (ctest runs those alone); the Lavapipe gates share
+      # FUSE_VULKAN_TEST_SLOTS slots of the resource spec (cmake/FuseVulkanSlots.cmake) instead of running one at a
+      # time; the UI wall-clock budgets are NDEBUG-only, so in this Debug build the rest are CPU-bound unit tests.
       - name: Run CTest under ASan+UBSan
         env:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
-        run: ctest --test-dir build/fuse-asan --no-tests=error --output-on-failure -j"$(nproc)" --timeout 2400
+        run: |
+          ctest --test-dir build/fuse-asan --no-tests=error --output-on-failure -j"$(nproc)" --timeout 2400 \
+            --resource-spec-file "$PWD/build/fuse-asan/fuse_ctest_resources.json"
 
-      - name: U8 parity demos + editor PIE embed (ASan+UBSan)
-        env:
-          VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
-          VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
-          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/asan.supp
-          LSAN_OPTIONS: suppressions=${{ github.workspace }}/cmake/sanitizers/lsan.supp
-          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/ubsan.supp
-        run: ctest --test-dir build/fuse-asan --no-tests=error -L u8 --output-on-failure -j1 --timeout 1200
+      # The u8 parity demos + editor PIE embed (label u8) run in the step above; a second -L u8 pass only repeated them
+      # (~3 min): the FUSE_SANITIZE test ENVIRONMENT overrides a step's ASAN_OPTIONS, so it was the same run.
 
       - name: Run fuse_runtime_smoke under ASan+UBSan
         env:

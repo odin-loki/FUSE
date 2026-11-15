@@ -44,6 +44,7 @@ option(FUSE_CORE_ENABLE_ASAN "Enable AddressSanitizer for fuse_core and fuse_cor
 option(FUSE_CORE_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer for fuse_core and fuse_core_* tests" OFF)
 option(FUSE_CORE_ENABLE_TSAN "Enable ThreadSanitizer for fuse_core and fuse_core_tests" OFF)
 include("${CMAKE_SOURCE_DIR}/cmake/FuseSanitizers.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/FuseVulkanSlots.cmake")
 include("${CMAKE_SOURCE_DIR}/cmake/FuseWarnings.cmake")
 option(FUSE_ENABLE_CLANG_TIDY "Export compile_commands.json for the optional fuse_clang_tidy seed gate (does not set CMAKE_CXX_CLANG_TIDY)" OFF)
 
@@ -92,5 +93,6 @@ include("${CMAKE_SOURCE_DIR}/cmake/FuseClangTidy.cmake")
 
 fuse_shipping_add_binary_strip_test()
 fuse_warnings_finalize()
+fuse_vulkan_slots_finalize() # before fuse_sanitize_finalize (it adds VK_ICD_FILENAMES to every test)
 fuse_sanitize_finalize()
 fuse_tsan_finalize()

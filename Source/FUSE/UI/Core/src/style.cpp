@@ -1204,6 +1204,30 @@ void StyleEngine::rebuild() {
         return a.order < b.order;
     });
     for (const Keyed& k : keyed) m_ordered.push_back(k.o);
+    buildRuleIndex();
+}
+
+void StyleEngine::buildRuleIndex() {
+    m_ruleIndex.clear();
+    m_anyRules.clear();
+    for (u32 i = 0; i < u32(m_ordered.size()); ++i) {
+        const StyleRule& r = *m_ordered[i].rule;
+        if (r.root || r.chain.empty()) { // :root is matched on the parent link; an empty chain never matches
+            if (r.root) m_anyRules.push_back(i);
+            continue;
+        }
+        const SimpleSelector& subject = r.chain.back();
+        if (subject.idHash) m_ruleIndex.push_back({0u, subject.idHash, i});
+        else if (subject.classCount) m_ruleIndex.push_back({1u, subject.classes[0], i});
+        else if (subject.typeHash) m_ruleIndex.push_back({2u, subject.typeHash, i});
+        else m_anyRules.push_back(i);
+    }
+    std::sort(m_ruleIndex.begin(), m_ruleIndex.end(), [](const RuleKey& a, const RuleKey& b) {
+        if (a.kind != b.kind) return a.kind < b.kind;
+        if (a.key != b.key) return a.key < b.key;
+        return a.rule < b.rule;
+    });
+    m_candidates.reserve(m_ordered.size());
 }
 
 StyleInvalidation StyleEngine::lookupInvalidation(u8 kind, u32 key) const {
@@ -1555,13 +1579,38 @@ u32 StyleEngine::compute(const StyleSubject& s, u32 node, const ComputedStyle* p
     if (parent) inheritFrom(cs, *parent);
     m_scratch.clear();
     m_localTokens.clear();
-    for (const Ordered& o : m_ordered) {
+    auto tryRule = [&](const Ordered& o) {
         const StyleRule* r = o.rule;
         if (matches(s, node, *r) && (r->cond < 0 || conditionHolds(s, node, o))) {
             m_scratch.push_back(r);
             for (const auto& d : r->decls)
                 if (d.prop == Prop::Count) m_localTokens.emplace_back(d.customHash, std::string_view(d.raw));
         }
+    };
+    const u32* classes = nullptr;
+    u32 classCount = 0;
+    if (s.classList(node, classes, classCount)) {
+        // candidates: the rules keyed on the node's id, classes and type, plus the unkeyed ones, in cascade order
+        m_candidates.clear();
+        auto bucket = [&](u32 kind, u32 key) {
+            auto it = std::lower_bound(m_ruleIndex.begin(), m_ruleIndex.end(), RuleKey{kind, key, 0u},
+                                       [](const RuleKey& a, const RuleKey& b) {
+                                           return a.kind != b.kind ? a.kind < b.kind : a.key < b.key;
+                                       });
+            for (; it != m_ruleIndex.end() && it->kind == kind && it->key == key; ++it) m_candidates.push_back(it->rule);
+        };
+        if (const u32 id = s.idHash(node)) bucket(0u, id);
+        for (u32 k = 0; k < classCount; ++k) bucket(1u, classes[k]);
+        if (const u32 type = s.typeHash(node)) bucket(2u, type);
+        const bool keyed = !m_candidates.empty();
+        m_candidates.insert(m_candidates.end(), m_anyRules.begin(), m_anyRules.end());
+        if (keyed) {
+            std::sort(m_candidates.begin(), m_candidates.end());
+            m_candidates.erase(std::unique(m_candidates.begin(), m_candidates.end()), m_candidates.end());
+        }
+        for (const u32 i : m_candidates) tryRule(m_ordered[i]);
+    } else {
+        for (const Ordered& o : m_ordered) tryRule(o);
     }
     for (const StyleRule* r : m_scratch)
         for (const auto& d : r->decls) {

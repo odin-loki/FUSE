@@ -608,7 +608,11 @@ void timeMillionRays() {
         svo.set({c(rng), c(rng), c(rng)}, 1u);
     }
     svo.fill({0, 0, 0}, {1023, 63, 1023}, 2u); // ground slab
-    std::vector<SvoRay> rays(1u << 20u);
+    // ASan / UBSan / TSan / valgrind: the first 128K rays of the same 1M sequence. Four serial passes over
+    // 1M rays (previous DDA, CpuReference, CpuParallel, packed layout) take ~4 min at -O0 + ASan on a 4-core
+    // runner, past the 300 s ctest limit under -j; the parity checks below are the same on the prefix.
+    const bool instrumented = fuse::core::kInstrumentedBuild || fuse::core::instrumentedRun();
+    std::vector<SvoRay> rays(instrumented ? (1u << 17u) : (1u << 20u));
     std::uniform_real_distribution<f32> unit(-1.f, 1.f);
     std::uniform_real_distribution<f32> pos(0.f, 1024.f);
     std::uniform_real_distribution<f32> down(-1.f, -0.25f);
@@ -664,10 +668,10 @@ void timeMillionRays() {
     const double legacyMs = std::chrono::duration<double, std::milli>(t0 - l0).count();
     const double refMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
     const double parMs = std::chrono::duration<double, std::milli>(t2 - t1).count();
-    std::printf("svo_ray_cast 1M rays (%u hits, %u differ from the previous DDA, %u of them hit/miss): previous DDA "
+    std::printf("svo_ray_cast %uK rays (%u hits, %u differ from the previous DDA, %u of them hit/miss): previous DDA "
                 "%.1f ms, CpuReference %.1f ms (%.2fx), CpuParallel (%u workers) %.1f ms; packed layout build %.1f ms "
                 "(%zu nodes, %zu bricks, %zu words), CpuReference over it %.1f ms\n",
-                hits, legacyMismatch, hitFlips, legacyMs, refMs, legacyMs / std::max(refMs, 1e-3), workers, parMs,
+                n >> 10u, hits, legacyMismatch, hitFlips, legacyMs, refMs, legacyMs / std::max(refMs, 1e-3), workers, parMs,
                 std::chrono::duration<double, std::milli>(p1 - p0).count(), layout.nodes.size(), layout.bricks.size(),
                 layout.pool.size(), std::chrono::duration<double, std::milli>(p2 - p1).count());
 
