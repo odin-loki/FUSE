@@ -48,10 +48,16 @@ endif()
 
 set(ENV{VK_INSTANCE_LAYERS} "VK_LAYER_KHRONOS_validation")
 cmake_host_system_information(RESULT _cores QUERY NUMBER_OF_LOGICAL_CORES)
+# FUSE_VULKAN_TEST_SLOTS builds (cmake/FuseVulkanSlots.cmake): the nested run shares the lavapipe slots too, or its
+# Lavapipe gates fall back to the one-at-a-time ICD lock (this gate was 2146 s of a 3213 s Release ctest pass).
+set(_resource_args)
+if(EXISTS "${FUSE_GATE_BUILD_DIR}/fuse_ctest_resources.json")
+  set(_resource_args --resource-spec-file "${FUSE_GATE_BUILD_DIR}/fuse_ctest_resources.json")
+endif()
 execute_process(
   # Timing budgets (label perf) and valgrind wrappers are proven by the outer run; under the
   # validation layer they only add load-dependent noise (and valgrind x validation is very slow).
-  COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${FUSE_GATE_BUILD_DIR}" -V --parallel ${_cores}
+  COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${FUSE_GATE_BUILD_DIR}" -V --parallel ${_cores} ${_resource_args}
           -E "^${FUSE_GATE_SELF}$" -LE "^(perf|valgrind|validation_control)$"
   RESULT_VARIABLE _ctest_result
   OUTPUT_VARIABLE _ctest_out
