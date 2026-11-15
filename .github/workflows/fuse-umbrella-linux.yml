@@ -251,7 +251,11 @@ jobs:
       # (~3 min): the FUSE_SANITIZE test ENVIRONMENT overrides a step's ASAN_OPTIONS, so it was the same run.
 
       - name: Run fuse_runtime_smoke under ASan+UBSan
+        # VK_ICD_FILENAMES: pinned to Lavapipe like the ctest run (cmake/FuseSanitizers.cmake). Unpinned, the loader
+        # probes every installed Mesa ICD, and LSan reports their uninstrumented allocations from vkEnumeratePhysical-
+        # Devices as leaks (run 43675418220: the first run where this step was reached).
         env:
+          VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/asan.supp
           LSAN_OPTIONS: suppressions=${{ github.workspace }}/cmake/sanitizers/lsan.supp
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/ubsan.supp
